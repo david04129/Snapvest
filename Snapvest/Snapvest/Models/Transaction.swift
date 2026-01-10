@@ -49,6 +49,15 @@ struct Transaction: Identifiable, Codable, Equatable {
     var createdAt: Date
     var updatedAt: Date
     var targetAccountId: String?  // 轉帳/還款目標帳戶ID
+    // 還款前狀態（僅用於 .repayment 類型，用於刪除時恢復）
+    var beforeRepaymentBalance: Decimal?  // 還款前的剩餘本金
+    var beforeRepaymentInterest: Decimal?  // 還款前的剩餘利息
+    var beforeRepaymentPaidPeriods: Int?  // 還款前的已還期數
+    var beforeRepaymentTotalPeriods: Int?  // 還款前的總期數
+    // 還款金額組成（僅用於 .repayment 類型）
+    var principalAmount: Decimal?  // 本金部分
+    var interestAmount: Decimal?   // 利息部分
+    var savedInterest: Decimal?    // 節省利息（僅用於提前還款類型）
     
     init(id: String = UUID().uuidString,
          accountId: String,
@@ -63,7 +72,14 @@ struct Transaction: Identifiable, Codable, Equatable {
          transactionDate: Date = Date(),
          createdAt: Date = Date(),
          updatedAt: Date = Date(),
-         targetAccountId: String? = nil) {
+         targetAccountId: String? = nil,
+         beforeRepaymentBalance: Decimal? = nil,
+         beforeRepaymentInterest: Decimal? = nil,
+         beforeRepaymentPaidPeriods: Int? = nil,
+         beforeRepaymentTotalPeriods: Int? = nil,
+         principalAmount: Decimal? = nil,
+         interestAmount: Decimal? = nil,
+         savedInterest: Decimal? = nil) {
         self.id = id
         self.accountId = accountId
         self.type = type
@@ -78,6 +94,13 @@ struct Transaction: Identifiable, Codable, Equatable {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.targetAccountId = targetAccountId
+        self.beforeRepaymentBalance = beforeRepaymentBalance
+        self.beforeRepaymentInterest = beforeRepaymentInterest
+        self.beforeRepaymentPaidPeriods = beforeRepaymentPaidPeriods
+        self.beforeRepaymentTotalPeriods = beforeRepaymentTotalPeriods
+        self.principalAmount = principalAmount
+        self.interestAmount = interestAmount
+        self.savedInterest = savedInterest
     }
     
     /// 交易總金額（不含手續費）

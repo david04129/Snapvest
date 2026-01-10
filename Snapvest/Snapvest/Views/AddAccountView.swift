@@ -281,6 +281,21 @@ struct AddAccountView: View {
             // 使用用戶輸入的開始日期作為債務建立日期（新增債務的日期）
             // 注意：每月還款日與開始日期無關，僅用於未來還款提醒，目前不使用
             
+            // 計算已還款本金和已支出利息（如果已還期數 > 0）
+            let calculatedTotalPaidPrincipal: Decimal
+            let calculatedTotalPaidInterest: Decimal
+            
+            if paidPeriodsValue > 0 {
+                // 已還款本金 = 原始本金 - 剩餘本金
+                calculatedTotalPaidPrincipal = principalValue - calculatedRemainingBalance
+                // 已支出利息 = 已還期數 × 每月應繳金額 - 已還款本金
+                calculatedTotalPaidInterest = monthlyPayment * Decimal(paidPeriodsValue) - calculatedTotalPaidPrincipal
+            } else {
+                // 如果還沒還款，初始值為 0
+                calculatedTotalPaidPrincipal = 0
+                calculatedTotalPaidInterest = 0
+            }
+            
             let liability = Liability(
                 accountId: repaymentAccountId,
                 name: name,
@@ -291,7 +306,10 @@ struct AddAccountView: View {
                 currency: .TWD,
                 startDate: startDate,  // 直接使用用戶選擇的開始日期
                 totalPeriods: periods,
-                paidPeriods: paidPeriodsValue
+                paidPeriods: paidPeriodsValue,
+                totalPaidPrincipal: calculatedTotalPaidPrincipal,
+                totalPaidInterest: calculatedTotalPaidInterest,
+                totalSavedInterest: 0  // 新建債務，沒有提前還款，節省利息為 0
             )
             try? await MockDataService.shared.createLiability(liability)
             

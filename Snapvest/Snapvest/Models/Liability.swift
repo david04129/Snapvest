@@ -21,6 +21,9 @@ struct Liability: Identifiable, Codable {
     var notes: String?
     var totalPeriods: Int  // 總期數
     var paidPeriods: Int  // 已還期數
+    var totalPaidPrincipal: Decimal  // 已還款本金（累加所有還款交易的本金部分）
+    var totalPaidInterest: Decimal  // 已支出利息（累加所有還款交易的利息部分）
+    var totalSavedInterest: Decimal  // 總共節省利息（累加所有提前還款的節省利息）
     var createdAt: Date
     var updatedAt: Date
     
@@ -37,6 +40,9 @@ struct Liability: Identifiable, Codable {
          notes: String? = nil,
          totalPeriods: Int = 0,
          paidPeriods: Int = 0,
+         totalPaidPrincipal: Decimal = 0,
+         totalPaidInterest: Decimal = 0,
+         totalSavedInterest: Decimal = 0,
          createdAt: Date = Date(),
          updatedAt: Date = Date()) {
         self.id = id
@@ -52,6 +58,9 @@ struct Liability: Identifiable, Codable {
         self.notes = notes
         self.totalPeriods = totalPeriods
         self.paidPeriods = paidPeriods
+        self.totalPaidPrincipal = totalPaidPrincipal
+        self.totalPaidInterest = totalPaidInterest
+        self.totalSavedInterest = totalSavedInterest
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

@@ -421,7 +421,10 @@ struct AddLiabilityView: View {
             currency: .TWD,
             startDate: startDate,
             totalPeriods: periods,
-            paidPeriods: 0
+            paidPeriods: 0,
+            totalPaidPrincipal: 0,  // 新建債務，已還本金為 0
+            totalPaidInterest: 0,   // 新建債務，已支出利息為 0
+            totalSavedInterest: 0   // 新建債務，節省利息為 0
         )
         
         Task {

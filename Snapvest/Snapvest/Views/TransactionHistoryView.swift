@@ -22,6 +22,8 @@ struct TransactionHistoryView: View {
     @State private var editingExpenseTransaction: Transaction?
     @State private var editingTransferTransaction: Transaction?
     @StateObject private var editingAccountViewModel = AccountDetailViewModel()
+    @State private var showingDeleteError = false
+    @State private var deleteErrorMessage: String? = nil
     
     var body: some View {
         NavigationStack {
@@ -31,11 +33,11 @@ struct TransactionHistoryView: View {
                     Text("\(account.name) - 交易紀錄")
                         .font(.title2)
                         .fontWeight(.bold)
-                    
-                    Text("此處顯示所有影響此帳戶餘額的交易。")
-                        .font(.caption)
-                        .foregroundColor(.secondaryText)
-                }
+                        
+                        Text("此處顯示所有影響此帳戶餘額的交易。")
+                            .font(.caption)
+                            .foregroundColor(.secondaryText)
+                    }
                 .padding(.horizontal, 20)
                 .padding(.top, 12)
                 .padding(.bottom, 8)
@@ -57,40 +59,40 @@ struct TransactionHistoryView: View {
                     VStack(spacing: 0) {
                         // 固定表頭
                         HStack(alignment: .top, spacing: 8) {
-                            Text("日期")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.secondaryText)
+                                Text("日期")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.secondaryText)
                                 .frame(width: 60, alignment: .leading)
-                            
-                            Text("摘要")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.secondaryText)
+                                
+                                Text("摘要")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.secondaryText)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                            
-                            Text("餘額變化")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.secondaryText)
+                                
+                                Text("餘額變化")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.secondaryText)
                                 .frame(width: 80, alignment: .leading)
-                            
-                            Text("餘額")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.secondaryText)
+                                
+                                Text("餘額")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.secondaryText)
                                 .frame(width: 90, alignment: .leading)
                         }
                         .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(Color.secondaryBackground)
-                        
+                            .padding(.vertical, 10)
+                            .background(Color.secondaryBackground)
+                            
                         // 可滾動的交易列表
                         ScrollView {
                             VStack(alignment: .leading, spacing: 0) {
-                                ForEach(viewModel.transactions) { transaction in
-                                    TransactionHistoryRowView(
-                                        transaction: transaction,
+                            ForEach(viewModel.transactions) { transaction in
+                                TransactionHistoryRowView(
+                                    transaction: transaction,
                                         accountId: account.id,
                                         accountCurrency: account.currency,
                                         balance: viewModel.getBalance(after: transaction, accountId: account.id, accountCurrency: account.currency),
@@ -106,10 +108,15 @@ struct TransactionHistoryView: View {
                                         },
                                         onEdit: {
                                             handleEditTransaction(transaction)
+                                        },
+                                        onDelete: { transaction in
+                                            Task {
+                                                await handleDeleteTransaction(transaction)
+                                            }
                                         }
                                     )
-                                    
-                                    Divider()
+                                
+                                Divider()
                                 }
                             }
                         }
@@ -166,7 +173,7 @@ struct TransactionHistoryView: View {
                         .onDisappear {
                             // 編輯完成後刷新交易紀錄
                             Task {
-                                await viewModel.loadTransactions(accountId: account.id)
+                await viewModel.loadTransactions(accountId: account.id)
                             }
                         }
                 }
@@ -176,6 +183,15 @@ struct TransactionHistoryView: View {
                     transaction: transaction,
                     viewModel: transactionsViewModel
                 )
+            }
+            .alert("無法刪除", isPresented: $showingDeleteError) {
+                Button("確定", role: .cancel) {
+                    deleteErrorMessage = nil
+                }
+            } message: {
+                if let errorMessage = deleteErrorMessage {
+                    Text(errorMessage)
+                }
             }
         }
     }
@@ -263,6 +279,46 @@ struct TransactionHistoryView: View {
         
         return ""
     }
+    
+    /// 處理刪除交易
+    private func handleDeleteTransaction(_ transaction: Transaction) async {
+        // 如果是還款交易，先驗證是否為最新紀錄
+        if transaction.type == .repayment || 
+           (transaction.notes?.contains("還款") == true) {
+            let (canDelete, errorMessage) = await transactionsViewModel.canDeleteRepaymentTransaction(transaction, userId: account.userId)
+            
+            if !canDelete, let error = errorMessage {
+                // 驗證失敗，顯示錯誤訊息，不執行刪除
+                await MainActor.run {
+                    self.deleteErrorMessage = error
+                    self.showingDeleteError = true
+                }
+                return
+            }
+        }
+        
+        // 清除之前的錯誤訊息
+        await MainActor.run {
+            transactionsViewModel.errorMessage = nil
+            deleteErrorMessage = nil
+        }
+        
+        // 執行刪除
+        await transactionsViewModel.deleteTransaction(transaction.id)
+        
+        // 再次檢查是否有錯誤訊息（防止其他錯誤）
+        await MainActor.run {
+            if let error = transactionsViewModel.errorMessage {
+                deleteErrorMessage = error
+                showingDeleteError = true
+                return
+            }
+        }
+        
+        // 如果沒有錯誤，重新載入交易紀錄
+        await viewModel.loadTransactions(accountId: account.id, userId: account.userId)
+        await transactionsViewModel.loadTransactions(userId: account.userId)
+    }
 }
 
 // MARK: - 交易行視圖（交易紀錄專用）
@@ -274,16 +330,17 @@ struct TransactionHistoryRowView: View {
     let isExpanded: Bool
     let onTap: () -> Void
     let onEdit: () -> Void
+    let onDelete: ((Transaction) -> Void)?
     
     var body: some View {
         VStack(spacing: 0) {
             // 主要交易行
             Button(action: onTap) {
                 HStack(alignment: .top, spacing: 8) {
-                    // 日期
-                    Text(formatDate(transaction.transactionDate))
-                        .font(.caption)
-                        .foregroundColor(.primaryText)
+            // 日期
+            Text(formatDate(transaction.transactionDate))
+                .font(.caption)
+                .foregroundColor(.primaryText)
                         .frame(width: 60, alignment: .leading)
                     
                     // 摘要
@@ -292,35 +349,35 @@ struct TransactionHistoryRowView: View {
                             // 顯示統一的圖標
                             let iconInfo = getTransactionIcon(transaction)
                             Image(systemName: iconInfo.icon)
-                                .font(.caption2)
+                            .font(.caption2)
                                 .foregroundColor(iconInfo.color)
-                            
-                            Text(getTransactionSummary(transaction))
-                                .font(.caption)
-                                .foregroundColor(.primaryText)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .lineLimit(1)
-                        }
-                        
-                        if transaction.type == .buy || transaction.type == .sell {
-                            Text("\(transaction.symbol) × \(transaction.quantity.formatted(fractionDigits: 0))")
-                                .font(.caption2)
-                                .foregroundColor(.secondaryText)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                     
-                    // 餘額變化
-                    let change = getBalanceChange(transaction, accountId: accountId, accountCurrency: accountCurrency)
-                    Text(formatBalanceChange(change, currency: accountCurrency))
-                        .font(.caption)
-                        .foregroundColor(change >= 0 ? .profitGreen : .lossRed)
-                        .frame(width: 80, alignment: .leading)
-                    
-                    // 餘額
-                    Text(balance.formatted(currency: accountCurrency))
+                    Text(getTransactionSummary(transaction))
                         .font(.caption)
                         .foregroundColor(.primaryText)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .lineLimit(1)
+                }
+                
+                if transaction.type == .buy || transaction.type == .sell {
+                    Text("\(transaction.symbol) × \(transaction.quantity.formatted(fractionDigits: 0))")
+                        .font(.caption2)
+                        .foregroundColor(.secondaryText)
+                }
+            }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            
+            // 餘額變化
+                    let change = getBalanceChange(transaction, accountId: accountId, accountCurrency: accountCurrency)
+                    Text(formatBalanceChange(change, currency: accountCurrency))
+                .font(.caption)
+                .foregroundColor(change >= 0 ? .profitGreen : .lossRed)
+                        .frame(width: 80, alignment: .leading)
+            
+            // 餘額
+                    Text(balance.formatted(currency: accountCurrency))
+                .font(.caption)
+                .foregroundColor(.primaryText)
                         .frame(width: 90, alignment: .leading)
                     
                     // 展開/收起圖標
@@ -335,8 +392,25 @@ struct TransactionHistoryRowView: View {
             }
             .buttonStyle(PlainButtonStyle())
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                // 還款和債務交易只能刪除，不能編輯（在 handleEditTransaction 中處理）
-                // 但在這裡也要隱藏編輯按鈕
+                // 刪除按鈕（所有交易都可以刪除）
+                if let onDelete = onDelete {
+                    Button(role: .destructive) {
+                        onDelete(transaction)
+                    } label: {
+                        VStack(spacing: 4) {
+                            Image(systemName: "trash.fill")
+                                .font(.system(size: 18, weight: .medium))
+                            Text("刪除")
+                                .font(.system(size: 10, weight: .medium))
+                        }
+                        .foregroundColor(.white)
+                        .frame(width: 70, height: 70)
+                        .background(Color.red)
+                    }
+                    .tint(.red)
+                }
+                
+                // 編輯按鈕（還款和債務交易不能編輯）
                 if transaction.type != .repayment && transaction.type != .liability {
                     Button {
                         onEdit()
@@ -362,7 +436,7 @@ struct TransactionHistoryRowView: View {
                         Text("備註")
                             .font(.caption)
                             .fontWeight(.semibold)
-                            .foregroundColor(.secondaryText)
+                .foregroundColor(.secondaryText)
                         Spacer()
                     }
                     
@@ -446,20 +520,13 @@ struct TransactionHistoryRowView: View {
             return transaction.totalAmountWithFee
         case .withdraw, .buy, .fee, .liability:
             return -transaction.totalAmountWithFee
-        case .transfer, .repayment:
-            // 轉帳/還款：判斷是轉出還是轉入
+        case .transfer:
+            // 轉帳：判斷是轉出還是轉入
             if transaction.accountId == accountId {
-                // 這是轉出帳戶：減少（使用轉出金額，即 transaction.currency）
-                // 如果幣別不同，需要轉換，但通常轉出帳戶顯示的就是自己的幣別
-                if transaction.currency == accountCurrency {
-                    return -transaction.totalAmount
-                } else {
-                    // 幣別不同，但轉出帳戶應該顯示自己的幣別金額
-                    return -transaction.totalAmount
-                }
+                // 這是轉出帳戶：減少（使用轉出金額）
+                return -transaction.totalAmount
             } else if transaction.targetAccountId == accountId {
-                // 這是轉入帳戶：增加（需要計算轉入金額，使用目標帳戶的幣別）
-                // 如果交易的貨幣與目標帳戶的貨幣不同，需要從備註中解析匯率並計算
+                // 這是轉入帳戶：增加（需要計算轉入金額）
                 if transaction.currency != accountCurrency {
                     // 跨幣別轉帳：從備註中解析匯率並計算轉入金額
                     var receivedAmount = transaction.totalAmount
@@ -484,7 +551,22 @@ struct TransactionHistoryRowView: View {
                     return transaction.totalAmount
                 }
             }
-            // 如果都不匹配，返回0（不應該發生）
+            return 0
+        case .repayment:
+            // 還款：判斷是還款帳戶（轉出）還是債務帳戶（轉入）
+            if transaction.accountId == accountId {
+                // 這是還款帳戶（源帳戶）：減少總還款金額（本金+利息）
+                // 還款帳戶顯示的是總還款金額
+                return -transaction.totalAmount
+            } else if transaction.targetAccountId == accountId {
+                // 這是債務帳戶（目標帳戶）：只增加本金部分（直接從 transaction.principalAmount 讀取）
+                // 債務帳戶的餘額就是剩餘本金，所以餘額變化只計算本金部分
+                if let principalAmount = transaction.principalAmount {
+                    return principalAmount
+                }
+                // 如果沒有本金數據，返回0（這種情況不應該發生）
+                return 0
+            }
             return 0
         }
     }
@@ -561,8 +643,8 @@ class TransactionHistoryViewModel: ObservableObject {
                 balance += t.totalAmountWithFee
             case .withdraw, .buy, .fee, .liability:
                 balance -= t.totalAmountWithFee
-            case .transfer, .repayment:
-                // 轉帳/還款：判斷是轉出還是轉入
+            case .transfer:
+                // 轉帳：判斷是轉出還是轉入
                 if t.accountId == accountId {
                     // 這是轉出帳戶：減少（使用轉出金額）
                     balance -= t.totalAmount
@@ -591,6 +673,20 @@ class TransactionHistoryViewModel: ObservableObject {
                         // 同幣別轉帳：直接使用交易金額
                         balance += t.totalAmount
                     }
+                }
+            case .repayment:
+                // 還款：判斷是還款帳戶（轉出）還是債務帳戶（轉入）
+                if t.accountId == accountId {
+                    // 這是還款帳戶（源帳戶）：減少總還款金額（本金+利息）
+                    // 還款帳戶顯示的是總還款金額
+                    balance -= t.totalAmount
+                } else if t.targetAccountId == accountId {
+                    // 這是債務帳戶（目標帳戶）：只增加本金部分（直接從 transaction.principalAmount 讀取）
+                    // 債務帳戶的餘額就是剩餘本金，所以餘額變化只計算本金部分
+                    if let principalAmount = t.principalAmount {
+                        balance += principalAmount
+                    }
+                    // 如果沒有本金數據，不增加餘額（這種情況不應該發生）
                 }
             }
         }

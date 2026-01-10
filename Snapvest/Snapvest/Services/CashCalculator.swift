@@ -22,16 +22,22 @@ class CashCalculator {
             if transaction.type == .transfer || transaction.type == .repayment {
                 if transaction.accountId == accountId {
                     // 這是轉出帳戶：減少現金（使用轉出金額）
+                    // 對於還款，這是還款帳戶，扣款總還款金額
                     cash -= transaction.totalAmount
                 } else if transaction.targetAccountId == accountId {
                     // 這是轉入帳戶：增加現金
-                    // 如果交易的貨幣與目標帳戶的貨幣不同，需要從備註中解析匯率並計算轉入金額
+                    // 如果提供了帳戶列表，查找目標帳戶以確定貨幣和帳戶類型
                     var receivedAmount = transaction.totalAmount
                     
-                    // 如果提供了帳戶列表，查找目標帳戶以確定貨幣
                     if !accounts.isEmpty, let targetAccount = accounts.first(where: { $0.id == accountId }) {
-                        // 如果交易的貨幣與目標帳戶的貨幣不同，需要計算轉入金額
-                        if transaction.currency != targetAccount.currency {
+                        // 如果是還款交易且目標帳戶是債務帳戶，只計算本金部分（直接從 transaction.principalAmount 讀取）
+                        if transaction.type == .repayment && targetAccount.accountType == .debt {
+                            // 直接使用交易中存儲的本金部分
+                            if let principalAmount = transaction.principalAmount {
+                                receivedAmount = principalAmount
+                            }
+                        } else if transaction.currency != targetAccount.currency {
+                            // 如果交易的貨幣與目標帳戶的貨幣不同（跨幣別轉帳/還款），需要從備註中解析匯率並計算轉入金額
                             // 從備註中解析匯率
                             if let notes = transaction.notes,
                                let rateRange = notes.range(of: "匯率: ") {
