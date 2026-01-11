@@ -48,6 +48,22 @@ protocol DataServiceProtocol {
     // 快照
     func fetchSnapshots(userId: String, startDate: Date?, endDate: Date?) async throws -> [Snapshot]
     func createSnapshot(_ snapshot: Snapshot) async throws
+    
+    // 帳戶快照
+    func fetchAccountSnapshot(accountId: String) async throws -> AccountSnapshot?
+    func saveAccountSnapshot(_ snapshot: AccountSnapshot) async throws
+    func deleteAccountSnapshot(accountId: String) async throws
+    
+    // 資產價格快照
+    func fetchAssetPriceSnapshot(assetType: AssetType, symbol: String) async throws -> AssetPriceSnapshot?
+    func fetchAssetPriceSnapshots(symbols: [SymbolInfo]) async throws -> [AssetPriceSnapshot]
+    func saveAssetPriceSnapshot(_ snapshot: AssetPriceSnapshot) async throws
+    func deleteAssetPriceSnapshot(assetType: AssetType, symbol: String) async throws
+    
+    // 使用者持股快照
+    func fetchUserHoldingsSnapshot(userId: String) async throws -> UserHoldingsSnapshot?
+    func saveUserHoldingsSnapshot(_ snapshot: UserHoldingsSnapshot) async throws
+    func deleteUserHoldingsSnapshot(userId: String) async throws
 }
 
 /// 資料服務實作（目前為 Mock，之後可替換為 Firebase/Supabase）
@@ -62,6 +78,11 @@ class MockDataService: DataServiceProtocol {
     private var transactions: [String: [Transaction]] = [:] // accountId: [Transaction]
     private var holdings: [String: [Holding]] = [:] // accountId: [Holding]
     private var liabilities: [String: [Liability]] = [:] // accountId: [Liability]
+    
+    // 快照儲存
+    private var accountSnapshots: [String: AccountSnapshot] = [:] // accountId: AccountSnapshot
+    private var assetPriceSnapshots: [String: AssetPriceSnapshot] = [:] // "assetType_symbol": AssetPriceSnapshot
+    private var userHoldingsSnapshots: [String: UserHoldingsSnapshot] = [:] // userId: UserHoldingsSnapshot
     
     // 私有初始化，強制使用單例
     private init() {
@@ -537,6 +558,62 @@ class MockDataService: DataServiceProtocol {
     
     func createSnapshot(_ snapshot: Snapshot) async throws {
         // Mock 實作
+    }
+    
+    // MARK: - 帳戶快照
+    
+    func fetchAccountSnapshot(accountId: String) async throws -> AccountSnapshot? {
+        return accountSnapshots[accountId]
+    }
+    
+    func saveAccountSnapshot(_ snapshot: AccountSnapshot) async throws {
+        accountSnapshots[snapshot.accountId] = snapshot
+    }
+    
+    func deleteAccountSnapshot(accountId: String) async throws {
+        accountSnapshots.removeValue(forKey: accountId)
+    }
+    
+    // MARK: - 資產價格快照
+    
+    func fetchAssetPriceSnapshot(assetType: AssetType, symbol: String) async throws -> AssetPriceSnapshot? {
+        let key = "\(assetType.rawValue)_\(symbol)"
+        return assetPriceSnapshots[key]
+    }
+    
+    func fetchAssetPriceSnapshots(symbols: [SymbolInfo]) async throws -> [AssetPriceSnapshot] {
+        var snapshots: [AssetPriceSnapshot] = []
+        for symbolInfo in symbols {
+            let key = "\(symbolInfo.assetType.rawValue)_\(symbolInfo.symbol)"
+            if let snapshot = assetPriceSnapshots[key] {
+                snapshots.append(snapshot)
+            }
+        }
+        return snapshots
+    }
+    
+    func saveAssetPriceSnapshot(_ snapshot: AssetPriceSnapshot) async throws {
+        let key = snapshot.id
+        assetPriceSnapshots[key] = snapshot
+    }
+    
+    func deleteAssetPriceSnapshot(assetType: AssetType, symbol: String) async throws {
+        let key = "\(assetType.rawValue)_\(symbol)"
+        assetPriceSnapshots.removeValue(forKey: key)
+    }
+    
+    // MARK: - 使用者持股快照
+    
+    func fetchUserHoldingsSnapshot(userId: String) async throws -> UserHoldingsSnapshot? {
+        return userHoldingsSnapshots[userId]
+    }
+    
+    func saveUserHoldingsSnapshot(_ snapshot: UserHoldingsSnapshot) async throws {
+        userHoldingsSnapshots[snapshot.userId] = snapshot
+    }
+    
+    func deleteUserHoldingsSnapshot(userId: String) async throws {
+        userHoldingsSnapshots.removeValue(forKey: userId)
     }
 }
 

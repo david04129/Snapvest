@@ -68,34 +68,11 @@ struct AccountsView: View {
                 }
                 .padding()
             }
-            .navigationTitle("帳戶管理")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 12) {
-                        Button(action: {
-                            showingAddAccount = true
-                        }) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "plus.circle.fill")
-                                Text("新增帳戶")
-                            }
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.appPrimary)
-                        }
-                        
-                        // 用戶頭像/名稱（佔位符，後續加入登入功能）
-                        Circle()
-                            .fill(Color.appPrimary.opacity(0.2))
-                            .frame(width: 32, height: 32)
-                            .overlay {
-                                Image(systemName: "person.fill")
-                                    .foregroundColor(.appPrimary)
-                                    .font(.caption)
-                            }
-                    }
-                }
+            .navigationBarBackButtonHidden(true)
+            .safeAreaInset(edge: .top) {
+                customHeaderBarWithAddButton(icon: "building.columns.fill", title: "帳戶管理", addButtonText: "新增帳戶", addButtonAction: {
+                    showingAddAccount = true
+                })
             }
             .refreshable {
                 await viewModel.loadAccounts(userId: userId)
@@ -124,6 +101,54 @@ struct AccountsView: View {
                 refreshTrigger = UUID()
             }
         }
+    }
+    
+    // MARK: - 自定義標題欄（帶新增按鈕）
+    private func customHeaderBarWithAddButton(icon: String, title: String, addButtonText: String, addButtonAction: @escaping () -> Void) -> some View {
+        HStack {
+            // 左側：ICON + 標題
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.appPrimary)
+                
+                Text(title)
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primaryText)
+            }
+            
+            Spacer()
+            
+            // 右側：新增按鈕 + 使用者頭像
+            HStack(spacing: 12) {
+                Button(action: addButtonAction) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus.circle.fill")
+                        Text(addButtonText)
+                    }
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.appPrimary)
+                }
+                
+                Button(action: {
+                    // TODO: 點擊後的功能
+                }) {
+                    Circle()
+                        .fill(Color.appPrimary.opacity(0.2))
+                        .frame(width: 32, height: 32)
+                        .overlay {
+                            Image(systemName: "person.fill")
+                                .foregroundColor(.appPrimary)
+                                .font(.caption)
+                        }
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color.cardBackground)
     }
     
     // MARK: - 拖曳排序輔助函數

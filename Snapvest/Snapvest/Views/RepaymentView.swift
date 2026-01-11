@@ -827,12 +827,17 @@ struct RepaymentView: View {
                 }
             }
             
-            // 解析匯率
-            if let rateRange = notesText.range(of: "匯率: ") {
-                let rateString = String(notesText[rateRange.upperBound...])
-                if let rateEnd = rateString.firstIndex(of: ")") {
-                    let rateValue = String(rateString[..<rateEnd])
-                    exchangeRate = rateValue.trimmingCharacters(in: .whitespaces)
+            // 從 transaction.exchangeRate 讀取匯率（如果有的話，用於向後兼容，也嘗試從 notes 解析）
+            if let rate = transaction.exchangeRate {
+                exchangeRate = rate.formatted(fractionDigits: 2)
+            } else {
+                // 向後兼容：嘗試從 notes 解析匯率（僅用於舊數據）
+                if let rateRange = notesText.range(of: "匯率: ") {
+                    let rateString = String(notesText[rateRange.upperBound...])
+                    if let rateEnd = rateString.firstIndex(of: ")") {
+                        let rateValue = String(rateString[..<rateEnd])
+                        exchangeRate = rateValue.trimmingCharacters(in: .whitespaces)
+                    }
                 }
             }
         }
@@ -1271,12 +1276,16 @@ struct RepaymentView: View {
                 }
             }
             
-            // ===== 構建備註（統一格式） =====
+            // ===== 構建備註（統一格式，包含匯率顯示） =====
             let repaymentTypePrefix = repaymentType == .prepayment ? "提前還款" : "定期還款"
             var transactionNotes = "\(repaymentTypePrefix)自 \(sourceAccount.name) 還款到 \(debtAccount.name)"
             
-            if sourceAccount.currency != debtAccount.currency {
-                transactionNotes += " (匯率: \(exchangeRate))"
+            // 計算匯率值（如果有跨幣別，用於設置 Transaction.exchangeRate 和 notes 中的顯示）
+            let exchangeRateValue: Decimal? = sourceAccount.currency != debtAccount.currency ? Decimal(string: exchangeRate) : nil
+            
+            // 如果有跨幣別，在備註中顯示匯率（使用與 Transaction.exchangeRate 相同的值）
+            if let rateValue = exchangeRateValue {
+                transactionNotes += " (匯率: \(rateValue.formatted(fractionDigits: 2)))"
             }
             
             // 先添加自定義備註（如果有）
@@ -1391,6 +1400,7 @@ struct RepaymentView: View {
                     createdAt: editingTransaction.createdAt,
                     updatedAt: Date(),
                     targetAccountId: debtAccount.id,
+                    exchangeRate: exchangeRateValue,
                     beforeRepaymentBalance: beforeRepaymentBalance,
                     beforeRepaymentInterest: beforeRepaymentInterest,
                     beforeRepaymentPaidPeriods: beforeRepaymentPaidPeriods,
@@ -1414,6 +1424,7 @@ struct RepaymentView: View {
                     notes: transactionNotes,
                     transactionDate: transactionDate,
                     targetAccountId: debtAccount.id,
+                    exchangeRate: exchangeRateValue,
                     beforeRepaymentBalance: beforeRepaymentBalance,
                     beforeRepaymentInterest: beforeRepaymentInterest,
                     beforeRepaymentPaidPeriods: beforeRepaymentPaidPeriods,

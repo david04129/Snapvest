@@ -801,12 +801,17 @@ struct TransferView: View {
             // 設置備註
             notes = extractedNotes ?? ""
             
-            // 解析匯率
-            if let rateRange = notesText.range(of: "匯率: ") {
-                let rateString = String(notesText[rateRange.upperBound...])
-                if let rateEnd = rateString.firstIndex(of: ")") {
-                    let rateValue = String(rateString[..<rateEnd])
-                    exchangeRate = rateValue.trimmingCharacters(in: .whitespaces)
+            // 從 transaction.exchangeRate 讀取匯率（如果有的話，用於向後兼容，也嘗試從 notes 解析）
+            if let rate = transaction.exchangeRate {
+                exchangeRate = rate.formatted(fractionDigits: 2)
+            } else {
+                // 向後兼容：嘗試從 notes 解析匯率（僅用於舊數據）
+                if let rateRange = notesText.range(of: "匯率: ") {
+                    let rateString = String(notesText[rateRange.upperBound...])
+                    if let rateEnd = rateString.firstIndex(of: ")") {
+                        let rateValue = String(rateString[..<rateEnd])
+                        exchangeRate = rateValue.trimmingCharacters(in: .whitespaces)
+                    }
                 }
             }
         }
@@ -835,7 +840,8 @@ struct TransferView: View {
                 transactionDate: transferTransaction.transactionDate,
                 createdAt: editingTransaction.createdAt,
                 updatedAt: Date(),
-                targetAccountId: transferTransaction.targetAccountId
+                targetAccountId: transferTransaction.targetAccountId,
+                exchangeRate: transferTransaction.exchangeRate
             )
             await transactionsViewModel.updateTransaction(updatedTransaction)
         } else {
@@ -948,7 +954,7 @@ struct TransferView: View {
         }
         
         var receivedAmount = amountValue
-        var exchangeRateText = ""
+        var exchangeRateValue: Decimal? = nil
         
         // 如果幣別不同，計算轉入金額並記錄匯率
         if targetAccount.currency != actualSourceAccount.currency {
@@ -957,15 +963,22 @@ struct TransferView: View {
             }
             // rateValue 是美金對台幣匯率（1 USD = rateValue TWD）
             receivedAmount = calculateReceivedAmount(amount: amountValue, rate: rateValue)
-            exchangeRateText = " (匯率: \(rateValue.formatted(fractionDigits: 2)))"
+            exchangeRateValue = rateValue
         }
         
         // 判斷是否為還款模式（轉入帳戶是債務帳戶）
         let isRepayment = targetAccount.accountType == .debt
         
         Task {
-            // 生成單一交易的備註（格式：自A轉帳到B 或 自A還款到B）
+            // 生成單一交易的備註（格式：自A轉帳到B 或 自A還款到B，包含匯率顯示）
             var transactionNotes: String
+            var exchangeRateText = ""
+            
+            // 如果有跨幣別，在備註中顯示匯率（用於查看，但計算使用 exchangeRate 欄位）
+            if let rateValue = exchangeRateValue {
+                exchangeRateText = " (匯率: \(rateValue.formatted(fractionDigits: 2)))"
+            }
+            
             if isRepayment {
                 // 還款模式：先計算本金和利息，然後生成備註
                 var baseNotes: String
@@ -1009,7 +1022,8 @@ struct TransferView: View {
                 fee: 0,
                 notes: transactionNotes,
                 transactionDate: transactionDate,
-                targetAccountId: targetAccount.id
+                targetAccountId: targetAccount.id,
+                exchangeRate: exchangeRateValue
             )
             
             await saveTransferAsync(

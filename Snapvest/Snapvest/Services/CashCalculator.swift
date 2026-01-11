@@ -37,21 +37,29 @@ class CashCalculator {
                                 receivedAmount = principalAmount
                             }
                         } else if transaction.currency != targetAccount.currency {
-                            // 如果交易的貨幣與目標帳戶的貨幣不同（跨幣別轉帳/還款），需要從備註中解析匯率並計算轉入金額
-                            // 從備註中解析匯率
-                            if let notes = transaction.notes,
-                               let rateRange = notes.range(of: "匯率: ") {
-                                let rateString = String(notes[rateRange.upperBound...])
-                                if let rateEnd = rateString.firstIndex(of: ")") {
-                                    let rateValue = String(rateString[..<rateEnd]).trimmingCharacters(in: .whitespaces)
-                                    if let rate = Decimal(string: rateValue), rate > 0 {
-                                        // 匯率是 1 USD = rate TWD
-                                        // 如果 transaction.currency == .TWD 且 targetAccount.currency == .USD，則轉入金額 = transaction.totalAmount / rate
-                                        // 如果 transaction.currency == .USD 且 targetAccount.currency == .TWD，則轉入金額 = transaction.totalAmount * rate
-                                        if transaction.currency == .TWD && targetAccount.currency == .USD {
-                                            receivedAmount = transaction.totalAmount / rate
-                                        } else if transaction.currency == .USD && targetAccount.currency == .TWD {
-                                            receivedAmount = transaction.totalAmount * rate
+                            // 如果交易的貨幣與目標帳戶的貨幣不同（跨幣別轉帳/還款），需要使用匯率計算轉入金額
+                            if let rate = transaction.exchangeRate, rate > 0 {
+                                // 匯率是 1 USD = rate TWD
+                                // 如果 transaction.currency == .TWD 且 targetAccount.currency == .USD，則轉入金額 = transaction.totalAmount / rate
+                                // 如果 transaction.currency == .USD 且 targetAccount.currency == .TWD，則轉入金額 = transaction.totalAmount * rate
+                                if transaction.currency == .TWD && targetAccount.currency == .USD {
+                                    receivedAmount = transaction.totalAmount / rate
+                                } else if transaction.currency == .USD && targetAccount.currency == .TWD {
+                                    receivedAmount = transaction.totalAmount * rate
+                                }
+                            } else {
+                                // 向後兼容：嘗試從 notes 解析匯率（僅用於舊數據）
+                                if let notes = transaction.notes,
+                                   let rateRange = notes.range(of: "匯率: ") {
+                                    let rateString = String(notes[rateRange.upperBound...])
+                                    if let rateEnd = rateString.firstIndex(of: ")") {
+                                        let rateValue = String(rateString[..<rateEnd]).trimmingCharacters(in: .whitespaces)
+                                        if let rate = Decimal(string: rateValue), rate > 0 {
+                                            if transaction.currency == .TWD && targetAccount.currency == .USD {
+                                                receivedAmount = transaction.totalAmount / rate
+                                            } else if transaction.currency == .USD && targetAccount.currency == .TWD {
+                                                receivedAmount = transaction.totalAmount * rate
+                                            }
                                         }
                                     }
                                 }

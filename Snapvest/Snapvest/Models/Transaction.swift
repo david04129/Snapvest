@@ -49,6 +49,14 @@ struct Transaction: Identifiable, Codable, Equatable {
     var createdAt: Date
     var updatedAt: Date
     var targetAccountId: String?  // 轉帳/還款目標帳戶ID
+    
+    // 交易金額（儲存欄位，在交易當下計算並儲存）
+    var totalAmount: Decimal      // 交易總金額（不含手續費）
+    var totalAmountWithFee: Decimal  // 交易總金額（含手續費）
+    
+    // 匯率（跨幣別交易時使用，格式：USD to TWD，1 USD = exchangeRate TWD）
+    var exchangeRate: Decimal?    // 交易當下的匯率（跨幣別買賣股票、轉帳、還款時使用）
+    
     // 還款前狀態（僅用於 .repayment 類型，用於刪除時恢復）
     var beforeRepaymentBalance: Decimal?  // 還款前的剩餘本金
     var beforeRepaymentInterest: Decimal?  // 還款前的剩餘利息
@@ -73,6 +81,7 @@ struct Transaction: Identifiable, Codable, Equatable {
          createdAt: Date = Date(),
          updatedAt: Date = Date(),
          targetAccountId: String? = nil,
+         exchangeRate: Decimal? = nil,
          beforeRepaymentBalance: Decimal? = nil,
          beforeRepaymentInterest: Decimal? = nil,
          beforeRepaymentPaidPeriods: Int? = nil,
@@ -94,6 +103,29 @@ struct Transaction: Identifiable, Codable, Equatable {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.targetAccountId = targetAccountId
+        self.exchangeRate = exchangeRate
+        
+        // 計算並儲存交易金額
+        let calculatedTotalAmount = quantity * price
+        self.totalAmount = calculatedTotalAmount
+        
+        // 根據交易類型計算含手續費的總金額
+        switch type {
+        case .buy, .deposit:
+            self.totalAmountWithFee = calculatedTotalAmount + fee
+        case .sell, .withdraw:
+            self.totalAmountWithFee = calculatedTotalAmount - fee
+        case .dividend:
+            self.totalAmountWithFee = calculatedTotalAmount
+        case .fee:
+            self.totalAmountWithFee = fee
+        case .liability:
+            self.totalAmountWithFee = calculatedTotalAmount
+        case .transfer, .repayment:
+            // 轉帳/還款：從轉出帳戶角度看是減少，從轉入帳戶角度看是增加
+            self.totalAmountWithFee = calculatedTotalAmount
+        }
+        
         self.beforeRepaymentBalance = beforeRepaymentBalance
         self.beforeRepaymentInterest = beforeRepaymentInterest
         self.beforeRepaymentPaidPeriods = beforeRepaymentPaidPeriods
@@ -101,30 +133,6 @@ struct Transaction: Identifiable, Codable, Equatable {
         self.principalAmount = principalAmount
         self.interestAmount = interestAmount
         self.savedInterest = savedInterest
-    }
-    
-    /// 交易總金額（不含手續費）
-    var totalAmount: Decimal {
-        quantity * price
-    }
-    
-    /// 交易總金額（含手續費）
-    var totalAmountWithFee: Decimal {
-        switch type {
-        case .buy, .deposit:
-            return totalAmount + fee
-        case .sell, .withdraw:
-            return totalAmount - fee
-        case .dividend:
-            return totalAmount
-        case .fee:
-            return fee
-        case .liability:
-            return totalAmount
-        case .transfer, .repayment:
-            // 轉帳/還款：從轉出帳戶角度看是減少，從轉入帳戶角度看是增加
-            return totalAmount
-        }
     }
 }
 

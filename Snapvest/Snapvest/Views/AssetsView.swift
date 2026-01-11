@@ -50,11 +50,53 @@ struct AssetsView: View {
                 }
                 .padding()
             }
-            .navigationTitle("資產")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    // 用戶頭像/名稱（佔位符，後續加入登入功能）
+            .navigationBarBackButtonHidden(true)
+            .safeAreaInset(edge: .top) {
+                customHeaderBarWithAddButton(icon: "chart.bar.fill", title: "資產", addButtonText: "新增資產", addButtonAction: {
+                    // TODO: 新增資產的功能
+                })
+            }
+            .refreshable {
+                await viewModel.loadData(userId: userId)
+            }
+            .task {
+                await viewModel.loadData(userId: userId)
+            }
+        }
+    }
+    
+    // MARK: - 自定義標題欄（帶新增按鈕）
+    private func customHeaderBarWithAddButton(icon: String, title: String, addButtonText: String, addButtonAction: @escaping () -> Void) -> some View {
+        HStack {
+            // 左側：ICON + 標題
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.appPrimary)
+                
+                Text(title)
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primaryText)
+            }
+            
+            Spacer()
+            
+            // 右側：新增按鈕 + 使用者頭像
+            HStack(spacing: 12) {
+                Button(action: addButtonAction) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus.circle.fill")
+                        Text(addButtonText)
+                    }
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.appPrimary)
+                }
+                
+                Button(action: {
+                    // TODO: 點擊後的功能
+                }) {
                     Circle()
                         .fill(Color.appPrimary.opacity(0.2))
                         .frame(width: 32, height: 32)
@@ -65,13 +107,10 @@ struct AssetsView: View {
                         }
                 }
             }
-            .refreshable {
-                await viewModel.loadData(userId: userId)
-            }
-            .task {
-                await viewModel.loadData(userId: userId)
-            }
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color.cardBackground)
     }
 }
 

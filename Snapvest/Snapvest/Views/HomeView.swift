@@ -32,20 +32,9 @@ struct HomeView: View {
                 }
                 .padding()
             }
-            .navigationTitle("首頁")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    // 用戶頭像/名稱（佔位符，後續加入登入功能）
-                    Circle()
-                        .fill(Color.appPrimary.opacity(0.2))
-                        .frame(width: 32, height: 32)
-                        .overlay {
-                            Image(systemName: "person.fill")
-                                .foregroundColor(.appPrimary)
-                                .font(.caption)
-                        }
-                }
+            .navigationBarBackButtonHidden(true)
+            .safeAreaInset(edge: .top) {
+                customHeaderBar(icon: "house.fill", title: "首頁")
             }
             .refreshable {
                 await viewModel.loadData(userId: userId)
@@ -54,6 +43,41 @@ struct HomeView: View {
                 await viewModel.loadData(userId: userId)
             }
         }
+    }
+    
+    private func customHeaderBar(icon: String, title: String) -> some View {
+        HStack {
+            // 左側：ICON + 標題
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.appPrimary)
+                
+                Text(title)
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primaryText)
+            }
+            
+            Spacer()
+            
+            // 右側：使用者頭像
+            Button(action: {
+                // TODO: 點擊後的功能
+            }) {
+                Circle()
+                    .fill(Color.appPrimary.opacity(0.2))
+                    .frame(width: 32, height: 32)
+                    .overlay {
+                        Image(systemName: "person.fill")
+                            .foregroundColor(.appPrimary)
+                            .font(.caption)
+                    }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color.cardBackground)
     }
 }
 

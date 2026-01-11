@@ -11,7 +11,6 @@ struct TransactionsView: View {
     @StateObject private var viewModel = TransactionsViewModel()
     @StateObject private var portfolioViewModel = PortfolioViewModel()
     @StateObject private var accountsViewModel = AccountsViewModel()
-    @State private var showingAddTransaction = false
     @State private var showingEditTransaction: Transaction?
     @State private var showingEditLiability = false
     @State private var editingLiability: Liability?
@@ -429,10 +428,9 @@ struct TransactionsView: View {
                 filterTitleSection
                 transactionsListSection
             }
-            .navigationTitle("所有紀錄")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                toolbarContent
+            .navigationBarBackButtonHidden(true)
+            .safeAreaInset(edge: .top) {
+                customHeaderBar(icon: "clock.fill", title: "所有紀錄")
             }
             .refreshable {
                 await viewModel.loadTransactions(userId: userId)
@@ -442,9 +440,6 @@ struct TransactionsView: View {
                 loadFilterPreferences()
                 // 然後載入交易數據
                 await viewModel.loadTransactions(userId: userId)
-            }
-            .sheet(isPresented: $showingAddTransaction) {
-                AddTransactionView(viewModel: viewModel)
             }
             .sheet(item: $showingEditTransaction) { transaction in
                 editTransactionSheet(transaction: transaction)
@@ -862,24 +857,27 @@ struct TransactionsView: View {
         }
     }
     
-    // MARK: - Toolbar
-    
-    @ToolbarContentBuilder
-    private var toolbarContent: some ToolbarContent {
-        ToolbarItem(placement: .topBarTrailing) {
-            HStack(spacing: 12) {
-                Button(action: {
-                    showingAddTransaction = true
-                }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "plus.circle.fill")
-                        Text("新增交易")
-                    }
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
+    // MARK: - 自定義標題欄
+    private func customHeaderBar(icon: String, title: String) -> some View {
+        HStack {
+            // 左側：ICON + 標題
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(.appPrimary)
-                }
                 
+                Text(title)
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primaryText)
+            }
+            
+            Spacer()
+            
+            // 右側：使用者頭像
+            Button(action: {
+                // TODO: 點擊後的功能
+            }) {
                 Circle()
                     .fill(Color.appPrimary.opacity(0.2))
                     .frame(width: 32, height: 32)
@@ -890,6 +888,9 @@ struct TransactionsView: View {
                     }
             }
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color.cardBackground)
     }
     
     // MARK: - Sheet Views
