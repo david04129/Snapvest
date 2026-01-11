@@ -428,6 +428,7 @@ struct TransactionsView: View {
                 filterTitleSection
                 transactionsListSection
             }
+            .background(Color.mainBackground)
             .navigationBarBackButtonHidden(true)
             .safeAreaInset(edge: .top) {
                 customHeaderBar(icon: "clock.fill", title: "所有紀錄")
@@ -890,7 +891,7 @@ struct TransactionsView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Color.cardBackground)
+        .background(Color.mainBackground)
     }
     
     // MARK: - Sheet Views

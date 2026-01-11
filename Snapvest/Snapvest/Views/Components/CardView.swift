@@ -12,14 +12,20 @@ struct CardView<Content: View>: View {
     let content: Content
     var padding: CGFloat = 16
     var cornerRadius: CGFloat = 12
+    var backgroundColor: Color? = nil
+    var borderColor: Color? = nil
     
     init(
         padding: CGFloat = 16,
         cornerRadius: CGFloat = 12,
+        backgroundColor: Color? = nil,
+        borderColor: Color? = nil,
         @ViewBuilder content: () -> Content
     ) {
         self.padding = padding
         self.cornerRadius = cornerRadius
+        self.backgroundColor = backgroundColor
+        self.borderColor = borderColor
         self.content = content()
     }
     
@@ -28,8 +34,16 @@ struct CardView<Content: View>: View {
             content
         }
         .padding(padding)
-        .background(Color.cardBackground)
+        .background(backgroundColor ?? Color.cardBackground)
         .cornerRadius(cornerRadius)
+        .overlay(
+            Group {
+                if let borderColor = borderColor {
+                    RoundedRectangle(cornerRadius: cornerRadius)
+                        .stroke(borderColor, lineWidth: 1)
+                }
+            }
+        )
         .shadow(
             color: Color.black.opacity(0.1),
             radius: 5,
@@ -44,19 +58,25 @@ struct TitledCardView<Content: View>: View {
     let title: String
     let content: Content
     var titleFont: Font = .headline
+    var backgroundColor: Color? = nil
+    var borderColor: Color? = nil
     
     init(
         title: String,
         titleFont: Font = .headline,
+        backgroundColor: Color? = nil,
+        borderColor: Color? = nil,
         @ViewBuilder content: () -> Content
     ) {
         self.title = title
         self.titleFont = titleFont
+        self.backgroundColor = backgroundColor
+        self.borderColor = borderColor
         self.content = content()
     }
     
     var body: some View {
-        CardView {
+        CardView(backgroundColor: backgroundColor, borderColor: borderColor) {
             VStack(alignment: .leading, spacing: 12) {
                 Text(title)
                     .font(titleFont)

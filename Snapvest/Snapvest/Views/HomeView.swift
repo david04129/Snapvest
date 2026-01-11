@@ -32,6 +32,7 @@ struct HomeView: View {
                 }
                 .padding()
             }
+            .background(Color.mainBackground)
             .navigationBarBackButtonHidden(true)
             .safeAreaInset(edge: .top) {
                 customHeaderBar(icon: "house.fill", title: "首頁")
@@ -77,7 +78,7 @@ struct HomeView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Color.cardBackground)
+        .background(Color.mainBackground)
     }
 }
 
@@ -100,21 +101,34 @@ struct NetWorthCardView: View {
     }
     
     var body: some View {
-        TitledCardView(title: "淨資產") {
+        TitledCardView(title: "淨資產", backgroundColor: Color.appPrimary.opacity(0.15), borderColor: Color.appPrimary.opacity(0.3)) {
             VStack(spacing: 16) {
                 // 標題和圓圈比例ICON
                 HStack(alignment: .center, spacing: 16) {
-                    // 圓圈比例ICON（藍色主題）
+                    // 圓圈比例ICON（藍色主題，剩餘部分用實色紅色）
                     ZStack {
+                        // 背景圓圈（實色紅色，代表負債，與長條圖顏色一致）
+                        let debtRatio = 1.0 - CGFloat(NSDecimalNumber(decimal: netWorthRatio / 100).doubleValue)
                         Circle()
-                            .stroke(Color.appPrimary.opacity(0.15), lineWidth: 7)
+                            .trim(from: 0, to: 1.0)
+                            .stroke(Color.lossRed, lineWidth: 7)
                             .frame(width: 50, height: 50)
                         
+                        // 淨資產部分（藍色）
                         Circle()
                             .trim(from: 0, to: CGFloat(NSDecimalNumber(decimal: netWorthRatio / 100).doubleValue))
                             .stroke(Color.appPrimary, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                             .frame(width: 50, height: 50)
                             .rotationEffect(.degrees(-90))
+                        
+                        // 負債部分（實色紅色，與長條圖顏色一致）
+                        if debtRatio > 0 {
+                            Circle()
+                                .trim(from: CGFloat(NSDecimalNumber(decimal: netWorthRatio / 100).doubleValue), to: 1.0)
+                                .stroke(Color.lossRed, style: StrokeStyle(lineWidth: 7, lineCap: .round))
+                                .frame(width: 50, height: 50)
+                                .rotationEffect(.degrees(-90))
+                        }
                         
                         Text("\(netWorthRatio.formatted(fractionDigits: 1))%")
                             .font(.caption2)
@@ -242,18 +256,23 @@ struct InvestmentAssetsCardView: View {
     }
     
     var body: some View {
-        TitledCardView(title: "投資資產") {
+        TitledCardView(title: "投資資產", backgroundColor: Color.profitGreen.opacity(0.15), borderColor: Color.profitGreen.opacity(0.3)) {
             VStack(spacing: 16) {
                 // 標題和圓圈比例ICON
                 HStack(alignment: .center, spacing: 16) {
-                    // 圓圈比例ICON（綠色主題）
+                    // 圓圈比例ICON（綠色主題，剩餘部分用淺綠色）
                     ZStack {
+                        let investmentRatioDouble = CGFloat(NSDecimalNumber(decimal: investmentRatio / 100).doubleValue)
+                        
+                        // 背景圓圈（淺綠色，代表未畫到的部分）
                         Circle()
+                            .trim(from: 0, to: 1.0)
                             .stroke(Color.profitGreen.opacity(0.15), lineWidth: 7)
                             .frame(width: 50, height: 50)
                         
+                        // 投資資產部分（綠色）
                         Circle()
-                            .trim(from: 0, to: CGFloat(NSDecimalNumber(decimal: investmentRatio / 100).doubleValue))
+                            .trim(from: 0, to: investmentRatioDouble)
                             .stroke(Color.profitGreen, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                             .frame(width: 50, height: 50)
                             .rotationEffect(.degrees(-90))
@@ -394,22 +413,27 @@ struct CashCardView: View {
     }
     
     var body: some View {
-        TitledCardView(title: "現金") {
+        TitledCardView(title: "現金", backgroundColor: Color(red: 0.95, green: 0.75, blue: 0.2).opacity(0.15), borderColor: Color(red: 0.95, green: 0.75, blue: 0.2).opacity(0.3)) {
             VStack(spacing: 16) {
                 // 標題和圓圈比例ICON
                 HStack(alignment: .center, spacing: 16) {
-                    // 圓圈比例ICON（金黃/橙色主題）
+                    // 圓圈比例ICON（金黃/橙色主題，剩餘部分用淺黃色，從12點開始逆時針繪製）
                     ZStack {
-                        let cashColor = Color(red: 1.0, green: 0.65, blue: 0.0)  // 金黃/橙色
+                        let cashColor = Color(red: 1.0, green: 0.75, blue: 0.0)  // 黃橘色（介於中間的顏色）
+                        let cashRatioDouble = CGFloat(NSDecimalNumber(decimal: cashRatio / 100).doubleValue)
+                        
+                        // 背景圓圈（淺黃色，代表未畫到的部分）
                         Circle()
+                            .trim(from: 0, to: 1.0)
                             .stroke(cashColor.opacity(0.15), lineWidth: 7)
                             .frame(width: 50, height: 50)
                         
+                        // 現金部分（黃色，從12點開始逆時針繪製）
                         Circle()
-                            .trim(from: 0, to: CGFloat(NSDecimalNumber(decimal: cashRatio / 100).doubleValue))
+                            .trim(from: 1.0 - cashRatioDouble, to: 1.0)  // 從1-value到1，實現逆時針
                             .stroke(cashColor, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                             .frame(width: 50, height: 50)
-                            .rotationEffect(.degrees(-90))
+                            .rotationEffect(.degrees(-90))  // -90度 = 從12點開始
                         
                         Text("\(cashRatio.formatted(fractionDigits: 1))%")
                             .font(.caption2)
@@ -449,8 +473,8 @@ struct CashCardView: View {
                     
                     InteractiveProgressBar(
                         segments: [
-                            (progress: animatedTWDCashProgress, color: .appPrimary, gradient: [.appPrimary, .appPrimary.opacity(0.8)]),
-                            (progress: animatedUSDCashProgress, color: .profitGreen, gradient: [.profitGreen, .profitGreen.opacity(0.8)])
+                            (progress: animatedTWDCashProgress, color: Color(red: 1.0, green: 0.84, blue: 0.0), gradient: [Color(red: 1.0, green: 0.84, blue: 0.0), Color(red: 1.0, green: 0.84, blue: 0.0)]),  // 台幣：黃色（純色，無漸層）
+                            (progress: animatedUSDCashProgress, color: Color(red: 1.0, green: 0.58, blue: 0.0), gradient: [Color(red: 1.0, green: 0.58, blue: 0.0), Color(red: 1.0, green: 0.58, blue: 0.0)])  // 美金：深橘色（純色，無漸層，比現金圈圈更深）
                         ],
                         cornerRadius: 4,
                         height: 8,
@@ -487,7 +511,7 @@ struct CashCardView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             HStack(spacing: 4) {
                                 Circle()
-                                    .fill(Color.appPrimary)
+                                    .fill(Color(red: 1.0, green: 0.84, blue: 0.0))  // 黃色
                                     .frame(width: 8, height: 8)
                                 Text("台幣餘額")
                                     .font(.caption)
@@ -512,7 +536,7 @@ struct CashCardView: View {
                                     .font(.caption)
                                     .foregroundColor(.secondaryText)
                                 Circle()
-                                    .fill(Color.profitGreen)
+                                    .fill(Color(red: 1.0, green: 0.58, blue: 0.0))  // 深橘色
                                     .frame(width: 8, height: 8)
                             }
                             let usdCash = viewModel.cashByCurrency[.USD] ?? 0

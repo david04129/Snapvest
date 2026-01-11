@@ -10,11 +10,15 @@ import SwiftUI
 /// iOS 風格的顏色主題
 extension Color {
     // MARK: - 主色調（iOS 風格）
-    /// 主要藍色（基於 iOS 系統藍色，但可自訂）
-    static let appPrimary = Color(red: 0.0, green: 0.48, blue: 1.0) // iOS Blue
+    /// 主要藍色（柔和藍，方案五：漸層藍）
+    static let appPrimary = Color(red: 0.2, green: 0.5, blue: 0.9) // 柔和藍
     
     /// 次要藍色（用於輔助元素）
-    static let appSecondary = Color(red: 0.0, green: 0.4, blue: 0.9)
+    static let appSecondary = Color(red: 0.2, green: 0.45, blue: 0.85)
+    
+    // MARK: - 背景顏色（方案五：漸層藍）
+    /// 主背景（極淺藍灰）
+    static let mainBackground = Color(red: 0.96, green: 0.97, blue: 0.99)
     
     // MARK: - 語義化顏色（iOS 標準）
     /// 獲利/成功（綠色）

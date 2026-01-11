@@ -50,6 +50,7 @@ struct AssetsView: View {
                 }
                 .padding()
             }
+            .background(Color.mainBackground)
             .navigationBarBackButtonHidden(true)
             .safeAreaInset(edge: .top) {
                 customHeaderBarWithAddButton(icon: "chart.bar.fill", title: "資產", addButtonText: "新增資產", addButtonAction: {
@@ -110,7 +111,7 @@ struct AssetsView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Color.cardBackground)
+        .background(Color.mainBackground)
     }
 }
 

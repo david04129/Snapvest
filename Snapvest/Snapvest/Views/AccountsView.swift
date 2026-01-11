@@ -68,6 +68,7 @@ struct AccountsView: View {
                 }
                 .padding()
             }
+            .background(Color.mainBackground)
             .navigationBarBackButtonHidden(true)
             .safeAreaInset(edge: .top) {
                 customHeaderBarWithAddButton(icon: "building.columns.fill", title: "帳戶管理", addButtonText: "新增帳戶", addButtonAction: {
@@ -148,7 +149,7 @@ struct AccountsView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Color.cardBackground)
+        .background(Color.mainBackground)
     }
     
     // MARK: - 拖曳排序輔助函數
@@ -318,12 +319,6 @@ struct ExpandableAccountCategorySection: View {
                         }
                     }
                     .padding()
-                    .background(accountType.color.opacity(0.15))
-                    .cornerRadius(12)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(accountType.color.opacity(0.3), lineWidth: 1)
-                    )
                 }
                 .buttonStyle(PlainButtonStyle())
                 
@@ -337,10 +332,17 @@ struct ExpandableAccountCategorySection: View {
                             .buttonStyle(PlainButtonStyle())
                         }
                     }
-                    .padding(.top, 8)
+                    .padding(.horizontal)
+                    .padding(.bottom)
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
+            .background(accountType.color.opacity(0.15))
+            .cornerRadius(12)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(accountType.color.opacity(0.3), lineWidth: 1)
+            )
         }
     }
     
@@ -385,7 +387,7 @@ struct AccountCardView: View {
     @State private var remainingBalance: Decimal = 0  // 債務帳戶的剩餘本金
     
     var body: some View {
-        CardView {
+        VStack {
             HStack {
                 Image(systemName: account.accountType.icon)
                     .foregroundColor(account.accountType.color)
@@ -394,6 +396,7 @@ struct AccountCardView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(account.name)
                         .font(.headline)
+                        .foregroundColor(.primaryText)
                     
                     if account.accountType == .debt {
                         Text("剩餘本金")
@@ -418,7 +421,7 @@ struct AccountCardView: View {
                         let negativeBalance = -remainingBalance
                         Text(negativeBalance.formatted(currency: account.currency))
                             .font(.headline)
-                            .foregroundColor(.lossRed)
+                            .foregroundColor(account.accountType.color)
                         
                         Text(account.currency.rawValue)
                             .font(.caption)
@@ -427,6 +430,7 @@ struct AccountCardView: View {
                         // 現金帳戶只顯示現金餘額
                         Text(cashBalance.formatted(currency: account.currency))
                             .font(.headline)
+                            .foregroundColor(account.accountType.color)
                         
                         Text(account.currency.rawValue)
                             .font(.caption)
@@ -435,6 +439,7 @@ struct AccountCardView: View {
                         // 其他帳戶顯示總資產（現金+持股市值）
                         Text(totalAssets.formatted(currency: account.currency))
                             .font(.headline)
+                            .foregroundColor(account.accountType.color)
                         
                         // 先顯示幣別
                         Text(account.currency.rawValue)
@@ -451,6 +456,15 @@ struct AccountCardView: View {
                 }
             }
         }
+        .padding(16)
+        .background(account.accountType.color.opacity(0.08))
+        .cornerRadius(12)
+        .shadow(
+            color: Color.black.opacity(0.1),
+            radius: 5,
+            x: 0,
+            y: 2
+        )
         .task {
             await loadAccountAssets()
         }

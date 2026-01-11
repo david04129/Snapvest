@@ -161,8 +161,14 @@ class PortfolioViewModel: ObservableObject {
             // 按貨幣分組計算現金
             // 傳入所有交易，CashCalculator 會自己處理轉帳/還款交易的過濾
             // 因為轉帳/還款交易記錄在轉出帳戶，但影響轉入帳戶的餘額
+            // 注意：債務帳戶不應計入總資產，只計算非債務帳戶的現金
             var cashByCurrencyLocal: [Currency: Decimal] = [:]
             for account in accounts {
+                // 跳過債務帳戶，因為債務是負債，不應計入總資產
+                if account.accountType == .debt {
+                    continue
+                }
+                
                 let cash = CashCalculator.calculateCash(accountId: account.id, transactions: allTransactions, accounts: accounts)
                 
                 if let existing = cashByCurrencyLocal[account.currency] {
