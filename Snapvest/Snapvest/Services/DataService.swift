@@ -64,6 +64,12 @@ protocol DataServiceProtocol {
     func fetchUserHoldingsSnapshot(userId: String) async throws -> UserHoldingsSnapshot?
     func saveUserHoldingsSnapshot(_ snapshot: UserHoldingsSnapshot) async throws
     func deleteUserHoldingsSnapshot(userId: String) async throws
+    
+    // 跨帳戶合併持股快照
+    func fetchAggregatedHoldingSnapshot(userId: String, assetType: AssetType, symbol: String) async throws -> AggregatedHoldingSnapshot?
+    func fetchAggregatedHoldingSnapshots(userId: String, assetType: AssetType?) async throws -> [AggregatedHoldingSnapshot]
+    func saveAggregatedHoldingSnapshot(_ snapshot: AggregatedHoldingSnapshot) async throws
+    func deleteAggregatedHoldingSnapshot(userId: String, assetType: AssetType, symbol: String) async throws
 }
 
 /// 資料服務實作（目前為 Mock，之後可替換為 Firebase/Supabase）
@@ -83,6 +89,7 @@ class MockDataService: DataServiceProtocol {
     private var accountSnapshots: [String: AccountSnapshot] = [:] // accountId: AccountSnapshot
     private var assetPriceSnapshots: [String: AssetPriceSnapshot] = [:] // "assetType_symbol": AssetPriceSnapshot
     private var userHoldingsSnapshots: [String: UserHoldingsSnapshot] = [:] // userId: UserHoldingsSnapshot
+    private var aggregatedHoldingSnapshots: [String: AggregatedHoldingSnapshot] = [:] // "userId_assetType_symbol": AggregatedHoldingSnapshot
     
     // 私有初始化，強制使用單例
     private init() {
@@ -614,6 +621,37 @@ class MockDataService: DataServiceProtocol {
     
     func deleteUserHoldingsSnapshot(userId: String) async throws {
         userHoldingsSnapshots.removeValue(forKey: userId)
+    }
+    
+    // MARK: - 跨帳戶合併持股快照
+    
+    func fetchAggregatedHoldingSnapshot(userId: String, assetType: AssetType, symbol: String) async throws -> AggregatedHoldingSnapshot? {
+        let key = "\(userId)_\(assetType.rawValue)_\(symbol)"
+        return aggregatedHoldingSnapshots[key]
+    }
+    
+    func fetchAggregatedHoldingSnapshots(userId: String, assetType: AssetType?) async throws -> [AggregatedHoldingSnapshot] {
+        if let assetType = assetType {
+            // 過濾特定資產類型
+            return aggregatedHoldingSnapshots.values.filter { snapshot in
+                snapshot.userId == userId && snapshot.assetType == assetType
+            }
+        } else {
+            // 返回所有資產類型
+            return aggregatedHoldingSnapshots.values.filter { snapshot in
+                snapshot.userId == userId
+            }
+        }
+    }
+    
+    func saveAggregatedHoldingSnapshot(_ snapshot: AggregatedHoldingSnapshot) async throws {
+        let key = snapshot.id
+        aggregatedHoldingSnapshots[key] = snapshot
+    }
+    
+    func deleteAggregatedHoldingSnapshot(userId: String, assetType: AssetType, symbol: String) async throws {
+        let key = "\(userId)_\(assetType.rawValue)_\(symbol)"
+        aggregatedHoldingSnapshots.removeValue(forKey: key)
     }
 }
 

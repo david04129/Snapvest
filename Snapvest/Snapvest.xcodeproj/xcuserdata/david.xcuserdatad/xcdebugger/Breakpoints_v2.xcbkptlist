@@ -3,4 +3,22 @@
    uuid = "55C26D80-EF37-4BB4-B657-E763992EBA1E"
    type = "1"
    version = "2.0">
+   <Breakpoints>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "18FC600B-3FE0-4F20-8BE5-2C7D904656C9"
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "Snapvest/Services/HoldingCalculator+Aggregated.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "83"
+            endingLineNumber = "83"
+            landmarkName = "calculateAggregatedHoldings(userId:accountSnapshots:accounts:transactions:assetPriceSnapshots:)"
+            landmarkType = "7">
+         </BreakpointContent>
+      </BreakpointProxy>
+   </Breakpoints>
 </Bucket>

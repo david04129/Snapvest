@@ -215,6 +215,22 @@ struct ExpandableAccountCategorySection: View {
     @StateObject private var accountsViewModel = AccountsViewModel()
     @State private var totalDebtBalance: Decimal = 0  // 債務帳戶的總剩餘本金
     
+    /// 根據帳戶類型返回深色文字顏色
+    private func textColorForAccountType(_ accountType: AccountType) -> Color {
+        switch accountType {
+        case .twdSecurities:
+            return .stockTWDeepBlue // 台幣證券戶 → 台股深藍色
+        case .usdAccount:
+            return .stockUSDeepPurple // 美金帳戶 → 美股深紫色
+        case .cryptoWallet:
+            return .cryptoDeepBrown // 加密貨幣錢包 → 加密貨幣深咖啡色
+        case .twdDeposit:
+            return .primaryText // 台幣存款帳戶 → 主要文字顏色
+        case .debt:
+            return .lossRed // 債務帳戶 → 紅色
+        }
+    }
+    
     var categoryTotal: Decimal {
         if accountType == .debt {
             // 債務帳戶：返回所有債務剩餘本金總和（負數）
@@ -249,7 +265,7 @@ struct ExpandableAccountCategorySection: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(accountType.displayName)
                                 .font(.headline)
-                                .foregroundColor(.primaryText)
+                                .foregroundColor(textColorForAccountType(accountType))
                             
                             Text("\(accounts.count)個帳戶")
                                 .font(.caption)
@@ -265,7 +281,7 @@ struct ExpandableAccountCategorySection: View {
                             
                             Text(categoryTotal.formatted(currency: .TWD))
                                 .font(.system(size: 17, weight: .bold))
-                                .foregroundColor(accountType.color)
+                                .foregroundColor(textColorForAccountType(accountType))
                         }
                         
                         Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
@@ -337,12 +353,9 @@ struct ExpandableAccountCategorySection: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
-            .background(accountType.color.opacity(0.15))
-            .cornerRadius(12)
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(accountType.color.opacity(0.3), lineWidth: 1)
-            )
+            .background(Color.cardBackground)
+            .cornerRadius(16)
+            .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 2)
         }
     }
     
@@ -386,6 +399,22 @@ struct AccountCardView: View {
     @State private var twdEquivalent: Decimal? = nil
     @State private var remainingBalance: Decimal = 0  // 債務帳戶的剩餘本金
     
+    /// 根據帳戶類型返回深色文字顏色
+    private func textColorForAccountType(_ accountType: AccountType) -> Color {
+        switch accountType {
+        case .twdSecurities:
+            return .stockTWDeepBlue // 台幣證券戶 → 台股深藍色
+        case .usdAccount:
+            return .stockUSDeepPurple // 美金帳戶 → 美股深紫色
+        case .cryptoWallet:
+            return .cryptoDeepBrown // 加密貨幣錢包 → 加密貨幣深咖啡色
+        case .twdDeposit:
+            return .primaryText // 台幣存款帳戶 → 主要文字顏色
+        case .debt:
+            return .lossRed // 債務帳戶 → 紅色
+        }
+    }
+    
     var body: some View {
         VStack {
             HStack {
@@ -396,7 +425,7 @@ struct AccountCardView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(account.name)
                         .font(.headline)
-                        .foregroundColor(.primaryText)
+                        .foregroundColor(textColorForAccountType(account.accountType))
                     
                     if account.accountType == .debt {
                         Text("剩餘本金")
@@ -421,7 +450,7 @@ struct AccountCardView: View {
                         let negativeBalance = -remainingBalance
                         Text(negativeBalance.formatted(currency: account.currency))
                             .font(.headline)
-                            .foregroundColor(account.accountType.color)
+                            .foregroundColor(.lossRed) // 債務保持紅色
                         
                         Text(account.currency.rawValue)
                             .font(.caption)
@@ -430,7 +459,7 @@ struct AccountCardView: View {
                         // 現金帳戶只顯示現金餘額
                         Text(cashBalance.formatted(currency: account.currency))
                             .font(.headline)
-                            .foregroundColor(account.accountType.color)
+                            .foregroundColor(.primaryText) // 現金帳戶使用主要文字顏色
                         
                         Text(account.currency.rawValue)
                             .font(.caption)
@@ -439,7 +468,7 @@ struct AccountCardView: View {
                         // 其他帳戶顯示總資產（現金+持股市值）
                         Text(totalAssets.formatted(currency: account.currency))
                             .font(.headline)
-                            .foregroundColor(account.accountType.color)
+                            .foregroundColor(textColorForAccountType(account.accountType))
                         
                         // 先顯示幣別
                         Text(account.currency.rawValue)
@@ -457,14 +486,18 @@ struct AccountCardView: View {
             }
         }
         .padding(16)
-        .background(account.accountType.color.opacity(0.08))
-        .cornerRadius(12)
-        .shadow(
-            color: Color.black.opacity(0.1),
-            radius: 5,
-            x: 0,
-            y: 2
+        .background(Color.cardBackground)
+        .cornerRadius(16)
+        .overlay(
+            // 左側色條
+            HStack {
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(account.accountType.color)
+                    .frame(width: 4)
+                Spacer()
+            }
         )
+        .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 1)
         .task {
             await loadAccountAssets()
         }

@@ -22,33 +22,14 @@ class PriceService: PriceServiceProtocol {
     }
     
     func fetchCurrentPrice(assetType: AssetType, symbol: String) async throws -> Decimal? {
-        // 1. 先查資料庫快取
-        if let cachedPrice = try await dataService.fetchPrice(assetType: assetType, symbol: symbol, date: nil) {
-            // 如果是今天的價格，直接返回
-            if Calendar.current.isDateInToday(cachedPrice.priceDate) {
-                return cachedPrice.price
-            }
-        }
-        
-        // 2. 如果沒有快取，返回模擬價格（用於測試）
-        let mockPrices: [String: Decimal] = [
-            "2330": 520,  // 台積電
-            "AAPL": 180,  // 蘋果
-            "BTC": 52000  // 比特幣
-        ]
-        
-        if let price = mockPrices[symbol] {
-            // 返回模擬價格
-            return price
-        }
-        
-        // 3. 如果沒有快取或不是今天的，調用 API
-        // TODO: 實作 API 調用
-        // 這裡需要後端服務支援
-        // 目前返回快取的價格（即使是舊的）
+        // 1. 先查資料庫快取（MockDataService 會返回所有模擬價格）
         if let cachedPrice = try await dataService.fetchPrice(assetType: assetType, symbol: symbol, date: nil) {
             return cachedPrice.price
         }
+        
+        // 2. 如果沒有快取，調用 API
+        // TODO: 實作 API 調用
+        // 這裡需要後端服務支援
         
         return nil
     }

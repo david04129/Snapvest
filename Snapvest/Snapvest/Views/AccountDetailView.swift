@@ -1362,16 +1362,10 @@ struct AssetAllocationProgressCard: View {
                         
                         // 進度條容器（整體矩形，然後用 mask 切割）
                         HStack(spacing: 0) {
-                            // 現金部分
+                            // 現金部分（單一深綠色，像首頁的投資資產的圈圈比例圖的綠色）
                             if animatedCashProgress > 0 {
                                 Rectangle()
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [.appPrimary, .profitGreen],
-                                            startPoint: .leading,
-                                            endPoint: .trailing
-                                        )
-                                    )
+                                    .fill(Color.profitGreen) // 深綠色
                                     .frame(width: geometry.size.width * animatedCashProgress, height: 12)
                             }
                             
@@ -1397,13 +1391,7 @@ struct AssetAllocationProgressCard: View {
                 HStack {
                     HStack(spacing: 4) {
                         Circle()
-                            .fill(
-                                LinearGradient(
-                                    colors: [.appPrimary, .profitGreen],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
+                            .fill(Color.profitGreen) // 深綠色（單一顏色）
                             .frame(width: 8, height: 8)
                         Text("現金 \(cashPercentage)%")
                             .font(.caption)
