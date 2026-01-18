@@ -101,6 +101,13 @@ struct AccountsView: View {
                 // 當視圖出現時，觸發類別總資產刷新
                 refreshTrigger = UUID()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { _ in
+                Task {
+                    await viewModel.loadAccounts(userId: userId)
+                    await portfolioViewModel.loadData(userId: userId)
+                    refreshTrigger = UUID()
+                }
+            }
         }
     }
     
@@ -355,7 +362,7 @@ struct ExpandableAccountCategorySection: View {
             }
             .background(Color.cardBackground)
             .cornerRadius(16)
-            .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 2)
+            .shadow(color: AppColors.shadowMedium, radius: 8, x: 0, y: 2)
         }
     }
     
@@ -497,7 +504,7 @@ struct AccountCardView: View {
                 Spacer()
             }
         )
-        .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 1)
+        .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 1)
         .task {
             await loadAccountAssets()
         }

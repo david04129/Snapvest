@@ -28,7 +28,7 @@ struct HomeView: View {
                     TodayPLCardView(viewModel: viewModel)
                     
                     // 已實現損益卡片
-                    RealizedPLCardView(viewModel: viewModel)
+                    RealizedPLCardView(viewModel: viewModel, userId: userId)
                 }
                 .padding()
             }
@@ -38,10 +38,20 @@ struct HomeView: View {
                 customHeaderBar(icon: "house.fill", title: "首頁")
             }
             .refreshable {
-                await viewModel.loadData(userId: userId)
+                await viewModel.ensureHomeSnapshot(userId: userId)
             }
             .task {
-                await viewModel.loadData(userId: userId)
+                await viewModel.ensureHomeSnapshot(userId: userId)
+            }
+            .onAppear {
+                Task {
+                    await viewModel.ensureHomeSnapshot(userId: userId)
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { _ in
+                Task {
+                    await viewModel.ensureHomeSnapshot(userId: userId)
+                }
             }
         }
     }
@@ -577,24 +587,252 @@ struct TodayPLCardView: View {
 // MARK: - 已實現損益卡片
 struct RealizedPLCardView: View {
     @ObservedObject var viewModel: PortfolioViewModel
+    let userId: String
+    @StateObject private var transactionsViewModel = TransactionsViewModel()
+    @State private var isExpanded = false
+    @State private var expandedTransactionIds: Set<String> = []
+    
+    private var realizedTransactionsByCurrency: [Currency: [Transaction]] {
+        let sells = transactionsViewModel.transactions.filter { $0.type == .sell }
+        return Dictionary(grouping: sells, by: { $0.currency })
+    }
     
     var body: some View {
         TitledCardView(title: "已實現損益") {
-            VStack(spacing: 12) {
-                Text(viewModel.realizedGainLoss.formatted(currency: viewModel.viewCurrency))
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundColor(viewModel.realizedGainLoss >= 0 ? .profitGreen : .lossRed)
-                
-                if viewModel.realizedGainLoss == 0 {
-                    Text("尚無已實現損益")
-                        .font(.subheadline)
-                        .foregroundColor(.secondaryText)
+            VStack(spacing: 16) {
+                HStack {
+                    Text(viewModel.realizedGainLoss.formatted(currency: viewModel.viewCurrency))
+                        .font(.system(size: 24, weight: .bold))
+                        .foregroundColor(viewModel.realizedGainLoss >= 0 ? .profitGreen : .lossRed)
+                    
+                    Spacer()
+                    
+                    Button(action: {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            isExpanded.toggle()
+                        }
+                    }) {
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.secondaryText)
+                            .frame(width: 24, height: 24)
+                    }
                 }
                 
-                // TODO: 實作已實現損益表格
-                // 目前先顯示佔位符
+                if isExpanded {
+                    if realizedTransactionsByCurrency.isEmpty {
+                        Text("尚無已實現損益交易")
+                            .font(.subheadline)
+                            .foregroundColor(.secondaryText)
+                    } else {
+                        VStack(spacing: 16) {
+                            realizedSection(title: "台幣已實現損益", transactions: realizedTransactionsByCurrency[.TWD] ?? [], currency: .TWD)
+                            realizedSection(title: "美金已實現損益", transactions: realizedTransactionsByCurrency[.USD] ?? [], currency: .USD)
+                        }
+                    }
+                }
             }
         }
+        .task {
+            await transactionsViewModel.loadTransactions(userId: userId)
+        }
+    }
+
+    private func realizedSection(title: String, transactions: [Transaction], currency: Currency) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundColor(.primaryText)
+            
+            if transactions.isEmpty {
+                Text("尚無交易")
+                    .font(.caption)
+                    .foregroundColor(.secondaryText)
+            } else {
+                CardView {
+                    VStack(spacing: 0) {
+                        // 表頭
+                        HStack {
+                            Text("名稱")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.secondaryText)
+                                .frame(width: 90, alignment: .leading)
+                            
+                            Spacer(minLength: 8)
+                            
+                            Text("損益")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.secondaryText)
+                                .frame(width: 120, alignment: .trailing)
+                        }
+                        .padding(.vertical, 10)
+                        .padding(.horizontal, 4)
+                        .background(Color.secondaryBackground)
+                        .cornerRadius(8)
+                        
+                        VStack(spacing: 0) {
+                            ForEach(transactions) { transaction in
+                                VStack(spacing: 8) {
+                                    Button(action: {
+                                        withAnimation(.easeInOut(duration: 0.2)) {
+                                            toggleTransaction(transaction.id)
+                                        }
+                                    }) {
+                                        HStack {
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text(displayName(for: transaction, currency: currency))
+                                                    .font(.subheadline)
+                                                    .fontWeight(.semibold)
+                                                    .foregroundColor(.primaryText)
+                                                Text(formatDate(transaction.transactionDate))
+                                                    .font(.caption)
+                                                    .foregroundColor(.secondaryText)
+                                            }
+                                            .frame(width: 90, alignment: .leading)
+                                            
+                                            Spacer(minLength: 8)
+                                            
+                                            VStack(alignment: .trailing, spacing: 4) {
+                                                if let realized = transaction.realizedGainLoss {
+                                                    Text(realized.formatted(currency: transaction.currency))
+                                                        .font(.subheadline)
+                                                        .fontWeight(.semibold)
+                                                        .foregroundColor(realized >= 0 ? .profitGreen : .lossRed)
+                                                } else {
+                                                    Text("--")
+                                                        .font(.subheadline)
+                                                        .fontWeight(.semibold)
+                                                        .foregroundColor(.secondaryText)
+                                                }
+                                                
+                                                if let percent = transaction.realizedGainLossPercent {
+                                                    Text("(\(percent.formatted(fractionDigits: 2))%)")
+                                                        .font(.caption)
+                                                        .foregroundColor(.secondaryText)
+                                                }
+                                            }
+                                            .frame(width: 120, alignment: .trailing)
+                                            
+                                            Image(systemName: expandedTransactionIds.contains(transaction.id) ? "chevron.up" : "chevron.down")
+                                                .font(.caption)
+                                                .foregroundColor(.secondaryText)
+                                        }
+                                        .padding(.horizontal, 4)
+                                        .padding(.vertical, 8)
+                                    }
+                                    .buttonStyle(PlainButtonStyle())
+                                    
+                                    if expandedTransactionIds.contains(transaction.id) {
+                                        HStack(spacing: 0) {
+                                            VStack(spacing: 6) {
+                                                Text("數量")
+                                                    .font(.caption)
+                                                    .foregroundColor(.secondaryText)
+                                                Text(transaction.quantity.formatted(fractionDigits: 4))
+                                                    .font(.subheadline)
+                                                    .fontWeight(.semibold)
+                                                    .foregroundColor(.primaryText)
+                                            }
+                                            .frame(maxWidth: .infinity)
+                                            
+                                            Divider()
+                                                .frame(height: 32)
+                                                .background(Color.separator.opacity(0.7))
+                                            
+                                            VStack(spacing: 6) {
+                                                Text("成本價")
+                                                    .font(.caption)
+                                                    .foregroundColor(.secondaryText)
+                                                if let costPerUnit = transaction.realizedCostPerUnit {
+                                                    Text(costPerUnit.formatted(currency: transaction.currency))
+                                                        .font(.subheadline)
+                                                        .fontWeight(.semibold)
+                                                        .foregroundColor(.primaryText)
+                                                } else {
+                                                    Text("--")
+                                                        .font(.subheadline)
+                                                        .fontWeight(.semibold)
+                                                        .foregroundColor(.secondaryText)
+                                                }
+                                            }
+                                            .frame(maxWidth: .infinity)
+                                            
+                                            Divider()
+                                                .frame(height: 32)
+                                                .background(Color.separator.opacity(0.7))
+                                            
+                                            VStack(spacing: 6) {
+                                                Text("成交均價")
+                                                    .font(.caption)
+                                                    .foregroundColor(.secondaryText)
+                                                Text(transaction.price.formatted(currency: transaction.currency))
+                                                    .font(.subheadline)
+                                                    .fontWeight(.semibold)
+                                                    .foregroundColor(.primaryText)
+                                            }
+                                            .frame(maxWidth: .infinity)
+                                        }
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 12)
+                                        .background(Color.secondaryBackground)
+                                        .cornerRadius(10)
+                                    }
+                                }
+                                
+                                if transaction.id != transactions.last?.id {
+                                    Divider()
+                                        .padding(.horizontal, 12)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func toggleTransaction(_ id: String) {
+        if expandedTransactionIds.contains(id) {
+            expandedTransactionIds.remove(id)
+        } else {
+            expandedTransactionIds.insert(id)
+        }
+    }
+    
+    private func displayName(for transaction: Transaction, currency: Currency) -> String {
+        if currency == .TWD {
+            return twStockNameMap[transaction.symbol] ?? transaction.symbol
+        }
+        return transaction.symbol
+    }
+    
+    private var twStockNameMap: [String: String] {
+        [
+            "2330": "台積電",
+            "2317": "鴻海",
+            "2454": "聯發科",
+            "2308": "台達電",
+            "2891": "中信金",
+            "2882": "國泰金",
+            "2886": "兆豐金",
+            "1301": "台塑",
+            "1303": "南亞",
+            "2002": "中鋼",
+            "2412": "中華電",
+            "2382": "廣達",
+            "2379": "瑞昱",
+            "3008": "大立光",
+            "2884": "玉山金"
+        ]
+    }
+    
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yy/MM/dd"
+        return formatter.string(from: date)
     }
 }
 
@@ -659,13 +897,13 @@ struct InteractiveProgressBar: View {
                         VStack(spacing: 0) {
                             Text(info)
                                 .font(.caption)
-                                .foregroundColor(.white)
+                                .foregroundColor(AppColors.actionForeground)
                                 .multilineTextAlignment(.center)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 6)
                                 .background(
                                     RoundedRectangle(cornerRadius: 6)
-                                        .fill(Color.black.opacity(0.85))
+                                        .fill(AppColors.overlayDark)
                                 )
                         }
                         .position(

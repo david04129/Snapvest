@@ -70,6 +70,11 @@ protocol DataServiceProtocol {
     func fetchAggregatedHoldingSnapshots(userId: String, assetType: AssetType?) async throws -> [AggregatedHoldingSnapshot]
     func saveAggregatedHoldingSnapshot(_ snapshot: AggregatedHoldingSnapshot) async throws
     func deleteAggregatedHoldingSnapshot(userId: String, assetType: AssetType, symbol: String) async throws
+
+    // 首頁快照
+    func fetchHomeDashboardSnapshot(userId: String) async throws -> HomeDashboardSnapshot?
+    func saveHomeDashboardSnapshot(_ snapshot: HomeDashboardSnapshot) async throws
+    func deleteHomeDashboardSnapshot(userId: String) async throws
 }
 
 /// 資料服務實作（目前為 Mock，之後可替換為 Firebase/Supabase）
@@ -90,6 +95,7 @@ class MockDataService: DataServiceProtocol {
     private var assetPriceSnapshots: [String: AssetPriceSnapshot] = [:] // "assetType_symbol": AssetPriceSnapshot
     private var userHoldingsSnapshots: [String: UserHoldingsSnapshot] = [:] // userId: UserHoldingsSnapshot
     private var aggregatedHoldingSnapshots: [String: AggregatedHoldingSnapshot] = [:] // "userId_assetType_symbol": AggregatedHoldingSnapshot
+    private var homeDashboardSnapshots: [String: HomeDashboardSnapshot] = [:] // userId: HomeDashboardSnapshot
     
     // 私有初始化，強制使用單例
     private init() {
@@ -155,38 +161,26 @@ class MockDataService: DataServiceProtocol {
                 transactionDate: calendar.date(byAdding: .day, value: -20, to: today) ?? today
             )
             
-            // 台股帳戶：買入15種不同的台股
-            let twStockSymbols = [
-                ("2330", "台積電", 500, 2),
-                ("2317", "鴻海", 100, 5),
-                ("2454", "聯發科", 800, 3),
-                ("2308", "台達電", 250, 4),
-                ("2891", "中信金", 25, 10),
-                ("2882", "國泰金", 50, 6),
-                ("2886", "兆豐金", 30, 8),
-                ("1301", "台塑", 90, 7),
-                ("1303", "南亞", 60, 9),
-                ("2002", "中鋼", 25, 12),
-                ("2412", "中華電", 120, 5),
-                ("2382", "廣達", 180, 4),
-                ("2379", "瑞昱", 350, 3),
-                ("3008", "大立光", 2000, 1),
-                ("2884", "玉山金", 28, 8)
-            ]
-            
+            // 台股帳戶：僅兩檔，每檔多筆交易
             var twStockTransactions: [Transaction] = [deposit2]
-            for (index, (symbol, name, price, quantity)) in twStockSymbols.enumerated() {
+            let twStockBuys: [(String, String, Decimal, Decimal, Int)] = [
+                ("2330", "台積電", 500, 2, -19),
+                ("2330", "台積電", 520, 1, -12),
+                ("2317", "鴻海", 100, 5, -18),
+                ("2317", "鴻海", 105, 3, -9)
+            ]
+            for (symbol, name, price, quantity, dayOffset) in twStockBuys {
                 let buy = Transaction(
                     accountId: twdSecuritiesAccount.id,
                     type: .buy,
                     assetType: .stockTW,
                     symbol: symbol,
-                    quantity: Decimal(quantity),
-                    price: Decimal(price),
+                    quantity: quantity,
+                    price: price,
                     currency: .TWD,
-                    fee: Decimal(quantity * price) * 0.001425,
+                    fee: (quantity * price) * 0.001425,
                     notes: "買入\(name)",
-                    transactionDate: calendar.date(byAdding: .day, value: -19 + index, to: today) ?? today
+                    transactionDate: calendar.date(byAdding: .day, value: dayOffset, to: today) ?? today
                 )
                 twStockTransactions.append(buy)
             }
@@ -205,38 +199,26 @@ class MockDataService: DataServiceProtocol {
                 transactionDate: calendar.date(byAdding: .day, value: -20, to: today) ?? today
             )
             
-            // 美股帳戶：買入15種不同的美股
-            let usStockSymbols = [
-                ("AAPL", 180, 2),
-                ("MSFT", 350, 1),
-                ("GOOGL", 140, 1),
-                ("AMZN", 150, 1),
-                ("TSLA", 250, 1),
-                ("META", 300, 1),
-                ("NVDA", 450, 1),
-                ("JPM", 150, 2),
-                ("V", 250, 1),
-                ("JNJ", 160, 1),
-                ("WMT", 150, 1),
-                ("MA", 400, 1),
-                ("PG", 150, 1),
-                ("UNH", 500, 1),
-                ("HD", 350, 1)
-            ]
-            
+            // 美股帳戶：僅兩檔，每檔多筆交易
             var usStockTransactions: [Transaction] = [deposit3]
-            for (index, (symbol, price, quantity)) in usStockSymbols.enumerated() {
+            let usStockBuys: [(String, Decimal, Decimal, Int)] = [
+                ("NVDA", 450, 1, -18),
+                ("NVDA", 470, 1, -10),
+                ("AAPL", 180, 2, -17),
+                ("AAPL", 185, 1, -8)
+            ]
+            for (symbol, price, quantity, dayOffset) in usStockBuys {
                 let buy = Transaction(
                     accountId: usdAccount.id,
                     type: .buy,
                     assetType: .stockUS,
                     symbol: symbol,
-                    quantity: Decimal(quantity),
-                    price: Decimal(price),
+                    quantity: quantity,
+                    price: price,
                     currency: .USD,
                     fee: 1,
                     notes: "買入\(symbol)",
-                    transactionDate: calendar.date(byAdding: .day, value: -19 + index, to: today) ?? today
+                    transactionDate: calendar.date(byAdding: .day, value: dayOffset, to: today) ?? today
                 )
                 usStockTransactions.append(buy)
             }
@@ -255,38 +237,26 @@ class MockDataService: DataServiceProtocol {
                 transactionDate: calendar.date(byAdding: .day, value: -20, to: today) ?? today
             )
             
-            // 加密貨幣錢包：買入15種不同的加密貨幣
-            let cryptoSymbols = [
-                ("BTC", 52000, 0.01),
-                ("ETH", 3000, 0.1),
-                ("BNB", 300, 1),
-                ("SOL", 100, 2),
-                ("ADA", 0.5, 100),
-                ("XRP", 0.6, 50),
-                ("DOGE", 0.08, 1000),
-                ("DOT", 7, 10),
-                ("MATIC", 0.9, 50),
-                ("AVAX", 35, 2),
-                ("LINK", 15, 5),
-                ("UNI", 6, 10),
-                ("ATOM", 10, 5),
-                ("ALGO", 0.2, 100),
-                ("VET", 0.03, 500)
-            ]
-            
+            // 加密貨幣錢包：僅兩檔，每檔多筆交易
             var cryptoTransactions: [Transaction] = [deposit4]
-            for (index, (symbol, price, quantity)) in cryptoSymbols.enumerated() {
+            let cryptoBuys: [(String, Decimal, Decimal, Int)] = [
+                ("BTC", 52000, 0.01, -18),
+                ("BTC", 54000, 0.005, -11),
+                ("ETH", 3000, 0.1, -17),
+                ("ETH", 3200, 0.05, -7)
+            ]
+            for (symbol, price, quantity, dayOffset) in cryptoBuys {
                 let buy = Transaction(
                     accountId: cryptoWallet.id,
                     type: .buy,
                     assetType: .crypto,
                     symbol: symbol,
-                    quantity: Decimal(quantity),
-                    price: Decimal(price),
+                    quantity: quantity,
+                    price: price,
                     currency: .USD,
-                    fee: Decimal(quantity * price) * 0.001,
+                    fee: (quantity * price) * 0.001,
                     notes: "買入\(symbol)",
-                    transactionDate: calendar.date(byAdding: .day, value: -19 + index, to: today) ?? today
+                    transactionDate: calendar.date(byAdding: .day, value: dayOffset, to: today) ?? today
                 )
                 cryptoTransactions.append(buy)
             }
@@ -500,15 +470,15 @@ class MockDataService: DataServiceProtocol {
         // Mock 實作 - 返回模擬價格
         let mockPrices: [String: Decimal] = [
             // 台股
-            "2330": 520, "2317": 105, "2454": 850, "2308": 260, "2891": 26,
+            "2330": 820, "2317": 60, "2454": 850, "2308": 260, "2891": 26,
             "2882": 52, "2886": 32, "1301": 95, "1303": 65, "2002": 27,
             "2412": 125, "2382": 190, "2379": 370, "3008": 2100, "2884": 30,
             // 美股
-            "AAPL": 180, "MSFT": 360, "GOOGL": 145, "AMZN": 155, "TSLA": 255,
-            "META": 310, "NVDA": 460, "JPM": 155, "V": 255, "JNJ": 165,
+            "AAPL": 120, "MSFT": 360, "GOOGL": 145, "AMZN": 155, "TSLA": 255,
+            "META": 310, "NVDA": 700, "JPM": 155, "V": 255, "JNJ": 165,
             "WMT": 155, "MA": 410, "PG": 155, "UNH": 510, "HD": 360,
             // 加密貨幣
-            "BTC": 52000, "ETH": 3100, "BNB": 310, "SOL": 105, "ADA": 0.55,
+            "BTC": 65000, "ETH": 2000, "BNB": 310, "SOL": 105, "ADA": 0.55,
             "XRP": 0.65, "DOGE": 0.085, "DOT": 7.5, "MATIC": 0.95, "AVAX": 36,
             "LINK": 16, "UNI": 6.5, "ATOM": 10.5, "ALGO": 0.22, "VET": 0.035
         ]
@@ -652,6 +622,18 @@ class MockDataService: DataServiceProtocol {
     func deleteAggregatedHoldingSnapshot(userId: String, assetType: AssetType, symbol: String) async throws {
         let key = "\(userId)_\(assetType.rawValue)_\(symbol)"
         aggregatedHoldingSnapshots.removeValue(forKey: key)
+    }
+
+    func fetchHomeDashboardSnapshot(userId: String) async throws -> HomeDashboardSnapshot? {
+        return homeDashboardSnapshots[userId]
+    }
+
+    func saveHomeDashboardSnapshot(_ snapshot: HomeDashboardSnapshot) async throws {
+        homeDashboardSnapshots[snapshot.userId] = snapshot
+    }
+
+    func deleteHomeDashboardSnapshot(userId: String) async throws {
+        homeDashboardSnapshots.removeValue(forKey: userId)
     }
 }
 

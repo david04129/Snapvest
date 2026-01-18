@@ -45,7 +45,7 @@ struct CardView<Content: View>: View {
             }
         )
         .shadow(
-            color: Color.black.opacity(0.1),
+            color: AppColors.shadowHigh,
             radius: 5,
             x: 0,
             y: 2

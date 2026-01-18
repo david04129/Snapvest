@@ -46,7 +46,7 @@ struct DashboardView: View {
                             .font(.caption)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
-                            .background(Color.blue.opacity(0.1))
+                            .background(AppColors.chipBackground)
                             .cornerRadius(8)
                     }
                 }
@@ -71,7 +71,7 @@ struct SummaryCardView: View {
             SummaryRowView(
                 title: "總資產",
                 value: viewModel.totalAssets.formatted(currency: viewModel.viewCurrency),
-                color: .blue
+                color: AppColors.appPrimary
             )
             
             // 總負債
@@ -80,7 +80,7 @@ struct SummaryCardView: View {
                 value: viewModel.totalLiabilities.formatted(currency: viewModel.viewCurrency),
                 subtitle: viewModel.totalAssets > 0 ? 
                     "\((viewModel.totalLiabilities / viewModel.totalAssets * 100).formatted(fractionDigits: 1))%" : "0%",
-                color: .red
+                color: AppColors.lossRed
             )
             
             // 總現金
@@ -89,7 +89,7 @@ struct SummaryCardView: View {
                 value: viewModel.totalCash.formatted(currency: viewModel.viewCurrency),
                 subtitle: viewModel.totalAssets > 0 ? 
                     "\((viewModel.totalCash / viewModel.totalAssets * 100).formatted(fractionDigits: 1))%" : "0%",
-                color: .green
+                color: AppColors.blueGreen4
             )
             
             // 總投資
@@ -98,7 +98,7 @@ struct SummaryCardView: View {
                 value: viewModel.totalInvestments.formatted(currency: viewModel.viewCurrency),
                 subtitle: viewModel.totalAssets > 0 ? 
                     "\((viewModel.totalInvestments / viewModel.totalAssets * 100).formatted(fractionDigits: 1))%" : "0%",
-                color: .purple
+                color: AppColors.green4
             )
             
             Divider()
@@ -109,20 +109,20 @@ struct SummaryCardView: View {
                 value: viewModel.unrealizedGainLoss.formatted(currency: viewModel.viewCurrency),
                 subtitle: viewModel.totalInvestments > 0 ? 
                     "\((viewModel.unrealizedGainLoss / viewModel.totalInvestments * 100).formatted(fractionDigits: 2))%" : "0%",
-                color: viewModel.unrealizedGainLoss >= 0 ? .green : .red
+                color: viewModel.unrealizedGainLoss >= 0 ? AppColors.profitGreen : AppColors.lossRed
             )
             
             // 已實現損益
             SummaryRowView(
                 title: "已實現損益",
                 value: viewModel.realizedGainLoss.formatted(currency: viewModel.viewCurrency),
-                color: viewModel.realizedGainLoss >= 0 ? .green : .red
+                color: viewModel.realizedGainLoss >= 0 ? AppColors.profitGreen : AppColors.lossRed
             )
         }
         .padding()
-        .background(Color(.systemBackground))
+        .background(AppColors.cardBackground)
         .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
+        .shadow(color: AppColors.shadowHigh, radius: 5, x: 0, y: 2)
     }
 }
 
@@ -131,13 +131,13 @@ struct SummaryRowView: View {
     let title: String
     let value: String
     var subtitle: String? = nil
-    var color: Color = .primary
+    var color: Color = AppColors.primaryText
     
     var body: some View {
         HStack {
             Text(title)
                 .font(.subheadline)
-                .foregroundColor(.secondary)
+                .foregroundColor(AppColors.secondaryText)
             
             Spacer()
             
@@ -149,7 +149,7 @@ struct SummaryRowView: View {
                 if let subtitle = subtitle {
                     Text(subtitle)
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppColors.secondaryText)
                 }
             }
         }
@@ -170,16 +170,16 @@ struct AssetAllocationChartView: View {
             // 目前顯示佔位符
             ZStack {
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.gray.opacity(0.1))
+                    .fill(AppColors.placeholderFill)
                     .frame(height: 200)
                 
                 VStack {
                     Image(systemName: "chart.pie.fill")
                         .font(.system(size: 40))
-                        .foregroundColor(.gray)
+                        .foregroundColor(AppColors.tertiaryText)
                     Text("圓餅圖\n（待實作）")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppColors.secondaryText)
                         .multilineTextAlignment(.center)
                 }
             }
@@ -201,7 +201,7 @@ struct HoldingsListView: View {
             if holdings.isEmpty {
                 Text("尚無持股")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppColors.secondaryText)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding()
             } else {
@@ -226,7 +226,7 @@ struct HoldingRowView: View {
                     
                     Text(holding.holding.assetType.displayName)
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppColors.secondaryText)
                 }
                 
                 Spacer()
@@ -246,7 +246,7 @@ struct HoldingRowView: View {
                             Text("(\(percent.formatted(fractionDigits: 2))%)")
                         }
                         .font(.caption)
-                        .foregroundColor(gainLoss >= 0 ? .green : .red)
+                        .foregroundColor(gainLoss >= 0 ? AppColors.profitGreen : AppColors.lossRed)
                     }
                 }
             }
@@ -256,7 +256,7 @@ struct HoldingRowView: View {
                 if let investmentRatio = holding.investmentRatio {
                     Text("投資佔比: \(investmentRatio.formatted(fractionDigits: 2))%")
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppColors.secondaryText)
                 }
                 
                 Spacer()
@@ -264,14 +264,14 @@ struct HoldingRowView: View {
                 if let assetRatio = holding.assetRatio {
                     Text("資產佔比: \(assetRatio.formatted(fractionDigits: 2))%")
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(AppColors.secondaryText)
                 }
             }
         }
         .padding()
-        .background(Color(.systemBackground))
+        .background(AppColors.cardBackground)
         .cornerRadius(8)
-        .shadow(color: Color.black.opacity(0.05), radius: 3, x: 0, y: 1)
+        .shadow(color: AppColors.shadowSoft, radius: 3, x: 0, y: 1)
     }
 }
 

@@ -1,5 +1,5 @@
 //
-//  ExpenseView.swift
+//  AdjustCashBalanceView.swift
 //  Snapvest
 //
 //  Created on 2024
@@ -7,50 +7,70 @@
 
 import SwiftUI
 
-struct ExpenseView: View {
+struct AdjustCashBalanceView: View {
     let account: Account
     @ObservedObject var viewModel: AccountDetailViewModel
-    @Environment(\.dismiss) var dismiss
+    let currentBalance: Decimal
+    @Environment(\.dismiss) private var dismiss
     
-    // 編輯模式：如果提供，則為編輯模式
-    let editingTransaction: Transaction?
-    
-    @State private var amount: String = ""
+    @State private var newBalanceText: String = ""
     @State private var notes: String = ""
     @State private var transactionDate: Date = Date()
-    @State private var twdEquivalent: Decimal? = nil
     @State private var errorMessage: String? = nil
     
     // TODO: 從匯率服務獲取即時匯率
     private let usdToTwdRate: Decimal = 32 // 臨時固定值
     
-    init(account: Account, viewModel: AccountDetailViewModel, editingTransaction: Transaction? = nil) {
-        self.account = account
-        self.viewModel = viewModel
-        self.editingTransaction = editingTransaction
+    private var newBalanceValue: Decimal? {
+        Decimal(string: newBalanceText)
+    }
+    
+    private var delta: Decimal? {
+        guard let newBalanceValue = newBalanceValue else { return nil }
+        return newBalanceValue - currentBalance
+    }
+    
+    private var isNegative: Bool {
+        guard let newBalanceValue = newBalanceValue else { return false }
+        return newBalanceValue < 0
+    }
+    
+    private var isUnchanged: Bool {
+        guard let newBalanceValue = newBalanceValue else { return true }
+        return newBalanceValue == currentBalance
+    }
+    
+    private var isValid: Bool {
+        guard newBalanceValue != nil else { return false }
+        if isNegative { return false }
+        if isUnchanged { return false }
+        return true
+    }
+    
+    private var themeColor: Color {
+        .appPrimary
     }
     
     // MARK: - View Components
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
-                // 圖標
                 ZStack {
                     Circle()
-                        .fill(Color.lossRed.opacity(0.15))
+                        .fill(themeColor.opacity(0.15))
                         .frame(width: 48, height: 48)
                     
-                    Image(systemName: "arrow.up.circle.fill")
+                    Image(systemName: "pencil.circle")
                         .font(.system(size: 24))
-                        .foregroundColor(.lossRed)
+                        .foregroundColor(themeColor)
                 }
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("支出")
+                    Text("調整餘額")
                         .font(.title2)
                         .fontWeight(.bold)
                     
-                    Text("記錄此帳戶的現金支出。")
+                    Text("直接調整現金餘額，系統會自動記錄收支。")
                         .font(.subheadline)
                         .foregroundColor(.secondaryText)
                 }
@@ -68,7 +88,7 @@ struct ExpenseView: View {
             HStack(spacing: 8) {
                 Image(systemName: "wallet.pass.fill")
                     .font(.system(size: 16))
-                    .foregroundColor(.lossRed)
+                    .foregroundColor(themeColor)
                 Text("目前帳戶")
                     .font(.subheadline)
                     .fontWeight(.semibold)
@@ -85,7 +105,7 @@ struct ExpenseView: View {
                         Text(account.name)
                             .font(.headline)
                             .foregroundColor(.primaryText)
-                        Text("現金餘額：\(viewModel.cashBalance.formatted(currency: account.currency))")
+                        Text("現金餘額：\(currentBalance.formatted(currency: account.currency))")
                             .font(.caption)
                             .foregroundColor(.secondaryText)
                     }
@@ -103,8 +123,8 @@ struct ExpenseView: View {
             HStack(spacing: 8) {
                 Image(systemName: "dollarsign.circle.fill")
                     .font(.system(size: 16))
-                    .foregroundColor(.lossRed)
-                Text("金額 (\(account.currency.rawValue))")
+                    .foregroundColor(themeColor)
+                Text("新餘額 (\(account.currency.rawValue))")
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.primaryText)
@@ -112,30 +132,56 @@ struct ExpenseView: View {
             
             CardView {
                 HStack {
-                    TextField("0", text: $amount)
+                    TextField("0", text: $newBalanceText)
                         .keyboardType(.decimalPad)
                         .font(.headline)
-                        .onChange(of: amount) { oldValue, newValue in
-                            handleAmountChange(oldValue: oldValue, newValue: newValue)
+                        .onChange(of: newBalanceText) { oldValue, newValue in
+                            handleBalanceChange(oldValue: oldValue, newValue: newValue)
                         }
                 }
             }
             
-            // 如果是美金帳戶，顯示台幣等值
-            if account.currency == .USD, let twd = twdEquivalent {
-                HStack(spacing: 6) {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.caption2)
-                        .foregroundColor(.secondaryText)
-                    Text("≈ \(twd.formatted(currency: .TWD))")
-                        .font(.caption)
-                        .foregroundColor(.secondaryText)
-                }
-                .padding(.top, 4)
-            }
+            adjustmentResultCard
         }
         .padding(.horizontal)
         .padding(.bottom, 16)
+    }
+    
+    @ViewBuilder
+    private var adjustmentResultCard: some View {
+        if delta != nil {
+            CardView {
+                VStack(alignment: .leading, spacing: 8) {
+                    if let delta = delta {
+                        let absDelta = delta > 0 ? delta : -delta
+                        HStack {
+                            Text(delta > 0 ? "將新增收入" : "將新增支出")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundColor(delta > 0 ? .profitGreen : .lossRed)
+                            Spacer()
+                            Text(absDelta.formatted(currency: account.currency))
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundColor(delta > 0 ? .profitGreen : .lossRed)
+                        }
+                    }
+                    
+                    if account.currency == .USD, let delta = delta {
+                        let absDelta = delta > 0 ? delta : -delta
+                        let twd = absDelta * usdToTwdRate
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .font(.caption2)
+                                .foregroundColor(.secondaryText)
+                            Text("≈ \(twd.formatted(currency: .TWD))")
+                                .font(.caption)
+                                .foregroundColor(.secondaryText)
+                        }
+                    }
+                }
+            }
+        }
     }
     
     private var dateSection: some View {
@@ -143,7 +189,7 @@ struct ExpenseView: View {
             HStack(spacing: 8) {
                 Image(systemName: "calendar")
                     .font(.system(size: 16))
-                    .foregroundColor(.lossRed)
+                    .foregroundColor(themeColor)
                 Text("日期")
                     .font(.subheadline)
                     .fontWeight(.semibold)
@@ -170,7 +216,7 @@ struct ExpenseView: View {
             HStack(spacing: 8) {
                 Image(systemName: "note.text")
                     .font(.system(size: 16))
-                    .foregroundColor(.lossRed)
+                    .foregroundColor(themeColor)
                 Text("備註 (選填)")
                     .font(.subheadline)
                     .fontWeight(.semibold)
@@ -184,7 +230,7 @@ struct ExpenseView: View {
                         .foregroundColor(.secondaryText)
                         .padding(.top, 2)
                     
-                    TextField("例如:餐費", text: $notes, axis: .vertical)
+                    TextField("例如:餘額調整", text: $notes, axis: .vertical)
                         .lineLimit(3...6)
                 }
             }
@@ -196,11 +242,18 @@ struct ExpenseView: View {
     @ViewBuilder
     private var errorMessageSection: some View {
         if let errorMessage = errorMessage {
-            Text(errorMessage)
-                .font(.caption)
-                .foregroundColor(.lossRed)
-                .padding(.horizontal)
-                .padding(.bottom, 8)
+            CardView {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .foregroundColor(.lossRed)
+                    Text(errorMessage)
+                        .font(.subheadline)
+                        .foregroundColor(.lossRed)
+                    Spacer()
+                }
+            }
+            .padding(.horizontal)
+            .padding(.bottom, 8)
         }
     }
     
@@ -216,7 +269,7 @@ struct ExpenseView: View {
                     errorMessageSection
                 }
             }
-            .navigationTitle(editingTransaction != nil ? "編輯支出" : "支出")
+            .navigationTitle("調整餘額")
             .navigationBarTitleDisplayMode(.inline)
             .tint(.appPrimary)
             .toolbar {
@@ -232,18 +285,18 @@ struct ExpenseView: View {
             }
             .safeAreaInset(edge: .bottom) {
                 Button(action: {
-                    saveExpense()
+                    saveAdjustment()
                 }) {
                     HStack(spacing: 8) {
-                        Image(systemName: "arrow.up")
+                        Image(systemName: "checkmark")
                             .font(.system(size: 18))
-                        Text(editingTransaction != nil ? "確認修改" : "確認支出")
+                        Text("確認調整")
                             .font(.headline)
                     }
                     .foregroundColor(AppColors.actionForeground)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
-                    .background(isValid ? Color.lossRed : AppColors.disabledBackground)
+                    .background(isValid ? themeColor : AppColors.disabledBackground)
                     .cornerRadius(12)
                 }
                 .disabled(!isValid)
@@ -252,105 +305,86 @@ struct ExpenseView: View {
                 .background(Color.cardBackground)
             }
             .task {
-                // 如果是編輯模式，預填資料
-                if let transaction = editingTransaction {
-                    amount = transaction.quantity.formatted(fractionDigits: 2)
-                    notes = transaction.notes ?? ""
-                    transactionDate = transaction.transactionDate
-                    calculateTwdEquivalent(amount)
+                if newBalanceText.isEmpty {
+                    newBalanceText = formattedBalanceInput(currentBalance)
                 }
             }
         }
     }
     
     // MARK: - Helper Methods
-    private func handleAmountChange(oldValue: String, newValue: String) {
-        // 過濾非數字字符
+    private func handleBalanceChange(oldValue: String, newValue: String) {
         let filtered = newValue.filter { $0.isNumber || $0 == "." }
         if filtered != newValue {
-            amount = filtered
+            newBalanceText = filtered
         }
-        // 驗證不能為負數或零
-        if let value = Decimal(string: filtered), value <= 0 {
-            amount = oldValue.isEmpty ? "" : oldValue
+        if let value = Decimal(string: filtered), value < 0 {
+            newBalanceText = oldValue.isEmpty ? "" : oldValue
         }
-        calculateTwdEquivalent(filtered)
         validateInput()
     }
     
     private func validateInput() {
         errorMessage = nil
         
-        guard let amountValue = Decimal(string: amount), !amount.isEmpty else {
+        guard let newBalanceValue = Decimal(string: newBalanceText), !newBalanceText.isEmpty else {
             return
         }
         
-        if amountValue <= 0 {
-            errorMessage = "金額必須大於 0"
+        if newBalanceValue < 0 {
+            errorMessage = "餘額不可為負數"
             return
         }
         
-        // 檢查支出金額不能大於現金餘額
-        if amountValue > viewModel.cashBalance {
-            errorMessage = "支出金額不能大於現金餘額 \(viewModel.cashBalance.formatted(currency: account.currency))"
+        if newBalanceValue == currentBalance {
+            errorMessage = "金額未變更"
             return
         }
     }
-    
-    private func calculateTwdEquivalent(_ amountString: String) {
-        guard let amountValue = Decimal(string: amountString) else {
-            twdEquivalent = nil
-            return
+
+    private func formattedBalanceInput(_ value: Decimal) -> String {
+        let number = NSDecimalNumber(decimal: value)
+        let rounded = number.rounding(accordingToBehavior: NSDecimalNumberHandler(
+            roundingMode: .plain,
+            scale: 0,
+            raiseOnExactness: false,
+            raiseOnOverflow: false,
+            raiseOnUnderflow: false,
+            raiseOnDivideByZero: false
+        ))
+        if number == rounded {
+            return value.formatted(fractionDigits: 0)
         }
+        return value.formatted(fractionDigits: 2)
+    }
+    
+    private func saveAdjustment() {
+        guard let newBalanceValue = Decimal(string: newBalanceText) else { return }
+        if newBalanceValue < 0 || newBalanceValue == currentBalance { return }
         
-        if account.currency == .USD {
-            twdEquivalent = amountValue * usdToTwdRate
-        } else {
-            twdEquivalent = nil
-        }
-    }
-    
-    private var isValid: Bool {
-        guard let amountValue = Decimal(string: amount),
-              !amount.isEmpty,
-              amountValue > 0,
-              amountValue <= viewModel.cashBalance else {
-            return false
-        }
-        return true
-    }
-    
-    private func saveExpense() {
-        guard let amountValue = Decimal(string: amount), amountValue > 0 else { return }
+        let deltaValue = newBalanceValue - currentBalance
+        if deltaValue == 0 { return }
+        
+        let transactionType: TransactionType = deltaValue > 0 ? .deposit : .withdraw
+        let amount = deltaValue > 0 ? deltaValue : -deltaValue
+        let autoNote = "餘額調整：\(currentBalance.formatted(currency: account.currency)) → \(newBalanceValue.formatted(currency: account.currency))"
+        let finalNotes = notes.isEmpty ? autoNote : "\(notes)（\(autoNote)）"
         
         Task {
             let transactionsViewModel = TransactionsViewModel()
-            
-            if let editingTransaction = editingTransaction {
-                // 編輯模式：更新現有交易
-                var updatedTransaction = editingTransaction
-                updatedTransaction.quantity = amountValue
-                updatedTransaction.price = 1
-                updatedTransaction.notes = notes.isEmpty ? nil : notes
-                updatedTransaction.transactionDate = transactionDate
-                await transactionsViewModel.updateTransaction(updatedTransaction)
-            } else {
-                // 新增模式：建立新交易
-                let transaction = Transaction(
-                    accountId: account.id,
-                    type: .withdraw,
-                    assetType: .cash,
-                    symbol: "CASH",
-                    quantity: amountValue,
-                    price: 1,
-                    currency: account.currency,
-                    fee: 0,
-                    notes: notes.isEmpty ? nil : notes,
-                    transactionDate: transactionDate
-                )
-                await transactionsViewModel.createTransaction(transaction)
-            }
-            
+            let transaction = Transaction(
+                accountId: account.id,
+                type: transactionType,
+                assetType: .cash,
+                symbol: "CASH",
+                quantity: amount,
+                price: 1,
+                currency: account.currency,
+                fee: 0,
+                notes: finalNotes,
+                transactionDate: transactionDate
+            )
+            await transactionsViewModel.createTransaction(transaction)
             await viewModel.refresh(accountId: account.id)
             dismiss()
         }
@@ -358,8 +392,9 @@ struct ExpenseView: View {
 }
 
 #Preview {
-    ExpenseView(
+    AdjustCashBalanceView(
         account: Account(userId: "test", name: "測試帳戶", type: .cash, currency: .TWD),
-        viewModel: AccountDetailViewModel()
+        viewModel: AccountDetailViewModel(),
+        currentBalance: 1000
     )
 }

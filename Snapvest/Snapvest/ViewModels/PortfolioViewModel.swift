@@ -16,11 +16,14 @@ class PortfolioViewModel: ObservableObject {
     @Published var totalInvestments: Decimal = 0
     @Published var unrealizedGainLoss: Decimal = 0
     @Published var realizedGainLoss: Decimal = 0
+    @Published var realizedGainLossTWD: Decimal = 0
+    @Published var realizedGainLossUSD: Decimal = 0
     @Published var holdings: [HoldingSnapshot] = []
     @Published var liabilities: [Liability] = []
     @Published var accounts: [Account] = []
     @Published var isLoading = false
     @Published var errorMessage: String?
+    @Published var homeSnapshot: HomeDashboardSnapshot?
     
     @Published var baseCurrency: Currency = .TWD
     @Published var viewCurrency: Currency = .TWD // 顯示貨幣（可切換）
@@ -57,8 +60,10 @@ class PortfolioViewModel: ObservableObject {
             let allTransactions = try await transactionsTask
             let calculatedHoldings = HoldingCalculator.calculateHoldings(from: allTransactions)
             
-            // 計算已實現損益
-            self.realizedGainLoss = HoldingCalculator.calculateRealizedGainLoss(from: allTransactions)
+            // 計算已實現損益（依貨幣）
+            let realizedByCurrency = HoldingCalculator.calculateRealizedGainLossByCurrency(from: allTransactions)
+            self.realizedGainLossTWD = realizedByCurrency[.TWD] ?? 0
+            self.realizedGainLossUSD = realizedByCurrency[.USD] ?? 0
             
             // 載入每個持股的當前價格
             var allHoldings: [HoldingSnapshot] = []
@@ -84,8 +89,49 @@ class PortfolioViewModel: ObservableObject {
             // 計算總覽數據
             await calculateSummary()
             
+            // 儲存首頁快照
+            if let userId = accounts.first?.userId {
+                await saveHomeDashboardSnapshot(userId: userId)
+            }
+            
         } catch {
             errorMessage = "載入資料失敗：\(error.localizedDescription)"
+        }
+        
+        isLoading = false
+    }
+
+    /// 載入首頁快照（不重新計算）
+    func loadHomeSnapshot(userId: String) async {
+        isLoading = true
+        errorMessage = nil
+        
+        do {
+            let snapshot = try await dataService.fetchHomeDashboardSnapshot(userId: userId)
+            homeSnapshot = snapshot
+            applyHomeSnapshot(snapshot)
+        } catch {
+            errorMessage = "載入首頁快照失敗：\(error.localizedDescription)"
+        }
+        
+        isLoading = false
+    }
+
+    /// 確保首頁快照存在（若沒有則先計算再讀取）
+    func ensureHomeSnapshot(userId: String) async {
+        isLoading = true
+        errorMessage = nil
+        
+        do {
+            let snapshot = try await dataService.fetchHomeDashboardSnapshot(userId: userId)
+            if snapshot == nil {
+                await loadData(userId: userId)
+            }
+            let latestSnapshot = try await dataService.fetchHomeDashboardSnapshot(userId: userId)
+            homeSnapshot = latestSnapshot
+            applyHomeSnapshot(latestSnapshot)
+        } catch {
+            errorMessage = "載入首頁快照失敗：\(error.localizedDescription)"
         }
         
         isLoading = false
@@ -218,8 +264,71 @@ class PortfolioViewModel: ObservableObject {
         unrealizedGainLoss = totalUnrealizedGainLoss
         totalAssets = totalInvestments + totalCash
         
+        // 已實現損益（顯示用，統一轉為 TWD）
+        realizedGainLoss = realizedGainLossTWD + (realizedGainLossUSD * usdToTwdRate)
+        
         // 更新持股的投資佔比和資產佔比
         updateHoldingRatios()
+    }
+
+    private func applyHomeSnapshot(_ snapshot: HomeDashboardSnapshot?) {
+        guard let snapshot = snapshot else {
+            totalAssets = 0
+            totalLiabilities = 0
+            totalCash = 0
+            totalInvestments = 0
+            unrealizedGainLoss = 0
+            realizedGainLoss = 0
+            realizedGainLossTWD = 0
+            realizedGainLossUSD = 0
+            cashByCurrency = [:]
+            return
+        }
+        
+        totalAssets = snapshot.totalAssets
+        totalLiabilities = snapshot.totalLiabilities
+        totalCash = snapshot.totalCash
+        totalInvestments = snapshot.totalAssets - snapshot.totalCash
+        unrealizedGainLoss = snapshot.totalAssets - snapshot.totalCash - snapshot.totalInvestmentsCost
+        realizedGainLossTWD = snapshot.realizedGainLossTWD
+        realizedGainLossUSD = snapshot.realizedGainLossUSD
+        cashByCurrency = [
+            .TWD: snapshot.twdCash,
+            .USD: snapshot.usdCash
+        ]
+        realizedGainLoss = realizedGainLossTWD + (realizedGainLossUSD * 32)
+
+        Task {
+            let usdToTwdRate = (try? await dataService.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate) ?? 32
+            realizedGainLoss = realizedGainLossTWD + (realizedGainLossUSD * usdToTwdRate)
+        }
+    }
+
+    private func saveHomeDashboardSnapshot(userId: String) async {
+        let netWorth = totalAssets - totalLiabilities
+        let totalInvestmentsCost = totalInvestments - unrealizedGainLoss
+        let twdCash = cashByCurrency[.TWD] ?? 0
+        let usdCash = cashByCurrency[.USD] ?? 0
+        
+        let snapshot = HomeDashboardSnapshot(
+            userId: userId,
+            netWorth: netWorth,
+            totalLiabilities: totalLiabilities,
+            totalAssets: totalAssets,
+            totalInvestmentsCost: totalInvestmentsCost,
+            totalCash: totalCash,
+            twdCash: twdCash,
+            usdCash: usdCash,
+            realizedGainLossTWD: realizedGainLossTWD,
+            realizedGainLossUSD: realizedGainLossUSD,
+            lastUpdated: Date()
+        )
+        
+        do {
+            try await dataService.saveHomeDashboardSnapshot(snapshot)
+        } catch {
+            // 快照儲存失敗不影響畫面顯示
+        }
     }
     
     /// 更新持股的投資佔比和資產佔比

@@ -403,11 +403,11 @@ struct TransactionHistoryRowView: View {
                             Text("刪除")
                                 .font(.system(size: 10, weight: .medium))
                         }
-                        .foregroundColor(.white)
+                        .foregroundColor(AppColors.actionForeground)
                         .frame(width: 70, height: 70)
-                        .background(Color.red)
+                        .background(AppColors.actionDestructiveBackground)
                     }
-                    .tint(.red)
+                    .tint(AppColors.actionDestructiveBackground)
                 }
                 
                 // 編輯按鈕（還款和債務交易不能編輯）
@@ -421,11 +421,11 @@ struct TransactionHistoryRowView: View {
                             Text("編輯")
                                 .font(.system(size: 10, weight: .medium))
                         }
-                        .foregroundColor(.white)
+                        .foregroundColor(AppColors.actionForeground)
                         .frame(width: 70, height: 70)
-                        .background(Color.blue)
+                        .background(AppColors.actionEditBackground)
                     }
-                    .tint(.blue)
+                    .tint(AppColors.actionEditBackground)
                 }
             }
             
@@ -447,7 +447,7 @@ struct TransactionHistoryRowView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
-                .background(Color.secondaryBackground.opacity(0.5))
+                .background(AppColors.secondaryBackground.opacity(0.5))
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }

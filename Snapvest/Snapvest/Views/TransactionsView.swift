@@ -32,12 +32,16 @@ struct TransactionsView: View {
     // 帳戶篩選（多選）
     @State private var selectedAccountIds: Set<String> = []
     @State private var showingAccountPicker = false
+    @State private var tempSelectedAccountIds: Set<String> = []
     
     // 時間篩選
     @State private var selectedTimeRange: TimeRangeFilter = .all
     @State private var customStartDate: Date = Calendar.current.startOfDay(for: Date())
     @State private var customEndDate: Date = Calendar.current.startOfDay(for: Date())
     @State private var showingDatePicker = false
+    @State private var tempSelectedTimeRange: TimeRangeFilter = .all
+    @State private var tempCustomStartDate: Date = Calendar.current.startOfDay(for: Date())
+    @State private var tempCustomEndDate: Date = Calendar.current.startOfDay(for: Date())
     
     // 篩選偏好持久化的 key
     private let filterPreferencesKey = "TransactionFilterPreferences"
@@ -118,64 +122,30 @@ struct TransactionsView: View {
             
             // 帳戶和時間篩選按鈕
             HStack(spacing: 12) {
-                // 帳戶篩選按鈕
+                // 帳戶篩選按鈕（下拉式樣式）
                 Button(action: {
+                    tempSelectedAccountIds = selectedAccountIds
                     showingAccountPicker = true
                 }) {
-                    HStack {
-                        Text("帳戶:")
-                            .font(.caption)
-                            .foregroundColor(.secondaryText)
-                        
-                        if selectedAccountIds.isEmpty {
-                            Text("所有帳戶")
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .foregroundColor(.primaryText)
-                        } else {
-                            Text("已選 \(selectedAccountIds.count) 個帳戶")
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .foregroundColor(.appPrimary)
-                        }
-                        
-                        Spacer()
-                        
-                        Image(systemName: "chevron.down")
-                            .font(.caption2)
-                            .foregroundColor(.secondaryText)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color.cardBackground)
-                    .cornerRadius(8)
+                    filterDropdownLabel(
+                        title: "帳戶",
+                        value: selectedAccountIds.isEmpty ? "所有帳戶" : "已選 \(selectedAccountIds.count) 個帳戶",
+                        isHighlighted: !selectedAccountIds.isEmpty
+                    )
                 }
                 
-                // 時間篩選按鈕
+                // 時間篩選按鈕（下拉式樣式）
                 Button(action: {
+                    tempSelectedTimeRange = selectedTimeRange
+                    tempCustomStartDate = customStartDate
+                    tempCustomEndDate = customEndDate
                     showingDatePicker = true
                 }) {
-                    HStack {
-                        Text("時間:")
-                            .font(.caption)
-                            .foregroundColor(.secondaryText)
-                        
-                        Text(selectedTimeRange.rawValue)
-                            .font(.caption)
-                            .fontWeight(.medium)
-                            .foregroundColor(.primaryText)
-                            .lineLimit(1)
-                        
-                        Spacer()
-                        
-                        Image(systemName: "chevron.down")
-                            .font(.caption2)
-                            .foregroundColor(.secondaryText)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color.cardBackground)
-                    .cornerRadius(8)
+                    filterDropdownLabel(
+                        title: "時間",
+                        value: selectedTimeRange.rawValue,
+                        isHighlighted: selectedTimeRange != .all
+                    )
                 }
                 
                 // 清除所有篩選按鈕
@@ -195,6 +165,31 @@ struct TransactionsView: View {
             .padding(.bottom, 8)
         }
         .background(Color.secondaryBackground)
+    }
+
+    private func filterDropdownLabel(title: String, value: String, isHighlighted: Bool) -> some View {
+        HStack(spacing: 8) {
+            Text("\(title):")
+                .font(.caption)
+                .foregroundColor(.secondaryText)
+            
+            Text(value)
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundColor(isHighlighted ? .appPrimary : .primaryText)
+                .lineLimit(1)
+            
+            Spacer()
+            
+            Image(systemName: "chevron.down")
+                .font(.caption2)
+                .foregroundColor(.secondaryText)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.cardBackground)
+        .cornerRadius(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
     
     private var filterTitleSection: some View {
@@ -251,9 +246,12 @@ struct TransactionsView: View {
     private var transactionsListView: some View {
         List {
             ForEach(filteredTransactions, id: \.id) { transaction in
+                let accountDisplay = getAccountDisplay(for: transaction)
                 TransactionRowView(
                     transaction: transaction,
-                    accountName: getAccountName(for: transaction),
+                    accountName: accountDisplay.name,
+                    accountIconName: accountDisplay.icon,
+                    accountColor: accountDisplay.color,
                     onEdit: { transaction in
                         handleEditTransaction(transaction)
                     },
@@ -508,21 +506,21 @@ struct TransactionsView: View {
                         HStack {
                             Button(action: {
                                 withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                    if selectedAccountIds.count == viewModel.accounts.count {
+                                    if tempSelectedAccountIds.count == viewModel.accounts.count {
                                         // 如果已全選，則全不選
-                                        selectedAccountIds.removeAll()
+                                        tempSelectedAccountIds.removeAll()
                                     } else {
                                         // 全選
-                                        selectedAccountIds = Set(viewModel.accounts.map { $0.id })
+                                        tempSelectedAccountIds = Set(viewModel.accounts.map { $0.id })
                                     }
                                 }
                             }) {
                                 HStack(spacing: 8) {
-                                    Image(systemName: selectedAccountIds.count == viewModel.accounts.count ? "checkmark.circle.fill" : "circle")
+                                    Image(systemName: tempSelectedAccountIds.count == viewModel.accounts.count ? "checkmark.circle.fill" : "circle")
                                         .font(.system(size: 16, weight: .semibold))
                                         .foregroundColor(.appPrimary)
                                     
-                                    Text(selectedAccountIds.count == viewModel.accounts.count ? "全不選" : "全選")
+                                    Text(tempSelectedAccountIds.count == viewModel.accounts.count ? "全不選" : "全選")
                                         .font(.subheadline)
                                         .fontWeight(.medium)
                                         .foregroundColor(.appPrimary)
@@ -532,10 +530,10 @@ struct TransactionsView: View {
                             
                             Spacer()
                             
-                            if !selectedAccountIds.isEmpty {
+                            if !tempSelectedAccountIds.isEmpty {
                                 Button(action: {
                                     withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                        selectedAccountIds.removeAll()
+                                        tempSelectedAccountIds.removeAll()
                                     }
                                 }) {
                                     HStack(spacing: 4) {
@@ -557,10 +555,10 @@ struct TransactionsView: View {
                     ForEach(viewModel.accounts, id: \.id) { account in
                         Button(action: {
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                if selectedAccountIds.contains(account.id) {
-                                    selectedAccountIds.remove(account.id)
+                                if tempSelectedAccountIds.contains(account.id) {
+                                    tempSelectedAccountIds.remove(account.id)
                                 } else {
-                                    selectedAccountIds.insert(account.id)
+                                    tempSelectedAccountIds.insert(account.id)
                                 }
                             }
                         }) {
@@ -592,7 +590,7 @@ struct TransactionsView: View {
                                     Spacer()
                                     
                                     // 選中標記
-                                    if selectedAccountIds.contains(account.id) {
+                                    if tempSelectedAccountIds.contains(account.id) {
                                         Image(systemName: "checkmark.circle.fill")
                                             .font(.system(size: 24, weight: .semibold))
                                             .foregroundColor(.appPrimary)
@@ -606,12 +604,12 @@ struct TransactionsView: View {
                             .overlay(
                                 // 選中時顯示邊框
                                 RoundedRectangle(cornerRadius: 12)
-                                    .stroke(selectedAccountIds.contains(account.id) ? Color.appPrimary : Color.clear, lineWidth: 2)
+                                    .stroke(tempSelectedAccountIds.contains(account.id) ? Color.appPrimary : Color.clear, lineWidth: 2)
                             )
                             .background(
                                 // 選中時顯示背景色
                                 RoundedRectangle(cornerRadius: 12)
-                                    .fill(selectedAccountIds.contains(account.id) ? Color.appPrimary.opacity(0.05) : Color.clear)
+                                    .fill(tempSelectedAccountIds.contains(account.id) ? Color.appPrimary.opacity(0.05) : Color.clear)
                             )
                         }
                         .buttonStyle(PlainButtonStyle())
@@ -637,6 +635,7 @@ struct TransactionsView: View {
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
+                        selectedAccountIds = tempSelectedAccountIds
                         saveFilterPreferences()
                         showingAccountPicker = false
                     }) {
@@ -681,6 +680,9 @@ struct TransactionsView: View {
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
+                        selectedTimeRange = tempSelectedTimeRange
+                        customStartDate = tempCustomStartDate
+                        customEndDate = tempCustomEndDate
                         saveFilterPreferences()
                         showingDatePicker = false
                     }) {
@@ -707,10 +709,10 @@ struct TransactionsView: View {
     private func timeRangeOptionButton(timeRange: TimeRangeFilter) -> some View {
         Button(action: {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                selectedTimeRange = timeRange
+                tempSelectedTimeRange = timeRange
                 if timeRange != .custom {
-                    customStartDate = Calendar.current.startOfDay(for: Date())
-                    customEndDate = Calendar.current.startOfDay(for: Date())
+                    tempCustomStartDate = Calendar.current.startOfDay(for: Date())
+                    tempCustomEndDate = Calendar.current.startOfDay(for: Date())
                 }
             }
         }) {
@@ -722,7 +724,7 @@ struct TransactionsView: View {
     // MARK: - 時間範圍卡片
     
     private func timeRangeCard(timeRange: TimeRangeFilter) -> some View {
-        let isSelected = selectedTimeRange == timeRange
+        let isSelected = tempSelectedTimeRange == timeRange
         
         return CardView {
             HStack {
@@ -759,7 +761,7 @@ struct TransactionsView: View {
     private var customDateRangeOption: some View {
         Button(action: {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                selectedTimeRange = .custom
+                tempSelectedTimeRange = .custom
             }
         }) {
             customDateRangeCard
@@ -771,7 +773,7 @@ struct TransactionsView: View {
     // MARK: - 自訂日期範圍卡片
     
     private var customDateRangeCard: some View {
-        let isSelected = selectedTimeRange == .custom
+        let isSelected = tempSelectedTimeRange == .custom
         
         return CardView {
             VStack(alignment: .leading, spacing: 16) {
@@ -826,11 +828,11 @@ struct TransactionsView: View {
     
     private var customDatePickers: some View {
         VStack(spacing: 16) {
-            datePickerRow(label: "開始日期", date: $customStartDate)
+            datePickerRow(label: "開始日期", date: $tempCustomStartDate)
             
             Divider()
             
-            datePickerRow(label: "結束日期", date: $customEndDate)
+            datePickerRow(label: "結束日期", date: $tempCustomEndDate)
         }
     }
     
@@ -1139,10 +1141,10 @@ struct TransactionsView: View {
         await viewModel.loadTransactions(userId: userId)
     }
     
-    private func getAccountName(for transaction: Transaction) -> String {
+    private func getAccountDisplay(for transaction: Transaction) -> (name: String, icon: String, color: Color) {
         // 確保 accounts 已載入
         if viewModel.accounts.isEmpty {
-            return "未知帳戶"
+            return (name: "未知帳戶", icon: "questionmark.circle", color: .secondaryText)
         }
         
         // 如果是轉帳或還款交易，顯示「A到B」格式
@@ -1151,27 +1153,33 @@ struct TransactionsView: View {
             if let sourceAccount = viewModel.accounts.first(where: { $0.id == transaction.accountId }),
                let targetAccountId = transaction.targetAccountId,
                let targetAccount = viewModel.accounts.first(where: { $0.id == targetAccountId }) {
-                return "\(sourceAccount.name)到\(targetAccount.name)"
+                return (
+                    name: "\(sourceAccount.name)到\(targetAccount.name)",
+                    icon: sourceAccount.accountType.icon,
+                    color: sourceAccount.accountType.color
+                )
             }
             
             // 如果無法獲取，返回預設值
             if let account = viewModel.accounts.first(where: { $0.id == transaction.accountId }) {
-                return account.name
+                return (name: account.name, icon: account.accountType.icon, color: account.accountType.color)
             }
-            return "未知帳戶"
+            return (name: "未知帳戶", icon: "questionmark.circle", color: .secondaryText)
         }
         
         // 非轉帳/還款交易，返回帳戶名稱
         if let account = viewModel.accounts.first(where: { $0.id == transaction.accountId }) {
-            return account.name
+            return (name: account.name, icon: account.accountType.icon, color: account.accountType.color)
         }
-        return "未知帳戶"
+        return (name: "未知帳戶", icon: "questionmark.circle", color: .secondaryText)
     }
 }
 
 struct TransactionRowView: View {
     let transaction: Transaction
     let accountName: String
+    let accountIconName: String
+    let accountColor: Color
     let onEdit: (Transaction) -> Void
     let onDelete: (Transaction) -> Void
     @State private var isExpanded: Bool = false
@@ -1201,9 +1209,14 @@ struct TransactionRowView: View {
                             .font(.headline)
                             .foregroundColor(.primaryText)
                         
-                        Text(accountName)
-                            .font(.caption)
-                            .foregroundColor(.secondaryText)
+                        HStack(spacing: 6) {
+                            Image(systemName: accountIconName)
+                                .font(.caption2)
+                                .foregroundColor(accountColor)
+                            Text(accountName)
+                                .font(.caption)
+                                .foregroundColor(.secondaryText)
+                        }
                     }
                     
                     Spacer()
@@ -1232,7 +1245,7 @@ struct TransactionRowView: View {
             .buttonStyle(PlainButtonStyle())
             
             // 展開的備註區域
-            if isExpanded, let notes = transaction.notes, !notes.isEmpty {
+            if isExpanded, let notes = expandedNotes {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("備註")
@@ -1249,7 +1262,7 @@ struct TransactionRowView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
-                .background(Color.secondaryBackground.opacity(0.5))
+                .background(AppColors.secondaryBackground.opacity(0.5))
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
@@ -1263,12 +1276,12 @@ struct TransactionRowView: View {
                     Text("刪除")
                         .font(.system(size: 10, weight: .medium))
                 }
-                .foregroundColor(.white)
+                .foregroundColor(AppColors.actionForeground)
                 .frame(width: 70, height: 70)
-                .background(Color.red)
+                .background(AppColors.actionDestructiveBackground)
                 .cornerRadius(0)
             }
-            .tint(.red)
+            .tint(AppColors.actionDestructiveBackground)
             
             // 還款和債務交易只能刪除，不能編輯
             if transaction.type != .repayment && transaction.type != .liability {
@@ -1281,12 +1294,12 @@ struct TransactionRowView: View {
                         Text("編輯")
                             .font(.system(size: 10, weight: .medium))
                     }
-                    .foregroundColor(.white)
+                    .foregroundColor(AppColors.actionForeground)
                     .frame(width: 70, height: 70)
-                    .background(Color.blue)
+                    .background(AppColors.actionEditBackground)
                     .cornerRadius(0)
                 }
-                .tint(.blue)
+                .tint(AppColors.actionEditBackground)
             }
         }
     }
@@ -1352,6 +1365,65 @@ struct TransactionRowView: View {
     private func isRepaymentTransaction(_ transaction: Transaction) -> Bool {
         // 檢查是否為還款類型
         return transaction.type == .repayment
+    }
+
+    private var expandedNotes: String? {
+        let userNote = transaction.notes?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasUserNote = !(userNote?.isEmpty ?? true)
+        
+        if transaction.type == .buy || transaction.type == .sell {
+            let action = transaction.type == .buy ? "買入" : "賣出"
+            let name = tradeDisplayName
+            let quantityText = formatQuantity(transaction.quantity)
+            let priceText = transaction.price.formatted(currency: transaction.currency)
+            let autoNote = "\(action)\(quantityText)股\(name)，股價\(priceText)"
+            
+            if hasUserNote {
+                return "\(autoNote)\n自訂備註：\(userNote!)"
+            }
+            return autoNote
+        }
+        
+        if hasUserNote {
+            return userNote
+        }
+        return nil
+    }
+    
+    private var tradeDisplayName: String {
+        if transaction.assetType == .stockTW {
+            return twStockNameMap[transaction.symbol] ?? transaction.symbol
+        }
+        return transaction.symbol
+    }
+    
+    private func formatQuantity(_ quantity: Decimal) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 3
+        formatter.usesGroupingSeparator = true
+        return formatter.string(from: quantity as NSDecimalNumber) ?? "\(quantity)"
+    }
+    
+    private var twStockNameMap: [String: String] {
+        [
+            "2330": "台積電",
+            "2317": "鴻海",
+            "2454": "聯發科",
+            "2308": "台達電",
+            "2891": "中信金",
+            "2882": "國泰金",
+            "2886": "兆豐金",
+            "1301": "台塑",
+            "1303": "南亞",
+            "2002": "中鋼",
+            "2412": "中華電",
+            "2382": "廣達",
+            "2379": "瑞昱",
+            "3008": "大立光",
+            "2884": "玉山金"
+        ]
     }
     
     private func typeIcon(for type: TransactionType) -> String {

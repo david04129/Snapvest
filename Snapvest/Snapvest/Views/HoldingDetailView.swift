@@ -308,7 +308,7 @@ struct HoldingDetailView: View {
                     Text("買入")
                 }
                 .font(.headline)
-                .foregroundColor(.white)
+                .foregroundColor(AppColors.actionForeground)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
                 .background(Color.profitGreen)
@@ -325,7 +325,7 @@ struct HoldingDetailView: View {
                     Text("賣出")
                 }
                 .font(.headline)
-                .foregroundColor(.white)
+                .foregroundColor(AppColors.actionForeground)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
                 .background(Color.lossRed)

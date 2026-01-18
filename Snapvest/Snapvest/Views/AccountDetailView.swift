@@ -12,8 +12,9 @@ struct AccountDetailView: View {
     @StateObject private var viewModel = AccountDetailViewModel()
     @StateObject private var portfolioViewModel = PortfolioViewModel()
     @StateObject private var accountsViewModel = AccountsViewModel()
-    @State private var showingIncome = false
-    @State private var showingExpense = false
+    @State private var showingCashFlow = false
+    @State private var selectedCashFlowType: CashFlowType = .income
+    @State private var showingAdjustCashBalance = false
     @State private var showingTransfer = false
     @State private var showingRepayment = false
     @State private var showingPrepayment = false  // 提前還款
@@ -32,6 +33,15 @@ struct AccountDetailView: View {
             } else {
                 // 一般帳戶：顯示原本的樣式
                 regularAccountView
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { _ in
+            Task {
+                if account.accountType == .debt {
+                    await loadDebtAccountData()
+                } else {
+                    await viewModel.refresh(accountId: account.id)
+                }
             }
         }
     }
@@ -67,10 +77,12 @@ struct AccountDetailView: View {
                         
                         // 貨幣切換開關（僅美股和加密貨幣帳戶）
                         if account.currency == .USD {
-                            CurrencyToggleView(
-                                displayCurrency: $viewModel.displayCurrency
-                            )
-                            .frame(width: 130, height: 38)
+                            CardView(padding: 6, cornerRadius: 12) {
+                                CurrencyToggleView(
+                                    displayCurrency: $viewModel.displayCurrency
+                                )
+                                .frame(width: 120, height: 34)
+                            }
                             .layoutPriority(0)
                         }
                     }
@@ -191,10 +203,10 @@ struct AccountDetailView: View {
                         Text("交易紀錄")
                     }
                     .font(.subheadline)
-                    .foregroundColor(.orange)
+                    .foregroundColor(AppColors.noticeForeground)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
-                    .background(Color.orange.opacity(0.1))
+                    .background(AppColors.noticeBackground)
                     .cornerRadius(8)
                 }
             }
@@ -203,35 +215,36 @@ struct AccountDetailView: View {
             // 底部操作按鈕
             Group {
                 if account.accountType != .debt {
-                    // 一般帳戶：收入、支出、轉帳按鈕
+                    // 一般帳戶：收/支、調整餘額、轉帳按鈕
                     HStack(spacing: 12) {
                         Button(action: {
-                            showingIncome = true
+                            showingCashFlow = true
                         }) {
                             HStack {
-                                Image(systemName: "arrow.down")
-                                Text("收入")
+                                Image(systemName: "arrow.up.arrow.down")
+                                    .font(.system(size: 16, weight: .semibold))
+                                Text("收/支")
                             }
                             .font(.headline)
-                            .foregroundColor(.white)
+                            .foregroundColor(AppColors.actionForeground)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
-                            .background(Color.profitGreen)
+                            .background(Color.appPrimary)
                             .cornerRadius(12)
                         }
                         
                         Button(action: {
-                            showingExpense = true
+                            showingAdjustCashBalance = true
                         }) {
                             HStack {
-                                Image(systemName: "arrow.up")
-                                Text("支出")
+                                Image(systemName: "pencil.circle")
+                                Text("調整餘額")
                             }
                             .font(.headline)
-                            .foregroundColor(.white)
+                            .foregroundColor(AppColors.actionForeground)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
-                            .background(Color.lossRed)
+                            .background(Color.appSecondary)
                             .cornerRadius(12)
                         }
                         
@@ -243,7 +256,7 @@ struct AccountDetailView: View {
                                 Text("轉帳")
                             }
                             .font(.headline)
-                            .foregroundColor(.white)
+                            .foregroundColor(AppColors.actionForeground)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
                             .background(Color.appPrimary)
@@ -260,14 +273,22 @@ struct AccountDetailView: View {
                 }
             }
         }
-        .sheet(isPresented: $showingIncome) {
-            IncomeView(account: account, viewModel: viewModel)
-        }
-        .sheet(isPresented: $showingExpense) {
-            ExpenseView(account: account, viewModel: viewModel)
+        .sheet(isPresented: $showingCashFlow) {
+            CashFlowView(
+                account: account,
+                viewModel: viewModel,
+                initialType: selectedCashFlowType
+            )
         }
         .sheet(isPresented: $showingTransfer) {
             TransferView(account: account, viewModel: viewModel)
+        }
+        .sheet(isPresented: $showingAdjustCashBalance) {
+            AdjustCashBalanceView(
+                account: account,
+                viewModel: viewModel,
+                currentBalance: viewModel.cashBalance
+            )
         }
         .task {
             // 根據帳戶貨幣設置顯示貨幣
@@ -296,10 +317,10 @@ struct AccountDetailView: View {
                         Text("交易紀錄")
                     }
                     .font(.subheadline)
-                    .foregroundColor(.orange)
+                    .foregroundColor(AppColors.noticeForeground)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
-                    .background(Color.orange.opacity(0.1))
+                    .background(AppColors.noticeBackground)
                     .cornerRadius(8)
                 }
             }
@@ -497,7 +518,7 @@ struct AccountDetailView: View {
                     Text("提前還款")
                 }
                 .font(.headline)
-                .foregroundColor(.white)
+                .foregroundColor(AppColors.actionForeground)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
                 .background(
@@ -519,7 +540,7 @@ struct AccountDetailView: View {
                     Text("定期還款")
                 }
                 .font(.headline)
-                .foregroundColor(.white)
+                .foregroundColor(AppColors.actionForeground)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
                 .background(
@@ -561,6 +582,7 @@ struct AccountDetailView: View {
             }
         }
     }
+
 }
 
 // MARK: - 自適應字體大小的文字視圖
@@ -620,7 +642,7 @@ struct CashBalanceCard: View {
                     
                     Spacer()
                     
-                    Image(systemName: "dollarsign.circle.fill")
+                    Image(systemName: "dollarsign.square.fill")
                         .foregroundColor(account.accountType.color)
                 }
                 
@@ -786,91 +808,13 @@ struct HoldingsTableContent: View {
 struct CurrencyToggleView: View {
     @Binding var displayCurrency: Currency
     
-    // 更現代的漸變藍色（替代 appPrimary 的純藍色）
-    // 使用更柔和、更現代的藍紫色漸變，類似 iOS 17+ 的設計風格
-    private var selectedGradient: LinearGradient {
-        LinearGradient(
-            colors: [
-                Color(red: 0.35, green: 0.58, blue: 0.96),  // 柔和的亮藍色
-                Color(red: 0.25, green: 0.45, blue: 0.88)   // 深藍紫色
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
-    
-    private var isUSDSelected: Bool {
-        displayCurrency == .USD
-    }
-    
-    private var backgroundOffset: CGFloat {
-        isUSDSelected ? 0 : 1
-    }
-    
     var body: some View {
-        GeometryReader { geometry in
-            let buttonWidth = geometry.size.width / 2
-            let buttonHeight = geometry.size.height
-            
-            ZStack(alignment: .leading) {
-                // 背景容器
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.secondaryBackground)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.separator.opacity(0.2), lineWidth: 1)
-                    )
-                
-                // 選中背景（滑動動畫）
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(selectedGradient)
-                    .frame(width: buttonWidth - 4)
-                    .padding(2)
-                    .offset(x: backgroundOffset * buttonWidth)
-                    .shadow(color: Color(red: 0.25, green: 0.45, blue: 0.88).opacity(0.25), radius: 6, x: 0, y: 3)
-                    .shadow(color: Color.black.opacity(0.08), radius: 1, x: 0, y: 1)
-                
-                // 按鈕區域
-                HStack(spacing: 0) {
-                    // USD 按鈕
-                    Button(action: {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-                            displayCurrency = .USD
-                        }
-                    }) {
-                        Text("USD")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(isUSDSelected ? .white : .secondaryText)
-                            .opacity(isUSDSelected ? 1.0 : 0.7)
-                            .frame(width: buttonWidth, height: buttonHeight)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                    
-                    // TWD 按鈕
-                    Button(action: {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-                            displayCurrency = .TWD
-                        }
-                    }) {
-                        Text("TWD")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(!isUSDSelected ? .white : .secondaryText)
-                            .opacity(!isUSDSelected ? 1.0 : 0.7)
-                            .frame(width: buttonWidth, height: buttonHeight)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                }
-                
-                // 分隔線（在兩個按鈕之間）
-                Rectangle()
-                    .fill(Color.separator.opacity(0.3))
-                    .frame(width: 1)
-                    .offset(x: buttonWidth - 0.5)
-            }
+        Picker("", selection: $displayCurrency) {
+            Text("USD").tag(Currency.USD)
+            Text("TWD").tag(Currency.TWD)
         }
-        .clipped()  // 確保滑動背景不會溢出
+        .pickerStyle(.segmented)
+        .font(.subheadline)
     }
 }
 
@@ -938,13 +882,17 @@ struct HoldingTableRow: View {
             // 損益
             if let displayGainLoss = displayGainLoss,
                let percent = holding.unrealizedGainLossPercent {
-                HStack(spacing: 4) {
-                    Image(systemName: displayGainLoss >= 0 ? "arrow.up" : "arrow.down")
-                        .font(.caption2)
-                    Text(displayGainLoss.formatted(currency: displayCurrency))
+                VStack(alignment: .trailing, spacing: 2) {
+                    HStack(spacing: 4) {
+                        Image(systemName: displayGainLoss >= 0 ? "arrow.up" : "arrow.down")
+                            .font(.caption2)
+                        Text(displayGainLoss.formatted(currency: displayCurrency))
+                    }
+                    .font(.caption)
+                    
                     Text("(\(percent.formatted(fractionDigits: 2))%)")
+                        .font(.caption2)
                 }
-                .font(.caption)
                 .foregroundColor(displayGainLoss >= 0 ? .profitGreen : .lossRed)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)

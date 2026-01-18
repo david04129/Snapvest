@@ -7,33 +7,8 @@
 
 import SwiftUI
 
-/// iOS 風格的顏色主題
-extension Color {
-    // MARK: - Hex 顏色初始化
-    init(hex: String) {
-        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
-        var int: UInt64 = 0
-        Scanner(string: hex).scanHexInt64(&int)
-        let a, r, g, b: UInt64
-        switch hex.count {
-        case 3: // RGB (12-bit)
-            (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
-        case 6: // RGB (24-bit)
-            (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
-        case 8: // ARGB (32-bit)
-            (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
-        default:
-            (a, r, g, b) = (255, 0, 0, 0)
-        }
-        self.init(
-            .sRGB,
-            red: Double(r) / 255,
-            green: Double(g) / 255,
-            blue: Double(b) / 255,
-            opacity: Double(a) / 255
-        )
-    }
-    
+// MARK: - 集中化顏色集合
+enum AppColors {
     // MARK: - 14色配色系統（從深藍到淺藍再到綠色）
     // 左側深藍區（1-4）
     static let blue1 = Color(hex: "#0D2235")  // 最深藍
@@ -140,5 +115,100 @@ extension Color {
     
     /// 邊框（極淺藍，50%透明度）
     static let borderLight = bluePale.opacity(0.5)
+    
+    // MARK: - 交互/狀態與陰影
+    static let disabledBackground = bluePale.opacity(0.7)
+    static let disabledForeground = secondaryText.opacity(0.6)
+    static let overlayDark = Color.black.opacity(0.85)
+    
+    static let shadowLow = Color.black.opacity(0.02)
+    static let shadowMedium = Color.black.opacity(0.04)
+    static let shadowSoft = Color.black.opacity(0.05)
+    static let shadowCard = Color.black.opacity(0.08)
+    static let shadowHigh = Color.black.opacity(0.1)
+    
+    static let strokeSubtle = primaryText.opacity(0.1)
+    static let strokeMuted = primaryText.opacity(0.2)
+    
+    static let noticeForeground = appPrimary
+    static let noticeBackground = appPrimary.opacity(0.1)
+    
+    static let actionEditBackground = appPrimary
+    static let actionDestructiveBackground = lossRed
+    static let actionForeground = Color.white
+    
+    static let chipBackground = appPrimary.opacity(0.1)
+    static let placeholderFill = bluePale.opacity(0.5)
+}
+
+/// iOS 風格的顏色主題（為舊有呼叫提供相容入口）
+extension Color {
+    // MARK: - Hex 顏色初始化
+    init(hex: String) {
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&int)
+        let a, r, g, b: UInt64
+        switch hex.count {
+        case 3: // RGB (12-bit)
+            (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
+        case 6: // RGB (24-bit)
+            (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
+        case 8: // ARGB (32-bit)
+            (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
+        default:
+            (a, r, g, b) = (255, 0, 0, 0)
+        }
+        self.init(
+            .sRGB,
+            red: Double(r) / 255,
+            green: Double(g) / 255,
+            blue: Double(b) / 255,
+            opacity: Double(a) / 255
+        )
+    }
+    
+    static var blue1: Color { AppColors.blue1 }
+    static var blue2: Color { AppColors.blue2 }
+    static var blue3: Color { AppColors.blue3 }
+    static var blue4: Color { AppColors.blue4 }
+    static var blueGreen1: Color { AppColors.blueGreen1 }
+    static var blueGreen2: Color { AppColors.blueGreen2 }
+    static var blueGreen3: Color { AppColors.blueGreen3 }
+    static var blueGreen4: Color { AppColors.blueGreen4 }
+    static var green1: Color { AppColors.green1 }
+    static var green2: Color { AppColors.green2 }
+    static var green3: Color { AppColors.green3 }
+    static var green4: Color { AppColors.green4 }
+    static var green5: Color { AppColors.green5 }
+    static var bluePale: Color { AppColors.bluePale }
+    
+    static var pieChartColors: [Color] { AppColors.pieChartColors }
+    
+    static var appPrimary: Color { AppColors.appPrimary }
+    static var appSecondary: Color { AppColors.appSecondary }
+    
+    static var mainBackground: Color { AppColors.mainBackground }
+    static var cardBackground: Color { AppColors.cardBackground }
+    static var secondaryBackground: Color { AppColors.secondaryBackground }
+    static var tertiaryBackground: Color { AppColors.tertiaryBackground }
+    
+    static var profitGreen: Color { AppColors.profitGreen }
+    static var lossRed: Color { AppColors.lossRed }
+    
+    static var stockTWColor: Color { AppColors.stockTWColor }
+    static var stockTWDeepBlue: Color { AppColors.stockTWDeepBlue }
+    static var stockUSColor: Color { AppColors.stockUSColor }
+    static var stockUSDeepGreen: Color { AppColors.stockUSDeepGreen }
+    static var stockUSDeepPurple: Color { AppColors.stockUSDeepPurple }
+    static var cryptoColor: Color { AppColors.cryptoColor }
+    static var cryptoDeepBrown: Color { AppColors.cryptoDeepBrown }
+    
+    static var primaryText: Color { AppColors.primaryText }
+    static var secondaryText: Color { AppColors.secondaryText }
+    static var tertiaryText: Color { AppColors.tertiaryText }
+    
+    static var separator: Color { AppColors.separator }
+    static var borderLight: Color { AppColors.borderLight }
 }
 

@@ -224,10 +224,10 @@ struct AddLiabilityView: View {
                     }) {
                         Text("儲存債務")
                             .font(.headline)
-                            .foregroundColor(.white)
+                            .foregroundColor(AppColors.actionForeground)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
-                            .background(isFormValid ? Color.lossRed : Color.gray)
+                            .background(isFormValid ? Color.lossRed : AppColors.disabledBackground)
                             .cornerRadius(12)
                     }
                     .disabled(!isFormValid)

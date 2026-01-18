@@ -240,10 +240,10 @@ struct IncomeView: View {
                         Text(editingTransaction != nil ? "確認修改" : "確認收入")
                             .font(.headline)
                     }
-                    .foregroundColor(.white)
+                    .foregroundColor(AppColors.actionForeground)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
-                    .background(isValid ? Color.profitGreen : Color.gray)
+                    .background(isValid ? Color.profitGreen : AppColors.disabledBackground)
                     .cornerRadius(12)
                 }
                 .disabled(!isValid)

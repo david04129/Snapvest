@@ -1,5 +1,5 @@
 //
-//  ExpenseView.swift
+//  CashFlowView.swift
 //  Snapvest
 //
 //  Created on 2024
@@ -7,14 +7,72 @@
 
 import SwiftUI
 
-struct ExpenseView: View {
+enum CashFlowType: String, CaseIterable, Identifiable {
+    case income
+    case expense
+    
+    var id: String { rawValue }
+    
+    var title: String {
+        switch self {
+        case .income: return "收入"
+        case .expense: return "支出"
+        }
+    }
+    
+    var subtitle: String {
+        switch self {
+        case .income: return "記錄此帳戶的現金收入。"
+        case .expense: return "記錄此帳戶的現金支出。"
+        }
+    }
+    
+    var iconName: String {
+        switch self {
+        case .income: return "arrow.up.circle.fill"
+        case .expense: return "arrow.down.circle.fill"
+        }
+    }
+    
+    var actionIcon: String {
+        switch self {
+        case .income: return "arrow.up"
+        case .expense: return "arrow.down"
+        }
+    }
+    
+    var themeColor: Color {
+        switch self {
+        case .income: return .profitGreen
+        case .expense: return .lossRed
+        }
+    }
+    
+    var transactionType: TransactionType {
+        switch self {
+        case .income: return .deposit
+        case .expense: return .withdraw
+        }
+    }
+    
+    var notesPlaceholder: String {
+        switch self {
+        case .income: return "例如:薪資收入"
+        case .expense: return "例如:餐費"
+        }
+    }
+}
+
+struct CashFlowView: View {
     let account: Account
     @ObservedObject var viewModel: AccountDetailViewModel
-    @Environment(\.dismiss) var dismiss
+    @Environment(\.dismiss) private var dismiss
     
     // 編輯模式：如果提供，則為編輯模式
     let editingTransaction: Transaction?
+    private let initialType: CashFlowType
     
+    @State private var selectedType: CashFlowType
     @State private var amount: String = ""
     @State private var notes: String = ""
     @State private var transactionDate: Date = Date()
@@ -24,10 +82,12 @@ struct ExpenseView: View {
     // TODO: 從匯率服務獲取即時匯率
     private let usdToTwdRate: Decimal = 32 // 臨時固定值
     
-    init(account: Account, viewModel: AccountDetailViewModel, editingTransaction: Transaction? = nil) {
+    init(account: Account, viewModel: AccountDetailViewModel, initialType: CashFlowType = .income, editingTransaction: Transaction? = nil) {
         self.account = account
         self.viewModel = viewModel
         self.editingTransaction = editingTransaction
+        self.initialType = initialType
+        _selectedType = State(initialValue: initialType)
     }
     
     // MARK: - View Components
@@ -37,26 +97,40 @@ struct ExpenseView: View {
                 // 圖標
                 ZStack {
                     Circle()
-                        .fill(Color.lossRed.opacity(0.15))
+                        .fill(selectedType.themeColor.opacity(0.15))
                         .frame(width: 48, height: 48)
                     
-                    Image(systemName: "arrow.up.circle.fill")
+                    Image(systemName: selectedType.iconName)
                         .font(.system(size: 24))
-                        .foregroundColor(.lossRed)
+                        .foregroundColor(selectedType.themeColor)
                 }
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("支出")
+                    Text(selectedType.title)
                         .font(.title2)
                         .fontWeight(.bold)
                     
-                    Text("記錄此帳戶的現金支出。")
+                    Text(selectedType.subtitle)
                         .font(.subheadline)
                         .foregroundColor(.secondaryText)
                 }
                 
                 Spacer()
             }
+            
+            Text("選擇本次紀錄類型")
+                .font(.caption)
+                .foregroundColor(.secondaryText)
+            
+            CardView(padding: 8, cornerRadius: 12) {
+                Picker("", selection: $selectedType) {
+                    Label("收入", systemImage: "arrow.up").tag(CashFlowType.income)
+                    Label("支出", systemImage: "arrow.down").tag(CashFlowType.expense)
+                }
+                .pickerStyle(.segmented)
+                .font(.subheadline)
+            }
+            .disabled(editingTransaction != nil)
         }
         .padding(.horizontal)
         .padding(.top)
@@ -68,7 +142,7 @@ struct ExpenseView: View {
             HStack(spacing: 8) {
                 Image(systemName: "wallet.pass.fill")
                     .font(.system(size: 16))
-                    .foregroundColor(.lossRed)
+                    .foregroundColor(selectedType.themeColor)
                 Text("目前帳戶")
                     .font(.subheadline)
                     .fontWeight(.semibold)
@@ -103,7 +177,7 @@ struct ExpenseView: View {
             HStack(spacing: 8) {
                 Image(systemName: "dollarsign.circle.fill")
                     .font(.system(size: 16))
-                    .foregroundColor(.lossRed)
+                    .foregroundColor(selectedType.themeColor)
                 Text("金額 (\(account.currency.rawValue))")
                     .font(.subheadline)
                     .fontWeight(.semibold)
@@ -143,7 +217,7 @@ struct ExpenseView: View {
             HStack(spacing: 8) {
                 Image(systemName: "calendar")
                     .font(.system(size: 16))
-                    .foregroundColor(.lossRed)
+                    .foregroundColor(selectedType.themeColor)
                 Text("日期")
                     .font(.subheadline)
                     .fontWeight(.semibold)
@@ -170,7 +244,7 @@ struct ExpenseView: View {
             HStack(spacing: 8) {
                 Image(systemName: "note.text")
                     .font(.system(size: 16))
-                    .foregroundColor(.lossRed)
+                    .foregroundColor(selectedType.themeColor)
                 Text("備註 (選填)")
                     .font(.subheadline)
                     .fontWeight(.semibold)
@@ -184,7 +258,7 @@ struct ExpenseView: View {
                         .foregroundColor(.secondaryText)
                         .padding(.top, 2)
                     
-                    TextField("例如:餐費", text: $notes, axis: .vertical)
+                    TextField(selectedType.notesPlaceholder, text: $notes, axis: .vertical)
                         .lineLimit(3...6)
                 }
             }
@@ -216,7 +290,7 @@ struct ExpenseView: View {
                     errorMessageSection
                 }
             }
-            .navigationTitle(editingTransaction != nil ? "編輯支出" : "支出")
+            .navigationTitle(editingTransaction != nil ? "編輯\(selectedType.title)" : "收/支")
             .navigationBarTitleDisplayMode(.inline)
             .tint(.appPrimary)
             .toolbar {
@@ -232,18 +306,18 @@ struct ExpenseView: View {
             }
             .safeAreaInset(edge: .bottom) {
                 Button(action: {
-                    saveExpense()
+                    saveCashFlow()
                 }) {
                     HStack(spacing: 8) {
-                        Image(systemName: "arrow.up")
+                        Image(systemName: selectedType.actionIcon)
                             .font(.system(size: 18))
-                        Text(editingTransaction != nil ? "確認修改" : "確認支出")
+                        Text(editingTransaction != nil ? "確認修改" : "確認\(selectedType.title)")
                             .font(.headline)
                     }
                     .foregroundColor(AppColors.actionForeground)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
-                    .background(isValid ? Color.lossRed : AppColors.disabledBackground)
+                    .background(isValid ? selectedType.themeColor : AppColors.disabledBackground)
                     .cornerRadius(12)
                 }
                 .disabled(!isValid)
@@ -257,7 +331,14 @@ struct ExpenseView: View {
                     amount = transaction.quantity.formatted(fractionDigits: 2)
                     notes = transaction.notes ?? ""
                     transactionDate = transaction.transactionDate
+                    if transaction.type == .withdraw {
+                        selectedType = .expense
+                    } else {
+                        selectedType = .income
+                    }
                     calculateTwdEquivalent(amount)
+                } else {
+                    selectedType = initialType
                 }
             }
         }
@@ -289,12 +370,6 @@ struct ExpenseView: View {
             errorMessage = "金額必須大於 0"
             return
         }
-        
-        // 檢查支出金額不能大於現金餘額
-        if amountValue > viewModel.cashBalance {
-            errorMessage = "支出金額不能大於現金餘額 \(viewModel.cashBalance.formatted(currency: account.currency))"
-            return
-        }
     }
     
     private func calculateTwdEquivalent(_ amountString: String) {
@@ -313,14 +388,13 @@ struct ExpenseView: View {
     private var isValid: Bool {
         guard let amountValue = Decimal(string: amount),
               !amount.isEmpty,
-              amountValue > 0,
-              amountValue <= viewModel.cashBalance else {
+              amountValue > 0 else {
             return false
         }
         return true
     }
     
-    private func saveExpense() {
+    private func saveCashFlow() {
         guard let amountValue = Decimal(string: amount), amountValue > 0 else { return }
         
         Task {
@@ -338,7 +412,7 @@ struct ExpenseView: View {
                 // 新增模式：建立新交易
                 let transaction = Transaction(
                     accountId: account.id,
-                    type: .withdraw,
+                    type: selectedType.transactionType,
                     assetType: .cash,
                     symbol: "CASH",
                     quantity: amountValue,
@@ -358,7 +432,7 @@ struct ExpenseView: View {
 }
 
 #Preview {
-    ExpenseView(
+    CashFlowView(
         account: Account(userId: "test", name: "測試帳戶", type: .cash, currency: .TWD),
         viewModel: AccountDetailViewModel()
     )

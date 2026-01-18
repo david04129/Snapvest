@@ -211,5 +211,67 @@ class HoldingCalculator {
         
         return realizedGainLoss
     }
+
+    /// 計算已實現損益（依貨幣分組，使用 FIFO）
+    static func calculateRealizedGainLossByCurrency(from transactions: [Transaction]) -> [Currency: Decimal] {
+        var realizedByCurrency: [Currency: Decimal] = [:]
+        var holdingLots: [String: [HoldingLot]] = [:]
+        
+        let sortedTransactions = transactions.sorted { $0.transactionDate < $1.transactionDate }
+        
+        for transaction in sortedTransactions {
+            let key = "\(transaction.assetType.rawValue)_\(transaction.symbol)"
+            
+            switch transaction.type {
+            case .buy:
+                let costPerUnit = transaction.totalAmountWithFee / transaction.quantity
+                let lot = HoldingLot(
+                    quantity: transaction.quantity,
+                    costPerUnit: costPerUnit,
+                    transactionDate: transaction.transactionDate
+                )
+                
+                if holdingLots[key] == nil {
+                    holdingLots[key] = []
+                }
+                holdingLots[key]?.append(lot)
+                
+            case .sell:
+                if var lots = holdingLots[key], !lots.isEmpty {
+                    var remainingToSell = transaction.quantity
+                    let sellPricePerUnit = transaction.totalAmountWithFee / transaction.quantity
+                    
+                    while remainingToSell > 0 && !lots.isEmpty {
+                        let oldestLot = lots[0]
+                        
+                        if oldestLot.quantity <= remainingToSell {
+                            let costBasis = oldestLot.quantity * oldestLot.costPerUnit
+                            let proceeds = oldestLot.quantity * sellPricePerUnit
+                            let gainLoss = proceeds - costBasis
+                            realizedByCurrency[transaction.currency, default: 0] += gainLoss
+                            
+                            remainingToSell -= oldestLot.quantity
+                            lots.removeFirst()
+                        } else {
+                            let costBasis = remainingToSell * oldestLot.costPerUnit
+                            let proceeds = remainingToSell * sellPricePerUnit
+                            let gainLoss = proceeds - costBasis
+                            realizedByCurrency[transaction.currency, default: 0] += gainLoss
+                            
+                            lots[0].quantity -= remainingToSell
+                            remainingToSell = 0
+                        }
+                    }
+                    
+                    holdingLots[key] = lots.isEmpty ? nil : lots
+                }
+                
+            default:
+                break
+            }
+        }
+        
+        return realizedByCurrency
+    }
 }
 

@@ -13,6 +13,7 @@ struct AssetsView: View {
     @State private var userId: String = "test-user-id"
     @State private var selectedSort: SortOption = .totalAssets
     @State private var selectedHolding: HoldingNavigationItem?
+    @State private var showingNewTradeFlow = false
     
     enum SortOption: String, CaseIterable {
         case totalAssets = "總資產由高到低"
@@ -94,8 +95,8 @@ struct AssetsView: View {
             .background(Color.mainBackground)
             .navigationBarBackButtonHidden(true)
             .safeAreaInset(edge: .top) {
-                customHeaderBarWithAddButton(icon: "chart.bar.fill", title: "資產", addButtonText: "新增資產", addButtonAction: {
-                    // TODO: 新增資產的功能
+                customHeaderBarWithAddButton(icon: "chart.bar.fill", title: "資產", addButtonText: "新增交易", addButtonAction: {
+                    showingNewTradeFlow = true
                 })
             }
             .refreshable {
@@ -104,6 +105,11 @@ struct AssetsView: View {
             .task {
                 await viewModel.loadData(userId: userId)
             }
+            .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { _ in
+                Task {
+                    await viewModel.loadData(userId: userId)
+                }
+            }
             .navigationDestination(item: $selectedHolding) { item in
                 HoldingDetailView(
                     aggregatedHolding: item.aggregatedHolding,
@@ -111,6 +117,13 @@ struct AssetsView: View {
                     totalAssets: item.totalAssets,
                     totalInvestments: item.totalInvestments
                 )
+            }
+            .sheet(isPresented: $showingNewTradeFlow, onDismiss: {
+                Task {
+                    await viewModel.loadData(userId: userId)
+                }
+            }) {
+                NewTradeFlowView()
             }
         }
     }
@@ -504,7 +517,7 @@ struct AssetCategoryCardView: View {
         }
         .background(Color.cardBackground)
         .cornerRadius(16)
-        .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 2)
+        .shadow(color: AppColors.shadowMedium, radius: 8, x: 0, y: 2)
     }
 }
 
@@ -569,7 +582,7 @@ struct CategoryPieChart: View {
                         Text(item.name)
                             .font(.caption2)
                             .fontWeight(.semibold)
-                            .foregroundColor(.white)
+                            .foregroundColor(AppColors.actionForeground)
                             .shadow(color: .black.opacity(0.3), radius: 1)
                     }
                 }
@@ -1032,7 +1045,7 @@ struct AllHoldingCard: View {
                     Spacer()
                 }
             )
-            .shadow(color: Color.black.opacity(0.04), radius: 6, x: 0, y: 1)
+            .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 1)
         }
         .buttonStyle(PlainButtonStyle())
     }
@@ -1200,7 +1213,7 @@ struct CategoryHoldingRow: View {
                         .frame(width: 20, height: 20)
                         .overlay(
                             Circle()
-                                .stroke(isColorPickerVisible ? Color.appPrimary : Color.primary.opacity(0.2), lineWidth: isColorPickerVisible ? 2.5 : 1)
+                                .stroke(isColorPickerVisible ? Color.appPrimary : AppColors.strokeMuted, lineWidth: isColorPickerVisible ? 2.5 : 1)
                         )
                         .padding(2) // 添加內邊距避免邊框被切
                 }
@@ -1236,7 +1249,7 @@ struct CategoryHoldingRow: View {
             .padding(.horizontal, 12)
             .background(Color.cardBackground)
             .cornerRadius(12)
-            .shadow(color: Color.black.opacity(0.02), radius: 4, x: 0, y: 1)
+            .shadow(color: AppColors.shadowLow, radius: 4, x: 0, y: 1)
             
             // 顏色選擇器（內聯顯示）
             if isColorPickerVisible {
@@ -1304,7 +1317,7 @@ struct InlineColorPicker: View {
                             )
                             .overlay(
                                 Circle()
-                                    .stroke(Color.primary.opacity(0.1), lineWidth: 0.5)
+                                    .stroke(AppColors.strokeSubtle, lineWidth: 0.5)
                             )
                             .padding(2) // 添加內邊距避免邊框被切
                             .shadow(color: isSelected(option.color) ? option.color.opacity(0.3) : .clear, radius: 2)
@@ -1412,7 +1425,7 @@ struct ColorPickerSheet: View {
                         .frame(width: 60, height: 60)
                         .overlay(
                             Circle()
-                                .stroke(Color.primary.opacity(0.2), lineWidth: 2)
+                                .stroke(AppColors.strokeMuted, lineWidth: 2)
                         )
                 }
                 .padding(.vertical, 16)
@@ -1450,7 +1463,7 @@ struct ColorPickerSheet: View {
                 }) {
                     Text("確認")
                         .font(.headline)
-                        .foregroundColor(.white)
+                        .foregroundColor(AppColors.actionForeground)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
                         .background(selectedColor)

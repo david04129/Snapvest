@@ -71,6 +71,49 @@ struct Snapshot: Identifiable, Codable {
     }
 }
 
+// MARK: - 首頁快照
+struct HomeDashboardSnapshot: Identifiable, Codable, Equatable {
+    let id: String
+    let userId: String
+    let netWorth: Decimal
+    let totalLiabilities: Decimal
+    let totalAssets: Decimal
+    let totalInvestmentsCost: Decimal
+    let totalCash: Decimal
+    let twdCash: Decimal
+    let usdCash: Decimal
+    let realizedGainLossTWD: Decimal
+    let realizedGainLossUSD: Decimal
+    let lastUpdated: Date
+    
+    init(
+        userId: String,
+        netWorth: Decimal,
+        totalLiabilities: Decimal,
+        totalAssets: Decimal,
+        totalInvestmentsCost: Decimal,
+        totalCash: Decimal,
+        twdCash: Decimal,
+        usdCash: Decimal,
+        realizedGainLossTWD: Decimal,
+        realizedGainLossUSD: Decimal,
+        lastUpdated: Date = Date()
+    ) {
+        self.userId = userId
+        self.id = userId
+        self.netWorth = netWorth
+        self.totalLiabilities = totalLiabilities
+        self.totalAssets = totalAssets
+        self.totalInvestmentsCost = totalInvestmentsCost
+        self.totalCash = totalCash
+        self.twdCash = twdCash
+        self.usdCash = usdCash
+        self.realizedGainLossTWD = realizedGainLossTWD
+        self.realizedGainLossUSD = realizedGainLossUSD
+        self.lastUpdated = lastUpdated
+    }
+}
+
 /// 快照詳細資料
 struct SnapshotData: Codable {
     var accounts: [String: AccountSnapshot]?

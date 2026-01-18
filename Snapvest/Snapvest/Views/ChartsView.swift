@@ -46,7 +46,7 @@ struct TrendChartView: View {
             // TODO: 實作走勢圖（使用 Charts 框架）
             ZStack {
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.gray.opacity(0.1))
+                    .fill(AppColors.placeholderFill)
                     .frame(height: 200)
                 
                 VStack {
@@ -75,7 +75,7 @@ struct InvestmentVsAssetChartView: View {
             // TODO: 實作炫風圖
             ZStack {
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.gray.opacity(0.1))
+                    .fill(AppColors.placeholderFill)
                     .frame(height: 200)
                 
                 VStack {

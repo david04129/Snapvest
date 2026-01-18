@@ -137,10 +137,10 @@ struct LiabilityDetailView: View {
                         Text("交易紀錄")
                     }
                     .font(.subheadline)
-                    .foregroundColor(.orange)
+                    .foregroundColor(AppColors.noticeForeground)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
-                    .background(Color.orange.opacity(0.1))
+                    .background(AppColors.noticeBackground)
                     .cornerRadius(8)
                 }
             }
@@ -154,7 +154,7 @@ struct LiabilityDetailView: View {
                     Text("進行還款")
                 }
                 .font(.headline)
-                .foregroundColor(.white)
+                .foregroundColor(AppColors.actionForeground)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
                 .background(Color.lossRed)

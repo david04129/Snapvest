@@ -57,6 +57,12 @@ struct Transaction: Identifiable, Codable, Equatable {
     // 匯率（跨幣別交易時使用，格式：USD to TWD，1 USD = exchangeRate TWD）
     var exchangeRate: Decimal?    // 交易當下的匯率（跨幣別買賣股票、轉帳、還款時使用）
     
+    // 已實現損益（僅用於賣出交易）
+    var realizedGainLoss: Decimal?
+    var realizedGainLossPercent: Decimal?
+    var realizedCostBasis: Decimal?
+    var realizedCostPerUnit: Decimal?
+    
     // 還款前狀態（僅用於 .repayment 類型，用於刪除時恢復）
     var beforeRepaymentBalance: Decimal?  // 還款前的剩餘本金
     var beforeRepaymentInterest: Decimal?  // 還款前的剩餘利息
@@ -88,7 +94,11 @@ struct Transaction: Identifiable, Codable, Equatable {
          beforeRepaymentTotalPeriods: Int? = nil,
          principalAmount: Decimal? = nil,
          interestAmount: Decimal? = nil,
-         savedInterest: Decimal? = nil) {
+         savedInterest: Decimal? = nil,
+         realizedGainLoss: Decimal? = nil,
+         realizedGainLossPercent: Decimal? = nil,
+         realizedCostBasis: Decimal? = nil,
+         realizedCostPerUnit: Decimal? = nil) {
         self.id = id
         self.accountId = accountId
         self.type = type
@@ -104,6 +114,10 @@ struct Transaction: Identifiable, Codable, Equatable {
         self.updatedAt = updatedAt
         self.targetAccountId = targetAccountId
         self.exchangeRate = exchangeRate
+        self.realizedGainLoss = realizedGainLoss
+        self.realizedGainLossPercent = realizedGainLossPercent
+        self.realizedCostBasis = realizedCostBasis
+        self.realizedCostPerUnit = realizedCostPerUnit
         
         // 計算並儲存交易金額
         let calculatedTotalAmount = quantity * price

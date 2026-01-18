@@ -1088,10 +1088,10 @@ struct DebtAccountDetailsFormView: View {
                     Text("建立帳戶")
                         .font(.headline)
                 }
-                .foregroundColor(.white)
+                .foregroundColor(AppColors.actionForeground)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
-                .background(isDebtFormValid ? accountType.color : Color.gray)
+                .background(isDebtFormValid ? accountType.color : AppColors.disabledBackground)
                 .cornerRadius(12)
             }
             .disabled(!isDebtFormValid)
@@ -1400,10 +1400,10 @@ struct AccountDetailsFormView: View {
                     Text("建立帳戶")
                         .font(.headline)
                 }
-                .foregroundColor(.white)
+                .foregroundColor(AppColors.actionForeground)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
-                .background(name.isEmpty ? Color.gray : accountType.color)
+                .background(name.isEmpty ? AppColors.disabledBackground : accountType.color)
                 .cornerRadius(12)
             }
             .disabled(name.isEmpty)

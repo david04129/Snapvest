@@ -41,6 +41,7 @@ class TransactionsViewModel: ObservableObject {
     func createTransaction(_ transaction: Transaction) async {
         do {
             try await dataService.createTransaction(transaction)
+            await updateSnapshotsIfNeeded(for: transaction.accountId)
             // 重新計算持股
             await updateHoldings(accountId: transaction.accountId)
             await loadTransactions(userId: accounts.first?.userId ?? "")
@@ -48,10 +49,60 @@ class TransactionsViewModel: ObservableObject {
             errorMessage = "建立交易失敗：\(error.localizedDescription)"
         }
     }
+
+    func createSellTransaction(
+        account: Account,
+        assetType: AssetType,
+        symbol: String,
+        quantity: Decimal,
+        price: Decimal,
+        currency: Currency,
+        exchangeRate: Decimal?,
+        transactionDate: Date,
+        averageCostFallback: Decimal
+    ) async {
+        do {
+            let costBasis = try await calculateCostBasis(
+                userId: account.userId,
+                accountId: account.id,
+                assetType: assetType,
+                symbol: symbol,
+                quantity: quantity,
+                averageCostFallback: averageCostFallback
+            )
+            let proceeds = quantity * price
+            let realizedGainLoss = proceeds - costBasis
+            let realizedGainLossPercent = costBasis > 0 ? (realizedGainLoss / costBasis) * 100 : nil
+            let realizedCostPerUnit = quantity > 0 ? costBasis / quantity : nil
+
+            let transaction = Transaction(
+                accountId: account.id,
+                type: .sell,
+                assetType: assetType,
+                symbol: symbol,
+                quantity: quantity,
+                price: price,
+                currency: currency,
+                fee: 0,
+                notes: nil,
+                transactionDate: transactionDate,
+                exchangeRate: exchangeRate,
+                realizedGainLoss: realizedGainLoss,
+                realizedGainLossPercent: realizedGainLossPercent,
+                realizedCostBasis: costBasis,
+                realizedCostPerUnit: realizedCostPerUnit
+            )
+            
+            await createTransaction(transaction)
+        } catch {
+            errorMessage = "建立賣出交易失敗：\(error.localizedDescription)"
+        }
+    }
     
     func updateTransaction(_ transaction: Transaction) async {
         do {
             try await dataService.updateTransaction(transaction)
+            await updateSnapshotsIfNeeded(for: transaction.accountId)
             await updateHoldings(accountId: transaction.accountId)
             await loadTransactions(userId: accounts.first?.userId ?? "")
         } catch {
@@ -276,6 +327,7 @@ class TransactionsViewModel: ObservableObject {
             }
             
             // 重新載入交易以確保數據一致性（這會更新本地數組）
+            await updateSnapshotsIfNeeded(for: transaction.accountId)
             await loadTransactions(userId: userId)
             // 清除錯誤訊息（如果刪除成功）
             await MainActor.run {
@@ -288,6 +340,60 @@ class TransactionsViewModel: ObservableObject {
             // 如果刪除失敗，重新載入數據以恢復狀態
             await loadTransactions(userId: accounts.first?.userId ?? "test-user-id")
         }
+    }
+
+    private func updateSnapshotsIfNeeded(for accountId: String) async {
+        if let userId = await resolveUserId(for: accountId) {
+            do {
+                let priceService = PriceService(dataService: dataService)
+                _ = try await SnapshotUpdater.rebuildSnapshots(
+                    userId: userId,
+                    dataService: dataService,
+                    priceService: priceService
+                )
+                await MainActor.run {
+                    NotificationCenter.default.post(name: .snapshotsDidUpdate, object: nil)
+                }
+            } catch {
+                // 快照更新失敗不影響交易流程
+            }
+        }
+    }
+
+    private func resolveUserId(for accountId: String) async -> String? {
+        if let account = accounts.first(where: { $0.id == accountId }) {
+            return account.userId
+        }
+        if let fetchedAccounts = try? await dataService.fetchAccounts(userId: "test-user-id"),
+           let account = fetchedAccounts.first(where: { $0.id == accountId }) {
+            return account.userId
+        }
+        return nil
+    }
+
+    private func calculateCostBasis(
+        userId: String,
+        accountId: String,
+        assetType: AssetType,
+        symbol: String,
+        quantity: Decimal,
+        averageCostFallback: Decimal
+    ) async throws -> Decimal {
+        if let snapshot = try await dataService.fetchAggregatedHoldingSnapshot(userId: userId, assetType: assetType, symbol: symbol),
+           let accountLots = snapshot.fifoLotsByAccount.first(where: { $0.accountId == accountId }) {
+            var remaining = quantity
+            var costBasis: Decimal = 0
+            for lot in accountLots.lots {
+                if remaining <= 0 { break }
+                let used = min(remaining, lot.remainingQuantity)
+                costBasis += used * lot.costPerUnit
+                remaining -= used
+            }
+            if costBasis > 0 {
+                return costBasis
+            }
+        }
+        return averageCostFallback * quantity
     }
     
     /// 檢查是否為轉帳交易

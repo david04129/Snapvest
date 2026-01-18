@@ -48,44 +48,35 @@ class AssetsViewModel: ObservableObject {
         errorMessage = nil
         
         do {
-            // 並行載入所有資料
-            async let accountsTask = dataService.fetchAccounts(userId: userId)
-            async let transactionsTask = dataService.fetchAllTransactions(userId: userId)
+            let fetchedAccounts = try await dataService.fetchAccounts(userId: userId)
+            let accountSnapshots = try await loadAccountSnapshots(accounts: fetchedAccounts)
+            var aggregated = try await dataService.fetchAggregatedHoldingSnapshots(userId: userId, assetType: nil)
+            let symbolInfos = await loadSymbolInfos(userId: userId, accountSnapshots: accountSnapshots, aggregatedHoldings: aggregated)
+            let assetPriceSnapshots = try await dataService.fetchAssetPriceSnapshots(symbols: symbolInfos)
             
-            let fetchedAccounts = try await accountsTask
-            let allTransactions = try await transactionsTask
-            
-            // 臨時方案：從交易記錄計算 AccountSnapshot（未來可以從快照系統讀取）
-            let accountSnapshots = calculateAccountSnapshotsFromTransactions(
-                accounts: fetchedAccounts,
-                transactions: allTransactions
-            )
-            
-            // 載入所有持股的價格快照
-            let assetPriceSnapshots = try await loadAssetPriceSnapshots(
-                userId: userId,
-                accounts: fetchedAccounts,
-                transactions: allTransactions
-            )
-            
-            // 計算跨帳戶合併持股快照
-            let aggregated = HoldingCalculator.calculateAggregatedHoldings(
-                userId: userId,
-                accountSnapshots: accountSnapshots,
-                accounts: fetchedAccounts,
-                transactions: allTransactions,
-                assetPriceSnapshots: assetPriceSnapshots
-            )
-            
-            self.aggregatedHoldings = aggregated
-            self.assetPriceSnapshots = assetPriceSnapshots
-            
-            // 計算總覽數據（傳入 accountSnapshots 以計算總現金）
-            await calculateSummary(
-                assetPriceSnapshots: assetPriceSnapshots,
-                accountSnapshots: accountSnapshots,
-                accounts: fetchedAccounts
-            )
+            if aggregated.isEmpty || accountSnapshots.isEmpty || assetPriceSnapshots.isEmpty {
+                let bundle = try await SnapshotUpdater.rebuildSnapshots(
+                    userId: userId,
+                    dataService: dataService,
+                    priceService: priceService
+                )
+                aggregated = bundle.aggregatedHoldings
+                self.assetPriceSnapshots = bundle.assetPriceSnapshots
+                self.aggregatedHoldings = bundle.aggregatedHoldings
+                await calculateSummary(
+                    assetPriceSnapshots: bundle.assetPriceSnapshots,
+                    accountSnapshots: bundle.accountSnapshots,
+                    accounts: fetchedAccounts
+                )
+            } else {
+                self.assetPriceSnapshots = assetPriceSnapshots
+                self.aggregatedHoldings = aggregated
+                await calculateSummary(
+                    assetPriceSnapshots: assetPriceSnapshots,
+                    accountSnapshots: accountSnapshots,
+                    accounts: fetchedAccounts
+                )
+            }
             
         } catch {
             errorMessage = "載入資料失敗：\(error.localizedDescription)"
@@ -93,85 +84,47 @@ class AssetsViewModel: ObservableObject {
         
         isLoading = false
     }
-    
-    /// 臨時方案：從交易記錄計算 AccountSnapshot（未來可以從快照系統讀取）
-    private func calculateAccountSnapshotsFromTransactions(
-        accounts: [Account],
-        transactions: [Transaction]
-    ) -> [AccountSnapshot] {
+
+    private func loadAccountSnapshots(accounts: [Account]) async throws -> [AccountSnapshot] {
         var snapshots: [AccountSnapshot] = []
-        
-        // 獲取所有帳戶的交易（包含轉帳/還款的轉入交易）
-        // 建立一個包含所有交易的集合（避免重複）
-        var allTransactionsSet: Set<String> = []
-        var allTransactions: [Transaction] = transactions
-        
-        // 添加轉帳/還款的轉入交易（避免重複）
         for account in accounts {
-            let incomingTransactions = transactions.filter { transaction in
-                (transaction.type == .transfer || transaction.type == .repayment) &&
-                transaction.targetAccountId == account.id &&
-                transaction.accountId != account.id &&
-                !allTransactionsSet.contains(transaction.id)
-            }
-            for transaction in incomingTransactions {
-                allTransactionsSet.insert(transaction.id)
-                allTransactions.append(transaction)
+            if let snapshot = try await dataService.fetchAccountSnapshot(accountId: account.id) {
+                snapshots.append(snapshot)
             }
         }
-        
-        // 為每個帳戶計算快照
-        for account in accounts {
-            // 過濾出該帳戶的交易（包含轉入交易）
-            let accountTransactions = allTransactions.filter { transaction in
-                transaction.accountId == account.id || 
-                ((transaction.type == .transfer || transaction.type == .repayment) &&
-                 transaction.targetAccountId == account.id)
-            }
-            
-            // 計算現金餘額
-            let cashBalance = CashCalculator.calculateCash(
-                accountId: account.id,
-                transactions: accountTransactions,
-                accounts: accounts
-            )
-            
-            // 計算持股（使用 HoldingCalculator）
-            let holdings = HoldingCalculator.calculateHoldings(from: accountTransactions)
-            
-            // 轉換為 HoldingSnapshotItem
-            let holdingItems = holdings.map { holding -> HoldingSnapshotItem in
-                HoldingSnapshotItem(
-                    id: holding.id,
-                    assetType: holding.assetType,
-                    symbol: holding.symbol,
-                    name: holding.name,
-                    quantity: holding.quantity,
-                    averageCost: holding.averageCost,
-                    currency: holding.currency,
-                    lastUpdated: holding.lastUpdated
-                )
-            }
-            
-            // 找到最後一筆交易日期
-            let lastTransactionDate = accountTransactions
-                .max(by: { $0.transactionDate < $1.transactionDate })?
-                .transactionDate
-            
-            let snapshot = AccountSnapshot(
-                accountId: account.id,
-                cashBalance: cashBalance,
-                holdings: holdingItems.isEmpty ? nil : holdingItems,
-                lastUpdated: Date(),
-                lastTransactionDate: lastTransactionDate,
-                version: 1
-            )
-            
-            snapshots.append(snapshot)
-        }
-        
         return snapshots
     }
+
+    private func loadSymbolInfos(
+        userId: String,
+        accountSnapshots: [AccountSnapshot],
+        aggregatedHoldings: [AggregatedHoldingSnapshot]
+    ) async -> [SymbolInfo] {
+        if let userSnapshot = try? await dataService.fetchUserHoldingsSnapshot(userId: userId) {
+            if !userSnapshot.symbols.isEmpty {
+                return userSnapshot.symbols
+            }
+        }
+        
+        if !aggregatedHoldings.isEmpty {
+            return aggregatedHoldings.map { SymbolInfo(assetType: $0.assetType, symbol: $0.symbol) }
+        }
+        
+        var symbolInfos: [SymbolInfo] = []
+        var symbolSet: Set<String> = []
+        for snapshot in accountSnapshots {
+            guard let holdings = snapshot.holdings else { continue }
+            for holding in holdings {
+                let key = "\(holding.assetType.rawValue)_\(holding.symbol)"
+                if symbolSet.contains(key) { continue }
+                symbolSet.insert(key)
+                symbolInfos.append(SymbolInfo(assetType: holding.assetType, symbol: holding.symbol))
+            }
+        }
+        return symbolInfos
+    }
+    
+    // 計算邏輯已移至 SnapshotUpdater
     
     /// 載入所有持股的價格快照（從 AssetPriceSnapshot 或 PriceService）
     private func loadAssetPriceSnapshots(

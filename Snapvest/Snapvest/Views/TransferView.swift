@@ -457,10 +457,10 @@ struct TransferView: View {
                         Text(editingTransaction != nil ? "確認修改" : "確認轉帳")
                             .font(.headline)
                     }
-                    .foregroundColor(.white)
+                    .foregroundColor(AppColors.actionForeground)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
-                    .background(isValid ? Color.appPrimary : Color.gray)
+                    .background(isValid ? Color.appPrimary : AppColors.disabledBackground)
                     .cornerRadius(12)
                 }
                 .disabled(!isValid)

@@ -538,10 +538,10 @@ struct RepaymentView: View {
                         Text(editingTransaction != nil ? "確認修改" : "確認還款")
                             .font(.headline)
                     }
-                            .foregroundColor(.white)
+                            .foregroundColor(AppColors.actionForeground)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
-                    .background(isValid ? debtThemeGradient : LinearGradient(gradient: Gradient(colors: [Color.gray, Color.gray]), startPoint: .leading, endPoint: .trailing))
+                    .background(isValid ? debtThemeGradient : LinearGradient(gradient: Gradient(colors: [AppColors.disabledBackground, AppColors.disabledBackground]), startPoint: .leading, endPoint: .trailing))
                             .cornerRadius(12)
                 }
                 .disabled(!isValid)
