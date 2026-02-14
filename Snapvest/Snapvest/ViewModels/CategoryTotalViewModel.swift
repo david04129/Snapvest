@@ -61,8 +61,8 @@ class CategoryTotalViewModel: ObservableObject {
                 // 計算持股
                 let calculatedHoldings = HoldingCalculator.calculateHoldings(from: transactions)
                 
-                // 載入當前價格並計算持股市值
-                var holdingsValue: Decimal = 0
+                // 載入當前價格並計算持股市值（換算為帳戶貨幣後再加總）
+                var holdingsValueInAccountCurrency: Decimal = 0
                 for holding in calculatedHoldings {
                     let currentPrice = try await priceService.fetchCurrentPrice(
                         assetType: holding.assetType,
@@ -70,21 +70,28 @@ class CategoryTotalViewModel: ObservableObject {
                     )
                     
                     if let price = currentPrice {
-                        let marketValue = holding.quantity * price
-                        holdingsValue += marketValue
+                        var marketValue = holding.quantity * price
+                        // 跨幣別：持股市值換算為帳戶貨幣
+                        if holding.currency != account.currency {
+                            if holding.currency == .USD && account.currency == .TWD {
+                                marketValue = marketValue * usdToTwdRate
+                            } else if holding.currency == .TWD && account.currency == .USD {
+                                marketValue = usdToTwdRate > 0 ? marketValue / usdToTwdRate : marketValue
+                            }
+                        }
+                        holdingsValueInAccountCurrency += marketValue
                     }
                 }
                 
-                // 計算帳戶總資產（原始貨幣）
-                let accountTotal = cashBalance + holdingsValue
+                // 計算帳戶總資產（已統一為帳戶貨幣）
+                let accountTotal = cashBalance + holdingsValueInAccountCurrency
                 
-                // 轉換為 TWD
+                // 轉換為 TWD 加總
                 if account.currency == .TWD {
                     total += accountTotal
                 } else if account.currency == .USD {
                     total += accountTotal * usdToTwdRate
                 } else {
-                    // 其他貨幣，暫時不轉換
                     total += accountTotal
                 }
             } catch {

@@ -57,6 +57,9 @@ struct Transaction: Identifiable, Codable, Equatable {
     // 匯率（跨幣別交易時使用，格式：USD to TWD，1 USD = exchangeRate TWD）
     var exchangeRate: Decimal?    // 交易當下的匯率（跨幣別買賣股票、轉帳、還款時使用）
     
+    // 買入時是否從帳戶扣款（nil 或 true = 扣款，false = 不扣款，用於外部資金買入等情境）
+    var deductFromAccount: Bool?
+    
     // 已實現損益（僅用於賣出交易）
     var realizedGainLoss: Decimal?
     var realizedGainLossPercent: Decimal?
@@ -88,6 +91,7 @@ struct Transaction: Identifiable, Codable, Equatable {
          updatedAt: Date = Date(),
          targetAccountId: String? = nil,
          exchangeRate: Decimal? = nil,
+         deductFromAccount: Bool? = true,
          beforeRepaymentBalance: Decimal? = nil,
          beforeRepaymentInterest: Decimal? = nil,
          beforeRepaymentPaidPeriods: Int? = nil,
@@ -114,6 +118,7 @@ struct Transaction: Identifiable, Codable, Equatable {
         self.updatedAt = updatedAt
         self.targetAccountId = targetAccountId
         self.exchangeRate = exchangeRate
+        self.deductFromAccount = deductFromAccount
         self.realizedGainLoss = realizedGainLoss
         self.realizedGainLossPercent = realizedGainLossPercent
         self.realizedCostBasis = realizedCostBasis

@@ -29,3 +29,9 @@ Pods/
 # Backup files
 *.backup
 *.bak
+
+# Scripts output (generated symbols files)
+scripts/output/
+
+# Supabase secrets (never commit)
+**/SupabaseConfig.secrets.swift

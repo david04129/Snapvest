@@ -74,6 +74,8 @@ class CashCalculator {
             
             guard transaction.accountId == accountId else { continue }
             
+            let account = accounts.first { $0.id == accountId }
+            
             switch transaction.type {
             case .deposit:
                 // 存入：增加現金
@@ -84,12 +86,21 @@ class CashCalculator {
                 cash -= transaction.totalAmountWithFee
                 
             case .buy:
-                // 買入：減少現金（含手續費）
-                cash -= transaction.totalAmountWithFee
+                // 買入：若 deductFromAccount 為 false，不扣款
+                guard transaction.deductFromAccount ?? true else { continue }
+                let deductAmount = amountInAccountCurrency(
+                    transaction: transaction,
+                    account: account
+                )
+                cash -= deductAmount
                 
             case .sell:
-                // 賣出：增加現金（含手續費）
-                cash += transaction.totalAmountWithFee
+                // 賣出：增加現金（含手續費），跨幣別時需換算
+                let addAmount = amountInAccountCurrency(
+                    transaction: transaction,
+                    account: account
+                )
+                cash += addAmount
                 
             case .dividend:
                 // 股利：增加現金
@@ -111,6 +122,42 @@ class CashCalculator {
         }
         
         return cash
+    }
+    
+    /// 將買賣交易金額換算為帳戶貨幣（供交易紀錄餘額計算使用，與 calculateCash 邏輯一致）
+    static func buySellAmountInAccountCurrency(transaction: Transaction, accountCurrency: Currency) -> Decimal {
+        let amount = transaction.totalAmountWithFee
+        guard transaction.currency != accountCurrency,
+              let rate = transaction.exchangeRate, rate > 0 else {
+            return amount
+        }
+        if transaction.currency == .USD && accountCurrency == .TWD {
+            return amount * rate
+        }
+        if transaction.currency == .TWD && accountCurrency == .USD {
+            return amount / rate
+        }
+        return amount
+    }
+    
+    /// 將交易金額換算為帳戶貨幣（用於買入扣款、賣出入帳等跨幣別情境）
+    private static func amountInAccountCurrency(
+        transaction: Transaction,
+        account: Account?
+    ) -> Decimal {
+        let amount = transaction.totalAmountWithFee
+        guard let account = account else { return amount }
+        guard transaction.currency != account.currency,
+              let rate = transaction.exchangeRate, rate > 0 else {
+            return amount
+        }
+        if transaction.currency == .USD && account.currency == .TWD {
+            return amount * rate
+        }
+        if transaction.currency == .TWD && account.currency == .USD {
+            return amount / rate
+        }
+        return amount
     }
     
     /// 計算所有帳戶的總現金（按貨幣分組）

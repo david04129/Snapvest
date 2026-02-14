@@ -9,6 +9,10 @@ import SwiftUI
 
 @main
 struct SnapvestApp: App {
+    init() {
+        SupabaseConfigLoader.configure()
+    }
+    
     var body: some Scene {
         WindowGroup {
             ContentView()

@@ -517,9 +517,14 @@ struct TransactionHistoryRowView: View {
         case .deposit, .dividend:
             return transaction.totalAmount
         case .sell:
-            return transaction.totalAmountWithFee
-        case .withdraw, .buy, .fee, .liability:
+            return CashCalculator.buySellAmountInAccountCurrency(transaction: transaction, accountCurrency: accountCurrency)
+        case .withdraw, .fee, .liability:
             return -transaction.totalAmountWithFee
+        case .buy:
+            if transaction.deductFromAccount ?? true {
+                return -CashCalculator.buySellAmountInAccountCurrency(transaction: transaction, accountCurrency: accountCurrency)
+            }
+            return 0
         case .transfer:
             // 轉帳：判斷是轉出還是轉入
             if transaction.accountId == accountId {
@@ -528,15 +533,20 @@ struct TransactionHistoryRowView: View {
             } else if transaction.targetAccountId == accountId {
                 // 這是轉入帳戶：增加（需要計算轉入金額）
                 if transaction.currency != accountCurrency {
-                    // 跨幣別轉帳：從備註中解析匯率並計算轉入金額
+                    // 跨幣別轉帳：優先使用 transaction.exchangeRate，向後兼容從備註解析
                     var receivedAmount = transaction.totalAmount
-                    if let notes = transaction.notes,
+                    if let rate = transaction.exchangeRate, rate > 0 {
+                        if transaction.currency == .TWD && accountCurrency == .USD {
+                            receivedAmount = transaction.totalAmount / rate
+                        } else if transaction.currency == .USD && accountCurrency == .TWD {
+                            receivedAmount = transaction.totalAmount * rate
+                        }
+                    } else if let notes = transaction.notes,
                        let rateRange = notes.range(of: "匯率: ") {
                         let rateString = String(notes[rateRange.upperBound...])
                         if let rateEnd = rateString.firstIndex(of: ")") {
                             let rateValue = String(rateString[..<rateEnd]).trimmingCharacters(in: .whitespaces)
                             if let rate = Decimal(string: rateValue), rate > 0 {
-                                // 匯率是 1 USD = rate TWD
                                 if transaction.currency == .TWD && accountCurrency == .USD {
                                     receivedAmount = transaction.totalAmount / rate
                                 } else if transaction.currency == .USD && accountCurrency == .TWD {
@@ -640,9 +650,13 @@ class TransactionHistoryViewModel: ObservableObject {
             case .deposit, .dividend:
                 balance += t.totalAmount
             case .sell:
-                balance += t.totalAmountWithFee
-            case .withdraw, .buy, .fee, .liability:
+                balance += CashCalculator.buySellAmountInAccountCurrency(transaction: t, accountCurrency: accountCurrency)
+            case .withdraw, .fee, .liability:
                 balance -= t.totalAmountWithFee
+            case .buy:
+                if t.deductFromAccount ?? true {
+                    balance -= CashCalculator.buySellAmountInAccountCurrency(transaction: t, accountCurrency: accountCurrency)
+                }
             case .transfer:
                 // 轉帳：判斷是轉出還是轉入
                 if t.accountId == accountId {
@@ -651,15 +665,20 @@ class TransactionHistoryViewModel: ObservableObject {
                 } else if t.targetAccountId == accountId {
                     // 這是轉入帳戶：增加（需要計算轉入金額）
                     if t.currency != accountCurrency {
-                        // 跨幣別轉帳：從備註中解析匯率並計算轉入金額
+                        // 跨幣別轉帳：優先使用 transaction.exchangeRate，向後兼容從備註解析
                         var receivedAmount = t.totalAmount
-                        if let notes = t.notes,
+                        if let rate = t.exchangeRate, rate > 0 {
+                            if t.currency == .TWD && accountCurrency == .USD {
+                                receivedAmount = t.totalAmount / rate
+                            } else if t.currency == .USD && accountCurrency == .TWD {
+                                receivedAmount = t.totalAmount * rate
+                            }
+                        } else if let notes = t.notes,
                            let rateRange = notes.range(of: "匯率: ") {
                             let rateString = String(notes[rateRange.upperBound...])
                             if let rateEnd = rateString.firstIndex(of: ")") {
                                 let rateValue = String(rateString[..<rateEnd]).trimmingCharacters(in: .whitespaces)
                                 if let rate = Decimal(string: rateValue), rate > 0 {
-                                    // 匯率是 1 USD = rate TWD
                                     if t.currency == .TWD && accountCurrency == .USD {
                                         receivedAmount = t.totalAmount / rate
                                     } else if t.currency == .USD && accountCurrency == .TWD {

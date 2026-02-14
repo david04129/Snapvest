@@ -177,18 +177,7 @@ struct NewTradeFlowView: View {
             if selectedAction == .sell {
                 SellTradeFormView(market: market)
             } else {
-                CardView {
-                    VStack(spacing: 6) {
-                        Text("買入介面尚未設計")
-                            .font(.subheadline)
-                            .foregroundColor(.secondaryText)
-                        Text("請先完成賣出流程設計。")
-                            .font(.caption)
-                            .foregroundColor(.tertiaryText)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .center)
-                }
-                .padding(.horizontal)
+                BuyTradeFormView(market: market)
             }
         }
     }

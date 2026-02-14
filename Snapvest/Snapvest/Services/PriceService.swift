@@ -22,14 +22,19 @@ class PriceService: PriceServiceProtocol {
     }
     
     func fetchCurrentPrice(assetType: AssetType, symbol: String) async throws -> Decimal? {
-        // 1. 先查資料庫快取（MockDataService 會返回所有模擬價格）
+        // 1. 若 Supabase 已設定，優先從 Supabase 讀取（使用與資產畫面相同的批量 API）
+        if SupabaseConfig.isConfigured {
+            let symbolInfo = SymbolInfo(assetType: assetType, symbol: symbol)
+            if let snapshots = try? await SupabasePriceService.fetchPrices(symbols: [symbolInfo]),
+               let snapshot = snapshots.first {
+                return snapshot.displayPrice
+            }
+        }
+        
+        // 2. 後備：DataService（Mock 或本地快取）
         if let cachedPrice = try await dataService.fetchPrice(assetType: assetType, symbol: symbol, date: nil) {
             return cachedPrice.price
         }
-        
-        // 2. 如果沒有快取，調用 API
-        // TODO: 實作 API 調用
-        // 這裡需要後端服務支援
         
         return nil
     }

@@ -99,6 +99,38 @@ class TransactionsViewModel: ObservableObject {
         }
     }
     
+    func createBuyTransaction(
+        account: Account,
+        assetType: AssetType,
+        symbol: String,
+        symbolName: String?,
+        quantity: Decimal,
+        price: Decimal,
+        currency: Currency,
+        fee: Decimal,
+        exchangeRate: Decimal?,
+        deductFromAccount: Bool,
+        transactionDate: Date
+    ) async {
+        let notes: String? = (symbolName.map { $0.isEmpty ? nil : "買入 \(symbol) - \($0)" } ?? nil)
+        let transaction = Transaction(
+            accountId: account.id,
+            type: .buy,
+            assetType: assetType,
+            symbol: symbol,
+            quantity: quantity,
+            price: price,
+            currency: currency,
+            fee: fee,
+            notes: notes,
+            transactionDate: transactionDate,
+            exchangeRate: exchangeRate,
+            deductFromAccount: deductFromAccount
+        )
+        
+        await createTransaction(transaction)
+    }
+    
     func updateTransaction(_ transaction: Transaction) async {
         do {
             try await dataService.updateTransaction(transaction)

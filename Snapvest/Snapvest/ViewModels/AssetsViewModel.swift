@@ -52,7 +52,15 @@ class AssetsViewModel: ObservableObject {
             let accountSnapshots = try await loadAccountSnapshots(accounts: fetchedAccounts)
             var aggregated = try await dataService.fetchAggregatedHoldingSnapshots(userId: userId, assetType: nil)
             let symbolInfos = await loadSymbolInfos(userId: userId, accountSnapshots: accountSnapshots, aggregatedHoldings: aggregated)
-            let assetPriceSnapshots = try await dataService.fetchAssetPriceSnapshots(symbols: symbolInfos)
+            var assetPriceSnapshots: [AssetPriceSnapshot]
+            if SupabaseConfig.isConfigured, !symbolInfos.isEmpty {
+                assetPriceSnapshots = (try? await SupabasePriceService.fetchPrices(symbols: symbolInfos)) ?? []
+            } else {
+                assetPriceSnapshots = []
+            }
+            if assetPriceSnapshots.isEmpty {
+                assetPriceSnapshots = try await dataService.fetchAssetPriceSnapshots(symbols: symbolInfos)
+            }
             
             if aggregated.isEmpty || accountSnapshots.isEmpty || assetPriceSnapshots.isEmpty {
                 let bundle = try await SnapshotUpdater.rebuildSnapshots(

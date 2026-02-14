@@ -1,0 +1,25 @@
+# 每日 16:00 (台灣時間) 更新股價
+# 需在 repo Settings > Secrets 設定 SUPABASE_URL、SUPABASE_SERVICE_ROLE_KEY
+name: Daily Price Update
+on:
+  schedule:
+    - cron: '0 8 * * *'  # UTC 08:00 = 台灣 16:00
+  workflow_dispatch:  # 允許手動觸發
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r backend/scripts/requirements.txt
+
+      - name: Run daily price update
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python backend/scripts/daily_price_update.py

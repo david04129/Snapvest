@@ -15,6 +15,8 @@ struct SellTradeFormView: View {
     @StateObject private var accountDetailViewModel = AccountDetailViewModel()
     @StateObject private var transactionsViewModel = TransactionsViewModel()
     
+    private let dataService: DataServiceProtocol = MockDataService.shared
+    
     @State private var selectedAccountId: String = ""
     @State private var selectedHoldingId: String = ""
     @State private var quantityText: String = ""
@@ -134,12 +136,18 @@ struct SellTradeFormView: View {
                 await accountDetailViewModel.loadAccountData(accountId: firstAccount.id)
             }
             transactionsViewModel.accounts = accountsViewModel.accounts
+            if needsExchangeRate && exchangeRateText.isEmpty {
+                loadExchangeRate()
+            }
         }
         .onChange(of: selectedAccountId) { _, newValue in
             Task {
                 await accountDetailViewModel.loadAccountData(accountId: newValue)
                 selectedHoldingId = availableHoldings.first?.id ?? ""
                 validateInput()
+            }
+            if needsExchangeRate && exchangeRateText.isEmpty {
+                loadExchangeRate()
             }
         }
         .onChange(of: selectedHoldingId) { _, _ in
@@ -409,6 +417,27 @@ struct SellTradeFormView: View {
     
     private func filterDecimalInput(_ value: String) -> String {
         value.filter { $0.isNumber || $0 == "." }
+    }
+    
+    private func loadExchangeRate() {
+        guard needsExchangeRate else { return }
+        Task {
+            do {
+                if let data = try await dataService.fetchExchangeRate(from: .USD, to: .TWD, date: nil) {
+                    await MainActor.run {
+                        if exchangeRateText.isEmpty {
+                            exchangeRateText = data.rate.formatted(fractionDigits: 2)
+                        }
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    if exchangeRateText.isEmpty {
+                        exchangeRateText = "32.00"
+                    }
+                }
+            }
+        }
     }
     
     private func holdingDisplayName(_ holding: Holding) -> String {

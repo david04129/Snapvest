@@ -33,7 +33,7 @@ struct AssetPriceSnapshot: Identifiable, Codable, Equatable {
     var lastUpdated: Date         // 快照最後更新時間（無論成功或失敗）
     var lastSuccessfulUpdate: Date? // 最後一次成功獲取價格的時間
     
-    init(
+    nonisolated init(
         assetType: AssetType,
         symbol: String,
         name: String? = nil,

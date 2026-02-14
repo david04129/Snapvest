@@ -200,7 +200,13 @@ enum SnapshotUpdater {
         priceService: PriceServiceProtocol,
         holdingsBySymbol: [String: HoldingSnapshotItem]
     ) async throws -> [AssetPriceSnapshot] {
-        var snapshots = try await dataService.fetchAssetPriceSnapshots(symbols: symbols)
+        var snapshots: [AssetPriceSnapshot] = []
+        if SupabaseConfig.isConfigured, !symbols.isEmpty {
+            snapshots = (try? await SupabasePriceService.fetchPrices(symbols: symbols)) ?? []
+        }
+        if snapshots.isEmpty {
+            snapshots = try await dataService.fetchAssetPriceSnapshots(symbols: symbols)
+        }
         let existingKeys = Set(snapshots.map { "\($0.assetType.rawValue)_\($0.symbol)" })
         
         for symbolInfo in symbols {
