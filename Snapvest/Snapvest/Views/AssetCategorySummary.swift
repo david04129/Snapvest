@@ -326,8 +326,8 @@ struct AssetCategorySummaryCard: View {
     }
     
     private var plColor: Color {
-        if displayUnrealized > 0 { return .profitGreen }
-        if displayUnrealized < 0 { return .lossRed }
+        if displayUnrealized > 0 { return .marketUp }
+        if displayUnrealized < 0 { return .marketDown }
         return .secondaryText
     }
     

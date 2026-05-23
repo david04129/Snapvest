@@ -130,8 +130,8 @@ private struct PerformanceTornadoRow: View {
     }
     
     private var valueColor: Color {
-        if value > 0 { return .profitGreen }
-        if value < 0 { return .lossRed }
+        if value > 0 { return .marketUp }
+        if value < 0 { return .marketDown }
         return .secondaryText
     }
     

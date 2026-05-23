@@ -26,10 +26,11 @@ struct AppRootView: View {
                     .transition(.opacity)
             }
         }
-        .id(themeManager.isDarkMode)
+        .id(themeManager.appearanceRefreshToken)
         .preferredColorScheme(themeManager.isDarkMode ? .dark : .light)
         .animation(.easeInOut(duration: 0.35), value: isLaunchComplete)
         .animation(.easeInOut(duration: 0.28), value: themeManager.isDarkMode)
+        .animation(.easeInOut(duration: 0.22), value: themeManager.isRedUpGreenDown)
         .task(id: userId) {
             await runLaunchSequence()
         }

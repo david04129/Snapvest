@@ -41,7 +41,7 @@ struct ContentView: View {
         .tint(.appPrimary)
         .toolbarBackground(Color.cardBackground, for: .tabBar)
         .toolbarBackground(.visible, for: .tabBar)
-        .id(themeManager.isDarkMode)
+        .id(themeManager.appearanceRefreshToken)
         .onChange(of: selectedTab) { previousTab, _ in
             NotificationCenter.default.post(
                 name: .tabResigned,

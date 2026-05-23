@@ -616,7 +616,7 @@ struct AllHoldingCard: View {
                                 .font(.caption)
                         }
                     }
-                    .foregroundColor(item.unrealizedGainLoss >= 0 ? .profitGreen : .lossRed)
+                    .foregroundColor(Color.marketColor(for: item.unrealizedGainLoss))
                 }
             }
             .padding(16)

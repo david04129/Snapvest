@@ -177,12 +177,12 @@ struct HoldingDetailView: View {
         aggregatedHolding.currency != .TWD
     }
     
-    private var metricDisplayPillIndex: Binding<Int> {
+    private var holdingsCurrencyDisplayBinding: Binding<AssetsCurrencyDisplay> {
         Binding(
-            get: { metricAmountDisplay == .twd ? 0 : 1 },
-            set: { newIndex in
-                withAnimation(ChartMotion.switchQuick) {
-                    metricAmountDisplay = newIndex == 0 ? .twd : .original
+            get: { metricAmountDisplay == .twd ? .twd : .original },
+            set: { newValue in
+                withAnimation(ChartMotion.switchSpring) {
+                    metricAmountDisplay = newValue == .twd ? .twd : .original
                 }
             }
         )
@@ -244,7 +244,7 @@ struct HoldingDetailView: View {
         case .original:
             amount = unrealizedGainLossOriginal
         }
-        return amount >= 0 ? .profitGreen : .lossRed
+        return Color.marketColor(for: amount)
     }
     
     var holdingColor: Color {
@@ -276,10 +276,7 @@ struct HoldingDetailView: View {
                 if canToggleCurrency {
                     HStack {
                         Spacer(minLength: 0)
-                        HoldingCurrencySegmentPills(
-                            options: ["台幣", aggregatedHolding.currency.rawValue],
-                            selectedIndex: metricDisplayPillIndex
-                        )
+                        AccountsCurrencyControlsBar(currencyDisplay: holdingsCurrencyDisplayBinding)
                     }
                 }
                 
@@ -389,7 +386,7 @@ struct HoldingDetailView: View {
     
     private func dailyChangeBadge(amount: Decimal, percent: Decimal, currency: Currency) -> some View {
         let up = amount >= 0
-        let color: Color = up ? .profitGreen : .lossRed
+        let color: Color = up ? .marketUp : .marketDown
         return HStack(spacing: 4) {
             Image(systemName: up ? "arrow.up" : "arrow.down")
                 .font(.caption2.weight(.bold))
@@ -712,7 +709,7 @@ private struct FIFOLotTableDataRow: View {
     }
     
     private var plColor: Color {
-        unrealizedGainLoss >= 0 ? .profitGreen : .lossRed
+        Color.marketColor(for: unrealizedGainLoss)
     }
     
     var body: some View {
@@ -825,45 +822,6 @@ private struct HoldingMetricTile: View {
         .overlay(
             RoundedRectangle(cornerRadius: 12)
                 .stroke(Color.separator.opacity(0.35), lineWidth: 1)
-        )
-    }
-}
-
-/// 指標區右上角幣別分段
-private struct HoldingCurrencySegmentPills: View {
-    let options: [String]
-    @Binding var selectedIndex: Int
-    
-    var body: some View {
-        HStack(spacing: 4) {
-            ForEach(Array(options.enumerated()), id: \.offset) { index, label in
-                Button {
-                    guard selectedIndex != index else { return }
-                    withAnimation(ChartMotion.switchQuick) {
-                        selectedIndex = index
-                    }
-                } label: {
-                    Text(label)
-                        .font(.system(size: 12, weight: selectedIndex == index ? .bold : .medium))
-                        .foregroundColor(selectedIndex == index ? AppColors.actionForeground : .secondaryText)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background {
-                            if selectedIndex == index {
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .fill(AppColors.appPrimary)
-                            }
-                        }
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(3)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(AppColors.secondaryBackground)
         )
     }
 }

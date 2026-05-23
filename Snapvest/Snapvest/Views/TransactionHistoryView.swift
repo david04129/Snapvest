@@ -453,7 +453,7 @@ struct TransactionHistoryRowView: View {
                     let change = getBalanceChange(transaction, accountId: accountId, accountCurrency: accountCurrency)
                     Text(formatBalanceChange(change, currency: accountCurrency))
                 .font(.caption)
-                .foregroundColor(change >= 0 ? .profitGreen : .lossRed)
+                .foregroundColor(change >= 0 ? .marketUp : .marketDown)
                         .frame(width: 80, alignment: .leading)
             
             // 餘額

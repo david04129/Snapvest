@@ -16,7 +16,7 @@ private struct DebtRepaymentSheetItem: Identifiable {
 
 struct AccountDetailView: View {
     let account: Account
-    @StateObject private var viewModel = AccountDetailViewModel()
+    @StateObject private var viewModel: AccountDetailViewModel
     @StateObject private var accountsViewModel = AccountsViewModel()
     @State private var showingAdjustCashBalance = false
     @State private var showingRepayment = false
@@ -24,6 +24,16 @@ struct AccountDetailView: View {
     @State private var currentLiability: Liability?
     @State private var repaymentAccountName: String = ""
     @State private var isDetailsExpanded: Bool = false
+    
+    init(account: Account, prefilledBalance: AccountBalanceDisplay? = nil) {
+        self.account = account
+        let vm = AccountDetailViewModel()
+        if let prefilledBalance {
+            vm.applyPrefill(prefilledBalance)
+        }
+        vm.displayCurrency = account.currency == .TWD ? .TWD : account.currency
+        _viewModel = StateObject(wrappedValue: vm)
+    }
     
     var body: some View {
         Group {
@@ -61,14 +71,7 @@ struct AccountDetailView: View {
                 
                 accountCashHoldingsMetricsRow
                 
-                if account.accountType != .twdDeposit, !viewModel.holdings.isEmpty {
-                    AccountHoldingsTableSection(
-                        holdings: viewModel.holdings,
-                        account: account,
-                        displayCurrency: viewModel.displayCurrency,
-                        exchangeRate: viewModel.exchangeRate
-                    )
-                }
+                accountHoldingsSection
             }
             .padding(.horizontal, 20)
             .padding(.top, 8)
@@ -104,12 +107,23 @@ struct AccountDetailView: View {
             )
         }
         .task {
-            if account.currency == .TWD {
-                viewModel.displayCurrency = .TWD
-            } else {
-                viewModel.displayCurrency = .USD
-            }
             await viewModel.loadAccountData(accountId: account.id)
+        }
+    }
+    
+    @ViewBuilder
+    private var accountHoldingsSection: some View {
+        if account.accountType != .twdDeposit {
+            if viewModel.isLoading && viewModel.holdings.isEmpty {
+                AccountHoldingsLoadingSection()
+            } else if !viewModel.holdings.isEmpty {
+                AccountHoldingsTableSection(
+                    holdings: viewModel.holdings,
+                    account: account,
+                    displayCurrency: viewModel.displayCurrency,
+                    exchangeRate: viewModel.exchangeRate
+                )
+            }
         }
     }
     
@@ -162,9 +176,6 @@ struct AccountDetailView: View {
                         .font(.title2)
                         .fontWeight(.bold)
                         .foregroundColor(.primaryText)
-                    Text("帳戶詳情")
-                        .font(.subheadline)
-                        .foregroundColor(.secondaryText)
                 }
                 Spacer()
                 Text(account.accountType.displayName)
@@ -215,10 +226,7 @@ struct AccountDetailView: View {
             )
             AccountMetricTile(
                 title: "持股市值",
-                value: accountDisplayHoldingsValue.formatted(currency: viewModel.displayCurrency),
-                footnote: account.accountType == .twdDeposit
-                    ? nil
-                    : (viewModel.holdings.isEmpty ? nil : "\(viewModel.holdings.count) 檔")
+                value: accountDisplayHoldingsValue.formatted(currency: viewModel.displayCurrency)
             )
         }
     }
@@ -324,9 +332,6 @@ struct AccountDetailView: View {
                         .font(.title2)
                         .fontWeight(.bold)
                         .foregroundColor(.primaryText)
-                    Text("貸款詳情")
-                        .font(.subheadline)
-                        .foregroundColor(.secondaryText)
                 }
                 Spacer()
                 Text(account.accountType.displayName)
@@ -550,6 +555,34 @@ struct AccountSectionCard<Content: View>: View {
     }
 }
 
+// MARK: - 帳戶詳情：持有標的載入占位
+struct AccountHoldingsLoadingSection: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("持有標的")
+                    .font(.headline)
+                    .foregroundColor(.primaryText)
+                Text("載入中…")
+                    .font(.caption)
+                    .foregroundColor(.secondaryText)
+            }
+            
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.secondaryBackground)
+                .frame(minHeight: 120)
+                .overlay {
+                    ProgressView()
+                }
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.separator.opacity(0.5), lineWidth: 1)
+                )
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 // MARK: - 帳戶詳情：持有標的表
 struct AccountHoldingsTableSection: View {
     let holdings: [HoldingSnapshot]
@@ -695,7 +728,7 @@ struct HoldingTableRow: View {
                     Text("(\(percent.formatted(fractionDigits: 2))%)")
                         .font(.caption2)
                 }
-                .foregroundColor(displayGainLoss >= 0 ? .profitGreen : .lossRed)
+                .foregroundColor(Color.marketColor(for: displayGainLoss))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
                 .frame(width: 110, alignment: .trailing)

@@ -60,6 +60,24 @@ enum AppColors {
     static var profitGreen: Color { p.profitGreen }
     static var lossRed: Color { p.lossRed }
     
+    /// 漲（預設綠；紅漲綠跌時為紅）
+    static var marketUp: Color {
+        ThemeManager.shared.isRedUpGreenDown ? p.lossRed : p.profitGreen
+    }
+    
+    /// 跌（預設紅；紅漲綠跌時為綠）
+    static var marketDown: Color {
+        ThemeManager.shared.isRedUpGreenDown ? p.profitGreen : p.lossRed
+    }
+    
+    static func marketColor(for change: Decimal) -> Color {
+        change >= 0 ? marketUp : marketDown
+    }
+    
+    static func marketColor(isPositive: Bool) -> Color {
+        isPositive ? marketUp : marketDown
+    }
+    
     static var primaryText: Color { p.primaryText }
     static var secondaryText: Color { p.secondaryText }
     static var tertiaryText: Color { p.tertiaryText }
@@ -130,6 +148,16 @@ extension Color {
     
     static var profitGreen: Color { AppColors.profitGreen }
     static var lossRed: Color { AppColors.lossRed }
+    static var marketUp: Color { AppColors.marketUp }
+    static var marketDown: Color { AppColors.marketDown }
+    
+    static func marketColor(for change: Decimal) -> Color {
+        AppColors.marketColor(for: change)
+    }
+    
+    static func marketColor(isPositive: Bool) -> Color {
+        AppColors.marketColor(isPositive: isPositive)
+    }
     
     static var stockTWColor: Color { AppColors.stockTWColor }
     static var stockTWDeepBlue: Color { AppColors.stockTWDeepBlue }

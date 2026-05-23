@@ -81,7 +81,10 @@ struct HomeView: View {
             
             Spacer()
             
-            ThemeToggleButton()
+            HStack(spacing: 8) {
+                MarketColorConventionToggleButton()
+                ThemeToggleButton()
+            }
             
             // 右側：使用者頭像
             Button(action: {
@@ -335,7 +338,7 @@ struct InvestmentAssetsCardView: View {
                     InteractiveProgressBar(
                         segments: [
                             (progress: animatedCostProgress, color: .secondaryText, gradient: [Color.secondaryText.opacity(0.4), Color.secondaryText.opacity(0.3)]),
-                            (progress: animatedGainLossProgress, color: viewModel.unrealizedGainLoss >= 0 ? .profitGreen : .lossRed, gradient: viewModel.unrealizedGainLoss >= 0 ? [.profitGreen, .profitGreen] : [.lossRed, .lossRed.opacity(0.8)])
+                            (progress: animatedGainLossProgress, color: Color.marketColor(for: viewModel.unrealizedGainLoss), gradient: viewModel.unrealizedGainLoss >= 0 ? [Color.marketUp, Color.marketUp] : [Color.marketDown, Color.marketDown.opacity(0.8)])
                         ],
                         cornerRadius: 4,
                         height: 8,
@@ -397,7 +400,7 @@ struct InvestmentAssetsCardView: View {
                             }
                             .font(.subheadline)
                             .fontWeight(.semibold)
-                            .foregroundColor(viewModel.unrealizedGainLoss >= 0 ? .profitGreen : .lossRed) // 使用深綠色
+                            .foregroundColor(Color.marketColor(for: viewModel.unrealizedGainLoss))
                         }
                     }
                     
@@ -588,7 +591,7 @@ struct TodayPLCardView: View {
             title: "今日損益",
             value: todayPL.formatted(currency: viewModel.viewCurrency),
             subtitle: "↑ \(todayPLPercent.formatted(fractionDigits: 2))%",
-            valueColor: todayPL >= 0 ? .profitGreen : .lossRed,
+            valueColor: Color.marketColor(for: todayPL),
             icon: "chart.line.uptrend.xyaxis"
         )
     }
@@ -613,7 +616,7 @@ struct RealizedPLCardView: View {
                 HStack {
                     Text(viewModel.realizedGainLoss.formatted(currency: viewModel.viewCurrency))
                         .font(.system(size: 24, weight: .bold))
-                        .foregroundColor(viewModel.realizedGainLoss >= 0 ? .profitGreen : .lossRed)
+                        .foregroundColor(Color.marketColor(for: viewModel.realizedGainLoss))
                     
                     Spacer()
                     
@@ -710,7 +713,7 @@ struct RealizedPLCardView: View {
                                                     Text(realized.formatted(currency: transaction.currency))
                                                         .font(.subheadline)
                                                         .fontWeight(.semibold)
-                                                        .foregroundColor(realized >= 0 ? .profitGreen : .lossRed)
+                                                        .foregroundColor(Color.marketColor(for: realized))
                                                 } else {
                                                     Text("--")
                                                         .font(.subheadline)

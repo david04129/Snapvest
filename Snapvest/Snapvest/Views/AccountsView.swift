@@ -345,7 +345,12 @@ struct ExpandableAccountCategorySection: View {
             if isExpanded {
                 VStack(spacing: 8) {
                     ForEach(accounts) { account in
-                        NavigationLink(destination: AccountDetailView(account: account)) {
+                        NavigationLink(
+                            destination: AccountDetailView(
+                                account: account,
+                                prefilledBalance: balancesByAccountId[account.id]
+                            )
+                        ) {
                             AccountCardView(
                                 account: account,
                                 balance: balancesByAccountId[account.id],
