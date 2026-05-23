@@ -132,6 +132,32 @@ struct AssetsDisplayControlsBar: View {
     }
 }
 
+// MARK: - 帳戶分頁：幣別切換（與資產分頁 chip 同款）
+
+struct AccountsCurrencyControlsBar: View {
+    @Binding var currencyDisplay: AssetsCurrencyDisplay
+    
+    private var currencyIcon: String {
+        currencyDisplay == .twd ? "dollarsign.circle.fill" : "arrow.triangle.2.circlepath"
+    }
+    
+    var body: some View {
+        HStack {
+            Spacer(minLength: 0)
+            AssetsFilterChipButton(
+                title: currencyDisplay.label,
+                icon: currencyIcon,
+                isActive: true
+            ) {
+                withAnimation(ChartMotion.switchSpring) {
+                    currencyDisplay = currencyDisplay == .twd ? .original : .twd
+                }
+            }
+            .animation(ChartMotion.switchSpring, value: currencyDisplay)
+        }
+    }
+}
+
 // MARK: - 類別摘要數據
 
 struct AssetCategorySummaryMetrics {

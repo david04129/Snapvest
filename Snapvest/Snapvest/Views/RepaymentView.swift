@@ -30,47 +30,8 @@ struct RepaymentView: View {
     
     private let dataService: DataServiceProtocol = MockDataService.shared
     
-    // 債務主題顏色（預設）
-    private var debtThemeColorBase: Color {
-        Color.lossRed
-    }
-    
-    // 提前還款主題顏色（紅色）
-    private var prepaymentColor: Color {
-        Color(red: 0.85, green: 0.15, blue: 0.15)
-    }
-    
-    // 定期還款主題顏色（橘色）
-    private var regularRepaymentColor: Color {
-        Color(red: 1.0, green: 0.55, blue: 0.0)
-    }
-    
-    // 根據還款類型返回對應的主題顏色
-    private var debtThemeColor: Color {
-        repaymentType == .prepayment ? prepaymentColor : regularRepaymentColor
-    }
-    
-    // 提前還款主題漸層（紅色漸層）
-    private var prepaymentGradient: LinearGradient {
-        LinearGradient(
-            gradient: Gradient(colors: [Color(red: 0.85, green: 0.15, blue: 0.15), Color(red: 0.95, green: 0.3, blue: 0.3)]),
-            startPoint: .leading,
-            endPoint: .trailing
-        )
-    }
-    
-    // 定期還款主題漸層（橘色漸層）
-    private var regularRepaymentGradient: LinearGradient {
-        LinearGradient(
-            gradient: Gradient(colors: [Color(red: 1.0, green: 0.55, blue: 0.0), Color(red: 1.0, green: 0.7, blue: 0.2)]),
-            startPoint: .leading,
-            endPoint: .trailing
-        )
-    }
-    
-    // 根據還款類型返回對應的漸層
-    private var debtThemeGradient: LinearGradient {
-        repaymentType == .prepayment ? prepaymentGradient : regularRepaymentGradient
+    private var themeColor: Color {
+        .appPrimary
     }
     
     init(
@@ -152,15 +113,15 @@ struct RepaymentView: View {
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
-                // 圖標（債務風格：紅色）
+                // 圖標
                 ZStack {
                     Circle()
-                        .fill(debtThemeColor.opacity(0.15))
+                        .fill(themeColor.opacity(0.15))
                         .frame(width: 48, height: 48)
                     
                     Image(systemName: repaymentType == .prepayment ? "arrow.down.circle.fill" : "creditcard.fill")
                         .font(.system(size: 24))
-                        .foregroundColor(debtThemeColor)
+                        .foregroundColor(themeColor)
                 }
                 
                 VStack(alignment: .leading, spacing: 4) {
@@ -184,13 +145,13 @@ struct RepaymentView: View {
     }
     
     private var sourceAccountSection: some View {
-                        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: "arrow.up.right.circle.fill")
                     .font(.system(size: 16))
-                    .foregroundColor(debtThemeColor)
+                    .foregroundColor(themeColor)
                 Text("轉出帳戶")
-                                    .font(.subheadline)
+                    .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.primaryText)
             }
@@ -226,9 +187,10 @@ struct RepaymentView: View {
                             .foregroundColor(.secondaryText)
                     }
                 }
-                        }
-                    }
-                    .padding(.horizontal)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal)
         .padding(.bottom, 16)
     }
     
@@ -237,9 +199,9 @@ struct RepaymentView: View {
             HStack(spacing: 8) {
                 Image(systemName: "arrow.down.left.circle.fill")
                     .font(.system(size: 16))
-                    .foregroundColor(debtThemeColor)
+                    .foregroundColor(themeColor)
                 Text("轉入帳戶（債務帳戶）")
-                            .font(.subheadline)
+                    .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.primaryText)
             }
@@ -278,7 +240,7 @@ struct RepaymentView: View {
             HStack(spacing: 8) {
                 Image(systemName: "dollarsign.circle.fill")
                     .font(.system(size: 16))
-                    .foregroundColor(debtThemeColor)
+                    .foregroundColor(themeColor)
                 Text("還款金額 (\(selectedSourceAccount?.currency.rawValue ?? liability.currency.rawValue))")
                     .font(.subheadline)
                     .fontWeight(.semibold)
@@ -294,7 +256,6 @@ struct RepaymentView: View {
                     let fullAmount = liability.remainingBalance + currentMonthInterest
                     
                     Button(action: {
-                        // 全額還款金額：四捨五入到整數（而不是向下取整）
                         let roundedAmount = (fullAmount as NSDecimalNumber).rounding(accordingToBehavior: NSDecimalNumberHandler(
                             roundingMode: .plain,
                             scale: 0,
@@ -312,18 +273,13 @@ struct RepaymentView: View {
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
                         }
-                    .foregroundColor(Color(red: 0.9, green: 0.2, blue: 0.2))
-                    .padding(.vertical, 8)
-                    .padding(.horizontal, 12)
-                    .background(
-                        LinearGradient(
-                            gradient: Gradient(colors: [Color(red: 0.9, green: 0.2, blue: 0.2).opacity(0.15), Color(red: 1.0, green: 0.6, blue: 0.0).opacity(0.15)]),
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .cornerRadius(8)
+                        .foregroundColor(themeColor)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 12)
+                        .background(themeColor.opacity(0.12))
+                        .cornerRadius(8)
                     }
+                    .buttonStyle(.plain)
                     
                     // 顯示剩餘本金和當月利息的金額
                     HStack(spacing: 16) {
@@ -382,7 +338,7 @@ struct RepaymentView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "info.circle.fill")
                         .font(.system(size: 16))
-                        .foregroundColor(debtThemeColor)
+                        .foregroundColor(themeColor)
                     Text("預估結果")
                         .font(.subheadline)
                         .fontWeight(.semibold)
@@ -460,7 +416,7 @@ struct RepaymentView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "arrow.triangle.2.circlepath")
                         .font(.system(size: 16))
-                        .foregroundColor(debtThemeColor)
+                        .foregroundColor(themeColor)
                     Text("美金對台幣匯率")
                             .font(.subheadline)
                         .fontWeight(.semibold)
@@ -507,23 +463,26 @@ struct RepaymentView: View {
             HStack(spacing: 8) {
                 Image(systemName: "calendar")
                     .font(.system(size: 16))
-                    .foregroundColor(debtThemeColor)
+                    .foregroundColor(themeColor)
                 Text("日期")
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.primaryText)
             }
             
-            CardView {
-                HStack(spacing: 12) {
-                    Image(systemName: "calendar.badge.clock")
-                        .font(.system(size: 18))
-                        .foregroundColor(.secondaryText)
-                    
-                    DatePicker("", selection: $transactionDate, displayedComponents: .date)
-                        .datePickerStyle(.compact)
-                }
+            VStack(alignment: .leading, spacing: 0) {
+                DatePicker("", selection: $transactionDate, displayedComponents: .date)
+                    .datePickerStyle(.compact)
+                    .labelsHidden()
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(Color.cardBackground)
+            .cornerRadius(12)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.separator.opacity(0.35), lineWidth: 1)
+            )
         }
         .padding(.horizontal)
         .padding(.bottom, 16)
@@ -534,7 +493,7 @@ struct RepaymentView: View {
             HStack(spacing: 8) {
                 Image(systemName: "note.text")
                     .font(.system(size: 16))
-                    .foregroundColor(debtThemeColor)
+                    .foregroundColor(themeColor)
                 Text("備註 (選填)")
                     .font(.subheadline)
                     .fontWeight(.semibold)
@@ -560,11 +519,18 @@ struct RepaymentView: View {
     @ViewBuilder
     private var errorMessageSection: some View {
         if let errorMessage = errorMessage {
-            Text(errorMessage)
-                .font(.caption)
-                .foregroundColor(.lossRed)
-                .padding(.horizontal)
-                .padding(.bottom, 8)
+            CardView {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .foregroundColor(.lossRed)
+                    Text(errorMessage)
+                        .font(.subheadline)
+                        .foregroundColor(.lossRed)
+                    Spacer()
+                }
+            }
+            .padding(.horizontal)
+            .padding(.bottom, 8)
         }
     }
     
@@ -582,9 +548,10 @@ struct RepaymentView: View {
                     errorMessageSection
                 }
             }
+            .background(Color.mainBackground)
             .navigationTitle(editingTransaction != nil ? "編輯還款" : (repaymentType == .prepayment ? "提前還款" : "定期還款"))
             .navigationBarTitleDisplayMode(.inline)
-            .tint(debtThemeColor)
+            .tint(.appPrimary)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: {
@@ -592,7 +559,7 @@ struct RepaymentView: View {
                     }) {
                         Image(systemName: "xmark")
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(debtThemeColor)
+                            .foregroundColor(.appPrimary)
                     }
                 }
             }
@@ -601,16 +568,16 @@ struct RepaymentView: View {
                     saveRepayment()
                 }) {
                     HStack(spacing: 8) {
-                        Image(systemName: repaymentType == .prepayment ? "arrow.down.circle.fill" : "creditcard.fill")
+                        Image(systemName: "checkmark")
                             .font(.system(size: 18))
                         Text(editingTransaction != nil ? "確認修改" : "確認還款")
                             .font(.headline)
                     }
-                            .foregroundColor(AppColors.actionForeground)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                    .background(isValid ? debtThemeGradient : LinearGradient(gradient: Gradient(colors: [AppColors.disabledBackground, AppColors.disabledBackground]), startPoint: .leading, endPoint: .trailing))
-                            .cornerRadius(12)
+                    .foregroundColor(AppColors.actionForeground)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(isValid ? themeColor : AppColors.disabledBackground)
+                    .cornerRadius(12)
                 }
                 .disabled(!isValid)
                 .padding(.horizontal)

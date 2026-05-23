@@ -53,10 +53,7 @@ struct AccountDetailView: View {
                 if account.currency == .USD {
                     HStack {
                         Spacer(minLength: 0)
-                        AccountCurrencySegmentPills(
-                            options: ["台幣", "USD"],
-                            selectedIndex: accountCurrencyPillIndex
-                        )
+                        AccountsCurrencyControlsBar(currencyDisplay: accountCurrencyDisplayBinding)
                     }
                 }
                 
@@ -144,12 +141,14 @@ struct AccountDetailView: View {
         account.accountType == .twdDeposit ? accountDisplayCashBalance : accountTotalValue
     }
     
-    private var accountCurrencyPillIndex: Binding<Int> {
+    private var accountCurrencyDisplayBinding: Binding<AssetsCurrencyDisplay> {
         Binding(
-            get: { viewModel.displayCurrency == .TWD ? 0 : 1 },
-            set: { newIndex in
-                withAnimation(ChartMotion.switchQuick) {
-                    viewModel.displayCurrency = newIndex == 0 ? .TWD : .USD
+            get: {
+                viewModel.displayCurrency == .TWD ? .twd : .original
+            },
+            set: { newValue in
+                withAnimation(ChartMotion.switchSpring) {
+                    viewModel.displayCurrency = newValue == .twd ? .TWD : account.currency
                 }
             }
         )
@@ -378,7 +377,6 @@ struct AccountDetailView: View {
     // MARK: - 債務帳戶底部按鈕
     private var debtAccountBottomButtons: some View {
         HStack(spacing: 12) {
-            // 提前還款按鈕（左側）- 紅色漸層
             Button(action: {
                 presentRepaymentSheet(type: .prepayment)
             }) {
@@ -389,18 +387,11 @@ struct AccountDetailView: View {
                 .font(.headline)
                 .foregroundColor(AppColors.actionForeground)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .background(
-                    LinearGradient(
-                        gradient: Gradient(colors: [Color(red: 0.85, green: 0.15, blue: 0.15), Color(red: 0.95, green: 0.3, blue: 0.3)]),
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
+                .padding(.vertical, 14)
+                .background(Color.lossRed)
                 .cornerRadius(12)
             }
             
-            // 定期還款按鈕（右側）- 橘色漸層
             Button(action: {
                 presentRepaymentSheet(type: .regular)
             }) {
@@ -411,20 +402,20 @@ struct AccountDetailView: View {
                 .font(.headline)
                 .foregroundColor(AppColors.actionForeground)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .background(
-                    LinearGradient(
-                        gradient: Gradient(colors: [Color(red: 1.0, green: 0.55, blue: 0.0), Color(red: 1.0, green: 0.7, blue: 0.2)]),
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
+                .padding(.vertical, 14)
+                .background(Color.appPrimary)
                 .cornerRadius(12)
             }
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 16)
-        .background(Color.cardBackground)
+        .padding(.vertical, 12)
+        .background(Color.mainBackground)
+        .overlay(
+            Rectangle()
+                .frame(height: 1)
+                .foregroundColor(Color.separator.opacity(0.3)),
+            alignment: .top
+        )
     }
     
     // MARK: - 載入債務帳戶數據
@@ -556,45 +547,6 @@ struct AccountSectionCard<Content: View>: View {
                 RoundedRectangle(cornerRadius: 12)
                     .stroke(Color.separator.opacity(0.35), lineWidth: 1)
             )
-    }
-}
-
-// MARK: - 帳戶詳情：幣別 pill（與個股頁同款）
-struct AccountCurrencySegmentPills: View {
-    let options: [String]
-    @Binding var selectedIndex: Int
-    
-    var body: some View {
-        HStack(spacing: 4) {
-            ForEach(Array(options.enumerated()), id: \.offset) { index, label in
-                Button {
-                    guard selectedIndex != index else { return }
-                    withAnimation(ChartMotion.switchQuick) {
-                        selectedIndex = index
-                    }
-                } label: {
-                    Text(label)
-                        .font(.system(size: 12, weight: selectedIndex == index ? .bold : .medium))
-                        .foregroundColor(selectedIndex == index ? AppColors.actionForeground : .secondaryText)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background {
-                            if selectedIndex == index {
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .fill(AppColors.appPrimary)
-                            }
-                        }
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(3)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(AppColors.secondaryBackground)
-        )
     }
 }
 
