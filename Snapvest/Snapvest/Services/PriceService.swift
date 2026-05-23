@@ -9,8 +9,14 @@ import Foundation
 
 /// 價格服務協議
 protocol PriceServiceProtocol {
-    func fetchCurrentPrice(assetType: AssetType, symbol: String) async throws -> Decimal?
+    func fetchCurrentPrice(assetType: AssetType, symbol: String, coingeckoId: String?) async throws -> Decimal?
     func fetchHistoricalPrices(assetType: AssetType, symbol: String, days: Int) async throws -> [Price]
+}
+
+extension PriceServiceProtocol {
+    func fetchCurrentPrice(assetType: AssetType, symbol: String) async throws -> Decimal? {
+        try await fetchCurrentPrice(assetType: assetType, symbol: symbol, coingeckoId: nil)
+    }
 }
 
 /// 價格服務實作
@@ -21,17 +27,20 @@ class PriceService: PriceServiceProtocol {
         self.dataService = dataService
     }
     
-    func fetchCurrentPrice(assetType: AssetType, symbol: String) async throws -> Decimal? {
-        // 1. 若 Supabase 已設定，優先從 Supabase 讀取（使用與資產畫面相同的批量 API）
+    func fetchCurrentPrice(
+        assetType: AssetType,
+        symbol: String,
+        coingeckoId: String?
+    ) async throws -> Decimal? {
         if SupabaseConfig.isConfigured {
-            let symbolInfo = SymbolInfo(assetType: assetType, symbol: symbol)
-            if let snapshots = try? await SupabasePriceService.fetchPrices(symbols: [symbolInfo]),
-               let snapshot = snapshots.first {
-                return snapshot.displayPrice
-            }
+            return await SupabasePriceService.fetchDisplayPrice(
+                assetType: assetType,
+                symbol: symbol,
+                coingeckoId: coingeckoId
+            )
         }
         
-        // 2. 後備：DataService（Mock 或本地快取）
+        // 離線 / 未設定 Supabase：使用 Mock 價格
         if let cachedPrice = try await dataService.fetchPrice(assetType: assetType, symbol: symbol, date: nil) {
             return cachedPrice.price
         }

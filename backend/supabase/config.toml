@@ -1,0 +1,7 @@
+# Snapvest Supabase 專案設定
+# 部署：cd backend && supabase functions deploy fetch-or-create-price
+
+# publishable key 不是 JWT，不可放在 Authorization: Bearer。
+# App 以 apikey header 呼叫；平台層關閉 JWT 驗證，函式內再檢查 apikey。
+[functions.fetch-or-create-price]
+verify_jwt = false

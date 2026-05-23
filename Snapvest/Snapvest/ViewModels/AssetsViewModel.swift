@@ -70,11 +70,10 @@ class AssetsViewModel: ObservableObject {
             var assetPriceSnapshots: [AssetPriceSnapshot]
             if SupabaseConfig.isConfigured, !symbolInfos.isEmpty {
                 assetPriceSnapshots = (try? await SupabasePriceService.fetchPrices(symbols: symbolInfos)) ?? []
+            } else if !symbolInfos.isEmpty {
+                assetPriceSnapshots = try await dataService.fetchAssetPriceSnapshots(symbols: symbolInfos)
             } else {
                 assetPriceSnapshots = []
-            }
-            if assetPriceSnapshots.isEmpty {
-                assetPriceSnapshots = try await dataService.fetchAssetPriceSnapshots(symbols: symbolInfos)
             }
             
             if aggregated.isEmpty || accountSnapshots.isEmpty || assetPriceSnapshots.isEmpty {
@@ -270,8 +269,7 @@ class AssetsViewModel: ObservableObject {
         for snapshot in accountSnapshots {
             guard let account = accountMap[snapshot.accountId] else { continue }
             
-            // 跳過債務帳戶
-            if account.accountType == .debt {
+            if account.accountType.isLiabilityAccount {
                 continue
             }
             

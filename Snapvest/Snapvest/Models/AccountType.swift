@@ -14,7 +14,8 @@ enum AccountType: String, Codable, CaseIterable {
     case twdSecurities = "twd_securities"     // 台幣證券戶
     case usdAccount = "usd_account"          // 美金帳戶
     case cryptoWallet = "crypto_wallet"      // 加密貨幣錢包
-    case debt = "debt"                        // 債務帳戶
+    case debt = "debt"                        // 債務帳戶（分期貸款）
+    case otherDebt = "other_debt"             // 其他債務（手動紀錄欠款）
     
     var displayName: String {
         switch self {
@@ -23,6 +24,7 @@ enum AccountType: String, Codable, CaseIterable {
         case .usdAccount: return "美金帳戶"
         case .cryptoWallet: return "加密貨幣錢包"
         case .debt: return "債務帳戶"
+        case .otherDebt: return "其他債務"
         }
     }
     
@@ -33,6 +35,7 @@ enum AccountType: String, Codable, CaseIterable {
         case .usdAccount: return "用於美金存提或直接買賣海外資產。"
         case .cryptoWallet: return "用於以美金直接買賣加密貨幣。"
         case .debt: return "用於記錄房屋貸款、信用貸款等。"
+        case .otherDebt: return "記錄欠朋友、信用卡帳單等，只需填欠款金額。"
         }
     }
     
@@ -43,6 +46,7 @@ enum AccountType: String, Codable, CaseIterable {
         case .usdAccount: return "dollarsign.circle.fill"
         case .cryptoWallet: return "bitcoinsign.circle.fill"
         case .debt: return "creditcard.fill"
+        case .otherDebt: return "doc.text.fill"
         }
     }
     
@@ -53,7 +57,13 @@ enum AccountType: String, Codable, CaseIterable {
         case .usdAccount: return Color.stockUSColor
         case .cryptoWallet: return Color.cryptoColor
         case .debt: return Color.lossRed
+        case .otherDebt: return Color.lossRed.opacity(0.85)
         }
+    }
+    
+    /// 負債類帳戶（不計入總資產）
+    var isLiabilityAccount: Bool {
+        self == .debt || self == .otherDebt
     }
     
     /// 對應的資產類型（用於內部邏輯）
@@ -63,7 +73,7 @@ enum AccountType: String, Codable, CaseIterable {
         case .twdSecurities: return .stockTW
         case .usdAccount: return .stockUS
         case .cryptoWallet: return .crypto
-        case .debt: return .cash // 債務帳戶不屬於資產類型
+        case .debt, .otherDebt: return .cash // 負債帳戶不屬於資產類型
         }
     }
     
@@ -72,7 +82,7 @@ enum AccountType: String, Codable, CaseIterable {
         switch self {
         case .twdDeposit, .twdSecurities: return .TWD
         case .usdAccount, .cryptoWallet: return .USD
-        case .debt: return .TWD
+        case .debt, .otherDebt: return .TWD
         }
     }
 }

@@ -14,5 +14,6 @@ import Foundation
 /// 開發用：直接設定 Supabase（複製此段到 SupabaseConfigLoader.configure() 的 #if DEBUG 區塊內）
 /*
 SupabaseConfig.url = "https://你的專案ID.supabase.co"
-SupabaseConfig.anonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...."
+SupabaseConfig.anonKey = "sb_publishable__...."  // 或 legacy anon JWT
+SupabaseConfig.anonJwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...."  // 選填，Edge Function Bearer
 */

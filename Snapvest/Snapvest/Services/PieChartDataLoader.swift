@@ -41,8 +41,7 @@ enum PieChartDataLoader {
         var prices: [AssetPriceSnapshot] = []
         if SupabaseConfig.isConfigured, !symbolInfos.isEmpty {
             prices = (try? await SupabasePriceService.fetchPrices(symbols: symbolInfos)) ?? []
-        }
-        if prices.isEmpty, !symbolInfos.isEmpty {
+        } else if !symbolInfos.isEmpty {
             prices = try await dataService.fetchAssetPriceSnapshots(symbols: symbolInfos)
         }
         if aggregated.isEmpty || accountSnapshots.isEmpty || prices.isEmpty {
@@ -60,7 +59,7 @@ enum PieChartDataLoader {
         var accountMap: [String: Account] = [:]
         for a in accounts { accountMap[a.id] = a }
         for snap in accountSnapshots {
-            guard let account = accountMap[snap.accountId], account.accountType != .debt else { continue }
+            guard let account = accountMap[snap.accountId], !account.accountType.isLiabilityAccount else { continue }
             if let existing = cashByCurrency[account.currency] {
                 cashByCurrency[account.currency] = existing + snap.cashBalance
             } else {

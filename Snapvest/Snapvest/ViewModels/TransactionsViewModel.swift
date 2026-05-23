@@ -470,10 +470,16 @@ class TransactionsViewModel: ObservableObject {
         if let userId = await resolveUserId(for: accountId) {
             do {
                 let priceService = PriceService(dataService: dataService)
-                _ = try await SnapshotUpdater.rebuildSnapshots(
+                let bundle = try await SnapshotUpdater.rebuildSnapshots(
                     userId: userId,
                     dataService: dataService,
                     priceService: priceService
+                )
+                await PortfolioStateSync.sync(
+                    userId: userId,
+                    dataService: dataService,
+                    priceService: priceService,
+                    bundle: bundle
                 )
                 await MainActor.run {
                     NotificationCenter.default.post(name: .snapshotsDidUpdate, object: nil)

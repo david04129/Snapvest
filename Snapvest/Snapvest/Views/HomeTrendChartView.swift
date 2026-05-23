@@ -1,0 +1,447 @@
+//
+//  HomeTrendChartView.swift
+//  Snapvest
+//
+//  首頁走勢圖（Mock 資料）：總資產 / 淨資產，可互動顯示當日數值
+//
+
+import SwiftUI
+import Charts
+
+// MARK: - 資料模型
+
+struct TrendChartPoint: Identifiable, Equatable {
+    let id: String
+    let date: Date
+    let totalAssets: Decimal
+    let netWorth: Decimal
+    let unrealizedGainLoss: Decimal
+    
+    func displayValue(for mode: TrendMetricMode) -> Decimal {
+        mode == .totalAssets ? totalAssets : netWorth
+    }
+    
+    /// 未實現損益報酬率（相對於總資產扣除未實現損益的近似成本）
+    var unrealizedReturnPercent: Decimal {
+        let costBasis = totalAssets - unrealizedGainLoss
+        guard costBasis > 0 else { return 0 }
+        return (unrealizedGainLoss / costBasis) * 100
+    }
+}
+
+enum TrendMetricMode: String, CaseIterable, Identifiable {
+    case netWorth = "淨資產"
+    case totalAssets = "總資產"
+    
+    var id: String { rawValue }
+}
+
+// MARK: - Mock 資料
+
+enum TrendChartMockData {
+    static let launchDate: Date = {
+        Calendar.current.date(byAdding: .day, value: -120, to: Date()) ?? Date()
+    }()
+    
+    static let allPoints: [TrendChartPoint] = generate(days: 120, endingAt: Date())
+    
+    static func generate(days: Int, endingAt endDate: Date) -> [TrendChartPoint] {
+        let calendar = Calendar.current
+        var points: [TrendChartPoint] = []
+        var totalAssets: Double = 1_850_000
+        var liabilities: Double = 420_000
+        var unrealized: Double = 185_000
+        
+        for offset in stride(from: days - 1, through: 0, by: -1) {
+            guard let date = calendar.date(byAdding: .day, value: -offset, to: calendar.startOfDay(for: endDate)) else { continue }
+            
+            let noise = sin(Double(offset) / 8.0) * 18_000
+            let drift = Double(days - offset) * 1_200
+            let dailyChange = Double.random(in: -22_000...28_000)
+            totalAssets = max(800_000, 1_850_000 + drift + noise + dailyChange * 0.3)
+            liabilities = max(100_000, 420_000 + Double(offset) * 180 + Double.random(in: -5_000...8_000))
+            unrealized = totalAssets * 0.11 + sin(Double(offset) / 5.0) * 35_000 + Double.random(in: -12_000...15_000)
+            
+            let netWorth = totalAssets - liabilities
+            points.append(
+                TrendChartPoint(
+                    id: ISO8601DateFormatter().string(from: date),
+                    date: date,
+                    totalAssets: Decimal(totalAssets.rounded()),
+                    netWorth: Decimal(netWorth.rounded()),
+                    unrealizedGainLoss: Decimal(unrealized.rounded())
+                )
+            )
+        }
+        return points
+    }
+    
+    static func filtered(
+        points: [TrendChartPoint],
+        range: DateRangePreset,
+        now: Date = Date(),
+        customStart: Date,
+        customEnd: Date
+    ) -> [TrendChartPoint] {
+        let interval = DateRangePresetCalculator.dateInterval(
+            for: range,
+            now: now,
+            customStart: customStart,
+            customEnd: customEnd
+        )
+        return points.filter { interval.contains($0.date) }
+    }
+}
+
+// MARK: - 首頁走勢圖區塊
+
+struct HomeTrendChartSection: View {
+    var currency: Currency = .TWD
+    var mockPoints: [TrendChartPoint] = TrendChartMockData.allPoints
+    
+    @State private var metricMode: TrendMetricMode = .netWorth
+    @State private var timeRange: DateRangePreset = .sevenDays
+    @State private var selectedPoint: TrendChartPoint?
+    @State private var customStartDate: Date = Calendar.current.date(byAdding: .month, value: -1, to: Date()) ?? Date()
+    @State private var customEndDate: Date = Date()
+    @State private var activeCustomDateField: CustomDatePickerField?
+    @State private var contentPhase: CGFloat = 1
+    
+    private var filteredPoints: [TrendChartPoint] {
+        TrendChartMockData.filtered(
+            points: mockPoints,
+            range: timeRange,
+            customStart: customStartDate,
+            customEnd: customEndDate
+        )
+    }
+    
+    private var displayPoint: TrendChartPoint? {
+        selectedPoint ?? filteredPoints.last
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            chartTitleHeader
+            
+            ChartSegmentedControl(
+                options: TrendMetricMode.allCases,
+                selection: $metricMode,
+                label: { $0.rawValue }
+            )
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .onChange(of: metricMode) { _, _ in
+                animateContentSwitch()
+            }
+            
+            if let point = displayPoint {
+                TrendChartValueInfo(
+                    point: point,
+                    metricMode: metricMode,
+                    currency: currency,
+                    isSelected: selectedPoint != nil,
+                    showsCustomRangeLabel: timeRange == .custom
+                )
+                .padding(.horizontal, 16)
+                .padding(.bottom, 10)
+                .opacity(contentPhase)
+            }
+            
+            if filteredPoints.count < 2 {
+                emptyState
+            } else {
+                trendChart
+                    .frame(height: 220)
+                    .padding(.horizontal, 8)
+                    .opacity(contentPhase)
+                    .animation(ChartMotion.switchSpring, value: metricMode)
+                    .animation(ChartMotion.switchSpring, value: timeRange)
+            }
+            
+            DateRangePresetPicker(selection: $timeRange)
+                .padding(.horizontal, 12)
+                .padding(.top, filteredPoints.count < 2 ? 8 : 4)
+                .padding(.bottom, timeRange == .custom ? 0 : 14)
+                .onChange(of: timeRange) { _, newRange in
+                    if newRange != .custom {
+                        resetSelectionToLatest()
+                        animateContentSwitch()
+                    }
+                }
+            
+            if timeRange == .custom {
+                CustomDateRangeBar(
+                    startDate: customStartDate,
+                    endDate: customEndDate,
+                    onStartTapped: { activeCustomDateField = .start },
+                    onEndTapped: { activeCustomDateField = .end }
+                )
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
+                .padding(.bottom, 14)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .background(Color.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: AppColors.shadowMedium, radius: 8, x: 0, y: 2)
+        .sheet(item: $activeCustomDateField) { field in
+            WheelDatePickerSheet(
+                title: field.title,
+                selection: field == .start ? $customStartDate : $customEndDate,
+                earliestDate: TrendChartMockData.launchDate,
+                onDone: {
+                    normalizeCustomRange()
+                    activeCustomDateField = nil
+                    resetSelectionToLatest()
+                    animateContentSwitch()
+                }
+            )
+        }
+        .onAppear { resetSelectionToLatest() }
+        .onChange(of: filteredPoints.count) { _, _ in resetSelectionToLatest() }
+        .animation(ChartMotion.switchSpring, value: timeRange == .custom)
+    }
+    
+    private var chartTitleHeader: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text("走勢圖")
+                .font(.system(size: 17, weight: .bold))
+                .foregroundColor(.primaryText)
+            Text("·")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundColor(AppColors.tertiaryText)
+            Text(metricMode.rawValue)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(AppColors.appPrimary)
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 16)
+    }
+    
+    private var trendChart: some View {
+        Chart {
+            ForEach(filteredPoints) { point in
+                let value = point.displayValue(for: metricMode)
+                AreaMark(
+                    x: .value("日期", point.date),
+                    y: .value("金額", value)
+                )
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [Color.appPrimary.opacity(0.22), Color.appPrimary.opacity(0.02)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .interpolationMethod(.catmullRom)
+                
+                LineMark(
+                    x: .value("日期", point.date),
+                    y: .value("金額", value)
+                )
+                .foregroundStyle(Color.appPrimary)
+                .lineStyle(StrokeStyle(lineWidth: 2, lineJoin: .round))
+                .interpolationMethod(.catmullRom)
+            }
+            
+            if let selected = selectedPoint ?? filteredPoints.last {
+                let selectedValue = selected.displayValue(for: metricMode)
+                RuleMark(x: .value("選取", selected.date))
+                    .foregroundStyle(Color.secondaryText.opacity(0.45))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                
+                PointMark(
+                    x: .value("日期", selected.date),
+                    y: .value("金額", selectedValue)
+                )
+                .foregroundStyle(Color.appPrimary)
+                .symbolSize(64)
+                .annotation(position: .overlay) {
+                    Circle()
+                        .strokeBorder(Color.cardBackground, lineWidth: 2)
+                        .background(Circle().fill(Color.appPrimary))
+                        .frame(width: 10, height: 10)
+                }
+            }
+        }
+        .chartYAxis {
+            AxisMarks(position: .trailing) { value in
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
+                    .foregroundStyle(Color.separator.opacity(0.35))
+                AxisValueLabel {
+                    if let doubleValue = value.as(Double.self) {
+                        Text(compactAxisLabel(doubleValue, domain: yAxisDomain))
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondaryText)
+                    }
+                }
+            }
+        }
+        .chartXAxis {
+            AxisMarks(values: .automatic(desiredCount: 4)) { _ in
+                AxisValueLabel(format: .dateTime.month(.twoDigits).day(.twoDigits))
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color.secondaryText)
+            }
+        }
+        .chartYScale(domain: yAxisDomain)
+        .chartOverlay { proxy in
+            GeometryReader { geometry in
+                Rectangle()
+                    .fill(Color.clear)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { gesture in
+                                updateSelection(at: gesture.location, proxy: proxy, geometry: geometry)
+                            }
+                    )
+            }
+        }
+    }
+    
+    private var yAxisDomain: ClosedRange<Double> {
+        let values = filteredPoints.map {
+            NSDecimalNumber(decimal: $0.displayValue(for: metricMode)).doubleValue
+        }
+        guard let minV = values.min(), let maxV = values.max() else { return 0...1 }
+        let padding = max((maxV - minV) * 0.08, maxV * 0.02)
+        return (minV - padding)...(maxV + padding)
+    }
+    
+    private var emptyState: some View {
+        Text("尚無足夠資料顯示走勢")
+            .font(.subheadline)
+            .foregroundColor(.secondaryText)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 32)
+    }
+    
+    /// Y 軸標籤：台幣優先用「萬」，並依區間跨度決定小數位，避免 1.8M～2.0M 全部顯示成 2M
+    private func compactAxisLabel(_ value: Double, domain: ClosedRange<Double>) -> String {
+        let span = domain.upperBound - domain.lowerBound
+        let absValue = abs(value)
+        let sign = value < 0 ? "-" : ""
+        
+        if absValue >= 10_000 {
+            let wan = absValue / 10_000
+            if span < 100_000 {
+                return sign + String(format: "%.1f萬", wan)
+            }
+            return sign + String(format: "%.0f萬", wan)
+        }
+        if absValue >= 1_000 {
+            let k = absValue / 1_000
+            if span < 10_000 {
+                return sign + String(format: "%.1fK", k)
+            }
+            return sign + String(format: "%.0fK", k)
+        }
+        return sign + String(format: "%.0f", absValue)
+    }
+    
+    private func updateSelection(at location: CGPoint, proxy: ChartProxy, geometry: GeometryProxy) {
+        guard let plotFrame = proxy.plotFrame else { return }
+        let origin = geometry[plotFrame].origin
+        let xPosition = location.x - origin.x
+        guard xPosition >= 0, xPosition <= geometry[plotFrame].width else { return }
+        guard let date: Date = proxy.value(atX: xPosition) else { return }
+        selectedPoint = nearestPoint(to: date, in: filteredPoints)
+    }
+    
+    private func nearestPoint(to date: Date, in points: [TrendChartPoint]) -> TrendChartPoint? {
+        points.min { lhs, rhs in
+            abs(lhs.date.timeIntervalSince(date)) < abs(rhs.date.timeIntervalSince(date))
+        }
+    }
+    
+    private func normalizeCustomRange() {
+        if customStartDate > customEndDate {
+            swap(&customStartDate, &customEndDate)
+        }
+    }
+    
+    private func resetSelectionToLatest() {
+        selectedPoint = nil
+    }
+    
+    private func animateContentSwitch() {
+        withAnimation(ChartMotion.switchQuick) { contentPhase = 0.72 }
+        withAnimation(ChartMotion.switchSpring) { contentPhase = 1 }
+    }
+}
+
+// MARK: - 數值資訊區（與圖表分離）
+
+private struct TrendChartValueInfo: View {
+    let point: TrendChartPoint
+    let metricMode: TrendMetricMode
+    let currency: Currency
+    let isSelected: Bool
+    let showsCustomRangeLabel: Bool
+    
+    private var displayValue: Decimal {
+        point.displayValue(for: metricMode)
+    }
+    
+    private var valueColor: Color {
+        if metricMode == .netWorth && displayValue < 0 {
+            return .lossRed
+        }
+        return .primaryText
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(displayValue.formatted(currency: currency))
+                .font(.system(size: 28, weight: .bold, design: .rounded))
+                .foregroundColor(valueColor)
+                .contentTransition(.numericText())
+                .animation(ChartMotion.switchSpring, value: displayValue)
+            
+            HStack(spacing: 4) {
+                Text("未實現")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.secondaryText)
+                Text(unrealizedText)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(Color.marketColor(for: point.unrealizedGainLoss))
+                Text("(\(formatPercent(point.unrealizedReturnPercent)))")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(Color.marketColor(for: point.unrealizedGainLoss))
+                if showsCustomRangeLabel {
+                    Text("自訂範圍")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.secondaryText)
+                        .padding(.leading, 2)
+                }
+            }
+            .contentTransition(.numericText())
+            
+            Text(formatDate(point.date))
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(isSelected ? AppColors.appPrimary : .secondaryText)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    
+    private var unrealizedText: String {
+        let prefix = point.unrealizedGainLoss >= 0 ? "+" : ""
+        return prefix + point.unrealizedGainLoss.formatted(currency: currency)
+    }
+    
+    private func formatPercent(_ value: Decimal) -> String {
+        let sign = value >= 0 ? "+" : ""
+        return sign + value.formatted(fractionDigits: 2) + "%"
+    }
+    
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_TW")
+        formatter.dateFormat = "yyyy年M月d日"
+        return formatter.string(from: date)
+    }
+}

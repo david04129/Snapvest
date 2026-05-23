@@ -72,6 +72,8 @@ struct AccountsView: View {
             let isLoading = viewModel.balancesLoading && !viewModel.balancesLoadedOnce
             let categoryTotal: Decimal = accountType == .debt
                 ? -viewModel.debtCategoryTotalBalance
+                : accountType == .otherDebt
+                ? -viewModel.otherDebtCategoryTotalBalance
                 : (viewModel.categoryTotalsTWD[accountType] ?? 0)
             ExpandableAccountCategorySection(
                 accountType: accountType,
@@ -245,7 +247,7 @@ struct ArchivedDebtAccountsSection: View {
                 HStack {
                     Image(systemName: "archivebox.fill")
                         .foregroundColor(.secondaryText)
-                    Text("已封存債務")
+                    Text("已封存負債")
                         .font(.headline)
                         .foregroundColor(.primaryText)
                     Text("(\(accounts.count))")
@@ -304,7 +306,7 @@ enum AccountListAmountDisplay {
         balancesByAccountId: [String: AccountBalanceDisplay],
         currencyDisplay: AssetsCurrencyDisplay
     ) -> (amount: Decimal, currency: Currency) {
-        if accountType == .debt {
+        if accountType == .debt || accountType == .otherDebt {
             return (categoryTotalTWD, .TWD)
         }
         
@@ -318,7 +320,7 @@ enum AccountListAmountDisplay {
             switch account.accountType {
             case .twdDeposit:
                 return partial + balance.cashBalance
-            case .debt:
+            case .debt, .otherDebt:
                 return partial + balance.remainingBalance
             default:
                 return partial + balance.totalAssets
@@ -333,7 +335,7 @@ enum AccountListAmountDisplay {
         currencyDisplay: AssetsCurrencyDisplay
     ) -> (amount: Decimal, currency: Currency) {
         switch account.accountType {
-        case .debt:
+        case .debt, .otherDebt:
             return (-balance.remainingBalance, account.currency)
         case .twdDeposit:
             return (balance.cashBalance, account.currency)
@@ -373,7 +375,7 @@ struct ExpandableAccountCategorySection: View {
     }
     
     private var categoryAmountColor: Color {
-        accountType == .debt ? .lossRed : .primaryText
+        accountType == .debt || accountType == .otherDebt ? .lossRed : .primaryText
     }
     
     var body: some View {
@@ -405,7 +407,7 @@ struct ExpandableAccountCategorySection: View {
                     Spacer()
                     
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text(accountType == .debt ? "類別總債務" : "類別總資產")
+                        Text(accountType == .debt || accountType == .otherDebt ? "類別總債務" : "類別總資產")
                             .font(.caption)
                             .foregroundColor(.secondaryText)
                         Text(categoryTotalText)
@@ -530,6 +532,7 @@ struct AccountCardView: View {
     private var accountSubtitle: String {
         switch account.accountType {
         case .debt: return "剩餘本金"
+        case .otherDebt: return "目前欠款"
         case .twdDeposit: return "現金餘額"
         default: return "總資產"
         }
@@ -541,7 +544,7 @@ struct AccountCardView: View {
             Text("—")
                 .font(.snapAmountRow)
                 .foregroundColor(.secondaryText)
-        } else if account.accountType == .debt, let balance {
+        } else if account.accountType == .debt || account.accountType == .otherDebt, let balance {
             let display = AccountListAmountDisplay.cardAmount(
                 account: account,
                 balance: balance,

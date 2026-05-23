@@ -18,8 +18,10 @@ struct AccountBalanceDisplay: Equatable {
 struct AccountsBalancesResult: Equatable {
     let byAccountId: [String: AccountBalanceDisplay]
     let categoryTotalsTWD: [AccountType: Decimal]
-    /// 債務類別：各債務帳戶剩餘本金加總（正數）
+    /// 債務類別：各債務帳戶剩餘本金加總（正數，僅分期債務）
     let debtCategoryTotalBalance: Decimal
+    /// 其他債務類別加總（正數）
+    let otherDebtCategoryTotalBalance: Decimal
 }
 
 @MainActor
@@ -51,6 +53,7 @@ enum AccountsBalancesCalculator {
         var byAccountId: [String: AccountBalanceDisplay] = [:]
         var categoryTotalsTWD: [AccountType: Decimal] = [:]
         var debtCategoryTotalBalance: Decimal = 0
+        var otherDebtCategoryTotalBalance: Decimal = 0
 
         for account in accounts {
             if account.accountType == .debt {
@@ -62,6 +65,29 @@ enum AccountsBalancesCalculator {
                     holdingsValue: 0,
                     totalAssets: 0,
                     twdEquivalent: nil,
+                    remainingBalance: remaining
+                )
+                continue
+            }
+            
+            if account.accountType == .otherDebt {
+                if account.isArchived { continue }
+                let remaining = OtherDebtCalculator.remainingBalance(
+                    accountId: account.id,
+                    transactions: allTransactions,
+                    accounts: accounts
+                )
+                let twdRemaining = accountTotalInTWD(
+                    accountTotal: remaining,
+                    currency: account.currency,
+                    usdToTwdRate: usdToTwdRate
+                )
+                otherDebtCategoryTotalBalance += twdRemaining
+                byAccountId[account.id] = AccountBalanceDisplay(
+                    cashBalance: 0,
+                    holdingsValue: 0,
+                    totalAssets: 0,
+                    twdEquivalent: account.currency == .USD ? twdRemaining : nil,
                     remainingBalance: remaining
                 )
                 continue
@@ -131,7 +157,8 @@ enum AccountsBalancesCalculator {
         return AccountsBalancesResult(
             byAccountId: byAccountId,
             categoryTotalsTWD: categoryTotalsTWD,
-            debtCategoryTotalBalance: debtCategoryTotalBalance
+            debtCategoryTotalBalance: debtCategoryTotalBalance,
+            otherDebtCategoryTotalBalance: otherDebtCategoryTotalBalance
         )
     }
 

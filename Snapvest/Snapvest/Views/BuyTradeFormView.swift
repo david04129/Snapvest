@@ -563,7 +563,14 @@ struct BuyTradeFormView: View {
     private func loadCurrentPrice() async {
         guard !selectedSymbol.isEmpty else { return }
         do {
-            let price = try await priceService.fetchCurrentPrice(assetType: assetType, symbol: selectedSymbol)
+            let coingeckoId = assetType == .crypto
+                ? SymbolListService.coingeckoId(forCryptoSymbol: selectedSymbol)
+                : nil
+            let price = try await priceService.fetchCurrentPrice(
+                assetType: assetType,
+                symbol: selectedSymbol,
+                coingeckoId: coingeckoId
+            )
             await MainActor.run {
                 currentPrice = price
             }

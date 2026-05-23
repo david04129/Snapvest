@@ -17,6 +17,9 @@ struct HomeView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
+                    // 走勢圖（Mock 資料）
+                    HomeTrendChartSection(currency: viewModel.viewCurrency)
+                    
                     // 淨資產卡片
                     NetWorthCardView(viewModel: viewModel)
                     
@@ -51,11 +54,11 @@ struct HomeView: View {
                 customHeaderBar(icon: "house.fill", title: "首頁")
             }
             .refreshable {
-                await viewModel.ensureHomeSnapshot(userId: userId)
+                await viewModel.refreshDashboardTotals(userId: userId)
             }
             .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { _ in
                 Task {
-                    await viewModel.ensureHomeSnapshot(userId: userId)
+                    await viewModel.refreshDashboardTotals(userId: userId)
                 }
             }
         }

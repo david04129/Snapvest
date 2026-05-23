@@ -17,6 +17,7 @@ class AccountsViewModel: ObservableObject {
     @Published var balancesByAccountId: [String: AccountBalanceDisplay] = [:]
     @Published var categoryTotalsTWD: [AccountType: Decimal] = [:]
     @Published var debtCategoryTotalBalance: Decimal = 0
+    @Published var otherDebtCategoryTotalBalance: Decimal = 0
     @Published var balancesLoading = false
     @Published var balancesLoadedOnce = false
     
@@ -56,6 +57,7 @@ class AccountsViewModel: ObservableObject {
         balancesByAccountId = result.byAccountId
         categoryTotalsTWD = result.categoryTotalsTWD
         debtCategoryTotalBalance = result.debtCategoryTotalBalance
+        otherDebtCategoryTotalBalance = result.otherDebtCategoryTotalBalance
     }
     
     func createAccount(_ account: Account) async {
@@ -134,6 +136,47 @@ class AccountsViewModel: ObservableObject {
             return nil
         } catch {
             return "重新命名失敗：\(error.localizedDescription)"
+        }
+    }
+    
+    func archiveOtherDebtAccount(_ account: Account) async -> String? {
+        guard account.accountType == .otherDebt else {
+            return "僅其他債務帳戶可封存"
+        }
+        guard !account.isArchived else {
+            return "此帳戶已封存"
+        }
+        
+        do {
+            let transactions = try await dataService.fetchAllTransactions(userId: account.userId)
+            let accounts = try await dataService.fetchAccounts(userId: account.userId)
+            let remaining = OtherDebtCalculator.remainingBalance(
+                accountId: account.id,
+                transactions: transactions,
+                accounts: accounts
+            )
+            guard remaining <= DebtAccountArchive.balanceTolerance else {
+                return "欠款須歸零後才能封存"
+            }
+            
+            var updated = account
+            updated.isArchived = true
+            updated.archivedAt = Date()
+            updated.updatedAt = Date()
+            try await dataService.updateAccount(updated)
+            
+            await loadAccounts(userId: account.userId)
+            let priceService = PriceService(dataService: dataService)
+            _ = try? await SnapshotUpdater.rebuildSnapshots(
+                userId: account.userId,
+                dataService: dataService,
+                priceService: priceService
+            )
+            NotificationCenter.default.post(name: .snapshotsDidUpdate, object: nil)
+            await refreshBalances(userId: account.userId)
+            return nil
+        } catch {
+            return error.localizedDescription
         }
     }
     

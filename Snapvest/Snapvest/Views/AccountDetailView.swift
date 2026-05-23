@@ -33,6 +33,9 @@ struct AccountDetailView: View {
     @State private var isArchiving = false
     @State private var displayAccountName: String
     @State private var showingRenameSheet = false
+    @State private var otherDebtRemaining: Decimal = 0
+    @State private var otherDebtRepaid: Decimal = 0
+    @State private var showingOtherDebtRepayment = false
     
     init(account: Account, prefilledBalance: AccountBalanceDisplay? = nil) {
         self.account = account
@@ -48,10 +51,10 @@ struct AccountDetailView: View {
     var body: some View {
         Group {
             if account.accountType == .debt {
-                // 債務帳戶：顯示原本的樣式
                 debtAccountView
+            } else if account.accountType == .otherDebt {
+                otherDebtAccountView
             } else {
-                // 一般帳戶：顯示原本的樣式
                 regularAccountView
             }
         }
@@ -70,6 +73,8 @@ struct AccountDetailView: View {
             Task {
                 if account.accountType == .debt {
                     await loadDebtAccountData()
+                } else if account.accountType == .otherDebt {
+                    await loadOtherDebtAccountData()
                 } else {
                     await viewModel.refresh(accountId: account.id)
                 }
@@ -599,6 +604,208 @@ struct AccountDetailView: View {
         }
     }
     
+    private func loadOtherDebtAccountData() async {
+        await accountsViewModel.loadAccounts(userId: account.userId)
+        if let updated = accountsViewModel.accounts.first(where: { $0.id == account.id }) {
+            displayAccountName = updated.name
+        }
+        do {
+            let transactions = try await MockDataService.shared.fetchAllTransactions(userId: account.userId)
+            let accounts = try await MockDataService.shared.fetchAccounts(userId: account.userId)
+            let remaining = OtherDebtCalculator.remainingBalance(
+                accountId: account.id,
+                transactions: transactions,
+                accounts: accounts
+            )
+            let repaid = OtherDebtCalculator.totalRepaid(
+                accountId: account.id,
+                transactions: transactions,
+                accounts: accounts
+            )
+            await MainActor.run {
+                otherDebtRemaining = remaining
+                otherDebtRepaid = repaid
+            }
+        } catch {
+            await MainActor.run {
+                otherDebtRemaining = 0
+                otherDebtRepaid = 0
+            }
+        }
+    }
+    
+    // MARK: - 其他債務帳戶視圖
+    private var otherDebtAccountView: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                otherDebtAccountHeader
+                otherDebtMetricsGrid
+                OtherDebtInfoCard(account: liveOtherDebtAccount)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
+            .padding(.bottom, 100)
+        }
+        .background(Color.mainBackground)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .navigationBarTitleDisplayMode(.inline)
+        .tint(.appPrimary)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                TransactionHistoryToolbarChip {
+                    showTransactionHistory = true
+                }
+            }
+            .sharedBackgroundVisibility(.hidden)
+        }
+        .safeAreaInset(edge: .bottom) {
+            otherDebtBottomButtons
+        }
+        .sheet(isPresented: $showingOtherDebtRepayment, onDismiss: {
+            Task { await loadOtherDebtAccountData() }
+        }) {
+            OtherDebtRepaymentView(
+                debtAccount: liveOtherDebtAccount,
+                prefilledAccounts: accountsViewModel.accounts
+            )
+        }
+        .task {
+            await loadOtherDebtAccountData()
+        }
+        .alert("封存帳戶", isPresented: $showArchiveConfirmation) {
+            Button("取消", role: .cancel) {}
+            Button("封存", role: .destructive) {
+                Task { await performArchiveOtherDebtAccount() }
+            }
+        } message: {
+            Text("封存後將自帳戶列表隱藏，還款紀錄會保留。確定要封存「\(liveOtherDebtAccount.name)」嗎？")
+        }
+        .alert("無法封存", isPresented: Binding(
+            get: { archiveErrorMessage != nil },
+            set: { if !$0 { archiveErrorMessage = nil } }
+        )) {
+            Button("好", role: .cancel) {}
+        } message: {
+            Text(archiveErrorMessage ?? "")
+        }
+    }
+    
+    private var otherDebtAccountHeader: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    accountNameTitleRow(name: displayAccountName)
+                }
+                Spacer()
+                if liveOtherDebtAccount.isArchived {
+                    Text("已封存")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.secondaryText)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.secondaryBackground)
+                        .clipShape(Capsule())
+                } else {
+                    Text(AccountType.otherDebt.displayName)
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(AccountType.otherDebt.color)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(AccountType.otherDebt.color.opacity(0.15))
+                        .clipShape(Capsule())
+                }
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.cardBackground)
+        .cornerRadius(16)
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 16)
+                .fill(AccountType.otherDebt.color)
+                .frame(width: 4)
+        }
+        .shadow(color: AppColors.shadowMedium, radius: 8, x: 0, y: 2)
+    }
+    
+    private var otherDebtMetricsGrid: some View {
+        LazyVGrid(
+            columns: [
+                GridItem(.flexible(), spacing: 10),
+                GridItem(.flexible(), spacing: 10)
+            ],
+            spacing: 10
+        ) {
+            MetricTile(
+                title: "目前欠款",
+                value: otherDebtRemaining.formatted(currency: liveOtherDebtAccount.currency),
+                valueColor: .lossRed
+            )
+            MetricTile(
+                title: "已還總額",
+                value: otherDebtRepaid.formatted(currency: liveOtherDebtAccount.currency),
+                valueColor: .profitGreen
+            )
+        }
+    }
+    
+    private var otherDebtRepaymentBottomButtons: some View {
+        HStack(spacing: 12) {
+            Button { showingOtherDebtRepayment = true } label: {
+                HStack {
+                    Image(systemName: "creditcard.fill")
+                    Text("還款")
+                }
+                .font(.headline)
+                .foregroundColor(AppColors.actionForeground)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(Color.appPrimary)
+                .cornerRadius(12)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(Color.mainBackground)
+        .overlay(
+            Rectangle()
+                .frame(height: 1)
+                .foregroundColor(Color.separator.opacity(0.3)),
+            alignment: .top
+        )
+    }
+    
+    private var liveOtherDebtAccount: Account {
+        accountsViewModel.accounts.first(where: { $0.id == account.id }) ?? account
+    }
+    
+    private var canArchiveOtherDebtAccount: Bool {
+        otherDebtRemaining <= DebtAccountArchive.balanceTolerance && !liveOtherDebtAccount.isArchived
+    }
+    
+    @ViewBuilder
+    private var otherDebtBottomButtons: some View {
+        if liveOtherDebtAccount.isArchived {
+            archivedDebtBottomNotice
+        } else if canArchiveOtherDebtAccount {
+            archiveDebtBottomBar
+        } else {
+            otherDebtRepaymentBottomButtons
+        }
+    }
+    
+    private func performArchiveOtherDebtAccount() async {
+        isArchiving = true
+        defer { isArchiving = false }
+        if let error = await accountsViewModel.archiveOtherDebtAccount(liveOtherDebtAccount) {
+            archiveErrorMessage = error
+        } else {
+            dismiss()
+        }
+    }
+    
     // MARK: - 載入債務帳戶數據
     private func presentRepaymentSheet(type: RepaymentType) {
         guard let liability = currentLiability else { return }
@@ -1078,6 +1285,54 @@ struct DetailsCard: View {
         formatter.dateFormat = "yyyy年MM月dd日"
         formatter.locale = Locale(identifier: "zh_TW")
         return formatter.string(from: date)
+    }
+}
+
+// MARK: - 其他債務資訊卡片
+struct OtherDebtInfoCard: View {
+    let account: Account
+    
+    var body: some View {
+        AccountSectionCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("債務資訊")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(.secondaryText)
+                
+                VStack(spacing: 16) {
+                    HStack {
+                        Text("類型")
+                            .font(.subheadline)
+                            .foregroundColor(.secondaryText)
+                        Spacer()
+                        HStack(spacing: 6) {
+                            Image(systemName: account.accountType.icon)
+                                .foregroundColor(account.accountType.color)
+                                .font(.system(size: 16))
+                            Text(account.accountType.displayName)
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.primaryText)
+                        }
+                    }
+                    
+                    Divider()
+                    
+                    InfoRowWithoutIcon(
+                        label: "幣別",
+                        value: account.currency.rawValue
+                    )
+                    
+                    Divider()
+                    
+                    InfoRowWithoutIcon(
+                        label: "計算方式",
+                        value: "手動紀錄欠款"
+                    )
+                }
+            }
+        }
     }
 }
 

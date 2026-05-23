@@ -3,7 +3,10 @@
 //  Snapvest
 //
 //  在 App 啟動時載入 Supabase 設定
-//  請在 Info.plist 或此處設定 SUPABASE_URL、SUPABASE_ANON_KEY
+//  Info.plist：
+//  - SUPABASE_URL
+//  - SUPABASE_ANON_KEY（publishable `sb_publishable__…` 或 legacy anon JWT）
+//  - SUPABASE_ANON_JWT（選填，legacy anon JWT `eyJ…`，供 Edge Function Authorization）
 //
 
 import Foundation
@@ -11,16 +14,22 @@ import Foundation
 enum SupabaseConfigLoader {
     /// 在 App 啟動時呼叫
     static func configure() {
-        // 開發與正式版皆可從 Info.plist 讀取，或直接設定如下
         #if DEBUG
-        SupabaseConfig.url = "https://eqtbyusegarvdfplcorq.supabase.co"
-        SupabaseConfig.anonKey = "sb_publishable__E7HewKbHnA47_P1Z6mkOg_qMxiC3os"
+        SupabaseConfig.url = stringFromPlist("SUPABASE_URL")
+            ?? "https://eqtbyusegarvdfplcorq.supabase.co"
+        SupabaseConfig.anonKey = stringFromPlist("SUPABASE_ANON_KEY")
+            ?? "sb_publishable__E7HewKbHnA47_P1Z6mkOg_qMxiC3os"
         #else
-        if let url = Bundle.main.object(forInfoDictionaryKey: "SUPABASE_URL") as? String,
-           let key = Bundle.main.object(forInfoDictionaryKey: "SUPABASE_ANON_KEY") as? String {
-            SupabaseConfig.url = url
-            SupabaseConfig.anonKey = key
-        }
+        SupabaseConfig.url = stringFromPlist("SUPABASE_URL")
+        SupabaseConfig.anonKey = stringFromPlist("SUPABASE_ANON_KEY")
         #endif
+        
+        SupabaseConfig.anonJwt = stringFromPlist("SUPABASE_ANON_JWT")
+    }
+    
+    private static func stringFromPlist(_ key: String) -> String? {
+        guard let value = Bundle.main.object(forInfoDictionaryKey: key) as? String else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }

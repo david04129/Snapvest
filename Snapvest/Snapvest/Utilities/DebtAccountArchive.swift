@@ -40,16 +40,19 @@ enum DebtAccountArchive {
 
 extension Account {
     var isActiveForListing: Bool {
-        accountType != .debt || !isArchived
+        if accountType.isLiabilityAccount {
+            return !isArchived
+        }
+        return true
     }
 }
 
 extension Array where Element == Account {
     func activeAccounts(ofType type: AccountType) -> [Account] {
-        filter { $0.accountType == type && ($0.accountType != .debt || !$0.isArchived) }
+        filter { $0.accountType == type && $0.isActiveForListing }
     }
     
     var archivedDebtAccounts: [Account] {
-        filter { $0.accountType == .debt && $0.isArchived }
+        filter { $0.accountType.isLiabilityAccount && $0.isArchived }
     }
 }

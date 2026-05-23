@@ -26,6 +26,8 @@ struct AddAccountView: View {
     @State private var selectedRepaymentAccount: Account?
     @State private var repaymentDay: String = "1"
     @State private var startDate: Date = Date()  // 開始日期
+    @State private var otherDebtAmount: String = ""
+    @State private var otherDebtNotes: String = ""
     @State private var userId: String = "test-user-id"
     @State private var duplicateNameError: String? = nil
     
@@ -40,6 +42,8 @@ struct AddAccountView: View {
         monthlyPayment = 0
         repaymentDay = "1"
         startDate = Date()
+        otherDebtAmount = ""
+        otherDebtNotes = ""
         selectedRepaymentAccount = nil
         duplicateNameError = nil
     }
@@ -57,6 +61,8 @@ struct AddAccountView: View {
             if let accountType = selectedAccountType {
                 if accountType == .debt {
                     return "新增債務帳戶"
+                } else if accountType == .otherDebt {
+                    return "新增其他債務"
                 } else {
                     return "新增\(accountType.displayName)"
                 }
@@ -130,6 +136,23 @@ struct AddAccountView: View {
                             },
                             onSave: {
                                 saveDebtAccount()
+                            }
+                        )
+                    } else if selectedAccountType == .otherDebt {
+                        OtherDebtAccountDetailsFormView(
+                            name: $name,
+                            amount: $otherDebtAmount,
+                            notes: $otherDebtNotes,
+                            startDate: $startDate,
+                            duplicateNameError: $duplicateNameError,
+                            onCancel: {
+                                resetForm()
+                                withAnimation {
+                                    showingAccountDetails = false
+                                }
+                            },
+                            onSave: {
+                                saveOtherDebtAccount()
                             }
                         )
                     } else {
@@ -227,6 +250,64 @@ struct AddAccountView: View {
             await portfolioViewModel.loadData(userId: userId)
             
             resetForm() // 重置表單
+            dismiss()
+        }
+    }
+    
+    private func saveOtherDebtAccount() {
+        guard selectedAccountType == .otherDebt,
+              let amountValue = Decimal(string: otherDebtAmount),
+              amountValue > 0 else { return }
+        
+        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+            duplicateNameError = "請輸入名稱"
+            return
+        }
+        
+        if isDuplicateName(name, accountType: .otherDebt) {
+            duplicateNameError = "此類別已有相同名稱的帳戶"
+            return
+        }
+        
+        duplicateNameError = nil
+        
+        Task {
+            let account = Account(
+                userId: userId,
+                name: name.trimmingCharacters(in: .whitespaces),
+                accountType: .otherDebt
+            )
+            await viewModel.createAccount(account)
+            
+            let noteText = otherDebtNotes.trimmingCharacters(in: .whitespacesAndNewlines)
+            var transactionNotes = "新增其他債務：\(account.name)"
+            if !noteText.isEmpty {
+                transactionNotes += "｜\(noteText)"
+            }
+            
+            let transaction = Transaction(
+                accountId: account.id,
+                type: .liability,
+                assetType: .cash,
+                symbol: "DEBT",
+                quantity: 1,
+                price: amountValue,
+                currency: account.currency,
+                notes: transactionNotes,
+                transactionDate: startDate
+            )
+            await transactionsViewModel.createTransaction(transaction)
+            
+            await viewModel.loadAccounts(userId: userId)
+            let priceService = PriceService(dataService: MockDataService.shared)
+            _ = try? await SnapshotUpdater.rebuildSnapshots(
+                userId: userId,
+                dataService: MockDataService.shared,
+                priceService: priceService
+            )
+            NotificationCenter.default.post(name: .snapshotsDidUpdate, object: nil)
+            
+            resetForm()
             dismiss()
         }
     }
@@ -1276,6 +1357,8 @@ struct AccountDetailsFormView: View {
             return "例如：Binance"
         case .debt:
             return "例如：房屋貸款"
+        case .otherDebt:
+            return "例如：欠朋友"
         }
     }
     
@@ -1519,6 +1602,237 @@ struct AccountPickerSheet: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - 其他債務帳戶詳情表單
+
+struct OtherDebtAccountDetailsFormView: View {
+    @Binding var name: String
+    @Binding var amount: String
+    @Binding var notes: String
+    @Binding var startDate: Date
+    @Binding var duplicateNameError: String?
+    let onCancel: () -> Void
+    let onSave: () -> Void
+    
+    @State private var showingDatePicker = false
+    
+    private let accountType = AccountType.otherDebt
+    
+    private var isFormValid: Bool {
+        guard !name.trimmingCharacters(in: .whitespaces).isEmpty,
+              let value = Decimal(string: amount),
+              value > 0 else { return false }
+        return true
+    }
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(spacing: 24) {
+                    VStack(spacing: 12) {
+                        Image(systemName: accountType.icon)
+                            .font(.system(size: 48))
+                            .foregroundColor(accountType.color)
+                            .frame(width: 80, height: 80)
+                            .background(accountType.color.opacity(0.1))
+                            .clipShape(Circle())
+                        
+                        Text(accountType.displayName)
+                            .font(.title3)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primaryText)
+                        
+                        Text(accountType.description)
+                            .font(.subheadline)
+                            .foregroundColor(.secondaryText)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 32)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 32)
+                    
+                    VStack(spacing: 0) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "person.circle.fill")
+                                    .font(.system(size: 16))
+                                    .foregroundColor(accountType.color)
+                                Text("帳戶名稱")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.primaryText)
+                            }
+                            
+                            TextField("例如：欠朋友", text: $name)
+                                .textFieldStyle(CustomTextFieldStyle())
+                                .onChange(of: name) { _, _ in duplicateNameError = nil }
+                            
+                            if let error = duplicateNameError {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "exclamationmark.circle.fill")
+                                        .font(.caption)
+                                        .foregroundColor(.red)
+                                    Text(error)
+                                        .font(.caption)
+                                        .foregroundColor(.red)
+                                }
+                                .padding(.leading, 4)
+                                .padding(.top, 4)
+                            }
+                        }
+                        .padding(20)
+                        
+                        Divider().padding(.horizontal, 20)
+                        
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "dollarsign.circle.fill")
+                                    .font(.system(size: 16))
+                                    .foregroundColor(accountType.color)
+                                Text("目前欠款")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.primaryText)
+                                Text("(TWD)")
+                                    .font(.caption)
+                                    .foregroundColor(.secondaryText)
+                            }
+                            
+                            TextField("0", text: $amount)
+                                .keyboardType(.decimalPad)
+                                .textFieldStyle(CustomTextFieldStyle())
+                                .onChange(of: amount) { oldValue, newValue in
+                                    let filtered = newValue.filter { $0.isNumber || $0 == "." }
+                                    if filtered != newValue { amount = filtered }
+                                    if let value = Decimal(string: filtered), value <= 0, !filtered.isEmpty {
+                                        amount = oldValue.isEmpty ? "" : oldValue
+                                    }
+                                }
+                            
+                            Text("不需填寫期數或利率，還款後會直接減少欠款")
+                                .font(.caption)
+                                .foregroundColor(.secondaryText)
+                                .padding(.leading, 4)
+                                .padding(.top, 4)
+                        }
+                        .padding(20)
+                        
+                        Divider().padding(.horizontal, 20)
+                        
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "note.text")
+                                    .font(.system(size: 16))
+                                    .foregroundColor(accountType.color)
+                                Text("備註（選填）")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.primaryText)
+                            }
+                            
+                            TextField("備註", text: $notes)
+                                .textFieldStyle(CustomTextFieldStyle())
+                        }
+                        .padding(20)
+                        
+                        Divider().padding(.horizontal, 20)
+                        
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "calendar.badge.plus")
+                                    .font(.system(size: 16))
+                                    .foregroundColor(accountType.color)
+                                Text("開始日期")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.primaryText)
+                            }
+                            
+                            Button { showingDatePicker = true } label: {
+                                HStack {
+                                    Text(formatDate(startDate))
+                                        .font(.body)
+                                        .foregroundColor(.primaryText)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    Image(systemName: "calendar")
+                                        .font(.system(size: 16))
+                                        .foregroundColor(.secondaryText)
+                                }
+                                .padding()
+                                .background(Color.secondaryBackground)
+                                .cornerRadius(12)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(Color.secondaryText.opacity(0.2), lineWidth: 1)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            
+                            Text("此筆債務的開始日期")
+                                .font(.caption)
+                                .foregroundColor(.secondaryText)
+                                .padding(.leading, 4)
+                                .padding(.top, 4)
+                        }
+                        .padding(20)
+                    }
+                    .background(Color.secondaryBackground)
+                    .cornerRadius(16)
+                    .padding(.horizontal)
+                    
+                    Spacer(minLength: 20)
+                }
+                .padding(.top, 8)
+            }
+            
+            Button(action: onSave) {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 18))
+                    Text("建立帳戶")
+                        .font(.headline)
+                }
+                .foregroundColor(AppColors.actionForeground)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(isFormValid ? accountType.color : AppColors.disabledBackground)
+                .cornerRadius(12)
+            }
+            .disabled(!isFormValid)
+            .padding(.horizontal)
+            .padding(.bottom)
+        }
+        .sheet(isPresented: $showingDatePicker) {
+            NavigationStack {
+                VStack {
+                    DatePicker(
+                        "選擇開始日期",
+                        selection: $startDate,
+                        displayedComponents: .date
+                    )
+                    .datePickerStyle(.graphical)
+                    .padding()
+                    Spacer()
+                }
+                .navigationTitle("選擇開始日期")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button("完成") { showingDatePicker = false }
+                    }
+                }
+            }
+            .presentationDetents([.medium])
+        }
+    }
+    
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy年MM月dd日"
+        formatter.locale = Locale(identifier: "zh_TW")
+        return formatter.string(from: date)
     }
 }
 

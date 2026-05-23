@@ -130,16 +130,30 @@ class PortfolioViewModel: ObservableObject {
             let snapshot = try await dataService.fetchHomeDashboardSnapshot(userId: userId)
             if snapshot == nil {
                 await loadData(userId: userId)
+            } else {
+                homeSnapshot = snapshot
+                applyHomeSnapshot(snapshot)
             }
-            let latestSnapshot = try await dataService.fetchHomeDashboardSnapshot(userId: userId)
-            homeSnapshot = latestSnapshot
-            applyHomeSnapshot(latestSnapshot)
             await refreshPieChartData(userId: userId)
         } catch {
             errorMessage = "載入首頁快照失敗：\(error.localizedDescription)"
         }
         
         isLoading = false
+        hasLoadedOnce = true
+    }
+    
+    /// 依最新帳戶／交易／負債重算首頁總覽（含其他債務），並寫回快照
+    func refreshDashboardTotals(userId: String) async {
+        do {
+            accounts = try await dataService.fetchAccounts(userId: userId)
+            liabilities = try await loadLiabilities(userId: userId)
+            await calculateSummary()
+            await saveHomeDashboardSnapshot(userId: userId)
+            await refreshPieChartData(userId: userId)
+        } catch {
+            errorMessage = "刷新首頁失敗：\(error.localizedDescription)"
+        }
         hasLoadedOnce = true
     }
     
@@ -236,8 +250,7 @@ class PortfolioViewModel: ObservableObject {
             // 注意：債務帳戶不應計入總資產，只計算非債務帳戶的現金
             var cashByCurrencyLocal: [Currency: Decimal] = [:]
             for account in accounts {
-                // 跳過債務帳戶，因為債務是負債，不應計入總資產
-                if account.accountType == .debt {
+                if account.accountType.isLiabilityAccount {
                     continue
                 }
                 
@@ -267,29 +280,28 @@ class PortfolioViewModel: ObservableObject {
             }
             
             totalCash = totalCashTWD
+            
+            totalLiabilities = TotalDebtCalculator.totalLiabilitiesTWD(
+                accounts: accounts,
+                liabilities: liabilities,
+                transactions: allTransactions,
+                usdToTwdRate: usdToTwdRate
+            )
         } catch {
             // 如果獲取交易失敗，設為 0
             totalCash = 0
-        }
-        
-        // 計算總負債（轉換為 TWD；已封存債務不計入）
-        var totalLiabilitiesValue: Decimal = 0
-        for liability in liabilities {
-            if DebtAccountArchive.isDebtAccountArchived(named: liability.name, accounts: accounts) {
-                continue
-            }
-            if liability.currency == .TWD {
-                totalLiabilitiesValue += liability.remainingBalance
-            } else if liability.currency == .USD {
-                totalLiabilitiesValue += liability.remainingBalance * usdToTwdRate
-            } else {
-                // 其他貨幣，暫時不轉換
-                totalLiabilitiesValue += liability.remainingBalance
+            totalLiabilities = liabilities.reduce(Decimal.zero) { partial, liability in
+                if DebtAccountArchive.isDebtAccountArchived(named: liability.name, accounts: accounts) {
+                    return partial
+                }
+                if liability.currency == .USD {
+                    return partial + liability.remainingBalance * usdToTwdRate
+                }
+                return partial + liability.remainingBalance
             }
         }
         
         totalInvestments = totalInvestmentsValue
-        totalLiabilities = totalLiabilitiesValue
         unrealizedGainLoss = totalUnrealizedGainLoss
         totalAssets = totalInvestments + totalCash
         

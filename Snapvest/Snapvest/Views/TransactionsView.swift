@@ -39,12 +39,10 @@ struct TransactionsView: View {
     @State private var tempSelectedAccountIds: Set<String> = []
     
     // 時間篩選（開始／結束日期）
-    @State private var isTimeFilterEnabled = false
+    @State private var timePreset: DateRangePreset = .all
     @State private var filterStartDate: Date = TransactionsView.defaultFilterStartDate
     @State private var filterEndDate: Date = TransactionsView.defaultFilterEndDate
-    @State private var showingTimeFilterSheet = false
-    @State private var tempFilterStartDate: Date = TransactionsView.defaultFilterStartDate
-    @State private var tempFilterEndDate: Date = TransactionsView.defaultFilterEndDate
+    @State private var activeTimeFilterDateField: CustomDatePickerField?
     
     // 篩選偏好持久化的 key
     private let filterPreferencesKey = "TransactionFilterPreferences"
@@ -55,14 +53,23 @@ struct TransactionsView: View {
     private static var defaultFilterStartDate: Date {
         let calendar = Calendar.current
         let end = calendar.startOfDay(for: Date())
-        return calendar.date(byAdding: .month, value: -1, to: end) ?? end
+        return calendar.date(byAdding: .day, value: -6, to: end) ?? end
+    }
+    private static var filterEarliestDate: Date {
+        Calendar.current.date(byAdding: .year, value: -20, to: Date()) ?? .distantPast
     }
     
     struct FilterPreferences: Codable {
         var selectedAccountIds: [String] = []
-        var isTimeFilterEnabled: Bool = false
+        var timePreset: String?
         var filterStartDate: Date?
         var filterEndDate: Date?
+        // 舊版相容
+        var isTimeFilterEnabled: Bool?
+    }
+    
+    private var isTimeFilterEnabled: Bool {
+        timePreset != .all
     }
     
     // MARK: - View Components
@@ -96,19 +103,25 @@ struct TransactionsView: View {
             return "共 \(filteredTransactions.count) 筆"
         }
         var parts: [String] = []
-        if isTimeFilterEnabled { parts.append(timeFilterChipTitle) }
+        if isTimeFilterEnabled { parts.append(timeFilterStatusLabel) }
         if !selectedAccountIds.isEmpty { parts.append("已選 \(selectedAccountIds.count) 帳戶") }
         parts.append("共 \(filteredTransactions.count) 筆")
         return parts.joined(separator: " · ")
     }
     
     private var filterListRefreshToken: String {
-        "\(isTimeFilterEnabled)_\(filterStartDate.timeIntervalSince1970)_\(filterEndDate.timeIntervalSince1970)_\(selectedAccountIds.hashValue)_\(filteredTransactions.count)"
+        "\(timePreset.rawValue)_\(filterStartDate.timeIntervalSince1970)_\(filterEndDate.timeIntervalSince1970)_\(selectedAccountIds.hashValue)_\(filteredTransactions.count)"
     }
     
-    private var timeFilterChipTitle: String {
-        guard isTimeFilterEnabled else { return "選擇時間" }
-        return "\(formatFilterDate(filterStartDate)) – \(formatFilterDate(filterEndDate))"
+    private var timeFilterStatusLabel: String {
+        switch timePreset {
+        case .all:
+            return "全部時間"
+        case .custom:
+            return "\(formatFilterDate(filterStartDate)) – \(formatFilterDate(filterEndDate))"
+        default:
+            return timePreset.rawValue
+        }
     }
     
     private func formatFilterDate(_ date: Date) -> String {
@@ -122,43 +135,35 @@ struct TransactionsView: View {
         selectedAccountIds.isEmpty ? "選帳戶" : "已選 \(selectedAccountIds.count) 帳戶"
     }
     
-    private func openTimeFilterSheet() {
-        if isTimeFilterEnabled {
-            tempFilterStartDate = filterStartDate
-            tempFilterEndDate = filterEndDate
-        } else {
-            tempFilterStartDate = Self.defaultFilterStartDate
-            tempFilterEndDate = Self.defaultFilterEndDate
-        }
-        showingTimeFilterSheet = true
-    }
-    
     private func openAccountFilterSheet() {
         tempSelectedAccountIds = selectedAccountIds
         showingAccountFilterSheet = true
     }
     
-    private func applyTimeFilter() {
-        var start = tempFilterStartDate
-        var end = tempFilterEndDate
-        if start > end {
-            swap(&start, &end)
+    private func applyTimePreset(_ preset: DateRangePreset) {
+        guard preset != .all else {
+            saveFilterPreferences()
+            return
         }
-        withAnimation(ChartMotion.switchSpring) {
-            isTimeFilterEnabled = true
-            filterStartDate = start
-            filterEndDate = end
+        guard preset != .custom else {
+            saveFilterPreferences()
+            return
         }
+        let range = DateRangePresetCalculator.dateRange(
+            for: preset,
+            customStart: filterStartDate,
+            customEnd: filterEndDate
+        )
+        filterStartDate = range.start
+        filterEndDate = range.end
         saveFilterPreferences()
-        showingTimeFilterSheet = false
     }
     
-    private func clearTimeFilter() {
-        withAnimation(ChartMotion.switchSpring) {
-            isTimeFilterEnabled = false
+    private func normalizeCustomDateRange() {
+        if filterStartDate > filterEndDate {
+            swap(&filterStartDate, &filterEndDate)
         }
         saveFilterPreferences()
-        showingTimeFilterSheet = false
     }
     
     private func applyAccountFilter() {
@@ -171,16 +176,24 @@ struct TransactionsView: View {
     
     private var filterSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Button(action: openTimeFilterSheet) {
-                    FilterSheetChipLabel(
-                        title: timeFilterChipTitle,
-                        icon: "calendar",
-                        isActive: isTimeFilterEnabled
-                    )
+            DateRangePresetPicker(selection: $timePreset)
+                .onChange(of: timePreset) { _, preset in
+                    withAnimation(ChartMotion.switchSpring) {
+                        applyTimePreset(preset)
+                    }
                 }
-                .buttonStyle(.plain)
-                
+            
+            if timePreset == .custom {
+                CustomDateRangeBar(
+                    startDate: filterStartDate,
+                    endDate: filterEndDate,
+                    onStartTapped: { activeTimeFilterDateField = .start },
+                    onEndTapped: { activeTimeFilterDateField = .end }
+                )
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+            
+            HStack(spacing: 8) {
                 Button(action: openAccountFilterSheet) {
                     FilterSheetChipLabel(
                         title: accountFilterChipTitle,
@@ -214,6 +227,7 @@ struct TransactionsView: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
+        .animation(ChartMotion.switchSpring, value: timePreset == .custom)
         .animation(ChartMotion.switchSpring, value: filterListRefreshToken)
     }
     
@@ -331,7 +345,7 @@ struct TransactionsView: View {
     
     // 計算日期範圍（只計算一次，避免重複計算）
     private func calculateDateRange() -> (start: Date, end: Date)? {
-        guard isTimeFilterEnabled else { return nil }
+        guard timePreset != .all else { return nil }
         let calendar = Calendar.current
         let startOfDay = calendar.startOfDay(for: filterStartDate)
         let endOfDay = calendar.date(bySettingHour: 23, minute: 59, second: 59, of: filterEndDate) ?? filterEndDate
@@ -341,7 +355,7 @@ struct TransactionsView: View {
     // 清除所有篩選
     private func clearAllFilters() {
         selectedAccountIds.removeAll()
-        isTimeFilterEnabled = false
+        timePreset = .all
         filterStartDate = Self.defaultFilterStartDate
         filterEndDate = Self.defaultFilterEndDate
         saveFilterPreferences()
@@ -351,9 +365,10 @@ struct TransactionsView: View {
     private func saveFilterPreferences() {
         let preferences = FilterPreferences(
             selectedAccountIds: Array(selectedAccountIds),
-            isTimeFilterEnabled: isTimeFilterEnabled,
-            filterStartDate: isTimeFilterEnabled ? filterStartDate : nil,
-            filterEndDate: isTimeFilterEnabled ? filterEndDate : nil
+            timePreset: timePreset.rawValue,
+            filterStartDate: timePreset == .all ? nil : filterStartDate,
+            filterEndDate: timePreset == .all ? nil : filterEndDate,
+            isTimeFilterEnabled: timePreset != .all
         )
         
         if let encoded = try? JSONEncoder().encode(preferences) {
@@ -371,12 +386,22 @@ struct TransactionsView: View {
         
         // 批量更新狀態，減少視圖重繪次數
         selectedAccountIds = Set(preferences.selectedAccountIds)
-        isTimeFilterEnabled = preferences.isTimeFilterEnabled
         if let startDate = preferences.filterStartDate {
             filterStartDate = startDate
         }
         if let endDate = preferences.filterEndDate {
             filterEndDate = endDate
+        }
+        if let presetRaw = preferences.timePreset,
+           let preset = DateRangePreset(rawValue: presetRaw) {
+            timePreset = preset
+        } else if preferences.isTimeFilterEnabled == true {
+            timePreset = DateRangePresetCalculator.matchingPreset(
+                start: filterStartDate,
+                end: filterEndDate
+            ) ?? .custom
+        } else {
+            timePreset = .all
         }
     }
     
@@ -446,8 +471,16 @@ struct TransactionsView: View {
                     Text(errorMessage)
                 }
             }
-            .sheet(isPresented: $showingTimeFilterSheet) {
-                timeFilterSheet
+            .sheet(item: $activeTimeFilterDateField) { field in
+                WheelDatePickerSheet(
+                    title: field.title,
+                    selection: field == .start ? $filterStartDate : $filterEndDate,
+                    earliestDate: Self.filterEarliestDate,
+                    onDone: {
+                        normalizeCustomDateRange()
+                        activeTimeFilterDateField = nil
+                    }
+                )
             }
             .sheet(isPresented: $showingAccountFilterSheet) {
                 accountFilterSheet
@@ -487,8 +520,8 @@ struct TransactionsView: View {
         showingEditExpense = false
         showingEditTransfer = false
         showingEditRepayment = false
-        showingTimeFilterSheet = false
         showingAccountFilterSheet = false
+        activeTimeFilterDateField = nil
         buyTradeEditItem = nil
         sellTradeEditItem = nil
         transactionPendingDelete = nil
@@ -575,47 +608,6 @@ struct TransactionsView: View {
         }
         await viewModel.loadTransactions(userId: userId)
         await portfolioViewModel.loadData(userId: userId)
-    }
-    
-    // MARK: - 時間篩選 Sheet
-    
-    private var timeFilterSheet: some View {
-        NavigationStack {
-            ScrollView {
-                customDateRangeEditor(
-                    startDate: $tempFilterStartDate,
-                    endDate: $tempFilterEndDate
-                )
-                .padding(.horizontal)
-                .padding(.top, 8)
-                .padding(.bottom, 24)
-            }
-            .background(Color.secondaryBackground)
-            .navigationTitle("選擇日期")
-            .navigationBarTitleDisplayMode(.inline)
-            .tint(.appPrimary)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("取消") {
-                        showingTimeFilterSheet = false
-                    }
-                    .foregroundColor(.appPrimary)
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("套用", action: applyTimeFilter)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.appPrimary)
-                }
-                ToolbarItem(placement: .bottomBar) {
-                    Button("不限時間", action: clearTimeFilter)
-                        .font(.subheadline)
-                        .foregroundColor(.secondaryText)
-                        .frame(maxWidth: .infinity)
-                }
-            }
-        }
-        .presentationDetents([.large])
-        .presentationDragIndicator(.visible)
     }
     
     // MARK: - 帳戶篩選 Sheet
@@ -725,37 +717,6 @@ struct TransactionsView: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
-    }
-    
-    private func customDateRangeEditor(startDate: Binding<Date>, endDate: Binding<Date>) -> some View {
-        VStack(spacing: 12) {
-            customDatePickerCard(label: "開始日期", date: startDate)
-            customDatePickerCard(label: "結束日期", date: endDate)
-        }
-    }
-    
-    private func customDatePickerCard(label: String, date: Binding<Date>) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(label)
-                .font(.subheadline)
-                .fontWeight(.semibold)
-                .foregroundColor(.primaryText)
-            
-            DatePicker("", selection: date, displayedComponents: [.date])
-                .datePickerStyle(.graphical)
-                .labelsHidden()
-                .tint(.appPrimary)
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.cardBackground)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.separator.opacity(0.35), lineWidth: 1)
-        }
     }
     
     // MARK: - 自定義標題欄

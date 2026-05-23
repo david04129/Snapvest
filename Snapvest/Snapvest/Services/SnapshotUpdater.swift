@@ -203,20 +203,33 @@ enum SnapshotUpdater {
         var snapshots: [AssetPriceSnapshot] = []
         if SupabaseConfig.isConfigured, !symbols.isEmpty {
             snapshots = (try? await SupabasePriceService.fetchPrices(symbols: symbols)) ?? []
-        }
-        if snapshots.isEmpty {
+        } else if !symbols.isEmpty {
             snapshots = try await dataService.fetchAssetPriceSnapshots(symbols: symbols)
         }
-        let existingKeys = Set(snapshots.map { "\($0.assetType.rawValue)_\($0.symbol)" })
+        
+        var snapshotByKey: [String: AssetPriceSnapshot] = [:]
+        for snapshot in snapshots {
+            snapshotByKey["\(snapshot.assetType.rawValue)_\(snapshot.symbol)"] = snapshot
+        }
         
         for symbolInfo in symbols {
             let key = "\(symbolInfo.assetType.rawValue)_\(symbolInfo.symbol)"
-            if existingKeys.contains(key) { continue }
+            if snapshotByKey[key] != nil { continue }
             
-            let currentPrice = try await priceService.fetchCurrentPrice(
-                assetType: symbolInfo.assetType,
-                symbol: symbolInfo.symbol
-            )
+            let currentPrice: Decimal?
+            if SupabaseConfig.isConfigured {
+                currentPrice = await SupabasePriceService.fetchDisplayPrice(
+                    assetType: symbolInfo.assetType,
+                    symbol: symbolInfo.symbol
+                )
+            } else {
+                currentPrice = try await priceService.fetchCurrentPrice(
+                    assetType: symbolInfo.assetType,
+                    symbol: symbolInfo.symbol
+                )
+            }
+            
+            guard let currentPrice else { continue }
             
             let holdingInfo = holdingsBySymbol[key]
             let snapshot = AssetPriceSnapshot(
@@ -231,10 +244,12 @@ enum SnapshotUpdater {
                 lastUpdated: Date(),
                 lastSuccessfulUpdate: Date()
             )
-            snapshots.append(snapshot)
+            snapshotByKey[key] = snapshot
         }
         
-        return snapshots
+        return symbols.compactMap { info in
+            snapshotByKey["\(info.assetType.rawValue)_\(info.symbol)"]
+        }
     }
 
     private static func loadLiabilities(
@@ -268,7 +283,7 @@ enum SnapshotUpdater {
         var totalUnrealizedGainLossTWD: Decimal = 0
         var cashByCurrency: [Currency: Decimal] = [:]
         
-        for account in accounts where account.accountType != .debt {
+        for account in accounts where !account.accountType.isLiabilityAccount {
             guard let snapshot = accountSnapshots.first(where: { $0.accountId == account.id }) else { continue }
             cashByCurrency[account.currency, default: 0] += snapshot.cashBalance
             
@@ -304,13 +319,12 @@ enum SnapshotUpdater {
         }
         
         var totalLiabilitiesTWD: Decimal = 0
-        for liability in liabilities {
-            if liability.currency == .USD {
-                totalLiabilitiesTWD += liability.remainingBalance * usdToTwdRate
-            } else {
-                totalLiabilitiesTWD += liability.remainingBalance
-            }
-        }
+        totalLiabilitiesTWD = TotalDebtCalculator.totalLiabilitiesTWD(
+            accounts: accounts,
+            liabilities: liabilities,
+            transactions: transactions,
+            usdToTwdRate: usdToTwdRate
+        )
         
         let realizedByCurrency = HoldingCalculator.calculateRealizedGainLossByCurrency(from: transactions)
         let realizedTWD = realizedByCurrency[.TWD] ?? 0

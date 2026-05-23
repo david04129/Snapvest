@@ -87,6 +87,10 @@ protocol DataServiceProtocol {
     func fetchHomeDashboardSnapshot(userId: String) async throws -> HomeDashboardSnapshot?
     func saveHomeDashboardSnapshot(_ snapshot: HomeDashboardSnapshot) async throws
     func deleteHomeDashboardSnapshot(userId: String) async throws
+    
+    // 投資組合狀態（同步至後端）
+    func syncPortfolioState(_ payload: PortfolioStateSyncPayload) async throws
+    func fetchLatestPortfolioState(userId: String) async throws -> PortfolioStateSyncPayload?
 }
 
 /// 資料服務實作（目前為 Mock，之後可替換為 Firebase/Supabase）
@@ -108,6 +112,7 @@ class MockDataService: DataServiceProtocol {
     private var userHoldingsSnapshots: [String: UserHoldingsSnapshot] = [:] // userId: UserHoldingsSnapshot
     private var aggregatedHoldingSnapshots: [String: AggregatedHoldingSnapshot] = [:] // "userId_assetType_symbol": AggregatedHoldingSnapshot
     private var homeDashboardSnapshots: [String: HomeDashboardSnapshot] = [:] // userId: HomeDashboardSnapshot
+    private var portfolioStates: [String: PortfolioStateSyncPayload] = [:] // userId: latest state
     
     // 私有初始化，強制使用單例
     private init() {
@@ -671,6 +676,17 @@ class MockDataService: DataServiceProtocol {
 
     func deleteHomeDashboardSnapshot(userId: String) async throws {
         homeDashboardSnapshots.removeValue(forKey: userId)
+    }
+    
+    func syncPortfolioState(_ payload: PortfolioStateSyncPayload) async throws {
+        portfolioStates[payload.userId] = payload
+        if SupabaseConfig.isConfigured {
+            try await SupabasePortfolioStateService.sync(payload)
+        }
+    }
+    
+    func fetchLatestPortfolioState(userId: String) async throws -> PortfolioStateSyncPayload? {
+        return portfolioStates[userId]
     }
 }
 
