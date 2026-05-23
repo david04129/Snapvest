@@ -292,4 +292,11 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+
+    if len(sys.argv) > 1 and sys.argv[1] == "--exchange-only":
+        supabase = get_supabase()
+        n = update_exchange_rates(supabase)
+        print(f"完成：已 upsert {n} 筆匯率")
+    else:
+        main()

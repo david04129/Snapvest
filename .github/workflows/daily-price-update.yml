@@ -37,8 +37,7 @@ jobs:
             echo "注意：不要用 anon / publishable key，也不要加引號或空白。"
             exit 1
           fi
-          # 與本機第二步相同：直接用 service_role 寫入 exchange_rates
-          cd backend/scripts && python update_exchange_rates_only.py
+          python backend/scripts/daily_price_update.py --exchange-only
 
       - name: Run daily stock price update
         env:
