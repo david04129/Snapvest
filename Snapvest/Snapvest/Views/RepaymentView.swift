@@ -12,10 +12,9 @@ struct RepaymentView: View {
     let liability: Liability
     let repaymentType: RepaymentType  // 還款類型（提前還款或定期還款）
     let editingTransaction: Transaction? // 編輯模式：如果提供，則為編輯模式
+    let preloadedAccounts: [Account]?
     @Environment(\.dismiss) var dismiss
     @StateObject private var accountsViewModel = AccountsViewModel()
-    @StateObject private var transactionsViewModel = TransactionsViewModel()
-    @StateObject private var portfolioViewModel = PortfolioViewModel()
     
     @State private var selectedSourceAccount: Account? // 轉出帳戶（還款帳戶）
     @State private var debtAccount: Account? // 債務帳戶（轉入帳戶，固定）
@@ -74,10 +73,79 @@ struct RepaymentView: View {
         repaymentType == .prepayment ? prepaymentGradient : regularRepaymentGradient
     }
     
-    init(liability: Liability, repaymentType: RepaymentType = .regular, editingTransaction: Transaction? = nil) {
+    init(
+        liability: Liability,
+        repaymentType: RepaymentType = .regular,
+        editingTransaction: Transaction? = nil,
+        preloadedAccounts: [Account]? = nil
+    ) {
         self.liability = liability
         self.repaymentType = repaymentType
         self.editingTransaction = editingTransaction
+        self.preloadedAccounts = preloadedAccounts
+        
+        if editingTransaction == nil {
+            switch repaymentType {
+            case .regular:
+                _amount = State(initialValue: Self.prefilledRegularAmount(for: liability))
+            case .prepayment:
+                _amount = State(initialValue: "")
+            }
+            _notes = State(initialValue: Self.prefilledNotes(for: repaymentType))
+        }
+        
+        if let accounts = preloadedAccounts, !accounts.isEmpty {
+            _debtAccount = State(initialValue: Self.debtAccount(in: accounts, liability: liability))
+            if editingTransaction == nil, repaymentType == .regular {
+                _selectedSourceAccount = State(
+                    initialValue: Self.repaymentSourceAccount(in: accounts, liability: liability)
+                )
+            }
+        }
+    }
+    
+    private static let integerRounding = NSDecimalNumberHandler(
+        roundingMode: .plain,
+        scale: 0,
+        raiseOnExactness: false,
+        raiseOnOverflow: false,
+        raiseOnUnderflow: false,
+        raiseOnDivideByZero: false
+    )
+    
+    private static func prefilledRegularAmount(for liability: Liability) -> String {
+        let monthlyRate = liability.monthlyRate
+        let currentMonthInterest = liability.remainingBalance * monthlyRate
+        let remainingTotal = liability.remainingBalance + currentMonthInterest
+        
+        let amount: Decimal
+        if remainingTotal < liability.monthlyPayment {
+            amount = (remainingTotal as NSDecimalNumber)
+                .rounding(accordingToBehavior: integerRounding).decimalValue
+        } else {
+            amount = (liability.monthlyPayment as NSDecimalNumber)
+                .rounding(accordingToBehavior: integerRounding).decimalValue
+        }
+        return amount.formatted(fractionDigits: 0)
+    }
+    
+    private static func prefilledNotes(for repaymentType: RepaymentType) -> String {
+        let calendar = Calendar.current
+        let now = Date()
+        let year = calendar.component(.year, from: now)
+        let month = calendar.component(.month, from: now)
+        if repaymentType == .prepayment {
+            return "\(year)/\(String(format: "%02d", month))提前還款"
+        }
+        return "\(year)/\(String(format: "%02d", month))還款"
+    }
+    
+    private static func debtAccount(in accounts: [Account], liability: Liability) -> Account? {
+        accounts.first { $0.accountType == .debt && $0.name == liability.name }
+    }
+    
+    private static func repaymentSourceAccount(in accounts: [Account], liability: Liability) -> Account? {
+        accounts.first { $0.id == liability.accountId }
     }
     
     // MARK: - View Components
@@ -564,7 +632,10 @@ struct RepaymentView: View {
             }
             .onChange(of: selectedSourceAccount) { oldValue, newValue in
                 if let account = newValue {
-                    loadSourceAccountCashBalance(accountId: account.id)
+                    loadSourceAccountCashBalance(
+                        accountId: account.id,
+                        accounts: accountsViewModel.accounts
+                    )
                     loadExchangeRate()
                 }
             }
@@ -717,64 +788,36 @@ struct RepaymentView: View {
     
     // MARK: - Functions
     private func loadInitialData() async {
-        await accountsViewModel.loadAccounts(userId: userId)
-        
-        // 找到債務帳戶（AccountType.debt）
-        debtAccount = accountsViewModel.accounts.first { account in
-            account.accountType == .debt && account.name == liability.name
+        if let preloadedAccounts, !preloadedAccounts.isEmpty {
+            accountsViewModel.accounts = preloadedAccounts
+        } else if accountsViewModel.accounts.isEmpty {
+            await accountsViewModel.loadAccounts(userId: userId)
         }
         
-        // 如果不是編輯模式，才預填默認值
+        if debtAccount == nil {
+            debtAccount = Self.debtAccount(in: accountsViewModel.accounts, liability: liability)
+        }
+        
         if editingTransaction == nil {
-            // 定期還款：預填轉出帳戶為還款帳戶
-            // 提前還款：允許從任何帳戶轉帳（不預填，讓用戶選擇）
-            if repaymentType == .regular {
-                if let repaymentAccount = accountsViewModel.accounts.first(where: { $0.id == liability.accountId }) {
-                    selectedSourceAccount = repaymentAccount
-                    loadSourceAccountCashBalance(accountId: repaymentAccount.id)
-                }
+            if repaymentType == .regular, selectedSourceAccount == nil {
+                selectedSourceAccount = Self.repaymentSourceAccount(
+                    in: accountsViewModel.accounts,
+                    liability: liability
+                )
             }
             
-            // 預填還款金額
-            if repaymentType == .regular {
-                // 定期還款：檢查是否為最後一期（剩餘本金+利息 < 每月還款金額）
-                let monthlyRate = liability.monthlyRate
-                let currentMonthInterest = liability.remainingBalance * monthlyRate
-                let remainingTotal = liability.remainingBalance + currentMonthInterest
-                
-                // 如果剩餘本金+利息 < 每月還款金額，則為最後一期，使用剩餘本金+利息作為還款金額
-                if remainingTotal < liability.monthlyPayment {
-                    // 最後一期：使用剩餘本金+利息（四捨五入到整數）
-                    let finalAmountRounded = (remainingTotal as NSDecimalNumber).rounding(accordingToBehavior: NSDecimalNumberHandler(roundingMode: .plain, scale: 0, raiseOnExactness: false, raiseOnOverflow: false, raiseOnUnderflow: false, raiseOnDivideByZero: false))
-                    amount = finalAmountRounded.decimalValue.formatted(fractionDigits: 0)
-                } else {
-                    // 正常期數：預填每月還款金額（整數，四捨五入）
-                    let monthlyPaymentRounded = (liability.monthlyPayment as NSDecimalNumber).rounding(accordingToBehavior: NSDecimalNumberHandler(roundingMode: .plain, scale: 0, raiseOnExactness: false, raiseOnOverflow: false, raiseOnUnderflow: false, raiseOnDivideByZero: false))
-                    amount = monthlyPaymentRounded.decimalValue.formatted(fractionDigits: 0)
-                }
-            } else {
-                // 提前還款：預填空白，讓用戶輸入任意金額
-                amount = ""
-            }
-            
-            // 預填備註
-            let calendar = Calendar.current
-            let now = Date()
-            let year = calendar.component(.year, from: now)
-            let month = calendar.component(.month, from: now)
-            
-            if repaymentType == .prepayment {
-                notes = "\(year)/\(String(format: "%02d", month))提前還款"
-            } else {
-                notes = "\(year)/\(String(format: "%02d", month))還款"
-            }
-            
-            // 如果是跨幣別，載入匯率
             if let sourceAccount = selectedSourceAccount,
-               let debtAccount = debtAccount,
+               let debtAccount,
                sourceAccount.currency != debtAccount.currency {
                 loadExchangeRate()
             }
+        }
+        
+        if let sourceAccount = selectedSourceAccount {
+            loadSourceAccountCashBalance(
+                accountId: sourceAccount.id,
+                accounts: accountsViewModel.accounts
+            )
         }
     }
     
@@ -856,7 +899,10 @@ struct RepaymentView: View {
             if let accountName = sourceAccountName {
                 selectedSourceAccount = accountsViewModel.accounts.first { $0.name == accountName }
                 if let sourceAccount = selectedSourceAccount {
-                    loadSourceAccountCashBalance(accountId: sourceAccount.id)
+                    loadSourceAccountCashBalance(
+                        accountId: sourceAccount.id,
+                        accounts: accountsViewModel.accounts
+                    )
                 }
             }
         }
@@ -884,31 +930,40 @@ struct RepaymentView: View {
         return ""
     }
     
-    private func loadSourceAccountCashBalance(accountId: String) {
+    private func loadSourceAccountCashBalance(accountId: String, accounts: [Account]) {
         Task {
             do {
-                var transactions = try await dataService.fetchTransactions(accountId: accountId)
+                async let localTransactions = dataService.fetchTransactions(accountId: accountId)
+                async let allTransactions = dataService.fetchAllTransactions(userId: userId)
                 
-                // 獲取所有交易，以便找到以該帳戶為目標帳戶的轉帳/還款交易
-                var allAccountsList: [Account] = []
-                do {
-                    allAccountsList = try await dataService.fetchAccounts(userId: userId)
-                    if let sourceAccount = allAccountsList.first(where: { $0.id == accountId }) {
-                        let allTransactions = try await dataService.fetchAllTransactions(userId: sourceAccount.userId)
-                        let incomingTransferTransactions = allTransactions.filter { transaction in
-                            (transaction.type == .transfer || transaction.type == .repayment) &&
-                            transaction.targetAccountId == accountId &&
-                            transaction.accountId != accountId
-                        }
-                        transactions.append(contentsOf: incomingTransferTransactions)
-                    }
-                } catch {
-                    // 如果獲取所有交易失敗，繼續使用該帳戶自己的交易
+                var transactions = try await localTransactions
+                let allTx = try await allTransactions
+                
+                let incomingTransferTransactions = allTx.filter { transaction in
+                    (transaction.type == .transfer || transaction.type == .repayment) &&
+                    transaction.targetAccountId == accountId &&
+                    transaction.accountId != accountId
+                }
+                transactions.append(contentsOf: incomingTransferTransactions)
+                
+                let accountList: [Account]
+                if accounts.isEmpty {
+                    accountList = try await dataService.fetchAccounts(userId: userId)
+                } else {
+                    accountList = accounts
                 }
                 
-                sourceAccountCashBalance = CashCalculator.calculateCash(accountId: accountId, transactions: transactions, accounts: allAccountsList.isEmpty ? accountsViewModel.accounts : allAccountsList)
+                await MainActor.run {
+                    sourceAccountCashBalance = CashCalculator.calculateCash(
+                        accountId: accountId,
+                        transactions: transactions,
+                        accounts: accountList
+                    )
+                }
             } catch {
-                sourceAccountCashBalance = 0
+                await MainActor.run {
+                    sourceAccountCashBalance = 0
+                }
             }
         }
     }
@@ -1203,6 +1258,7 @@ struct RepaymentView: View {
         debtAccount: Account,
         amountValue: Decimal
     ) async {
+        let transactionsViewModel = TransactionsViewModel()
         do {
             // 計算轉入金額（如果是跨幣別，需要轉換）
             let receivedAmount: Decimal
@@ -1570,7 +1626,7 @@ struct RepaymentView: View {
                 try await MockDataService.shared.updateLiability(updatedLiability)
                 
             // 刷新數據
-            await portfolioViewModel.loadData(userId: userId)
+            await PortfolioViewModel().loadData(userId: userId)
             await accountsViewModel.loadAccounts(userId: userId)
                 
             // 通知父視圖刷新（通過重新載入債務數據）

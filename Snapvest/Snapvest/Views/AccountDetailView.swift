@@ -7,23 +7,23 @@
 
 import SwiftUI
 
+private struct DebtRepaymentSheetItem: Identifiable {
+    let id = UUID()
+    let liability: Liability
+    let accounts: [Account]
+    let repaymentType: RepaymentType
+}
+
 struct AccountDetailView: View {
     let account: Account
     @StateObject private var viewModel = AccountDetailViewModel()
-    @StateObject private var portfolioViewModel = PortfolioViewModel()
     @StateObject private var accountsViewModel = AccountsViewModel()
-    @State private var showingCashFlow = false
-    @State private var selectedCashFlowType: CashFlowType = .income
     @State private var showingAdjustCashBalance = false
-    @State private var showingTransfer = false
     @State private var showingRepayment = false
-    @State private var showingPrepayment = false  // 提前還款
-    @State private var showingRegularRepayment = false  // 定期還款
+    @State private var repaymentSheetItem: DebtRepaymentSheetItem?
     @State private var currentLiability: Liability?
     @State private var repaymentAccountName: String = ""
     @State private var isDetailsExpanded: Bool = false
-    @State private var isHoldingsExpanded: Bool = false  // 持有股數展開/收起狀態
-    @State private var holdingsHeight: CGFloat = 200  // 持有股數列表高度
     
     var body: some View {
         Group {
@@ -48,151 +48,36 @@ struct AccountDetailView: View {
     
     // MARK: - 一般帳戶視圖
     private var regularAccountView: some View {
-        GeometryReader { geometry in
-            ScrollView {
-                VStack(spacing: 0) {
-                    // 固定區域：標題和卡片
-                    VStack(alignment: .leading, spacing: 12) {
-                        // 帳戶標題（包含貨幣切換按鈕）
-                        HStack(alignment: .top, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack(spacing: 8) {
-                                Image(systemName: account.accountType.icon)
-                                    .font(.system(size: 20))
-                                    .foregroundColor(account.accountType.color)
-                                
-                                Text(account.name)
-                                    .font(.title2)
-                                    .fontWeight(.bold)
-                                    .lineLimit(2)
-                                    .multilineTextAlignment(.leading)
-                            }
-                            
-                            Text("帳戶資產總覽")
-                                .font(.caption)
-                                .foregroundColor(.secondaryText)
-                        }
-                        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-                        .layoutPriority(1)
-                        
-                        // 貨幣切換開關（僅美股和加密貨幣帳戶）
-                        if account.currency == .USD {
-                            CardView(padding: 6, cornerRadius: 12) {
-                                CurrencyToggleView(
-                                    displayCurrency: $viewModel.displayCurrency
-                                )
-                                .frame(width: 120, height: 34)
-                            }
-                            .layoutPriority(0)
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 12)
-                    
-                    // 主要指標卡片區域
-                    if account.accountType == .twdDeposit {
-                        // 台幣現金帳戶：單卡片（格式統一，與其他帳戶類型保持一致）
-                        CashBalanceCard(
-                            account: account,
-                            cashBalance: viewModel.cashBalance,
-                            displayCurrency: viewModel.displayCurrency,
-                            exchangeRate: viewModel.exchangeRate
+        ScrollView {
+            VStack(spacing: 16) {
+                if account.currency == .USD {
+                    HStack {
+                        Spacer(minLength: 0)
+                        AccountCurrencySegmentPills(
+                            options: ["台幣", "USD"],
+                            selectedIndex: accountCurrencyPillIndex
                         )
-                        .frame(maxWidth: .infinity)
-                        .padding(.horizontal, 20)
-                    } else {
-                        // 台股、美股、加密貨幣帳戶：兩個卡片並排
-                        HStack(spacing: 12) {
-                            CashBalanceCard(
-                                account: account,
-                                cashBalance: viewModel.cashBalance,
-                                displayCurrency: viewModel.displayCurrency,
-                                exchangeRate: viewModel.exchangeRate
-                            )
-                            .frame(maxWidth: .infinity)
-                            
-                            HoldingsValueCard(
-                                account: account,
-                                holdingsValue: viewModel.holdingsValue,
-                                holdings: viewModel.holdings,
-                                displayCurrency: viewModel.displayCurrency,
-                                exchangeRate: viewModel.exchangeRate
-                            )
-                            .frame(maxWidth: .infinity)
-                        }
-                        .padding(.horizontal, 20)
-                        
-                        // 資產分配比例條（僅在總資產 > 0 時顯示）
-                        let totalAssetsValue = (account.currency == .USD && viewModel.displayCurrency == .TWD) 
-                            ? (viewModel.cashBalance + viewModel.holdingsValue) * viewModel.exchangeRate
-                            : (viewModel.cashBalance + viewModel.holdingsValue)
-                        
-                        if totalAssetsValue > 0 {
-                            AssetAllocationProgressCard(
-                                account: account,
-                                cashBalance: viewModel.cashBalance,
-                                holdingsValue: viewModel.holdingsValue,
-                                displayCurrency: viewModel.displayCurrency,
-                                exchangeRate: viewModel.exchangeRate
-                            )
-                            .padding(.horizontal, 20)
-                            .padding(.top, 8)
-                        }
-                    }
-                    
-                        // 持有股數標題和表頭（固定，包含展開/收起按鈕）
-                        if account.accountType != .twdDeposit && !viewModel.holdings.isEmpty {
-                            HoldingsTableHeader(isExpanded: $isHoldingsExpanded)
-                                .padding(.horizontal, 20)
-                                .padding(.top, 8)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                    
-                    // 持股列表內容（根據展開狀態調整是否限制高度）
-                    if account.accountType != .twdDeposit && !viewModel.holdings.isEmpty {
-                        ZStack(alignment: .top) {
-                            ScrollView {
-                                HoldingsTableContent(
-                                    holdings: viewModel.holdings,
-                                    account: account,
-                                    displayCurrency: viewModel.displayCurrency,
-                                    exchangeRate: viewModel.exchangeRate
-                                )
-                                .padding(.horizontal, 20)
-                                .padding(.bottom, 16)
-                            }
-                            
-                            // 收起時的漸層遮罩（不阻擋滑動）
-                            if !isHoldingsExpanded {
-                                VStack {
-                                    Spacer()
-                                    LinearGradient(
-                                        colors: [.clear, .cardBackground],
-                                        startPoint: .center,
-                                        endPoint: .bottom
-                                    )
-                                    .frame(height: 40)
-                                    .allowsHitTesting(false)
-                                }
-                                .frame(height: 200)
-                            }
-                        }
-                        .frame(height: holdingsHeight)
-                        .clipped()
-                        .onChange(of: isHoldingsExpanded) { _, newValue in
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                holdingsHeight = newValue ? 600 : 200
-                            }
-                        }
-                        .onAppear {
-                            holdingsHeight = isHoldingsExpanded ? 600 : 200
-                        }
                     }
                 }
+                
+                accountHeroCard
+                
+                accountCashHoldingsMetricsRow
+                
+                if account.accountType != .twdDeposit, !viewModel.holdings.isEmpty {
+                    AccountHoldingsTableSection(
+                        holdings: viewModel.holdings,
+                        account: account,
+                        displayCurrency: viewModel.displayCurrency,
+                        exchangeRate: viewModel.exchangeRate
+                    )
+                }
             }
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
+            .padding(.bottom, 100)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color.mainBackground)
         .navigationBarTitleDisplayMode(.inline)
         .tint(.appPrimary)
         .toolbar {
@@ -212,76 +97,7 @@ struct AccountDetailView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            // 底部操作按鈕
-            Group {
-                if account.accountType != .debt {
-                    // 一般帳戶：收/支、調整餘額、轉帳按鈕
-                    HStack(spacing: 12) {
-                        Button(action: {
-                            showingCashFlow = true
-                        }) {
-                            HStack {
-                                Image(systemName: "arrow.up.arrow.down")
-                                    .font(.system(size: 16, weight: .semibold))
-                                Text("收/支")
-                            }
-                            .font(.headline)
-                            .foregroundColor(AppColors.actionForeground)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(Color.appPrimary)
-                            .cornerRadius(12)
-                        }
-                        
-                        Button(action: {
-                            showingAdjustCashBalance = true
-                        }) {
-                            HStack {
-                                Image(systemName: "pencil.circle")
-                                Text("調整餘額")
-                            }
-                            .font(.headline)
-                            .foregroundColor(AppColors.actionForeground)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(Color.appSecondary)
-                            .cornerRadius(12)
-                        }
-                        
-                        Button(action: {
-                            showingTransfer = true
-                        }) {
-                            HStack {
-                                Image(systemName: "arrow.left.arrow.right")
-                                Text("轉帳")
-                            }
-                            .font(.headline)
-                            .foregroundColor(AppColors.actionForeground)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(Color.appPrimary)
-                            .cornerRadius(12)
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 16)
-                    .background(Color.cardBackground)
-                } else {
-                    // 債務帳戶不顯示按鈕（在 debtAccountView 中顯示）
-                    Color.clear
-                        .frame(height: 0)
-                }
-            }
-        }
-        .sheet(isPresented: $showingCashFlow) {
-            CashFlowView(
-                account: account,
-                viewModel: viewModel,
-                initialType: selectedCashFlowType
-            )
-        }
-        .sheet(isPresented: $showingTransfer) {
-            TransferView(account: account, viewModel: viewModel)
+            adjustCashBalanceBottomBar
         }
         .sheet(isPresented: $showingAdjustCashBalance) {
             AdjustCashBalanceView(
@@ -291,7 +107,6 @@ struct AccountDetailView: View {
             )
         }
         .task {
-            // 根據帳戶貨幣設置顯示貨幣
             if account.currency == .TWD {
                 viewModel.displayCurrency = .TWD
             } else {
@@ -301,11 +116,168 @@ struct AccountDetailView: View {
         }
     }
     
+    // MARK: - 一般帳戶：顯示用計算
+    
+    private var accountDisplayCashBalance: Decimal {
+        if account.currency == .USD && viewModel.displayCurrency == .TWD {
+            return viewModel.cashBalance * viewModel.exchangeRate
+        }
+        return viewModel.cashBalance
+    }
+    
+    private var accountDisplayHoldingsValue: Decimal {
+        if account.currency == .USD && viewModel.displayCurrency == .TWD {
+            return viewModel.holdingsValue * viewModel.exchangeRate
+        }
+        return viewModel.holdingsValue
+    }
+    
+    private var accountTotalValue: Decimal {
+        accountDisplayCashBalance + accountDisplayHoldingsValue
+    }
+    
+    private var accountHeroPrimaryLabel: String {
+        account.accountType == .twdDeposit ? "現金餘額" : "帳戶總資產"
+    }
+    
+    private var accountHeroPrimaryAmount: Decimal {
+        account.accountType == .twdDeposit ? accountDisplayCashBalance : accountTotalValue
+    }
+    
+    private var accountCurrencyPillIndex: Binding<Int> {
+        Binding(
+            get: { viewModel.displayCurrency == .TWD ? 0 : 1 },
+            set: { newIndex in
+                withAnimation(ChartMotion.switchQuick) {
+                    viewModel.displayCurrency = newIndex == 0 ? .TWD : .USD
+                }
+            }
+        )
+    }
+    
+    private var accountHeroCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(account.name)
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.primaryText)
+                    Text("帳戶詳情")
+                        .font(.subheadline)
+                        .foregroundColor(.secondaryText)
+                }
+                Spacer()
+                Text(account.accountType.displayName)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(account.accountType.color)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(account.accountType.color.opacity(0.15))
+                    .clipShape(Capsule())
+            }
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(accountHeroPrimaryLabel)
+                    .font(.caption)
+                    .foregroundColor(.secondaryText)
+                Text(accountHeroPrimaryAmount.formatted(currency: viewModel.displayCurrency))
+                    .font(.system(size: 28, weight: .bold))
+                    .foregroundColor(.primaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.cardBackground)
+        .cornerRadius(16)
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 16)
+                .fill(account.accountType.color)
+                .frame(width: 4)
+        }
+        .shadow(color: AppColors.shadowMedium, radius: 8, x: 0, y: 2)
+    }
+    
+    private var accountCashHoldingsMetricsRow: some View {
+        LazyVGrid(
+            columns: [
+                GridItem(.flexible(), spacing: 10),
+                GridItem(.flexible(), spacing: 10)
+            ],
+            spacing: 10
+        ) {
+            AccountMetricTile(
+                title: "現金餘額",
+                value: accountDisplayCashBalance.formatted(currency: viewModel.displayCurrency)
+            )
+            AccountMetricTile(
+                title: "持股市值",
+                value: accountDisplayHoldingsValue.formatted(currency: viewModel.displayCurrency),
+                footnote: account.accountType == .twdDeposit
+                    ? nil
+                    : (viewModel.holdings.isEmpty ? nil : "\(viewModel.holdings.count) 檔")
+            )
+        }
+    }
+    
+    private var adjustCashBalanceBottomBar: some View {
+        Button(action: {
+            showingAdjustCashBalance = true
+        }) {
+            HStack {
+                Image(systemName: "pencil.circle.fill")
+                Text("調整餘額")
+            }
+            .font(.headline)
+            .foregroundColor(AppColors.actionForeground)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(Color.appPrimary)
+            .cornerRadius(12)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(Color.mainBackground)
+        .overlay(
+            Rectangle()
+                .frame(height: 1)
+                .foregroundColor(Color.separator.opacity(0.3)),
+            alignment: .top
+        )
+    }
+    
     // MARK: - 債務帳戶視圖
     private var debtAccountView: some View {
         ScrollView {
-            debtAccountContent
+            VStack(spacing: 16) {
+                debtAccountHeader
+                
+                if let liability = currentLiability {
+                    debtAccountMetricsGrid(liability: liability)
+                    
+                    RepaymentProgressCard(liability: liability)
+                    
+                    DetailsCard(
+                        liability: liability,
+                        isExpanded: $isDetailsExpanded
+                    )
+                    
+                    RepaymentInfoCard(
+                        liability: liability,
+                        repaymentAccount: accountsViewModel.accounts.first(where: { $0.id == liability.accountId }),
+                        repaymentAccountName: repaymentAccountName
+                    )
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
+            .padding(.bottom, 100)
         }
+        .background(Color.mainBackground)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .navigationBarTitleDisplayMode(.inline)
         .tint(.appPrimary)
@@ -328,182 +300,79 @@ struct AccountDetailView: View {
         .safeAreaInset(edge: .bottom) {
             debtAccountBottomButtons
         }
-        .sheet(isPresented: $showingPrepayment) {
-            if let liability = currentLiability {
-                RepaymentView(liability: liability, repaymentType: .prepayment)
-                    .onDisappear {
-                        Task {
-                            await loadDebtAccountData()
-                        }
-                    }
+        .sheet(item: $repaymentSheetItem, onDismiss: {
+            Task {
+                await loadDebtAccountData()
             }
-        }
-        .sheet(isPresented: $showingRegularRepayment) {
-            if let liability = currentLiability {
-                RepaymentView(liability: liability, repaymentType: .regular)
-                    .onDisappear {
-                        Task {
-                            await loadDebtAccountData()
-                        }
-                    }
-            }
+        }) { item in
+            RepaymentView(
+                liability: item.liability,
+                repaymentType: item.repaymentType,
+                preloadedAccounts: item.accounts
+            )
         }
         .task {
             await loadDebtAccountData()
         }
-        .onChange(of: showingPrepayment) { oldValue, newValue in
-            if !newValue {
-                Task {
-                    await loadDebtAccountData()
-                }
-            }
-        }
-        .onChange(of: showingRegularRepayment) { oldValue, newValue in
-            if !newValue {
-                Task {
-                    await loadDebtAccountData()
-                }
-            }
-        }
-    }
-    
-    // MARK: - 債務帳戶內容
-    @ViewBuilder
-    private var debtAccountContent: some View {
-        VStack(spacing: 20) {
-            // 標題
-            debtAccountHeader
-            
-            if let liability = currentLiability {
-                debtAccountCards(liability: liability)
-            }
-        }
-        .padding()
     }
     
     // MARK: - 債務帳戶標題
     private var debtAccountHeader: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-                Image(systemName: account.accountType.icon)
-                    .font(.system(size: 20))
-                    .foregroundColor(account.accountType.color)
-                
-                Text(currentLiability?.name ?? account.name)
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-            }
-            
-            Text("貸款詳情與狀態")
-                .font(.caption)
-                .foregroundColor(.secondaryText)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-    }
-    
-    // MARK: - 債務帳戶卡片區域
-    @ViewBuilder
-    private func debtAccountCards(liability: Liability) -> some View {
-        // 主要指標卡片區域（並排）
-        HStack(spacing: 12) {
-            remainingPrincipalCard(liability: liability)
-            paidAmountCard(liability: liability)
-        }
-        .padding(.horizontal, 20)
-        
-        // 還款進度卡片
-        RepaymentProgressCard(liability: liability)
-            .padding(.horizontal, 20)
-            .padding(.top, 8)
-            .transition(.opacity.combined(with: .move(edge: .bottom)))
-        
-        // 詳細資訊（可折疊）
-        DetailsCard(
-            liability: liability,
-            isExpanded: $isDetailsExpanded
-        )
-        .transition(.opacity.combined(with: .move(edge: .bottom)))
-        
-        // 還款資訊卡片
-        RepaymentInfoCard(
-            liability: liability,
-            repaymentAccount: accountsViewModel.accounts.first(where: { $0.id == liability.accountId }),
-            repaymentAccountName: repaymentAccountName
-        )
-        .transition(.opacity.combined(with: .move(edge: .bottom)))
-    }
-    
-    // MARK: - 剩餘本金卡片
-    private func remainingPrincipalCard(liability: Liability) -> some View {
-        CardView {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("剩餘本金")
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(currentLiability?.name ?? account.name)
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.primaryText)
+                    Text("貸款詳情")
                         .font(.subheadline)
                         .foregroundColor(.secondaryText)
-                    
-                    Spacer()
-                    
-                    Image(systemName: "wallet.pass.fill")
-                        .foregroundColor(.lossRed)
-                        .font(.system(size: 18))
                 }
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    AdaptiveFontText(
-                        text: liability.remainingBalance.formatted(currency: liability.currency),
-                        baseFontSize: 28,
-                        color: .lossRed
-                    )
-                }
-                
-                Text("")
+                Spacer()
+                Text(account.accountType.displayName)
                     .font(.caption)
-                    .foregroundColor(.clear)
-                    .frame(height: 16)
+                    .fontWeight(.semibold)
+                    .foregroundColor(account.accountType.color)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(account.accountType.color.opacity(0.15))
+                    .clipShape(Capsule())
             }
         }
-        .frame(maxWidth: .infinity)
-        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.cardBackground)
+        .cornerRadius(16)
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 16)
+                .fill(account.accountType.color)
+                .frame(width: 4)
+        }
+        .shadow(color: AppColors.shadowMedium, radius: 8, x: 0, y: 2)
     }
     
-    // MARK: - 已還款金額（含利息）卡片
-    private func paidAmountCard(liability: Liability) -> some View {
+    private func debtAccountMetricsGrid(liability: Liability) -> some View {
         let paidAmount = liability.totalPaidPrincipal + liability.totalPaidInterest
         
-        return CardView {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("已還款金額（含利息）")
-                        .font(.subheadline)
-                        .foregroundColor(.secondaryText)
-                    
-                    Spacer()
-                    
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.profitGreen)
-                        .font(.system(size: 18))
-                }
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    AdaptiveFontText(
-                        text: paidAmount.formatted(currency: liability.currency),
-                        baseFontSize: 28,
-                        color: .profitGreen
-                    )
-                }
-                
-                Text("")
-                    .font(.caption)
-                    .foregroundColor(.clear)
-                    .frame(height: 16)
-            }
+        return LazyVGrid(
+            columns: [
+                GridItem(.flexible(), spacing: 10),
+                GridItem(.flexible(), spacing: 10)
+            ],
+            spacing: 10
+        ) {
+            AccountMetricTile(
+                title: "剩餘本金",
+                value: liability.remainingBalance.formatted(currency: liability.currency),
+                valueColor: .lossRed
+            )
+            AccountMetricTile(
+                title: "已還款（含息）",
+                value: paidAmount.formatted(currency: liability.currency),
+                valueColor: .profitGreen
+            )
         }
-        .frame(maxWidth: .infinity)
-        .transition(.opacity.combined(with: .scale(scale: 0.95)))
     }
     
     // MARK: - 債務帳戶底部按鈕
@@ -511,7 +380,7 @@ struct AccountDetailView: View {
         HStack(spacing: 12) {
             // 提前還款按鈕（左側）- 紅色漸層
             Button(action: {
-                showingPrepayment = true
+                presentRepaymentSheet(type: .prepayment)
             }) {
                 HStack {
                     Image(systemName: "arrow.down.circle.fill")
@@ -533,7 +402,7 @@ struct AccountDetailView: View {
             
             // 定期還款按鈕（右側）- 橘色漸層
             Button(action: {
-                showingRegularRepayment = true
+                presentRepaymentSheet(type: .regular)
             }) {
                 HStack {
                     Image(systemName: "creditcard.fill")
@@ -559,6 +428,15 @@ struct AccountDetailView: View {
     }
     
     // MARK: - 載入債務帳戶數據
+    private func presentRepaymentSheet(type: RepaymentType) {
+        guard let liability = currentLiability else { return }
+        repaymentSheetItem = DebtRepaymentSheetItem(
+            liability: liability,
+            accounts: accountsViewModel.accounts,
+            repaymentType: type
+        )
+    }
+    
     private func loadDebtAccountData() async {
         await accountsViewModel.loadAccounts(userId: "test-user-id")
         
@@ -618,203 +496,175 @@ struct AdaptiveFontText: View {
     }
 }
 
-// MARK: - 現金餘額卡片
-struct CashBalanceCard: View {
-    let account: Account
-    let cashBalance: Decimal
-    let displayCurrency: Currency
-    let exchangeRate: Decimal
-    
-    var displayAmount: Decimal {
-        if account.currency == .USD && displayCurrency == .TWD {
-            return cashBalance * exchangeRate
-        }
-        return cashBalance
-    }
+// MARK: - 帳戶／債務詳情指標格（與個股頁同高）
+struct AccountMetricTile: View {
+    let title: String
+    let value: String
+    var valueColor: Color = .primaryText
+    var footnote: String? = nil
     
     var body: some View {
-        CardView {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("現金餘額")
-                        .font(.subheadline)
-                        .foregroundColor(.secondaryText)
-                    
-                    Spacer()
-                    
-                    Image(systemName: "dollarsign.square.fill")
-                        .foregroundColor(account.accountType.color)
-                }
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    AdaptiveFontText(
-                        text: displayAmount.formatted(currency: displayCurrency),
-                        baseFontSize: 28,
-                        color: .primaryText
-                    )
-                }
-                
-                // 添加一行空白以對齊持股市值卡片的第三行（保持相同高度）
-                Text("")
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .foregroundColor(.secondaryText)
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
+                .fixedSize(horizontal: false, vertical: true)
+            
+            Text(value)
+                .font(.system(size: 20, weight: .bold))
+                .foregroundColor(valueColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            
+            if let footnote, !footnote.isEmpty {
+                Text(footnote)
                     .font(.caption)
-                    .foregroundColor(.clear)
-                    .frame(height: 16)  // 與持股市值卡片的第三行高度一致
+                    .fontWeight(.semibold)
+                    .foregroundColor(.secondaryText)
+                    .lineLimit(1)
+            } else {
+                Text(" ")
+                    .font(.caption)
+                    .opacity(0)
             }
         }
+        .frame(maxWidth: .infinity, minHeight: 88, alignment: .leading)
+        .padding(12)
+        .background(Color.cardBackground)
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.separator.opacity(0.35), lineWidth: 1)
+        )
     }
 }
 
-// MARK: - 持股市值卡片
-struct HoldingsValueCard: View {
-    let account: Account
-    let holdingsValue: Decimal
+// MARK: - 帳戶／債務詳情區塊卡（與指標格同款邊框，全寬）
+struct AccountSectionCard<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+    
+    var body: some View {
+        content()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(Color.cardBackground)
+            .cornerRadius(12)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.separator.opacity(0.35), lineWidth: 1)
+            )
+    }
+}
+
+// MARK: - 帳戶詳情：幣別 pill（與個股頁同款）
+struct AccountCurrencySegmentPills: View {
+    let options: [String]
+    @Binding var selectedIndex: Int
+    
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(Array(options.enumerated()), id: \.offset) { index, label in
+                Button {
+                    guard selectedIndex != index else { return }
+                    withAnimation(ChartMotion.switchQuick) {
+                        selectedIndex = index
+                    }
+                } label: {
+                    Text(label)
+                        .font(.system(size: 12, weight: selectedIndex == index ? .bold : .medium))
+                        .foregroundColor(selectedIndex == index ? AppColors.actionForeground : .secondaryText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background {
+                            if selectedIndex == index {
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(AppColors.appPrimary)
+                            }
+                        }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(3)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(AppColors.secondaryBackground)
+        )
+    }
+}
+
+// MARK: - 帳戶詳情：持有標的表
+struct AccountHoldingsTableSection: View {
     let holdings: [HoldingSnapshot]
+    let account: Account
     let displayCurrency: Currency
     let exchangeRate: Decimal
     
-    var displayAmount: Decimal {
-        if account.currency == .USD && displayCurrency == .TWD {
-            return holdingsValue * exchangeRate
-        }
-        return holdingsValue
-    }
-    
     var body: some View {
-        CardView {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("持股市值")
-                        .font(.subheadline)
-                        .foregroundColor(.secondaryText)
-                    
-                    Spacer()
-                    
-                    Image(systemName: "chart.bar.fill")
-                        .foregroundColor(account.accountType.color)
-                }
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    AdaptiveFontText(
-                        text: displayAmount.formatted(currency: displayCurrency),
-                        baseFontSize: 28,
-                        color: .primaryText
-                    )
-                }
-                
-                Text("\(holdings.count) 檔持股")
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("持有標的")
+                    .font(.headline)
+                    .foregroundColor(.primaryText)
+                Text("\(holdings.count) 檔")
                     .font(.caption)
                     .foregroundColor(.secondaryText)
             }
-        }
-    }
-}
-
-// MARK: - 持股列表標題和表頭（固定）
-struct HoldingsTableHeader: View {
-    @Binding var isExpanded: Bool
-    
-    var body: some View {
-        CardView {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    Text("持有股數")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.secondaryText)
-                    
-                    Spacer()
-                    
-                    Button(action: {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            isExpanded.toggle()
-                        }
-                    }) {
-                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.secondaryText)
+            
+            VStack(spacing: 0) {
+                holdingsTableHeader
+                Divider()
+                ForEach(Array(holdings.enumerated()), id: \.element.id) { index, holding in
+                    HoldingTableRow(
+                        holding: holding,
+                        account: account,
+                        displayCurrency: displayCurrency,
+                        exchangeRate: exchangeRate
+                    )
+                    if index < holdings.count - 1 {
+                        Divider()
                     }
-                    .buttonStyle(PlainButtonStyle())
-                }
-                .padding(.bottom, 12)
-                
-                // 表頭
-                HStack(spacing: 8) {
-                    Text("名稱")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.secondaryText)
-                        .frame(width: 60, alignment: .leading)
-                    
-                    Text("數量")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.secondaryText)
-                        .frame(width: 45, alignment: .center)
-                    
-                    Spacer(minLength: 8)
-                    
-                    Text("現值")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.secondaryText)
-                        .frame(width: 90, alignment: .trailing)
-                    
-                    Text("損益")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.secondaryText)
-                        .frame(width: 110, alignment: .trailing)
-                }
-                .padding(.vertical, 10)
-                .padding(.horizontal, 0)
-                .background(Color.secondaryBackground)
-                .cornerRadius(8)
-            }
-        }
-    }
-}
-
-// MARK: - 持股列表內容（可滾動）
-struct HoldingsTableContent: View {
-    let holdings: [HoldingSnapshot]
-    let account: Account
-    let displayCurrency: Currency
-    let exchangeRate: Decimal
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            ForEach(holdings) { holding in
-                HoldingTableRow(
-                    holding: holding,
-                    account: account,
-                    displayCurrency: displayCurrency,
-                    exchangeRate: exchangeRate
-                )
-                
-                if holding.id != holdings.last?.id {
-                    Divider()
-                        .padding(.horizontal, 16)
                 }
             }
+            .background(Color.secondaryBackground)
+            .cornerRadius(10)
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(Color.separator.opacity(0.5), lineWidth: 1)
+            )
         }
-        .background(Color.cardBackground)
-        .cornerRadius(12)
-        .padding(.top, 4)
     }
-}
-
-// MARK: - 貨幣切換開關
-struct CurrencyToggleView: View {
-    @Binding var displayCurrency: Currency
     
-    var body: some View {
-        Picker("", selection: $displayCurrency) {
-            Text("USD").tag(Currency.USD)
-            Text("TWD").tag(Currency.TWD)
+    private var holdingsTableHeader: some View {
+        HStack(spacing: 8) {
+            headerCell("名稱", alignment: .leading)
+                .frame(width: 60, alignment: .leading)
+            headerCell("數量", alignment: .center)
+                .frame(width: 45, alignment: .center)
+            Spacer(minLength: 8)
+            headerCell("現值", alignment: .trailing)
+                .frame(width: 90, alignment: .trailing)
+            headerCell("損益", alignment: .trailing)
+                .frame(width: 110, alignment: .trailing)
         }
-        .pickerStyle(.segmented)
-        .font(.subheadline)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
+        .background(Color.tertiaryBackground.opacity(0.6))
+    }
+    
+    private func headerCell(_ title: String, alignment: HorizontalAlignment) -> some View {
+        Text(title)
+            .font(.caption)
+            .fontWeight(.semibold)
+            .foregroundColor(.primaryText.opacity(0.75))
+            .frame(maxWidth: .infinity, alignment: Alignment(horizontal: alignment, vertical: .center))
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
     }
 }
 
@@ -954,23 +804,13 @@ struct RepaymentProgressCard: View {
     }
     
     var body: some View {
-        CardView {
-            VStack(alignment: .leading, spacing: 16) {
-                // 標題和圖標
-                HStack {
-                    Text("還款進度")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.secondaryText)
-                    
-                    Spacer()
-                    
-                    Image(systemName: "chart.bar.xaxis")
-                        .foregroundColor(.lossRed)
-                        .font(.system(size: 18))
-                }
+        AccountSectionCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("還款進度")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(.secondaryText)
                 
-                // 期數顯示（字體自適應）
                 Text("\(paidPeriods)/\(totalPeriods) 期")
                     .font(.title2)
                     .fontWeight(.bold)
@@ -1044,9 +884,8 @@ struct DetailsCard: View {
     @Binding var isExpanded: Bool
     
     var body: some View {
-        CardView {
+        AccountSectionCard {
             VStack(alignment: .leading, spacing: 0) {
-                // 標題欄（可點擊）
                 Button(action: {
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                         isExpanded.toggle()
@@ -1170,7 +1009,13 @@ struct RepaymentInfoCard: View {
     }
     
     var body: some View {
-        TitledCardView(title: "還款資訊") {
+        AccountSectionCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("還款資訊")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(.secondaryText)
+                
             VStack(spacing: 16) {
                 // 還款帳戶（ICON 在帳戶名稱前面）
                 HStack {
@@ -1202,8 +1047,6 @@ struct RepaymentInfoCard: View {
                 
                 Divider()
                 
-                Divider()
-                
                 // 還款總期數（無 ICON）
                 InfoRowWithoutIcon(
                     label: "還款總期數",
@@ -1217,164 +1060,9 @@ struct RepaymentInfoCard: View {
                     label: "每月還款日",
                     value: "每月 \(calculateRepaymentDay(liability: liability)) 日"
                 )
-            }
-            .padding(.vertical, 8)
-        }
-    }
-}
-
-// MARK: - 資產分配比例條卡片
-struct AssetAllocationProgressCard: View {
-    let account: Account
-    let cashBalance: Decimal
-    let holdingsValue: Decimal
-    let displayCurrency: Currency
-    let exchangeRate: Decimal
-    @State private var animatedCashProgress: Double = 0.0
-    @State private var animatedHoldingsProgress: Double = 0.0
-    
-    // 計算顯示金額（考慮貨幣轉換）
-    private var displayCashBalance: Decimal {
-        if account.currency == .USD && displayCurrency == .TWD {
-            return cashBalance * exchangeRate
-        }
-        return cashBalance
-    }
-    
-    private var displayHoldingsValue: Decimal {
-        if account.currency == .USD && displayCurrency == .TWD {
-            return holdingsValue * exchangeRate
-        }
-        return holdingsValue
-    }
-    
-    // 計算總資產
-    private var totalAssets: Decimal {
-        return displayCashBalance + displayHoldingsValue
-    }
-    
-    // 計算比例（目標值）
-    private var targetCashRatio: Double {
-        guard totalAssets > 0 else { return 0.0 }
-        return Double(NSDecimalNumber(decimal: displayCashBalance / totalAssets).doubleValue)
-    }
-    
-    private var targetHoldingsRatio: Double {
-        guard totalAssets > 0 else { return 0.0 }
-        return Double(NSDecimalNumber(decimal: displayHoldingsValue / totalAssets).doubleValue)
-    }
-    
-    // 百分比顯示
-    private var cashPercentage: String {
-        let percentage = targetCashRatio * 100
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.minimumFractionDigits = 1
-        formatter.maximumFractionDigits = 1
-        return formatter.string(from: NSNumber(value: percentage)) ?? "0.0"
-    }
-    
-    private var holdingsPercentage: String {
-        let percentage = targetHoldingsRatio * 100
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.minimumFractionDigits = 1
-        formatter.maximumFractionDigits = 1
-        return formatter.string(from: NSNumber(value: percentage)) ?? "0.0"
-    }
-    
-    var body: some View {
-        CardView {
-            VStack(alignment: .leading, spacing: 16) {
-                // 標題和圖標
-                HStack {
-                    Text("資產分配")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.secondaryText)
-                    
-                    Spacer()
-                    
-                    Image(systemName: "chart.bar.xaxis")
-                        .foregroundColor(account.accountType.color)
-                        .font(.system(size: 18))
-                }
-                
-                // 進度條（使用連續的矩形，無縫連接）
-                GeometryReader { geometry in
-                    ZStack(alignment: .leading) {
-                        // 背景（有圓角）
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.secondaryBackground)
-                            .frame(height: 12)
-                        
-                        // 進度條容器（整體矩形，然後用 mask 切割）
-                        HStack(spacing: 0) {
-                            // 現金部分（單一深綠色，像首頁的投資資產的圈圈比例圖的綠色）
-                            if animatedCashProgress > 0 {
-                                Rectangle()
-                                    .fill(Color.profitGreen) // 深綠色
-                                    .frame(width: geometry.size.width * animatedCashProgress, height: 12)
-                            }
-                            
-                            // 持股部分（緊接著，無間隙）
-                            if animatedHoldingsProgress > 0 {
-                                Rectangle()
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [account.accountType.color, account.accountType.color.opacity(0.7)],
-                                            startPoint: .leading,
-                                            endPoint: .trailing
-                                        )
-                                    )
-                                    .frame(width: geometry.size.width * animatedHoldingsProgress, height: 12)
-                            }
-                        }
-                        .clipShape(RoundedRectangle(cornerRadius: 8))  // 整體圓角，確保兩段連接連續
-                    }
-                }
-                .frame(height: 12)
-                
-                // 比例顯示
-                HStack {
-                    HStack(spacing: 4) {
-                        Circle()
-                            .fill(Color.profitGreen) // 深綠色（單一顏色）
-                            .frame(width: 8, height: 8)
-                        Text("現金 \(cashPercentage)%")
-                            .font(.caption)
-                            .foregroundColor(.secondaryText)
-                    }
-                    
-                    Spacer()
-                    
-                    HStack(spacing: 4) {
-                        Circle()
-                            .fill(account.accountType.color)
-                            .frame(width: 8, height: 8)
-                        Text("持股 \(holdingsPercentage)%")
-                            .font(.caption)
-                            .foregroundColor(.secondaryText)
-                    }
                 }
             }
         }
-        .onAppear {
-            // 載入動畫：從0開始動畫到目標比例（確保每次進入頁面都看到動畫）
-            // 先重置為0
-            animatedCashProgress = 0.0
-            animatedHoldingsProgress = 0.0
-            
-            // 延遲一小段時間後開始動畫，確保視圖已完全渲染
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                withAnimation(.spring(response: 0.9, dampingFraction: 0.75)) {
-                    animatedCashProgress = targetCashRatio
-                    animatedHoldingsProgress = targetHoldingsRatio
-                }
-            }
-        }
-        // 使用 id 確保每次進入頁面時視圖重新創建，觸發 onAppear
-        .id("asset-allocation-\(account.id)")
     }
 }
 

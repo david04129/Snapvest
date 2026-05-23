@@ -196,16 +196,19 @@ struct AdjustCashBalanceView: View {
                     .foregroundColor(.primaryText)
             }
             
-            CardView {
-                HStack(spacing: 12) {
-                    Image(systemName: "calendar.badge.clock")
-                        .font(.system(size: 18))
-                        .foregroundColor(.secondaryText)
-                    
-                    DatePicker("", selection: $transactionDate, displayedComponents: .date)
-                        .datePickerStyle(.compact)
-                }
+            VStack(alignment: .leading, spacing: 0) {
+                DatePicker("", selection: $transactionDate, displayedComponents: .date)
+                    .datePickerStyle(.compact)
+                    .labelsHidden()
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(Color.cardBackground)
+            .cornerRadius(12)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.separator.opacity(0.35), lineWidth: 1)
+            )
         }
         .padding(.horizontal)
         .padding(.bottom, 16)
