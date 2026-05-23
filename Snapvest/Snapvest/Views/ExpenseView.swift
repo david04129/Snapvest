@@ -310,11 +310,19 @@ struct ExpenseView: View {
         }
     }
     
+    /// 編輯時須把原支出金額加回，否則會誤判餘額不足
+    private var maxAllowedExpenseAmount: Decimal {
+        if let existing = editingTransaction {
+            return viewModel.cashBalance + existing.totalAmountWithFee
+        }
+        return viewModel.cashBalance
+    }
+    
     private var isValid: Bool {
         guard let amountValue = Decimal(string: amount),
               !amount.isEmpty,
               amountValue > 0,
-              amountValue <= viewModel.cashBalance else {
+              amountValue <= maxAllowedExpenseAmount else {
             return false
         }
         return true
@@ -326,13 +334,23 @@ struct ExpenseView: View {
         Task {
             let transactionsViewModel = TransactionsViewModel()
             
-            if let editingTransaction = editingTransaction {
-                // 編輯模式：更新現有交易
-                var updatedTransaction = editingTransaction
-                updatedTransaction.quantity = amountValue
-                updatedTransaction.price = 1
-                updatedTransaction.notes = notes.isEmpty ? nil : notes
-                updatedTransaction.transactionDate = transactionDate
+            if let existing = editingTransaction {
+                // 編輯模式：重建交易以重算 totalAmount / totalAmountWithFee
+                let updatedTransaction = Transaction(
+                    id: existing.id,
+                    accountId: existing.accountId,
+                    type: .withdraw,
+                    assetType: existing.assetType,
+                    symbol: existing.symbol,
+                    quantity: amountValue,
+                    price: 1,
+                    currency: existing.currency,
+                    fee: existing.fee,
+                    notes: notes.isEmpty ? nil : notes,
+                    transactionDate: transactionDate,
+                    createdAt: existing.createdAt,
+                    updatedAt: Date()
+                )
                 await transactionsViewModel.updateTransaction(updatedTransaction)
             } else {
                 // 新增模式：建立新交易

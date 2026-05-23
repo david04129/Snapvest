@@ -131,14 +131,106 @@ class TransactionsViewModel: ObservableObject {
         await createTransaction(transaction)
     }
     
-    func updateTransaction(_ transaction: Transaction) async {
+    func updateTransaction(_ transaction: Transaction, previousAccountId: String? = nil) async {
         do {
             try await dataService.updateTransaction(transaction)
             await updateSnapshotsIfNeeded(for: transaction.accountId)
             await updateHoldings(accountId: transaction.accountId)
+            if let previousAccountId, previousAccountId != transaction.accountId {
+                await updateSnapshotsIfNeeded(for: previousAccountId)
+                await updateHoldings(accountId: previousAccountId)
+            }
             await loadTransactions(userId: accounts.first?.userId ?? "")
         } catch {
             errorMessage = "更新交易失敗：\(error.localizedDescription)"
+        }
+    }
+    
+    func updateBuyTransaction(
+        existing: Transaction,
+        account: Account,
+        quantity: Decimal,
+        price: Decimal,
+        currency: Currency,
+        fee: Decimal,
+        exchangeRate: Decimal?,
+        deductFromAccount: Bool,
+        transactionDate: Date,
+        symbolName: String?
+    ) async {
+        let notes: String? = {
+            if let symbolName, !symbolName.isEmpty {
+                return "買入 \(existing.symbol) - \(symbolName)"
+            }
+            return existing.notes
+        }()
+        let updated = Transaction(
+            id: existing.id,
+            accountId: account.id,
+            type: .buy,
+            assetType: existing.assetType,
+            symbol: existing.symbol,
+            quantity: quantity,
+            price: price,
+            currency: currency,
+            fee: fee,
+            notes: notes,
+            transactionDate: transactionDate,
+            createdAt: existing.createdAt,
+            updatedAt: Date(),
+            exchangeRate: exchangeRate,
+            deductFromAccount: deductFromAccount
+        )
+        await updateTransaction(updated, previousAccountId: existing.accountId)
+    }
+    
+    func updateSellTransaction(
+        existing: Transaction,
+        account: Account,
+        quantity: Decimal,
+        price: Decimal,
+        currency: Currency,
+        exchangeRate: Decimal?,
+        transactionDate: Date,
+        averageCostFallback: Decimal
+    ) async {
+        do {
+            let costBasis = try await calculateCostBasis(
+                userId: account.userId,
+                accountId: account.id,
+                assetType: existing.assetType,
+                symbol: existing.symbol,
+                quantity: quantity,
+                averageCostFallback: averageCostFallback
+            )
+            let proceeds = quantity * price
+            let realizedGainLoss = proceeds - costBasis
+            let realizedGainLossPercent = costBasis > 0 ? (realizedGainLoss / costBasis) * 100 : nil
+            let realizedCostPerUnit = quantity > 0 ? costBasis / quantity : nil
+            
+            let updated = Transaction(
+                id: existing.id,
+                accountId: account.id,
+                type: .sell,
+                assetType: existing.assetType,
+                symbol: existing.symbol,
+                quantity: quantity,
+                price: price,
+                currency: currency,
+                fee: existing.fee,
+                notes: existing.notes,
+                transactionDate: transactionDate,
+                createdAt: existing.createdAt,
+                updatedAt: Date(),
+                exchangeRate: exchangeRate,
+                realizedGainLoss: realizedGainLoss,
+                realizedGainLossPercent: realizedGainLossPercent,
+                realizedCostBasis: costBasis,
+                realizedCostPerUnit: realizedCostPerUnit
+            )
+            await updateTransaction(updated, previousAccountId: existing.accountId)
+        } catch {
+            errorMessage = "更新賣出交易失敗：\(error.localizedDescription)"
         }
     }
     

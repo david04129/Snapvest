@@ -7,6 +7,33 @@
 
 import SwiftUI
 
+/// 從個股／資產類型帶入交易市場
+extension TradeMarket {
+    init?(assetType: AssetType) {
+        switch assetType {
+        case .stockTW: self = .stockTW
+        case .stockUS: self = .stockUS
+        case .crypto: self = .crypto
+        case .cash: return nil
+        }
+    }
+}
+
+struct BuyTradePrefill: Equatable {
+    let symbol: String
+    let symbolName: String?
+    let preferredAccountId: String?
+    /// 從個股詳情進入時為 true：不可改選其他代號
+    var lockSymbol: Bool = false
+}
+
+struct SellTradePrefill: Equatable {
+    let symbol: String
+    let preferredAccountId: String?
+    /// 從個股詳情進入時為 true：僅能賣出此代號
+    var lockSymbol: Bool = false
+}
+
 enum TradeMarket: String, CaseIterable, Identifiable {
     case stockTW
     case stockUS
@@ -100,12 +127,28 @@ struct NewTradeFlowView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: {
-                        dismiss()
-                    }) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 16, weight: .semibold))
+                    if selectedMarket != nil {
+                        Button {
+                            withAnimation(ChartMotion.switchSpring) {
+                                selectedMarket = nil
+                                selectedAction = .buy
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "chevron.left")
+                                    .font(.system(size: 16, weight: .semibold))
+                                Text("市場")
+                                    .font(.subheadline)
+                                    .fontWeight(.medium)
+                            }
                             .foregroundColor(.appPrimary)
+                        }
+                    } else {
+                        Button(action: { dismiss() }) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.appPrimary)
+                        }
                     }
                 }
             }
@@ -146,20 +189,23 @@ struct NewTradeFlowView: View {
     
     private func tradeActionStep(for market: TradeMarket) -> some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("\(market.title) 交易")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 10) {
+                Image(systemName: market.iconName)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(market.themeColor)
+                    .frame(width: 32, height: 32)
+                    .background(market.themeColor.opacity(0.12))
+                    .clipShape(Circle())
                 
-                Text("請選擇要進行的交易動作。")
-                    .font(.subheadline)
-                    .foregroundColor(.secondaryText)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text(market.title)
+                    .font(.headline)
+                    .foregroundColor(.primaryText)
+                
+                Spacer(minLength: 0)
             }
             .padding(.horizontal)
-            .padding(.top)
-            .padding(.bottom, 8)
+            .padding(.top, 8)
+            .padding(.bottom, 4)
             
             CardView(padding: 8, cornerRadius: 12) {
                 Picker("", selection: $selectedAction) {
@@ -172,14 +218,15 @@ struct NewTradeFlowView: View {
                 .font(.subheadline)
             }
             .padding(.horizontal)
-            .padding(.bottom, 12)
+            .padding(.bottom, 8)
             
             if selectedAction == .sell {
-                SellTradeFormView(market: market)
+                SellTradeFormView(market: market, embedInTradeFlow: true)
             } else {
-                BuyTradeFormView(market: market)
+                BuyTradeFormView(market: market, embedInTradeFlow: true)
             }
         }
+        .background(Color.mainBackground)
     }
 }
 

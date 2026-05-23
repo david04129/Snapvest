@@ -10,11 +10,35 @@ import Foundation
 struct SymbolItem: Identifiable, Equatable {
     let symbol: String
     let name: String
+    /// CoinGecko API 用的 id（僅加密貨幣；與 ticker 常不同，例如 USDC → usd-coin）
+    let coingeckoId: String?
     var id: String { symbol }
+
+    init(symbol: String, name: String, coingeckoId: String? = nil) {
+        self.symbol = symbol
+        self.name = name
+        self.coingeckoId = coingeckoId
+    }
 }
 
 /// 從 Bundle 讀取股票/加密貨幣代號清單，並提供搜尋功能
 struct SymbolListService {
+
+    private static var cryptoCoingeckoIdBySymbol: [String: String]?
+
+    /// 依 ticker 查 CoinGecko id（用於抓價；與清單內 coingeckoId 一致）
+    static func coingeckoId(forCryptoSymbol symbol: String) -> String? {
+        if cryptoCoingeckoIdBySymbol == nil {
+            let items = loadSymbols(market: .crypto)
+            cryptoCoingeckoIdBySymbol = Dictionary(
+                uniqueKeysWithValues: items.compactMap { item in
+                    guard let cg = item.coingeckoId, !cg.isEmpty else { return nil }
+                    return (item.symbol.lowercased(), cg)
+                }
+            )
+        }
+        return cryptoCoingeckoIdBySymbol?[symbol.lowercased()]
+    }
 
     /// 載入指定市場的完整代號清單（依 symbol 排序）
     @MainActor static func loadSymbols(market: TradeMarket) -> [SymbolItem] {
@@ -34,7 +58,8 @@ struct SymbolListService {
         }
         return itemsArray.compactMap { item -> SymbolItem? in
             guard let symbol = item["symbol"] as? String, let name = item["name"] as? String else { return nil }
-            return SymbolItem(symbol: symbol, name: name)
+            let coingeckoId = item["coingeckoId"] as? String
+            return SymbolItem(symbol: symbol, name: name, coingeckoId: coingeckoId)
         }.sorted { $0.symbol < $1.symbol }
     }
     

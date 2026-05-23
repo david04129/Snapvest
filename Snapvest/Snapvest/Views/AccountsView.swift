@@ -8,62 +8,23 @@
 import SwiftUI
 
 struct AccountsView: View {
+    @Binding var selectedTab: Int
+    @EnvironmentObject private var portfolioViewModel: PortfolioViewModel
     @StateObject private var viewModel = AccountsViewModel()
-    @StateObject private var portfolioViewModel = PortfolioViewModel()
     @State private var showingAddAccount = false
     @State private var showingAddLiability = false
     @State private var userId: String = "test-user-id"
-    @State private var expandedCategories: Set<AccountType> = Set(AccountType.allCases) // 預設全部展開
+    @State private var expandedCategories: Set<AccountType> = Set(AccountType.allCases)
     @State private var accountOrder: [AccountType] = AccountType.allCases
-    @State private var accountOrders: [AccountType: [String]] = [:] // 每個類別內的帳戶排序
-    @State private var refreshTrigger: UUID = UUID() // 用於觸發類別總資產刷新
+    @State private var accountOrders: [AccountType: [String]] = [:]
+    @State private var navigationStackResetID = UUID()
     
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 12) {
-                    // 按帳戶類型分組顯示（可收縮/展開，支援拖曳排序）
                     ForEach(accountOrder, id: \.self) { accountType in
-                        if accountType == .debt {
-                            // 負債帳戶（顯示所有債務帳戶，就像其他帳戶類型一樣）
-                            let debtAccounts = viewModel.accounts.filter { $0.accountType == .debt }
-                            if !debtAccounts.isEmpty {
-                                ExpandableAccountCategorySection(
-                                    accountType: accountType,
-                                    accounts: debtAccounts,
-                                    portfolioViewModel: portfolioViewModel,
-                                    isExpanded: Binding(
-                                        get: { expandedCategories.contains(accountType) },
-                                        set: { isExpanded in
-                                            if isExpanded {
-                                                expandedCategories.insert(accountType)
-                                            } else {
-                                                expandedCategories.remove(accountType)
-                                            }
-                                        }
-                                    ),
-                                    refreshTrigger: refreshTrigger
-                                )
-                            }
-                        } else {
-                            // 一般帳戶
-                            ExpandableAccountCategorySection(
-                                accountType: accountType,
-                                accounts: viewModel.accounts.filter { $0.accountType == accountType },
-                                portfolioViewModel: portfolioViewModel,
-                                isExpanded: Binding(
-                                    get: { expandedCategories.contains(accountType) },
-                                    set: { isExpanded in
-                                        if isExpanded {
-                                            expandedCategories.insert(accountType)
-                                        } else {
-                                            expandedCategories.remove(accountType)
-                                        }
-                                    }
-                                ),
-                                refreshTrigger: refreshTrigger
-                            )
-                        }
+                        accountCategorySection(for: accountType)
                     }
                 }
                 .padding()
@@ -76,39 +37,71 @@ struct AccountsView: View {
                 })
             }
             .refreshable {
-                await viewModel.loadAccounts(userId: userId)
-                await portfolioViewModel.loadData(userId: userId)
+                await reloadAccountsTabData()
             }
             .sheet(isPresented: $showingAddAccount, onDismiss: {
-                // 當sheet關閉時，重新載入數據
                 Task {
-                    await viewModel.loadAccounts(userId: userId)
-                    await portfolioViewModel.loadData(userId: userId)
-                    // 觸發類別總資產刷新
-                    refreshTrigger = UUID()
+                    await reloadAccountsTabData()
                 }
             }) {
                 AddAccountView(viewModel: viewModel)
             }
             .task {
-                await viewModel.loadAccounts(userId: userId)
-                await portfolioViewModel.loadData(userId: userId)
+                await reloadAccountsTabData()
                 loadAccountOrder()
-                // 觸發類別總資產刷新
-                refreshTrigger = UUID()
-            }
-            .onAppear {
-                // 當視圖出現時，觸發類別總資產刷新
-                refreshTrigger = UUID()
             }
             .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { _ in
-                Task {
-                    await viewModel.loadAccounts(userId: userId)
-                    await portfolioViewModel.loadData(userId: userId)
-                    refreshTrigger = UUID()
-                }
+                Task { await reloadAccountsTabData() }
             }
         }
+        .id(navigationStackResetID)
+        .resetNavigationWhenTabReappears(selectedTab: $selectedTab, resignedTab: .accounts) {
+            navigationStackResetID = UUID()
+        }
+    }
+    
+    @ViewBuilder
+    private func accountCategorySection(for accountType: AccountType) -> some View {
+        let typeAccounts = viewModel.accounts.filter { $0.accountType == accountType }
+        if typeAccounts.isEmpty { EmptyView() } else {
+            let isLoading = viewModel.balancesLoading && !viewModel.balancesLoadedOnce
+            let categoryTotal: Decimal = accountType == .debt
+                ? -viewModel.debtCategoryTotalBalance
+                : (viewModel.categoryTotalsTWD[accountType] ?? 0)
+            ExpandableAccountCategorySection(
+                accountType: accountType,
+                accounts: typeAccounts,
+                categoryTotalTWD: categoryTotal,
+                isCategoryLoading: isLoading,
+                balancesByAccountId: viewModel.balancesByAccountId,
+                isBalanceLoading: isLoading,
+                isExpanded: expandedBinding(for: accountType)
+            )
+        }
+    }
+    
+    private func expandedBinding(for accountType: AccountType) -> Binding<Bool> {
+        Binding(
+            get: { expandedCategories.contains(accountType) },
+            set: { isExpanded in
+                if isExpanded {
+                    expandedCategories.insert(accountType)
+                } else {
+                    expandedCategories.remove(accountType)
+                }
+            }
+        )
+    }
+
+    private func reloadAccountsTabData() async {
+        await viewModel.loadAccounts(userId: userId)
+        if !portfolioViewModel.hasLoadedOnce {
+            await portfolioViewModel.loadData(userId: userId)
+        }
+        await viewModel.refreshBalances(
+            userId: userId,
+            preloadedLiabilities: portfolioViewModel.liabilities
+        )
     }
     
     // MARK: - 自定義標題欄（帶新增按鈕）
@@ -211,214 +204,118 @@ struct AccountsView: View {
     }
 }
 
+
 // MARK: - 可收縮/展開的帳戶類別區塊
 struct ExpandableAccountCategorySection: View {
     let accountType: AccountType
     let accounts: [Account]
-    @ObservedObject var portfolioViewModel: PortfolioViewModel
+    let categoryTotalTWD: Decimal
+    let isCategoryLoading: Bool
+    let balancesByAccountId: [String: AccountBalanceDisplay]
+    let isBalanceLoading: Bool
     @Binding var isExpanded: Bool
-    let refreshTrigger: UUID // 用於觸發刷新
-    @StateObject private var categoryViewModel = CategoryTotalViewModel()
-    @StateObject private var accountsViewModel = AccountsViewModel()
-    @State private var totalDebtBalance: Decimal = 0  // 債務帳戶的總剩餘本金
     
-    /// 根據帳戶類型返回深色文字顏色
     private func textColorForAccountType(_ accountType: AccountType) -> Color {
         switch accountType {
-        case .twdSecurities:
-            return .stockTWDeepBlue // 台幣證券戶 → 台股深藍色
-        case .usdAccount:
-            return .stockUSDeepPurple // 美金帳戶 → 美股深紫色
-        case .cryptoWallet:
-            return .cryptoDeepBrown // 加密貨幣錢包 → 加密貨幣深咖啡色
-        case .twdDeposit:
-            return .primaryText // 台幣存款帳戶 → 主要文字顏色
-        case .debt:
-            return .lossRed // 債務帳戶 → 紅色
+        case .twdSecurities: return .stockTWDeepBlue
+        case .usdAccount: return .stockUSDeepPurple
+        case .cryptoWallet: return .cryptoDeepBrown
+        case .twdDeposit: return .primaryText
+        case .debt: return .lossRed
         }
     }
     
-    var categoryTotal: Decimal {
-        if accountType == .debt {
-            // 債務帳戶：返回所有債務剩餘本金總和（負數）
-            return -totalDebtBalance
-        } else {
-            // 一般帳戶：返回總資產
-            return categoryViewModel.totalAssets
-        }
+    private var categoryTotalText: String {
+        if isCategoryLoading { return "—" }
+        return categoryTotalTWD.formatted(currency: .TWD)
     }
     
     var body: some View {
-        if !accounts.isEmpty {
-            VStack(spacing: 0) {
-                // 可點擊的標題欄（收縮/展開）
-                Button(action: {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                        isExpanded.toggle()
+        VStack(spacing: 0) {
+            Button(action: {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    isExpanded.toggle()
+                }
+            }) {
+                HStack {
+                    ZStack {
+                        Circle()
+                            .fill(accountType.color.opacity(0.2))
+                            .frame(width: 40, height: 40)
+                        Image(systemName: accountType.icon)
+                            .foregroundColor(accountType.color)
+                            .font(.system(size: 20))
                     }
-                }) {
-                    HStack {
-                        // 圖標（帶背景色）
-                        ZStack {
-                            Circle()
-                                .fill(accountType.color.opacity(0.2))
-                                .frame(width: 40, height: 40)
-                            
-                            Image(systemName: accountType.icon)
-                                .foregroundColor(accountType.color)
-                                .font(.system(size: 20))
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(accountType.displayName)
-                                .font(.headline)
-                                .foregroundColor(textColorForAccountType(accountType))
-                            
-                            Text("\(accounts.count)個帳戶")
-                                .font(.caption)
-                                .foregroundColor(.secondaryText)
-                        }
-                        
-                        Spacer()
-                        
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text(accountType == .debt ? "類別總債務" : "類別總資產")
-                                .font(.caption)
-                                .foregroundColor(.secondaryText)
-                            
-                            Text(categoryTotal.formatted(currency: .TWD))
-                                .font(.system(size: 17, weight: .bold))
-                                .foregroundColor(textColorForAccountType(accountType))
-                        }
-                        
-                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                            .foregroundColor(.secondaryText)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(accountType.displayName)
+                            .font(.headline)
+                            .foregroundColor(textColorForAccountType(accountType))
+                        Text("\(accounts.count)個帳戶")
                             .font(.caption)
+                            .foregroundColor(.secondaryText)
                     }
-                    .task {
-                        if accountType == .debt {
-                            await loadTotalDebtBalance()
-                        } else {
-                            await categoryViewModel.calculateCategoryTotal(
-                                accounts: accounts,
-                                portfolioViewModel: portfolioViewModel
+                    
+                    Spacer()
+                    
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(accountType == .debt ? "類別總債務" : "類別總資產")
+                            .font(.caption)
+                            .foregroundColor(.secondaryText)
+                        Text(categoryTotalText)
+                            .font(.system(size: 17, weight: .bold))
+                            .foregroundColor(textColorForAccountType(accountType))
+                    }
+                    
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .foregroundColor(.secondaryText)
+                        .font(.caption)
+                }
+                .padding()
+            }
+            .buttonStyle(.plain)
+            
+            if isExpanded {
+                VStack(spacing: 8) {
+                    ForEach(accounts) { account in
+                        NavigationLink(destination: AccountDetailView(account: account)) {
+                            AccountCardView(
+                                account: account,
+                                balance: balancesByAccountId[account.id],
+                                isBalanceLoading: isBalanceLoading
                             )
                         }
+                        .buttonStyle(.plain)
                     }
-                    .onChange(of: refreshTrigger) { _, _ in
-                        Task {
-                            if accountType == .debt {
-                                await loadTotalDebtBalance()
-                            } else {
-                                await categoryViewModel.calculateCategoryTotal(
-                                    accounts: accounts,
-                                    portfolioViewModel: portfolioViewModel
-                                )
-                            }
-                        }
-                    }
-                    .onChange(of: accounts.map { $0.id }) { _, _ in
-                        Task {
-                            if accountType == .debt {
-                                await loadTotalDebtBalance()
-                            } else {
-                                await categoryViewModel.calculateCategoryTotal(
-                                    accounts: accounts,
-                                    portfolioViewModel: portfolioViewModel
-                                )
-                            }
-                        }
-                    }
-                    .onChange(of: portfolioViewModel.totalAssets) { _, _ in
-                        Task {
-                            if accountType == .debt {
-                                await loadTotalDebtBalance()
-                            } else {
-                                await categoryViewModel.calculateCategoryTotal(
-                                    accounts: accounts,
-                                    portfolioViewModel: portfolioViewModel
-                                )
-                            }
-                        }
-                    }
-                    .padding()
                 }
-                .buttonStyle(PlainButtonStyle())
-                
-                // 帳戶列表（可展開/收縮）
-                if isExpanded {
-                    VStack(spacing: 8) {
-                        ForEach(accounts) { account in
-                            NavigationLink(destination: AccountDetailView(account: account)) {
-                                AccountCardView(account: account, portfolioViewModel: portfolioViewModel)
-                            }
-                            .buttonStyle(PlainButtonStyle())
-                        }
-                    }
-                    .padding(.horizontal)
-                    .padding(.bottom)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-                }
-            }
-            .background(Color.cardBackground)
-            .cornerRadius(16)
-            .shadow(color: AppColors.shadowMedium, radius: 8, x: 0, y: 2)
-        }
-    }
-    
-    // 載入債務帳戶的總剩餘本金
-    private func loadTotalDebtBalance() async {
-        await accountsViewModel.loadAccounts(userId: "test-user-id")
-        var total: Decimal = 0
-        
-        // 對於每個債務帳戶，找到對應的債務記錄
-        for debtAccount in accounts {
-            // 在所有還款帳戶中查找對應的債務
-            for repaymentAccount in accountsViewModel.accounts {
-                do {
-                    let liabilities = try await MockDataService.shared.fetchLiabilities(accountId: repaymentAccount.id)
-                    if let liability = liabilities.first(where: { $0.name == debtAccount.name }) {
-                        total += liability.remainingBalance
-                        break  // 找到對應的債務後，跳出內層循環
-                    }
-                } catch {
-                    // 如果載入失敗，繼續嘗試下一個帳戶
-                    continue
-                }
+                .padding(.horizontal)
+                .padding(.bottom)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        
-        await MainActor.run {
-            totalDebtBalance = total
-        }
+        .background(Color.cardBackground)
+        .cornerRadius(16)
+        .shadow(color: AppColors.shadowMedium, radius: 8, x: 0, y: 2)
     }
 }
 
 // MARK: - 帳戶卡片
 struct AccountCardView: View {
     let account: Account
-    @ObservedObject var portfolioViewModel: PortfolioViewModel
-    @StateObject private var accountDetailViewModel = AccountDetailViewModel()
-    @StateObject private var accountsViewModel = AccountsViewModel()
-    @State private var totalAssets: Decimal = 0
-    @State private var cashBalance: Decimal = 0
-    @State private var holdingsValue: Decimal = 0
-    @State private var twdEquivalent: Decimal? = nil
-    @State private var remainingBalance: Decimal = 0  // 債務帳戶的剩餘本金
+    let balance: AccountBalanceDisplay?
+    let isBalanceLoading: Bool
     
-    /// 根據帳戶類型返回深色文字顏色
+    private var showLoadingPlaceholder: Bool {
+        isBalanceLoading && balance == nil
+    }
+    
     private func textColorForAccountType(_ accountType: AccountType) -> Color {
         switch accountType {
-        case .twdSecurities:
-            return .stockTWDeepBlue // 台幣證券戶 → 台股深藍色
-        case .usdAccount:
-            return .stockUSDeepPurple // 美金帳戶 → 美股深紫色
-        case .cryptoWallet:
-            return .cryptoDeepBrown // 加密貨幣錢包 → 加密貨幣深咖啡色
-        case .twdDeposit:
-            return .primaryText // 台幣存款帳戶 → 主要文字顏色
-        case .debt:
-            return .lossRed // 債務帳戶 → 紅色
+        case .twdSecurities: return .stockTWDeepBlue
+        case .usdAccount: return .stockUSDeepPurple
+        case .cryptoWallet: return .cryptoDeepBrown
+        case .twdDeposit: return .primaryText
+        case .debt: return .lossRed
         }
     }
     
@@ -433,57 +330,20 @@ struct AccountCardView: View {
                     Text(account.name)
                         .font(.headline)
                         .foregroundColor(textColorForAccountType(account.accountType))
-                    
-                    if account.accountType == .debt {
-                        Text("剩餘本金")
-                            .font(.caption)
-                            .foregroundColor(.secondaryText)
-                    } else if account.accountType == .twdDeposit {
-                        Text("現金餘額")
-                            .font(.caption)
-                            .foregroundColor(.secondaryText)
-                    } else {
-                        Text("總資產")
-                            .font(.caption)
-                            .foregroundColor(.secondaryText)
-                    }
+                    Text(accountSubtitle)
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
                 }
                 
                 Spacer()
                 
                 VStack(alignment: .trailing, spacing: 4) {
-                    if account.accountType == .debt {
-                        // 債務帳戶顯示剩餘本金（負數）
-                        let negativeBalance = -remainingBalance
-                        Text(negativeBalance.formatted(currency: account.currency))
-                            .font(.headline)
-                            .foregroundColor(.lossRed) // 債務保持紅色
-                        
+                    amountPrimaryText
+                    if !showLoadingPlaceholder {
                         Text(account.currency.rawValue)
                             .font(.caption)
                             .foregroundColor(.secondaryText)
-                    } else if account.accountType == .twdDeposit {
-                        // 現金帳戶只顯示現金餘額
-                        Text(cashBalance.formatted(currency: account.currency))
-                            .font(.headline)
-                            .foregroundColor(.primaryText) // 現金帳戶使用主要文字顏色
-                        
-                        Text(account.currency.rawValue)
-                            .font(.caption)
-                            .foregroundColor(.secondaryText)
-                    } else {
-                        // 其他帳戶顯示總資產（現金+持股市值）
-                        Text(totalAssets.formatted(currency: account.currency))
-                            .font(.headline)
-                            .foregroundColor(textColorForAccountType(account.accountType))
-                        
-                        // 先顯示幣別
-                        Text(account.currency.rawValue)
-                            .font(.caption)
-                            .foregroundColor(.secondaryText)
-                        
-                        // 如果是美金帳戶或加密貨幣錢包，顯示台幣等值
-                        if account.currency == .USD, let twd = twdEquivalent {
+                        if account.currency == .USD, let twd = balance?.twdEquivalent {
                             Text("≈ \(twd.formatted(currency: .TWD))")
                                 .font(.caption)
                                 .foregroundColor(.secondaryText)
@@ -496,7 +356,6 @@ struct AccountCardView: View {
         .background(Color.cardBackground)
         .cornerRadius(16)
         .overlay(
-            // 左側色條
             HStack {
                 RoundedRectangle(cornerRadius: 16)
                     .fill(account.accountType.color)
@@ -505,43 +364,38 @@ struct AccountCardView: View {
             }
         )
         .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 1)
-        .task {
-            await loadAccountAssets()
+    }
+    
+    private var accountSubtitle: String {
+        switch account.accountType {
+        case .debt: return "剩餘本金"
+        case .twdDeposit: return "現金餘額"
+        default: return "總資產"
         }
     }
     
-    private func loadAccountAssets() async {
-        if account.accountType == .debt {
-            // 債務帳戶：載入剩餘本金
-            await accountsViewModel.loadAccounts(userId: "test-user-id")
-            let allAccounts = accountsViewModel.accounts
-            for acc in allAccounts {
-                do {
-                    let liabilities = try await MockDataService.shared.fetchLiabilities(accountId: acc.id)
-                    if let liability = liabilities.first(where: { $0.name == account.name }) {
-                        await MainActor.run {
-                            remainingBalance = liability.remainingBalance
-                        }
-                        break
-                    }
-                } catch {
-                    // 如果載入失敗，繼續嘗試下一個帳戶
-                }
-            }
+    @ViewBuilder
+    private var amountPrimaryText: some View {
+        if showLoadingPlaceholder {
+            Text("—")
+                .font(.headline)
+                .foregroundColor(.secondaryText)
+        } else if account.accountType == .debt, let balance {
+            Text((-balance.remainingBalance).formatted(currency: account.currency))
+                .font(.headline)
+                .foregroundColor(.lossRed)
+        } else if account.accountType == .twdDeposit, let balance {
+            Text(balance.cashBalance.formatted(currency: account.currency))
+                .font(.headline)
+                .foregroundColor(.primaryText)
+        } else if let balance {
+            Text(balance.totalAssets.formatted(currency: account.currency))
+                .font(.headline)
+                .foregroundColor(textColorForAccountType(account.accountType))
         } else {
-            // 一般帳戶：載入資產
-            await accountDetailViewModel.loadAccountData(accountId: account.id)
-            cashBalance = accountDetailViewModel.cashBalance
-            holdingsValue = accountDetailViewModel.holdingsValue
-            totalAssets = cashBalance + holdingsValue
-            
-            // 如果是美金帳戶或加密貨幣錢包，計算台幣等值
-            if account.currency == .USD {
-                // TODO: 從匯率服務獲取即時匯率
-                // 目前使用固定匯率 1 USD = 32 TWD（應該從 ExchangeRate 服務獲取）
-                let usdToTwdRate: Decimal = 32 // 臨時固定值，之後應該從服務獲取
-                twdEquivalent = totalAssets * usdToTwdRate
-            }
+            Text("—")
+                .font(.headline)
+                .foregroundColor(.secondaryText)
         }
     }
 }
@@ -668,6 +522,7 @@ struct DebtCardView: View {
 }
 
 #Preview {
-    AccountsView()
+    AccountsView(selectedTab: .constant(AppTab.accounts.rawValue))
+        .environmentObject(PortfolioViewModel())
 }
 

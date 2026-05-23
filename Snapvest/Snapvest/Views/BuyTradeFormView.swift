@@ -9,6 +9,10 @@ import SwiftUI
 
 struct BuyTradeFormView: View {
     let market: TradeMarket
+    let prefill: BuyTradePrefill?
+    let editingTransaction: Transaction?
+    /// 嵌在 NewTradeFlowView 時隱藏表單內標題（流程頁已有買賣切換）
+    var embedInTradeFlow: Bool = false
     let onSubmit: (() -> Void)?
     
     @StateObject private var accountsViewModel = AccountsViewModel()
@@ -19,8 +23,8 @@ struct BuyTradeFormView: View {
     @State private var selectedSymbolName: String = ""
     @State private var quantityText: String = ""
     @State private var priceText: String = ""
-    @State private var feeText: String = ""
     @State private var exchangeRateText: String = ""
+
     @State private var transactionDate: Date = Date()
     @State private var deductFromAccount: Bool = true
     @State private var errorMessage: String?
@@ -34,9 +38,24 @@ struct BuyTradeFormView: View {
     
     @Environment(\.dismiss) private var dismiss
     
-    init(market: TradeMarket, onSubmit: (() -> Void)? = nil) {
+    init(
+        market: TradeMarket,
+        prefill: BuyTradePrefill? = nil,
+        editingTransaction: Transaction? = nil,
+        embedInTradeFlow: Bool = false,
+        onSubmit: (() -> Void)? = nil
+    ) {
         self.market = market
+        self.prefill = prefill
+        self.editingTransaction = editingTransaction
+        self.embedInTradeFlow = embedInTradeFlow
         self.onSubmit = onSubmit
+    }
+    
+    private var isEditMode: Bool { editingTransaction != nil }
+    
+    private var isSymbolLocked: Bool {
+        isEditMode || prefill?.lockSymbol == true
     }
     
     private var availableAccounts: [Account] {
@@ -68,10 +87,6 @@ struct BuyTradeFormView: View {
         Decimal(string: priceText)
     }
     
-    private var feeValue: Decimal {
-        Decimal(string: feeText) ?? 0
-    }
-    
     private var exchangeRateValue: Decimal? {
         Decimal(string: exchangeRateText)
     }
@@ -92,7 +107,7 @@ struct BuyTradeFormView: View {
     /// 本筆交易需扣款金額（帳戶貨幣）
     private var transactionAmountInAccountCurrency: Decimal? {
         guard let qty = quantityValue, let price = priceValue, qty > 0, price > 0 else { return nil }
-        let amountInTradeCurrency = qty * price + feeValue
+        let amountInTradeCurrency = qty * price
         guard let account = selectedAccount else { return amountInTradeCurrency }
         if priceCurrency == account.currency {
             return amountInTradeCurrency
@@ -126,36 +141,54 @@ struct BuyTradeFormView: View {
     
     var body: some View {
         ScrollView {
-            VStack(spacing: 24) {
-                headerSection
+            VStack(spacing: 16) {
+                if !embedInTradeFlow {
+                    TradeFormCompactHeader(
+                        market: market,
+                        actionTitle: "買入",
+                        isEditMode: isEditMode
+                    )
+                }
                 formCard
                 errorMessageSection
             }
-            .padding(.top, 8)
+            .padding(.top, embedInTradeFlow ? 4 : 0)
         }
+        .background(Color.mainBackground)
         .safeAreaInset(edge: .bottom) {
-            Button(action: handleSubmit) {
-                HStack(spacing: 8) {
-                    Image(systemName: "arrow.up")
-                    Text("買入")
+            VStack(spacing: 10) {
+                buyAmountSummary
+                Button(action: handleSubmit) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.up")
+                        Text(isEditMode ? "確認修改" : "買入")
+                    }
+                    .font(.headline)
+                    .foregroundColor(AppColors.actionForeground)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(canSubmit ? Color.profitGreen : AppColors.disabledBackground)
+                    .cornerRadius(12)
                 }
-                .font(.headline)
-                .foregroundColor(AppColors.actionForeground)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .background(canSubmit ? Color.profitGreen : AppColors.disabledBackground)
-                .cornerRadius(12)
+                .disabled(!canSubmit)
             }
-            .disabled(!canSubmit)
             .padding(.horizontal)
-            .padding(.vertical, 16)
+            .padding(.vertical, 12)
             .background(Color.cardBackground)
         }
         .task {
             await accountsViewModel.loadAccounts(userId: userId)
             transactionsViewModel.accounts = accountsViewModel.accounts
-            if selectedAccountId.isEmpty, let first = availableAccounts.first {
+            if let preferred = prefill?.preferredAccountId,
+               availableAccounts.contains(where: { $0.id == preferred }) {
+                selectedAccountId = preferred
+            } else if selectedAccountId.isEmpty, let first = availableAccounts.first {
                 selectedAccountId = first.id
+            }
+            if let transaction = editingTransaction {
+                applyEditingPrefill(from: transaction)
+            } else {
+                applySymbolPrefill()
             }
             if !selectedAccountId.isEmpty {
                 loadAccountCashBalance(accountId: selectedAccountId)
@@ -174,7 +207,6 @@ struct BuyTradeFormView: View {
         }
         .onChange(of: quantityText) { _, _ in validateInput() }
         .onChange(of: priceText) { _, _ in validateInput() }
-        .onChange(of: feeText) { _, _ in validateInput() }
         .onChange(of: exchangeRateText) { _, _ in validateInput() }
         .onChange(of: deductFromAccount) { _, _ in validateInput() }
         .sheet(isPresented: $showingSymbolPicker) {
@@ -187,45 +219,64 @@ struct BuyTradeFormView: View {
         }
     }
     
-    private var headerSection: some View {
-        VStack(spacing: 12) {
-            Image(systemName: market.iconName)
-                .font(.system(size: 48))
-                .foregroundColor(market.themeColor)
-                .frame(width: 80, height: 80)
-                .background(market.themeColor.opacity(0.1))
-                .clipShape(Circle())
-            
-            Text("買入\(market.title)")
-                .font(.title3)
-                .fontWeight(.semibold)
-                .foregroundColor(.primaryText)
-            
-            Text("請填寫買入資訊")
-                .font(.subheadline)
-                .foregroundColor(.secondaryText)
+    @ViewBuilder
+    private var buyAmountSummary: some View {
+        if !deductFromAccount {
+            TradeFormAmountSummary(
+                label: "本筆買入",
+                amountText: tradeAmountDisplayText ?? "—",
+                detailText: amountBreakdownDetail,
+                footnote: "不從帳戶扣款"
+            )
+        } else if let account = selectedAccount, let amount = transactionAmountInAccountCurrency {
+            TradeFormAmountSummary(
+                label: "預估扣款",
+                amountText: amount.formatted(currency: account.currency),
+                detailText: amountBreakdownDetail,
+                footnote: accountBalanceFootnote
+            )
+        } else {
+            TradeFormAmountSummary(
+                label: "預估扣款",
+                amountText: "—",
+                detailText: "請填寫數量與價格"
+            )
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 24)
+    }
+    
+    private var tradeAmountDisplayText: String? {
+        guard let amount = transactionAmountInAccountCurrency else { return nil }
+        let currency = selectedAccount?.currency ?? priceCurrency
+        return amount.formatted(currency: currency)
+    }
+    
+    private var amountBreakdownDetail: String? {
+        guard let qty = quantityValue, let price = priceValue, qty > 0, price > 0 else { return nil }
+        let qtyLabel = qty.formattedQuantityInput(maxFractionDigits: market == .crypto ? 8 : 4)
+        let priceLabel = price.formatted(currency: priceCurrency, fractionDigits: 2, showSymbol: true)
+        return "\(qtyLabel) × \(priceLabel)"
+    }
+    
+    private var accountBalanceFootnote: String? {
+        guard deductFromAccount, let account = selectedAccount else { return nil }
+        return "帳戶餘額 \(accountCashBalance.formatted(currency: account.currency))"
     }
     
     private var formCard: some View {
         VStack(spacing: 0) {
-            accountSection
-            Divider().padding(.horizontal, 20)
             symbolSection
             Divider().padding(.horizontal, 20)
             quantitySection
             Divider().padding(.horizontal, 20)
             priceSection
             Divider().padding(.horizontal, 20)
-            feeSection
+            accountSection
+            Divider().padding(.horizontal, 20)
+            deductFromAccountSection
             if needsExchangeRate {
                 Divider().padding(.horizontal, 20)
                 exchangeRateSection
             }
-            Divider().padding(.horizontal, 20)
-            deductFromAccountSection
             Divider().padding(.horizontal, 20)
             dateSection
         }
@@ -309,8 +360,15 @@ struct BuyTradeFormView: View {
     
     private var quantitySection: some View {
         buyFormRow(title: "數量", icon: "number.circle.fill", color: market.themeColor) {
-            TextField("0", text: $quantityText)
-                .keyboardType(.decimalPad)
+            VStack(alignment: .leading, spacing: 4) {
+                TextField("0", text: $quantityText)
+                    .keyboardType(.decimalPad)
+                if market == .crypto {
+                    Text("加密貨幣可輸入小數，例如 0.01")
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                }
+            }
         }
     }
     
@@ -321,18 +379,6 @@ struct BuyTradeFormView: View {
                     Text("$").foregroundColor(.secondaryText)
                 }
                 TextField("0", text: $priceText)
-                    .keyboardType(.decimalPad)
-            }
-        }
-    }
-    
-    private var feeSection: some View {
-        buyFormRow(title: "手續費（選填）", icon: "percent", color: market.themeColor) {
-            HStack(spacing: 8) {
-                if priceCurrency == .USD {
-                    Text("$").foregroundColor(.secondaryText)
-                }
-                TextField("0", text: $feeText)
                     .keyboardType(.decimalPad)
             }
         }
@@ -359,8 +405,7 @@ struct BuyTradeFormView: View {
     
     private var dateSection: some View {
         buyFormRow(title: "交易日期", icon: "calendar", color: market.themeColor) {
-            DatePicker("", selection: $transactionDate, in: ...Date(), displayedComponents: .date)
-                .datePickerStyle(.compact)
+            TradeFormDatePicker(date: $transactionDate)
         }
     }
     
@@ -390,21 +435,51 @@ struct BuyTradeFormView: View {
               let price = priceValue else { return }
         
         Task {
-            await transactionsViewModel.createBuyTransaction(
-                account: account,
-                assetType: assetType,
-                symbol: selectedSymbol,
-                symbolName: selectedSymbolName.isEmpty ? nil : selectedSymbolName,
-                quantity: qty,
-                price: price,
-                currency: priceCurrency,
-                fee: feeValue,
-                exchangeRate: exchangeRateValue,
-                deductFromAccount: deductFromAccount,
-                transactionDate: transactionDate
-            )
+            if let existing = editingTransaction {
+                await transactionsViewModel.updateBuyTransaction(
+                    existing: existing,
+                    account: account,
+                    quantity: qty,
+                    price: price,
+                    currency: priceCurrency,
+                    fee: 0,
+                    exchangeRate: exchangeRateValue,
+                    deductFromAccount: deductFromAccount,
+                    transactionDate: transactionDate,
+                    symbolName: selectedSymbolName.isEmpty ? nil : selectedSymbolName
+                )
+            } else {
+                await transactionsViewModel.createBuyTransaction(
+                    account: account,
+                    assetType: assetType,
+                    symbol: selectedSymbol,
+                    symbolName: selectedSymbolName.isEmpty ? nil : selectedSymbolName,
+                    quantity: qty,
+                    price: price,
+                    currency: priceCurrency,
+                    fee: 0,
+                    exchangeRate: exchangeRateValue,
+                    deductFromAccount: deductFromAccount,
+                    transactionDate: transactionDate
+                )
+            }
             onSubmit?()
             dismiss()
+        }
+    }
+    
+    private func applyEditingPrefill(from transaction: Transaction) {
+        selectedAccountId = transaction.accountId
+        selectedSymbol = transaction.symbol
+        selectedSymbolName = transaction.buySymbolNameFromNotes ?? ""
+        quantityText = transaction.quantity.formattedQuantityInput(
+            maxFractionDigits: transaction.assetType == .crypto ? 8 : 4
+        )
+        priceText = transaction.price.formatted(fractionDigits: 2)
+        transactionDate = transaction.transactionDate
+        deductFromAccount = transaction.deductFromAccount ?? true
+        if let rate = transaction.exchangeRate {
+            exchangeRateText = rate.formatted(fractionDigits: 2)
         }
     }
     
@@ -422,7 +497,8 @@ struct BuyTradeFormView: View {
             return
         }
         
-        if deductFromAccount,
+        if !isEditMode,
+           deductFromAccount,
            let amount = transactionAmountInAccountCurrency,
            let account = selectedAccount,
            amount > accountCashBalance {
@@ -475,6 +551,13 @@ struct BuyTradeFormView: View {
                 }
             }
         }
+    }
+    
+    private func applySymbolPrefill() {
+        guard let prefill, selectedSymbol.isEmpty else { return }
+        selectedSymbol = prefill.symbol
+        selectedSymbolName = prefill.symbolName ?? ""
+        Task { await loadCurrentPrice() }
     }
     
     private func loadCurrentPrice() async {

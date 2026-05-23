@@ -24,6 +24,10 @@ struct TransactionHistoryView: View {
     @StateObject private var editingAccountViewModel = AccountDetailViewModel()
     @State private var showingDeleteError = false
     @State private var deleteErrorMessage: String? = nil
+    @State private var transactionPendingDelete: Transaction?
+    @State private var showingDeleteConfirmation = false
+    @State private var buyTradeEditItem: BuyTradeEditItem?
+    @State private var sellTradeEditItem: SellTradeEditItem?
     
     var body: some View {
         NavigationStack {
@@ -110,9 +114,8 @@ struct TransactionHistoryView: View {
                                             handleEditTransaction(transaction)
                                         },
                                         onDelete: { transaction in
-                                            Task {
-                                                await handleDeleteTransaction(transaction)
-                                            }
+                                            transactionPendingDelete = transaction
+                                            showingDeleteConfirmation = true
                                         }
                                     )
                                 
@@ -184,6 +187,26 @@ struct TransactionHistoryView: View {
                     viewModel: transactionsViewModel
                 )
             }
+            .sheet(item: $buyTradeEditItem) { item in
+                editBuyTradeSheet(item: item)
+            }
+            .sheet(item: $sellTradeEditItem) { item in
+                editSellTradeSheet(item: item)
+            }
+            .alert("刪除這筆紀錄？", isPresented: $showingDeleteConfirmation) {
+                Button("取消", role: .cancel) {
+                    transactionPendingDelete = nil
+                }
+                Button("刪除", role: .destructive) {
+                    guard let transaction = transactionPendingDelete else { return }
+                    transactionPendingDelete = nil
+                    Task { await handleDeleteTransaction(transaction) }
+                }
+            } message: {
+                if let transaction = transactionPendingDelete {
+                    Text(transaction.deleteConfirmationMessage)
+                }
+            }
             .alert("無法刪除", isPresented: $showingDeleteError) {
                 Button("確定", role: .cancel) {
                     deleteErrorMessage = nil
@@ -251,10 +274,69 @@ struct TransactionHistoryView: View {
             // 支出交易
             editingExpenseTransaction = transaction
             showingEditExpense = true
+        } else if transaction.type == .buy || transaction.type == .sell {
+            guard let market = TradeMarket(assetType: transaction.assetType) else {
+                showingEditTransaction = transaction
+                return
+            }
+            if transaction.type == .buy {
+                buyTradeEditItem = BuyTradeEditItem(transaction: transaction, market: market)
+            } else {
+                sellTradeEditItem = SellTradeEditItem(transaction: transaction, market: market)
+            }
         } else {
-            // 其他交易類型（buy, sell等）使用原有的EditTransactionView
             showingEditTransaction = transaction
         }
+    }
+    
+    private func editBuyTradeSheet(item: BuyTradeEditItem) -> some View {
+        NavigationStack {
+            BuyTradeFormView(market: item.market, editingTransaction: item.transaction) {
+                buyTradeEditItem = nil
+                Task {
+                    await viewModel.loadTransactions(accountId: account.id, userId: account.userId)
+                    await transactionsViewModel.loadTransactions(userId: account.userId)
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        buyTradeEditItem = nil
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.appPrimary)
+                    }
+                }
+            }
+        }
+        .background(Color.mainBackground)
+        .presentationBackground(Color.mainBackground)
+    }
+    
+    private func editSellTradeSheet(item: SellTradeEditItem) -> some View {
+        NavigationStack {
+            SellTradeFormView(market: item.market, editingTransaction: item.transaction) { _ in
+                sellTradeEditItem = nil
+                Task {
+                    await viewModel.loadTransactions(accountId: account.id, userId: account.userId)
+                    await transactionsViewModel.loadTransactions(userId: account.userId)
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        sellTradeEditItem = nil
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.appPrimary)
+                    }
+                }
+            }
+        }
+        .background(Color.mainBackground)
+        .presentationBackground(Color.mainBackground)
     }
     
     /// 從轉帳交易的 notes 中提取帳戶名稱
@@ -394,7 +476,7 @@ struct TransactionHistoryRowView: View {
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                 // 刪除按鈕（所有交易都可以刪除）
                 if let onDelete = onDelete {
-                    Button(role: .destructive) {
+                    Button {
                         onDelete(transaction)
                     } label: {
                         VStack(spacing: 4) {

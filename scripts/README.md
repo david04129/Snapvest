@@ -12,7 +12,8 @@
   "updatedAt": "2025-02-14",
   "items": [
     {"symbol": "2330", "name": "台積電"},
-    {"symbol": "AAPL", "name": "Apple Inc."}
+    {"symbol": "AAPL", "name": "Apple Inc."},
+    {"symbol": "btc", "name": "Bitcoin", "coingeckoId": "bitcoin"}
   ]
 }
 ```
@@ -26,7 +27,7 @@
 | 市場 | 來源 | 說明 |
 |------|------|------|
 | 美股 | NASDAQ nasdaqtraded.txt | 自動下載，含 NASDAQ/NYSE/AMEX |
-| 加密貨幣 | CoinGecko API /coins/list | 自動下載 |
+| 加密貨幣 | CoinGecko API /coins/markets（市值 Top 500） | 含 `coingeckoId`（抓價必用）；並產生 `backend/scripts/data/crypto_coingecko_map.json` |
 | 台股 | 證交所(上市) + 櫃買(上櫃、興櫃) | 自動下載 上市+上櫃+興櫃；上市失敗時可放 CSV 於 scripts/data/ |
 
 ## 使用方式

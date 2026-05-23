@@ -8,46 +8,51 @@
 import SwiftUI
 
 struct ContentView: View {
+    @ObservedObject private var themeManager = ThemeManager.shared
     @State private var selectedTab = 0
-    @State private var accountsViewId = UUID()
     
     var body: some View {
         TabView(selection: $selectedTab) {
-            HomeView()
+            HomeView(selectedTab: $selectedTab)
                 .tabItem {
                     Label("首頁", systemImage: "house.fill")
                 }
-                .tag(0)
+                .tag(AppTab.home.rawValue)
             
-            AccountsView()
-                .id(accountsViewId)
+            AccountsView(selectedTab: $selectedTab)
                 .tabItem {
                     Label("帳戶", systemImage: "building.columns.fill")
                 }
-                .tag(1)
-                .onAppear {
-                    // 當切換到帳戶 Tab 時，重置視圖 ID 以清除導航狀態
-                    accountsViewId = UUID()
-                }
+                .tag(AppTab.accounts.rawValue)
             
-            AssetsView()
+            AssetsView(selectedTab: $selectedTab)
                 .tabItem {
                     Label("資產", systemImage: "chart.bar.fill")
                 }
-                .tag(2)
+                .tag(AppTab.assets.rawValue)
             
-            TransactionsView()
+            TransactionsView(selectedTab: $selectedTab)
                 .tabItem {
                     Label("紀錄", systemImage: "clock.fill")
                 }
-                .tag(3)
+                .tag(AppTab.transactions.rawValue)
         }
         .background(Color.mainBackground)
         .tint(.appPrimary)
+        .toolbarBackground(Color.cardBackground, for: .tabBar)
+        .toolbarBackground(.visible, for: .tabBar)
+        .id(themeManager.isDarkMode)
+        .onChange(of: selectedTab) { previousTab, _ in
+            NotificationCenter.default.post(
+                name: .tabResigned,
+                object: nil,
+                userInfo: [TabResignUserInfoKey.tabIndex: previousTab]
+            )
+        }
     }
 }
 
 #Preview {
     ContentView()
+        .environmentObject(PortfolioViewModel())
 }
-

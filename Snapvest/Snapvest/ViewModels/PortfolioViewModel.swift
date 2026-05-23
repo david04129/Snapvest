@@ -24,6 +24,7 @@ class PortfolioViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var homeSnapshot: HomeDashboardSnapshot?
+    @Published var pieChartInputs: PieChartInputs?
     
     @Published var baseCurrency: Currency = .TWD
     @Published var viewCurrency: Currency = .TWD // 顯示貨幣（可切換）
@@ -34,6 +35,7 @@ class PortfolioViewModel: ObservableObject {
     private let dataService: DataServiceProtocol
     private let priceService: PriceServiceProtocol
     private var cancellables = Set<AnyCancellable>()
+    private(set) var hasLoadedOnce = false
     
     init(dataService: DataServiceProtocol? = nil,
          priceService: PriceServiceProtocol? = nil) {
@@ -88,6 +90,7 @@ class PortfolioViewModel: ObservableObject {
             
             // 計算總覽數據
             await calculateSummary()
+            await refreshPieChartData(userId: userId)
             
             // 儲存首頁快照
             if let userId = accounts.first?.userId {
@@ -99,6 +102,7 @@ class PortfolioViewModel: ObservableObject {
         }
         
         isLoading = false
+        hasLoadedOnce = true
     }
 
     /// 載入首頁快照（不重新計算）
@@ -130,11 +134,22 @@ class PortfolioViewModel: ObservableObject {
             let latestSnapshot = try await dataService.fetchHomeDashboardSnapshot(userId: userId)
             homeSnapshot = latestSnapshot
             applyHomeSnapshot(latestSnapshot)
+            await refreshPieChartData(userId: userId)
         } catch {
             errorMessage = "載入首頁快照失敗：\(error.localizedDescription)"
         }
         
         isLoading = false
+        hasLoadedOnce = true
+    }
+    
+    /// 載入圓餅圖用持股與現金明細
+    func refreshPieChartData(userId: String) async {
+        pieChartInputs = try? await PieChartDataLoader.load(
+            userId: userId,
+            dataService: dataService,
+            priceService: priceService
+        )
     }
     
     /// 載入所有負債

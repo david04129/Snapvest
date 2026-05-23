@@ -8,9 +8,11 @@
 import Foundation
 
 /// 持股佔比顯示類型
-enum HoldingRatioType: String, Codable, CaseIterable {
+enum HoldingRatioType: String, Codable, CaseIterable, Identifiable {
     case totalAssets = "totalAssets"           // 總資產佔比
     case totalInvestments = "totalInvestments" // 總投資佔比
+    
+    var id: String { rawValue }
     
     var displayName: String {
         switch self {
@@ -18,6 +20,14 @@ enum HoldingRatioType: String, Codable, CaseIterable {
             return "總資產佔比"
         case .totalInvestments:
             return "總投資佔比"
+        }
+    }
+    
+    /// 分段控制用短標籤
+    var segmentLabel: String {
+        switch self {
+        case .totalAssets: return "總資產"
+        case .totalInvestments: return "投資組合"
         }
     }
 }

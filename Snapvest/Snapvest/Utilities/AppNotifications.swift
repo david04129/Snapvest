@@ -9,4 +9,17 @@ import Foundation
 
 extension Notification.Name {
     static let snapshotsDidUpdate = Notification.Name("snapshotsDidUpdate")
+    /// 使用者切換到其他 Tab 時發送；userInfo["tabIndex"] = Int
+    static let tabResigned = Notification.Name("tabResigned")
+}
+
+enum TabResignUserInfoKey {
+    static let tabIndex = "tabIndex"
+}
+
+enum AppTab: Int {
+    case home = 0
+    case accounts = 1
+    case assets = 2
+    case transactions = 3
 }

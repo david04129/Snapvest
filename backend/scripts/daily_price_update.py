@@ -8,10 +8,14 @@ Snapvest 每日股價更新腳本
 """
 import json
 import math
+import json
+import math
 import os
 import time
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
+from pathlib import Path
+from typing import Optional, Set
 from pathlib import Path
 from typing import Optional, Set
 
@@ -35,6 +39,92 @@ CRYPTO_ID_MAP_PATH = Path(__file__).parent / "data" / "crypto_coingecko_map.json
 YAHOO_TW_SUFFIX = ".TW"  # 台股 Yahoo symbol 格式
 # 與 migration 003_exchange_rates.sql 註解一致
 EXCHANGE_RATE_API_URL = "https://open.er-api.com/v6/latest/USD"
+
+
+def _is_valid_price(val) -> bool:
+    """股價／匯率數值檢查（過濾 nan、inf、非正數）"""
+    if val is None:
+        return False
+    try:
+        f = float(val)
+    except (TypeError, ValueError):
+        return False
+    if math.isnan(f) or math.isinf(f):
+        return False
+    return f > 0
+
+
+def fetch_usd_exchange_rates() -> dict[str, float]:
+    """從 open.er-api.com 取得以 USD 為基準的各幣匯率（1 USD = rate 單位外幣）"""
+    resp = requests.get(EXCHANGE_RATE_API_URL, timeout=20)
+    resp.raise_for_status()
+    payload = resp.json()
+    if payload.get("result") != "success":
+        raise RuntimeError(f"匯率 API 回應異常: {payload.get('error-type', payload)}")
+    rates = payload.get("rates") or {}
+    return {k: float(v) for k, v in rates.items() if _is_valid_price(v)}
+
+
+def _raise_on_supabase_error(response, context: str) -> None:
+    """Supabase 2.x：RLS 拒絕或 schema 錯誤時 error 不為空，需主動檢查"""
+    err = getattr(response, "error", None)
+    if err is not None:
+        raise RuntimeError(f"{context}: {err}")
+
+
+def update_exchange_rates(supabase: Client) -> int:
+    """寫入 exchange_rates（from_currency=USD），供 App 讀取"""
+    rates = fetch_usd_exchange_rates()
+    if not rates:
+        raise RuntimeError("匯率 API 無有效資料")
+
+    now = datetime.now(TW_TZ).isoformat()
+    rows = [
+        {
+            "from_currency": "USD",
+            "to_currency": to_currency,
+            "rate": str(rate),
+            "updated_at": now,
+        }
+        for to_currency, rate in rates.items()
+    ]
+
+    chunk_size = 100
+    written = 0
+    for i in range(0, len(rows), chunk_size):
+        chunk = rows[i : i + chunk_size]
+        resp = supabase.table("exchange_rates").upsert(
+            chunk,
+            on_conflict="from_currency,to_currency",
+        ).execute()
+        _raise_on_supabase_error(resp, f"exchange_rates upsert chunk {i // chunk_size + 1}")
+        written += len(chunk)
+
+    # 讓 App 的 shouldFetchPrices() 判定 DB 較新，一併刷新匯率快取
+    meta_resp = supabase.table("price_update_metadata").upsert(
+        {"id": "global", "last_updated_at": now},
+        on_conflict="id",
+    ).execute()
+    _raise_on_supabase_error(meta_resp, "price_update_metadata upsert")
+
+    twd = rates.get("TWD")
+    if twd:
+        print(f"  USD/TWD ≈ {twd:.4f}（updated_at={now}）")
+
+    # 寫入後驗證（anon 可讀）
+    verify = (
+        supabase.table("exchange_rates")
+        .select("rate,updated_at")
+        .eq("from_currency", "USD")
+        .eq("to_currency", "TWD")
+        .limit(1)
+        .execute()
+    )
+    _raise_on_supabase_error(verify, "exchange_rates verify read")
+    if verify.data:
+        row = verify.data[0]
+        print(f"  DB 驗證 TWD: rate={row.get('rate')} updated_at={row.get('updated_at')}")
+    return written
 
 
 def _is_valid_price(val) -> bool:

@@ -13,6 +13,12 @@ class AccountsViewModel: ObservableObject {
     @Published var accounts: [Account] = []
     @Published var isLoading = false
     @Published var errorMessage: String?
+
+    @Published var balancesByAccountId: [String: AccountBalanceDisplay] = [:]
+    @Published var categoryTotalsTWD: [AccountType: Decimal] = [:]
+    @Published var debtCategoryTotalBalance: Decimal = 0
+    @Published var balancesLoading = false
+    @Published var balancesLoadedOnce = false
     
     private let dataService: DataServiceProtocol
     
@@ -31,6 +37,25 @@ class AccountsViewModel: ObservableObject {
         }
         
         isLoading = false
+    }
+
+    /// 一次算出所有帳戶卡片與類別總額（單次交易／報價／負債查詢）
+    func refreshBalances(userId: String, preloadedLiabilities: [Liability] = []) async {
+        if !balancesLoadedOnce { balancesLoading = true }
+        defer {
+            balancesLoading = false
+            balancesLoadedOnce = true
+        }
+
+        let result = await AccountsBalancesCalculator.compute(
+            accounts: accounts,
+            userId: userId,
+            dataService: dataService,
+            preloadedLiabilities: preloadedLiabilities
+        )
+        balancesByAccountId = result.byAccountId
+        categoryTotalsTWD = result.categoryTotalsTWD
+        debtCategoryTotalBalance = result.debtCategoryTotalBalance
     }
     
     func createAccount(_ account: Account) async {

@@ -1,7 +1,8 @@
 # Snapvest UI 顏色對照表
 
 以下所有顏色定義集中在 `AppColors`（`Snapvest/Snapvest/Utilities/ColorTheme.swift`）。
-`Color.*` 僅作為相容入口，實際色值以 `AppColors` 為準。
+實際色值依 `ThemePalette`（`ThemePalette.swift`）的 **淺色 `.light`** / **深色 `.dark`** 兩套，由 `ThemeManager` 切換。
+`Color.*` 僅作為相容入口，實際色值以當前主題的 `AppColors` 為準。
 
 ## 配色盤（14 色）
 - `AppColors.blue1`：最深藍

@@ -8,8 +8,10 @@
 import SwiftUI
 
 struct HomeView: View {
-    @StateObject private var viewModel = PortfolioViewModel()
+    @Binding var selectedTab: Int
+    @EnvironmentObject private var viewModel: PortfolioViewModel
     @State private var userId: String = "test-user-id"
+    @State private var navigationStackResetID = UUID()
     
     var body: some View {
         NavigationStack {
@@ -29,6 +31,17 @@ struct HomeView: View {
                     
                     // 已實現損益卡片
                     RealizedPLCardView(viewModel: viewModel, userId: userId)
+                    
+                    // 圓餅圖（總資產 / 投資組合 / 所有細項）
+                    if viewModel.pieChartInputs != nil {
+                        HomePieChartSection(
+                            inputs: viewModel.pieChartInputs,
+                            totalAssets: viewModel.totalAssets,
+                            totalInvestments: viewModel.totalInvestments
+                        )
+                        
+                        HomePerformanceChartSection(inputs: viewModel.pieChartInputs)
+                    }
                 }
                 .padding()
             }
@@ -40,19 +53,15 @@ struct HomeView: View {
             .refreshable {
                 await viewModel.ensureHomeSnapshot(userId: userId)
             }
-            .task {
-                await viewModel.ensureHomeSnapshot(userId: userId)
-            }
-            .onAppear {
-                Task {
-                    await viewModel.ensureHomeSnapshot(userId: userId)
-                }
-            }
             .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { _ in
                 Task {
                     await viewModel.ensureHomeSnapshot(userId: userId)
                 }
             }
+        }
+        .id(navigationStackResetID)
+        .resetNavigationWhenTabReappears(selectedTab: $selectedTab, resignedTab: .home) {
+            navigationStackResetID = UUID()
         }
     }
     
@@ -71,6 +80,8 @@ struct HomeView: View {
             }
             
             Spacer()
+            
+            ThemeToggleButton()
             
             // 右側：使用者頭像
             Button(action: {
@@ -111,7 +122,7 @@ struct NetWorthCardView: View {
     }
     
     var body: some View {
-        TitledCardView(title: "淨資產", backgroundColor: Color.cardBackground, borderColor: Color.blue3.opacity(0.2)) {
+        TitledCardView(title: "淨資產", backgroundColor: Color.cardBackground, borderColor: Color.appPrimary.opacity(0.2)) {
             VStack(spacing: 16) {
                 // 標題和圓圈比例ICON
                 HStack(alignment: .center, spacing: 16) {
@@ -127,7 +138,7 @@ struct NetWorthCardView: View {
                         // 淨資產部分（使用14色中的藍色）
                         Circle()
                             .trim(from: 0, to: CGFloat(NSDecimalNumber(decimal: netWorthRatio / 100).doubleValue))
-                            .stroke(Color.blue3, style: StrokeStyle(lineWidth: 7, lineCap: .round))
+                            .stroke(Color.appPrimary, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                             .frame(width: 50, height: 50)
                             .rotationEffect(.degrees(-90))
                         
@@ -143,7 +154,7 @@ struct NetWorthCardView: View {
                         Text("\(netWorthRatio.formatted(fractionDigits: 1))%")
                             .font(.caption2)
                             .fontWeight(.semibold)
-                            .foregroundColor(.blue3)
+                            .foregroundColor(.appPrimary)
                     }
                     
                     // 主要數字
@@ -171,7 +182,7 @@ struct NetWorthCardView: View {
                     // 進度條（連續形式，帶動畫、觸摸互動）
                     InteractiveProgressBar(
                         segments: [
-                            (progress: animatedNetWorthProgress, color: .blue3, gradient: [.blue3, .blue3.opacity(0.8)]),
+                            (progress: animatedNetWorthProgress, color: .appPrimary, gradient: [.appPrimary, .appPrimary.opacity(0.8)]),
                             (progress: animatedDebtProgress, color: .lossRed, gradient: [.lossRed, .lossRed.opacity(0.8)])
                         ],
                         cornerRadius: 4,
@@ -212,7 +223,7 @@ struct NetWorthCardView: View {
                             Text(netWorth.formatted(currency: viewModel.viewCurrency))
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
-                                .foregroundColor(.blue3)
+                                .foregroundColor(.appPrimary)
                             Text("\(netWorthRatio.formatted(fractionDigits: 1))%")
                                 .font(.caption2)
                                 .foregroundColor(.secondaryText)
@@ -266,7 +277,7 @@ struct InvestmentAssetsCardView: View {
     }
     
     var body: some View {
-        TitledCardView(title: "投資資產", backgroundColor: Color.cardBackground, borderColor: Color.green4.opacity(0.2)) {
+        TitledCardView(title: "投資資產", backgroundColor: Color.cardBackground, borderColor: Color.stockUSColor.opacity(0.2)) {
             VStack(spacing: 16) {
                 // 標題和圓圈比例ICON
                 HStack(alignment: .center, spacing: 16) {
@@ -277,20 +288,20 @@ struct InvestmentAssetsCardView: View {
                         // 背景圓圈（淺綠色，代表未畫到的部分，使用14色中的綠色）
                         Circle()
                             .trim(from: 0, to: 1.0)
-                            .stroke(Color.green4.opacity(0.15), lineWidth: 7)
+                            .stroke(Color.stockUSColor.opacity(0.15), lineWidth: 7)
                             .frame(width: 50, height: 50)
                         
                         // 投資資產部分（使用14色中的深綠色）
                         Circle()
                             .trim(from: 0, to: investmentRatioDouble)
-                            .stroke(Color.green4, style: StrokeStyle(lineWidth: 7, lineCap: .round))
+                            .stroke(Color.stockUSColor, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                             .frame(width: 50, height: 50)
                             .rotationEffect(.degrees(-90))
                         
                         Text("\(investmentRatio.formatted(fractionDigits: 1))%")
                             .font(.caption2)
                             .fontWeight(.semibold)
-                            .foregroundColor(.green4)
+                            .foregroundColor(.stockUSColor)
                     }
                     
                     // 主要數字
@@ -423,13 +434,13 @@ struct CashCardView: View {
     }
     
     var body: some View {
-        TitledCardView(title: "現金", backgroundColor: Color.cardBackground, borderColor: Color.blueGreen4.opacity(0.2)) {
+        TitledCardView(title: "現金", backgroundColor: Color.cardBackground, borderColor: Color.allocationTwdCash.opacity(0.2)) {
             VStack(spacing: 16) {
                 // 標題和圓圈比例ICON
                 HStack(alignment: .center, spacing: 16) {
                     // 圓圈比例ICON（使用14色中的藍綠色，從12點開始逆時針繪製）
                     ZStack {
-                        let cashColor = Color.blueGreen4  // 使用14色中的藍綠色
+                        let cashColor = Color.allocationTwdCash  // 使用14色中的藍綠色
                         let cashRatioDouble = CGFloat(NSDecimalNumber(decimal: cashRatio / 100).doubleValue)
                         
                         // 背景圓圈（淺藍綠色，代表未畫到的部分）
@@ -483,8 +494,8 @@ struct CashCardView: View {
                     
                     InteractiveProgressBar(
                         segments: [
-                            (progress: animatedTWDCashProgress, color: Color.blueGreen4, gradient: [Color.blueGreen4, Color.blueGreen4.opacity(0.8)]),  // 台幣：使用14色中的藍綠色
-                            (progress: animatedUSDCashProgress, color: Color.blueGreen3, gradient: [Color.blueGreen3, Color.blueGreen3.opacity(0.8)])  // 美金：使用14色中的較深藍綠色
+                            (progress: animatedTWDCashProgress, color: Color.allocationTwdCash, gradient: [Color.allocationTwdCash, Color.allocationTwdCash.opacity(0.8)]),  // 台幣：使用14色中的藍綠色
+                            (progress: animatedUSDCashProgress, color: Color.allocationUsdCash, gradient: [Color.allocationUsdCash, Color.allocationUsdCash.opacity(0.8)])  // 美金：使用14色中的較深藍綠色
                         ],
                         cornerRadius: 4,
                         height: 8,
@@ -521,7 +532,7 @@ struct CashCardView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             HStack(spacing: 4) {
                                 Circle()
-                                    .fill(Color.blueGreen4)  // 使用14色中的藍綠色
+                                    .fill(Color.allocationTwdCash)  // 使用14色中的藍綠色
                                     .frame(width: 8, height: 8)
                                 Text("台幣餘額")
                                     .font(.caption)
@@ -546,7 +557,7 @@ struct CashCardView: View {
                                     .font(.caption)
                                     .foregroundColor(.secondaryText)
                                 Circle()
-                                    .fill(Color.blueGreen3)  // 使用14色中的較深藍綠色
+                                    .fill(Color.allocationUsdCash)  // 使用14色中的較深藍綠色
                                     .frame(width: 8, height: 8)
                             }
                             let usdCash = viewModel.cashByCurrency[.USD] ?? 0
@@ -920,6 +931,7 @@ struct InteractiveProgressBar: View {
 }
 
 #Preview {
-    HomeView()
+    HomeView(selectedTab: .constant(AppTab.home.rawValue))
+        .environmentObject(PortfolioViewModel())
 }
 

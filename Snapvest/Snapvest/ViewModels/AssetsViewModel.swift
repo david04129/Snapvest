@@ -13,14 +13,24 @@ class AssetsViewModel: ObservableObject {
     @Published var aggregatedHoldings: [AggregatedHoldingSnapshot] = []
     @Published var assetPriceSnapshots: [AssetPriceSnapshot] = [] // 價格快照（用於計算市值和損益）
     @Published var isLoading = false
+    @Published private(set) var hasLoadedOnce = false
     @Published var errorMessage: String?
     
     @Published var totalAssets: Decimal = 0
     @Published var totalInvestments: Decimal = 0
     @Published var totalCash: Decimal = 0
     
+    /// 總資產圓餅圖：各類市值（台幣）
+    @Published var allocationTwdCash: Decimal = 0
+    @Published var allocationUsdCashTWD: Decimal = 0
+    @Published var allocationStockTW: Decimal = 0
+    @Published var allocationStockUS: Decimal = 0
+    @Published var allocationCrypto: Decimal = 0
+    
     // 匯率變數（明確區分即時匯率和購買時匯率）
     /// 即時匯率（用於市值和現金餘額轉換為台幣）
+    var usdToTwdRate: Decimal { currentExchangeRate }
+    
     /// TODO: 未來從 ExchangeRate 服務獲取即時匯率
     private var currentExchangeRate: Decimal {
         // 目前使用固定模擬值，未來替換為即時匯率服務
@@ -42,10 +52,15 @@ class AssetsViewModel: ObservableObject {
         self.priceService = priceService ?? PriceService(dataService: service)
     }
     
-    /// 載入所有資料
+    /// 載入所有資料（僅首次顯示整頁載入；之後切 Tab／通知刷新在背景更新）
     func loadData(userId: String) async {
-        isLoading = true
+        if !hasLoadedOnce { isLoading = true }
         errorMessage = nil
+        
+        defer {
+            isLoading = false
+            hasLoadedOnce = true
+        }
         
         do {
             let fetchedAccounts = try await dataService.fetchAccounts(userId: userId)
@@ -89,8 +104,6 @@ class AssetsViewModel: ObservableObject {
         } catch {
             errorMessage = "載入資料失敗：\(error.localizedDescription)"
         }
-        
-        isLoading = false
     }
 
     private func loadAccountSnapshots(accounts: [Account]) async throws -> [AccountSnapshot] {
@@ -293,5 +306,36 @@ class AssetsViewModel: ObservableObject {
         self.totalInvestments = totalInvestmentsValue
         self.totalCash = totalCashTWD
         self.totalAssets = totalInvestmentsValue + totalCashTWD
+        
+        allocationTwdCash = cashByCurrency[.TWD] ?? 0
+        let usdCash = cashByCurrency[.USD] ?? 0
+        allocationUsdCashTWD = usdCash * usdToTwdRate
+        
+        var tw: Decimal = 0
+        var us: Decimal = 0
+        var crypto: Decimal = 0
+        for aggregated in aggregatedHoldings {
+            let key = "\(aggregated.assetType.rawValue)_\(aggregated.symbol)"
+            guard let priceSnapshot = priceMap[key],
+                  let currentPrice = priceSnapshot.displayPrice else { continue }
+            let marketValue = aggregated.totalQuantity * currentPrice
+            let marketValueTWD: Decimal
+            if aggregated.currency == .TWD {
+                marketValueTWD = marketValue
+            } else if aggregated.currency == .USD {
+                marketValueTWD = marketValue * usdToTwdRate
+            } else {
+                continue
+            }
+            switch aggregated.assetType {
+            case .stockTW: tw += marketValueTWD
+            case .stockUS: us += marketValueTWD
+            case .crypto: crypto += marketValueTWD
+            case .cash: break
+            }
+        }
+        allocationStockTW = tw
+        allocationStockUS = us
+        allocationCrypto = crypto
     }
 }

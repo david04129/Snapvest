@@ -102,7 +102,11 @@ struct SupabasePriceService {
     }
 
     /// 呼叫 fetch-or-create-price（新增股票時使用）
-    static func fetchOrCreatePrice(assetType: AssetType, symbol: String) async throws -> Decimal? {
+    static func fetchOrCreatePrice(
+        assetType: AssetType,
+        symbol: String,
+        coingeckoId: String? = nil
+    ) async throws -> Decimal? {
         guard SupabaseConfig.isConfigured,
               let url = URL(string: "\(SupabaseConfig.url!)/functions/v1/fetch-or-create-price"),
               let key = SupabaseConfig.anonKey else { throw SupabaseError.notConfigured }

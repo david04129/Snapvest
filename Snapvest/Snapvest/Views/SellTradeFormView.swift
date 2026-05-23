@@ -9,6 +9,9 @@ import SwiftUI
 
 struct SellTradeFormView: View {
     let market: TradeMarket
+    let prefill: SellTradePrefill?
+    let editingTransaction: Transaction?
+    var embedInTradeFlow: Bool = false
     let onSubmit: ((SellTradeDraft) -> Void)?
     
     @StateObject private var accountsViewModel = AccountsViewModel()
@@ -27,10 +30,21 @@ struct SellTradeFormView: View {
     @State private var userId: String = "test-user-id"
     @Environment(\.dismiss) private var dismiss
     
-    init(market: TradeMarket, onSubmit: ((SellTradeDraft) -> Void)? = nil) {
+    init(
+        market: TradeMarket,
+        prefill: SellTradePrefill? = nil,
+        editingTransaction: Transaction? = nil,
+        embedInTradeFlow: Bool = false,
+        onSubmit: ((SellTradeDraft) -> Void)? = nil
+    ) {
         self.market = market
+        self.prefill = prefill
+        self.editingTransaction = editingTransaction
+        self.embedInTradeFlow = embedInTradeFlow
         self.onSubmit = onSubmit
     }
+    
+    private var isEditMode: Bool { editingTransaction != nil }
     
     private var availableAccounts: [Account] {
         accountsViewModel.accounts.filter { account in
@@ -58,8 +72,33 @@ struct SellTradeFormView: View {
         }
     }
     
+    private var isSymbolLocked: Bool {
+        isEditMode || prefill?.lockSymbol == true
+    }
+    
+    private var lockedSymbol: String? {
+        editingTransaction?.symbol ?? prefill?.symbol
+    }
+    
+    /// 編輯時加回此筆原賣出數量，作為可賣上限
+    private var sellQuantityHeadroom: Decimal {
+        let base = selectedHolding?.holding.quantity ?? 0
+        if let editingTransaction {
+            return base + editingTransaction.quantity
+        }
+        return availableQuantity
+    }
+    
+    /// 鎖定代號時僅顯示該檔持股
+    private var selectableHoldings: [HoldingSnapshot] {
+        guard isSymbolLocked, let symbol = prefill?.symbol else {
+            return availableHoldings
+        }
+        return availableHoldings.filter { $0.holding.symbol == symbol }
+    }
+    
     private var selectedHolding: HoldingSnapshot? {
-        availableHoldings.first { $0.id == selectedHoldingId }
+        selectableHoldings.first { $0.id == selectedHoldingId }
     }
     
     private var needsExchangeRate: Bool {
@@ -82,15 +121,41 @@ struct SellTradeFormView: View {
         Decimal(string: exchangeRateText)
     }
     
+    private var priceCurrency: Currency {
+        switch market {
+        case .stockTW: return .TWD
+        case .stockUS, .crypto: return .USD
+        }
+    }
+    
+    /// 賣出金額（交易幣別）
+    private var sellProceedsInTradeCurrency: Decimal? {
+        guard let qty = quantityValue, let price = priceValue, qty > 0, price > 0 else { return nil }
+        return qty * price
+    }
+    
+    /// 入帳金額（帳戶幣別）
+    private var sellProceedsInAccountCurrency: Decimal? {
+        guard let proceeds = sellProceedsInTradeCurrency else { return nil }
+        guard let account = selectedAccount else { return proceeds }
+        if priceCurrency == account.currency { return proceeds }
+        guard needsExchangeRate, let rate = exchangeRateValue, rate > 0 else { return proceeds }
+        return proceeds * rate
+    }
+    
     private var isValid: Bool {
         guard selectedAccount != nil,
-              selectedHolding != nil,
               let quantityValue = quantityValue,
               let priceValue = priceValue,
               quantityValue > 0,
-              priceValue > 0,
-              quantityValue <= availableQuantity else {
+              priceValue > 0 else {
             return false
+        }
+        
+        if isEditMode {
+            guard quantityValue <= sellQuantityHeadroom else { return false }
+        } else {
+            guard selectedHolding != nil, quantityValue <= availableQuantity else { return false }
         }
         
         if needsExchangeRate {
@@ -104,36 +169,56 @@ struct SellTradeFormView: View {
     
     var body: some View {
         ScrollView {
-            VStack(spacing: 24) {
-                headerSection
+            VStack(spacing: 16) {
+                if !embedInTradeFlow {
+                    TradeFormCompactHeader(
+                        market: market,
+                        actionTitle: "賣出",
+                        isEditMode: isEditMode
+                    )
+                }
                 formCard
                 errorMessageSection
             }
-            .padding(.top, 8)
+            .padding(.top, embedInTradeFlow ? 4 : 0)
         }
+        .background(Color.mainBackground)
         .safeAreaInset(edge: .bottom) {
-            Button(action: handleSubmit) {
-                HStack(spacing: 8) {
-                    Image(systemName: "arrow.down")
-                    Text("賣出")
+            VStack(spacing: 10) {
+                sellAmountSummary
+                Button(action: handleSubmit) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.down")
+                        Text(isEditMode ? "確認修改" : "賣出")
+                    }
+                    .font(.headline)
+                    .foregroundColor(AppColors.actionForeground)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(isValid ? Color.lossRed : AppColors.disabledBackground)
+                    .cornerRadius(12)
                 }
-                .font(.headline)
-                .foregroundColor(AppColors.actionForeground)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .background(isValid ? Color.lossRed : AppColors.disabledBackground)
-                .cornerRadius(12)
+                .disabled(!isValid)
             }
-            .disabled(!isValid)
             .padding(.horizontal)
-            .padding(.vertical, 16)
+            .padding(.vertical, 12)
             .background(Color.cardBackground)
         }
         .task {
             await accountsViewModel.loadAccounts(userId: userId)
-            if selectedAccountId.isEmpty, let firstAccount = availableAccounts.first {
+            if let preferred = prefill?.preferredAccountId,
+               availableAccounts.contains(where: { $0.id == preferred }) {
+                selectedAccountId = preferred
+            } else if selectedAccountId.isEmpty, let firstAccount = availableAccounts.first {
                 selectedAccountId = firstAccount.id
-                await accountDetailViewModel.loadAccountData(accountId: firstAccount.id)
+            }
+            if !selectedAccountId.isEmpty {
+                await accountDetailViewModel.loadAccountData(accountId: selectedAccountId)
+                if let transaction = editingTransaction {
+                    applyEditingPrefill(from: transaction)
+                } else {
+                    applyHoldingPrefill()
+                }
             }
             transactionsViewModel.accounts = accountsViewModel.accounts
             if needsExchangeRate && exchangeRateText.isEmpty {
@@ -143,7 +228,14 @@ struct SellTradeFormView: View {
         .onChange(of: selectedAccountId) { _, newValue in
             Task {
                 await accountDetailViewModel.loadAccountData(accountId: newValue)
-                selectedHoldingId = availableHoldings.first?.id ?? ""
+                if let transaction = editingTransaction {
+                    applyEditingPrefill(from: transaction)
+                } else {
+                    applyHoldingPrefill()
+                    if selectedHoldingId.isEmpty, !isSymbolLocked {
+                        selectedHoldingId = selectableHoldings.first?.id ?? ""
+                    }
+                }
                 validateInput()
             }
             if needsExchangeRate && exchangeRateText.isEmpty {
@@ -167,33 +259,32 @@ struct SellTradeFormView: View {
         }
     }
     
-    private var headerSection: some View {
-        VStack(spacing: 12) {
-            Image(systemName: market.iconName)
-                .font(.system(size: 48))
-                .foregroundColor(market.themeColor)
-                .frame(width: 80, height: 80)
-                .background(market.themeColor.opacity(0.1))
-                .clipShape(Circle())
-            
-            Text("賣出\(market.title)")
-                .font(.title3)
-                .fontWeight(.semibold)
-                .foregroundColor(.primaryText)
-            
-            Text("請填寫賣出資訊")
-                .font(.subheadline)
-                .foregroundColor(.secondaryText)
+    @ViewBuilder
+    private var sellAmountSummary: some View {
+        if let account = selectedAccount, let amount = sellProceedsInAccountCurrency {
+            TradeFormAmountSummary(
+                label: "預估入帳",
+                amountText: amount.formatted(currency: account.currency),
+                detailText: sellAmountBreakdownDetail
+            )
+        } else {
+            TradeFormAmountSummary(
+                label: "預估入帳",
+                amountText: "—",
+                detailText: "請填寫數量與價格"
+            )
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 24)
+    }
+    
+    private var sellAmountBreakdownDetail: String? {
+        guard let qty = quantityValue, let price = priceValue, qty > 0, price > 0 else { return nil }
+        let qtyLabel = qty.formattedQuantityInput(maxFractionDigits: market == .crypto ? 8 : 4)
+        let priceLabel = price.formatted(currency: priceCurrency, fractionDigits: 2, showSymbol: true)
+        return "\(qtyLabel) × \(priceLabel)"
     }
     
     private var formCard: some View {
         VStack(spacing: 0) {
-            accountSection
-            Divider()
-                .padding(.horizontal, 20)
             holdingSection
             Divider()
                 .padding(.horizontal, 20)
@@ -201,6 +292,9 @@ struct SellTradeFormView: View {
             Divider()
                 .padding(.horizontal, 20)
             priceSection
+            Divider()
+                .padding(.horizontal, 20)
+            accountSection
             if needsExchangeRate {
                 Divider()
                     .padding(.horizontal, 20)
@@ -298,8 +392,15 @@ struct SellTradeFormView: View {
     
     private var quantitySection: some View {
         FormRow(title: "數量", icon: "number.circle.fill", color: market.themeColor) {
-            TextField("0", text: $quantityText)
-                .keyboardType(.decimalPad)
+            VStack(alignment: .leading, spacing: 4) {
+                TextField("0", text: $quantityText)
+                    .keyboardType(.decimalPad)
+                if market == .crypto {
+                    Text("加密貨幣可輸入小數，例如 0.01")
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                }
+            }
             
             if selectedHolding != nil {
                 infoRow(
@@ -333,8 +434,7 @@ struct SellTradeFormView: View {
     
     private var dateSection: some View {
         FormRow(title: "交易日期", icon: "calendar", color: market.themeColor) {
-            DatePicker("", selection: $transactionDate, displayedComponents: .date)
-                .datePickerStyle(.compact)
+            TradeFormDatePicker(date: $transactionDate)
         }
     }
     
@@ -358,35 +458,73 @@ struct SellTradeFormView: View {
     
     private func handleSubmit() {
         guard let selectedAccount = selectedAccount,
-              let selectedHolding = selectedHolding,
               let quantityValue = quantityValue,
               let priceValue = priceValue else {
             return
         }
         
-        let draft = SellTradeDraft(
-            market: market,
-            account: selectedAccount,
-            holding: selectedHolding,
-            quantity: quantityValue,
-            price: priceValue,
-            exchangeRate: exchangeRateValue,
-            transactionDate: transactionDate
-        )
+        let averageCostFallback: Decimal
+        if let selectedHolding {
+            averageCostFallback = selectedHolding.holding.averageCost
+        } else if let existing = editingTransaction {
+            averageCostFallback = existing.realizedCostPerUnit ?? existing.price
+        } else {
+            return
+        }
+        
         Task {
-            await transactionsViewModel.createSellTransaction(
-                account: selectedAccount,
-                assetType: market.assetType,
-                symbol: selectedHolding.holding.symbol,
-                quantity: quantityValue,
-                price: priceValue,
-                currency: priceCurrency,
-                exchangeRate: exchangeRateValue,
-                transactionDate: transactionDate,
-                averageCostFallback: selectedHolding.holding.averageCost
-            )
-            onSubmit?(draft)
+            if let existing = editingTransaction {
+                await transactionsViewModel.updateSellTransaction(
+                    existing: existing,
+                    account: selectedAccount,
+                    quantity: quantityValue,
+                    price: priceValue,
+                    currency: priceCurrency,
+                    exchangeRate: exchangeRateValue,
+                    transactionDate: transactionDate,
+                    averageCostFallback: averageCostFallback
+                )
+            } else if let selectedHolding {
+                await transactionsViewModel.createSellTransaction(
+                    account: selectedAccount,
+                    assetType: market.assetType,
+                    symbol: selectedHolding.holding.symbol,
+                    quantity: quantityValue,
+                    price: priceValue,
+                    currency: priceCurrency,
+                    exchangeRate: exchangeRateValue,
+                    transactionDate: transactionDate,
+                    averageCostFallback: selectedHolding.holding.averageCost
+                )
+                let draft = SellTradeDraft(
+                    market: market,
+                    account: selectedAccount,
+                    holding: selectedHolding,
+                    quantity: quantityValue,
+                    price: priceValue,
+                    exchangeRate: exchangeRateValue,
+                    transactionDate: transactionDate
+                )
+                onSubmit?(draft)
+            }
             dismiss()
+        }
+    }
+    
+    private func applyEditingPrefill(from transaction: Transaction) {
+        selectedAccountId = transaction.accountId
+        quantityText = transaction.quantity.formattedQuantityInput(
+            maxFractionDigits: transaction.assetType == .crypto ? 8 : 4
+        )
+        priceText = transaction.price.formatted(fractionDigits: 2)
+        transactionDate = transaction.transactionDate
+        if let rate = transaction.exchangeRate {
+            exchangeRateText = rate.formatted(fractionDigits: 2)
+        }
+        if let match = selectableHoldings.first(where: { $0.holding.symbol == transaction.symbol }) {
+            selectedHoldingId = match.id
+        } else {
+            selectedHoldingId = ""
         }
     }
     
@@ -402,8 +540,9 @@ struct SellTradeFormView: View {
             return
         }
         
-        if quantityValue > availableQuantity {
-            errorMessage = "數量不可超過持有數量"
+        let maxQty = isEditMode ? sellQuantityHeadroom : availableQuantity
+        if quantityValue > maxQty {
+            errorMessage = "數量不可超過可賣數量"
             return
         }
         
@@ -440,20 +579,23 @@ struct SellTradeFormView: View {
         }
     }
     
+    private func applyHoldingPrefill() {
+        guard let prefill else { return }
+        if let match = selectableHoldings.first(where: { $0.holding.symbol == prefill.symbol }) {
+            selectedHoldingId = match.id
+            if priceText.isEmpty, let price = match.currentPrice {
+                priceText = price.formatted(fractionDigits: 2)
+            }
+        } else if isSymbolLocked {
+            selectedHoldingId = ""
+        }
+    }
+    
     private func holdingDisplayName(_ holding: Holding) -> String {
         if holding.assetType == .stockTW, let name = holding.name, !name.isEmpty {
             return "\(holding.symbol)-\(name)"
         }
         return holding.symbol
-    }
-
-    private var priceCurrency: Currency {
-        switch market {
-        case .stockTW:
-            return .TWD
-        case .stockUS, .crypto:
-            return .USD
-        }
     }
 
     private func formatQuantity(_ value: Decimal) -> String {

@@ -48,8 +48,8 @@ enum AccountType: String, Codable, CaseIterable {
     
     var color: Color {
         switch self {
-        case .twdDeposit: return Color.blue1      // 最深藍
-        case .twdSecurities: return Color.blue3     // 台股中深藍
+        case .twdDeposit: return Color.appPrimary
+        case .twdSecurities: return Color.stockTWColor
         case .usdAccount: return Color.stockUSDeepPurple // 美股藍綠色
         case .cryptoWallet: return Color.cryptoColor       // 加密貨幣深青綠（較暗）
         case .debt: return Color.lossRed                 // 亮紅色

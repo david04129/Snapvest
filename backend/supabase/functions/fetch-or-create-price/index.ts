@@ -1,5 +1,7 @@
 // Supabase Edge Function: 新增股票時，若資料庫無價格則即時抓取並儲存
-// 部署: supabase functions deploy fetch-or-create-price
+// 部署（擇一）:
+//   cd backend && supabase functions deploy fetch-or-create-price
+//   cd 專案根目錄 && supabase functions deploy fetch-or-create-price
 // 呼叫: POST .../functions/v1/fetch-or-create-price  Body: { "assetType": "stock_us", "symbol": "AAPL" }
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"

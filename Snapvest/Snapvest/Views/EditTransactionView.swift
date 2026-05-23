@@ -183,7 +183,9 @@ struct EditTransactionView: View {
                 } else {
                     // 預填資料
                     amount = transaction.totalAmount.formatted(fractionDigits: 2)
-                    quantity = transaction.quantity.formatted(fractionDigits: 0)
+                    quantity = transaction.quantity.formattedQuantityInput(
+                        maxFractionDigits: transaction.assetType == .crypto ? 8 : 4
+                    )
                     price = transaction.price.formatted(fractionDigits: 2)
                     fee = transaction.fee.formatted(fractionDigits: 2)
                     notes = transaction.notes ?? ""

@@ -155,3 +155,40 @@ struct Transaction: Identifiable, Codable, Equatable {
     }
 }
 
+extension Transaction {
+    /// 從買入備註解析股票名稱（格式：買入 SYMBOL - 名稱）
+    var buySymbolNameFromNotes: String? {
+        guard type == .buy, let notes else { return nil }
+        let prefix = "買入 \(symbol) - "
+        guard notes.hasPrefix(prefix) else { return nil }
+        let name = String(notes.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
+        return name.isEmpty ? nil : name
+    }
+    
+    /// 刪除確認對話框摘要
+    var deleteConfirmationMessage: String {
+        let dateText: String = {
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "zh_TW")
+            f.dateFormat = "yyyy/M/d"
+            return f.string(from: transactionDate)
+        }()
+        switch type {
+        case .buy:
+            return "確定刪除「買入 \(symbol)」？（\(dateText)）此操作無法復原。"
+        case .sell:
+            return "確定刪除「賣出 \(symbol)」？（\(dateText)）此操作無法復原。"
+        case .deposit:
+            return "確定刪除這筆收入？（\(dateText)）此操作無法復原。"
+        case .withdraw:
+            return "確定刪除這筆支出？（\(dateText)）此操作無法復原。"
+        case .transfer:
+            return "確定刪除這筆轉帳？（\(dateText)）此操作無法復原。"
+        case .repayment:
+            return "確定刪除這筆還款？（\(dateText)）此操作無法復原。"
+        default:
+            return "確定刪除這筆紀錄？（\(dateText)）此操作無法復原。"
+        }
+    }
+}
+
