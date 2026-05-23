@@ -25,6 +25,8 @@ struct AccountDetailView: View {
     @State private var repaymentAccountName: String = ""
     @State private var isDetailsExpanded: Bool = false
     @State private var showTransactionHistory = false
+    @State private var selectedHolding: HoldingNavigationItem?
+    @State private var isLoadingHoldingDetail = false
     
     init(account: Account, prefilledBalance: AccountBalanceDisplay? = nil) {
         self.account = account
@@ -48,6 +50,14 @@ struct AccountDetailView: View {
         }
         .navigationDestination(isPresented: $showTransactionHistory) {
             TransactionHistoryView(account: account)
+        }
+        .navigationDestination(item: $selectedHolding) { item in
+            HoldingDetailView(
+                aggregatedHolding: item.aggregatedHolding,
+                assetPriceSnapshot: item.assetPriceSnapshot,
+                totalAssets: item.totalAssets,
+                totalInvestments: item.totalInvestments
+            )
         }
         .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { _ in
             Task {
@@ -107,6 +117,25 @@ struct AccountDetailView: View {
         }
     }
     
+    private func navigateToHoldingDetail(_ holding: HoldingSnapshot) {
+        guard !isLoadingHoldingDetail else { return }
+        isLoadingHoldingDetail = true
+        Task {
+            defer { isLoadingHoldingDetail = false }
+            do {
+                if let item = try await HoldingNavigationBuilder.load(
+                    userId: account.userId,
+                    assetType: holding.holding.assetType,
+                    symbol: holding.holding.symbol
+                ) {
+                    selectedHolding = item
+                }
+            } catch {
+                // 無法載入合併持股時靜默略過
+            }
+        }
+    }
+    
     @ViewBuilder
     private var accountHoldingsSection: some View {
         if account.accountType != .twdDeposit {
@@ -117,7 +146,10 @@ struct AccountDetailView: View {
                     holdings: viewModel.holdings,
                     account: account,
                     displayCurrency: viewModel.displayCurrency,
-                    exchangeRate: viewModel.exchangeRate
+                    exchangeRate: viewModel.exchangeRate,
+                    onHoldingTap: { holding in
+                        navigateToHoldingDetail(holding)
+                    }
                 )
             }
         }
@@ -216,11 +248,11 @@ struct AccountDetailView: View {
             ],
             spacing: 10
         ) {
-            AccountMetricTile(
+            MetricTile(
                 title: "現金餘額",
                 value: accountDisplayCashBalance.formatted(currency: viewModel.displayCurrency)
             )
-            AccountMetricTile(
+            MetricTile(
                 title: "持股市值",
                 value: accountDisplayHoldingsValue.formatted(currency: viewModel.displayCurrency)
             )
@@ -354,12 +386,12 @@ struct AccountDetailView: View {
             ],
             spacing: 10
         ) {
-            AccountMetricTile(
+            MetricTile(
                 title: "剩餘本金",
                 value: liability.remainingBalance.formatted(currency: liability.currency),
                 valueColor: .lossRed
             )
-            AccountMetricTile(
+            MetricTile(
                 title: "已還款（含息）",
                 value: paidAmount.formatted(currency: liability.currency),
                 valueColor: .profitGreen
@@ -480,52 +512,6 @@ struct AdaptiveFontText: View {
     }
 }
 
-// MARK: - 帳戶／債務詳情指標格（與個股頁同高）
-struct AccountMetricTile: View {
-    let title: String
-    let value: String
-    var valueColor: Color = .primaryText
-    var footnote: String? = nil
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.subheadline)
-                .fontWeight(.medium)
-                .foregroundColor(.secondaryText)
-                .lineLimit(2)
-                .minimumScaleFactor(0.85)
-                .fixedSize(horizontal: false, vertical: true)
-            
-            Text(value)
-                .font(.system(size: 20, weight: .bold))
-                .foregroundColor(valueColor)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            
-            if let footnote, !footnote.isEmpty {
-                Text(footnote)
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.secondaryText)
-                    .lineLimit(1)
-            } else {
-                Text(" ")
-                    .font(.caption)
-                    .opacity(0)
-            }
-        }
-        .frame(maxWidth: .infinity, minHeight: 88, alignment: .leading)
-        .padding(12)
-        .background(Color.cardBackground)
-        .cornerRadius(12)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.separator.opacity(0.35), lineWidth: 1)
-        )
-    }
-}
-
 // MARK: - 帳戶／債務詳情區塊卡（與指標格同款邊框，全寬）
 struct AccountSectionCard<Content: View>: View {
     @ViewBuilder var content: () -> Content
@@ -577,6 +563,7 @@ struct AccountHoldingsTableSection: View {
     let account: Account
     let displayCurrency: Currency
     let exchangeRate: Decimal
+    let onHoldingTap: (HoldingSnapshot) -> Void
     
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -597,7 +584,8 @@ struct AccountHoldingsTableSection: View {
                         holding: holding,
                         account: account,
                         displayCurrency: displayCurrency,
-                        exchangeRate: exchangeRate
+                        exchangeRate: exchangeRate,
+                        onTap: { onHoldingTap(holding) }
                     )
                     if index < holdings.count - 1 {
                         Divider()
@@ -647,6 +635,7 @@ struct HoldingTableRow: View {
     let account: Account
     let displayCurrency: Currency
     let exchangeRate: Decimal
+    let onTap: () -> Void
     
     // 轉換金額用於顯示
     private func convertAmount(_ amount: Decimal, from: Currency) -> Decimal {
@@ -667,6 +656,13 @@ struct HoldingTableRow: View {
     }
     
     var body: some View {
+        Button(action: onTap) {
+            rowContent
+        }
+        .buttonStyle(.plain)
+    }
+    
+    private var rowContent: some View {
         HStack(spacing: 8) {
             // 名稱
             VStack(alignment: .leading, spacing: 2) {
@@ -726,9 +722,14 @@ struct HoldingTableRow: View {
                     .foregroundColor(.secondaryText)
                     .frame(width: 110, alignment: .trailing)
             }
+            
+            Image(systemName: "chevron.right")
+                .font(.caption2.weight(.semibold))
+                .foregroundColor(.secondaryText)
         }
         .padding(.vertical, 12)
         .padding(.horizontal, 16)
+        .contentShape(Rectangle())
     }
 }
 

@@ -23,31 +23,13 @@ struct AssetsView: View {
         case todayPL = "今日損益由高到低"
     }
     
-    // 用於 NavigationDestination 的包裝結構
-    struct HoldingNavigationItem: Identifiable, Hashable {
-        let id: String // 使用 aggregatedHolding.id
-        let aggregatedHolding: AggregatedHoldingSnapshot
-        let assetPriceSnapshot: AssetPriceSnapshot?
-        let totalAssets: Decimal
-        let totalInvestments: Decimal
-        
-        func hash(into hasher: inout Hasher) {
-            hasher.combine(id)
-            hasher.combine(aggregatedHolding.lastUpdated)
-            hasher.combine(aggregatedHolding.totalQuantity)
-            hasher.combine(aggregatedHolding.version)
-            hasher.combine(totalAssets)
-            hasher.combine(totalInvestments)
-        }
-        
-        /// 持股資料變更時須判定為不同 item，詳情頁才會刷新
-        static func == (lhs: HoldingNavigationItem, rhs: HoldingNavigationItem) -> Bool {
-            lhs.id == rhs.id
-                && lhs.aggregatedHolding == rhs.aggregatedHolding
-                && lhs.assetPriceSnapshot == rhs.assetPriceSnapshot
-                && lhs.totalAssets == rhs.totalAssets
-                && lhs.totalInvestments == rhs.totalInvestments
-        }
+    private func holdingNavigationItem(for holding: AggregatedHoldingSnapshot) -> HoldingNavigationItem {
+        HoldingNavigationBuilder.make(
+            aggregatedHolding: holding,
+            assetPriceSnapshots: viewModel.assetPriceSnapshots,
+            totalAssets: viewModel.totalAssets,
+            totalInvestments: viewModel.totalInvestments
+        )
     }
     
     var body: some View {
@@ -171,19 +153,6 @@ struct AssetsView: View {
         } else {
             selectedHolding = nil
         }
-    }
-    
-    private func holdingNavigationItem(for holding: AggregatedHoldingSnapshot) -> HoldingNavigationItem {
-        let priceSnapshot = viewModel.assetPriceSnapshots.first { snapshot in
-            snapshot.symbol == holding.symbol && snapshot.assetType == holding.assetType
-        }
-        return HoldingNavigationItem(
-            id: holding.id,
-            aggregatedHolding: holding,
-            assetPriceSnapshot: priceSnapshot,
-            totalAssets: viewModel.totalAssets,
-            totalInvestments: viewModel.totalInvestments
-        )
     }
     
     // MARK: - 導航到持股詳細頁面

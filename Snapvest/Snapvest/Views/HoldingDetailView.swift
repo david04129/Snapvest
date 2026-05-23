@@ -404,30 +404,31 @@ struct HoldingDetailView: View {
     // MARK: - 次要指標
     private var secondaryMetricsSection: some View {
         LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-            HoldingMetricTile(
+            MetricTile(
                 title: "市值",
                 value: displayedMarketValueText
             )
-            HoldingMetricTile(
+            MetricTile(
                 title: "未實現損益",
                 value: displayedUnrealizedAmountText,
                 valueColor: displayedUnrealizedColor,
-                footnote: displayedUnrealizedPercentText
+                footnote: displayedUnrealizedPercentText,
+                footnoteColor: displayedUnrealizedColor
             )
-            HoldingMetricTile(
+            MetricTile(
                 title: "總成本",
                 value: displayedTotalCostText
             )
-            HoldingMetricTile(
+            MetricTile(
                 title: "平均成本",
                 value: displayedAverageCostText
             )
-            HoldingMetricTile(
+            MetricTile(
                 title: "總資產佔比",
                 value: "\(totalAssetsRatio.formatted(fractionDigits: 1))%",
                 valueColor: holdingColor
             )
-            HoldingMetricTile(
+            MetricTile(
                 title: "投資組合佔比",
                 value: "\(totalInvestmentsRatio.formatted(fractionDigits: 1))%",
                 valueColor: holdingColor
@@ -781,48 +782,6 @@ private struct FIFOLotTableDataRow: View {
             return quantity.formatted(fractionDigits: 0)
         }
         return quantity.formatted(fractionDigits: 4)
-    }
-}
-
-
-// MARK: - 次要指標格
-private struct HoldingMetricTile: View {
-    let title: String
-    let value: String
-    var valueColor: Color = .primaryText
-    var footnote: String? = nil
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.subheadline)
-                .fontWeight(.medium)
-                .foregroundColor(.secondaryText)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-            
-            Text(value)
-                .font(.system(size: 20, weight: .bold))
-                .foregroundColor(valueColor)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            
-            if let footnote, !footnote.isEmpty {
-                Text(footnote)
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundColor(valueColor)
-                    .lineLimit(1)
-            }
-        }
-        .frame(maxWidth: .infinity, minHeight: 88, alignment: .leading)
-        .padding(12)
-        .background(Color.cardBackground)
-        .cornerRadius(12)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.separator.opacity(0.35), lineWidth: 1)
-        )
     }
 }
 
