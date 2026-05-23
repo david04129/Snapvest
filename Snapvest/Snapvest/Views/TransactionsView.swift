@@ -1073,7 +1073,7 @@ struct TransactionsView: View {
 
 // MARK: - 日期區段標題
 
-private struct TransactionDateSectionHeader: View {
+struct TransactionDateSectionHeader: View {
     let date: Date
     let count: Int
     

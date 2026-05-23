@@ -12,7 +12,6 @@ struct TransactionHistoryView: View {
     let account: Account
     @StateObject private var viewModel = TransactionHistoryViewModel()
     @StateObject private var transactionsViewModel = TransactionsViewModel()
-    @Environment(\.dismiss) var dismiss
     @State private var expandedTransactionId: String? = nil
     @State private var showingEditIncome = false
     @State private var showingEditExpense = false
@@ -29,111 +28,46 @@ struct TransactionHistoryView: View {
     @State private var buyTradeEditItem: BuyTradeEditItem?
     @State private var sellTradeEditItem: SellTradeEditItem?
     
+    private struct TransactionDayGroup: Identifiable {
+        let day: Date
+        let transactions: [Transaction]
+        
+        var id: Date { day }
+    }
+    
+    private var transactionDayGroups: [TransactionDayGroup] {
+        let calendar = Calendar.current
+        let grouped = Dictionary(grouping: viewModel.transactions) {
+            calendar.startOfDay(for: $0.transactionDate)
+        }
+        return grouped.keys.sorted(by: >).map { day in
+            TransactionDayGroup(
+                day: day,
+                transactions: grouped[day]!.sorted { $0.transactionDate > $1.transactionDate }
+            )
+        }
+    }
+    
     var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: 0) {
-                // 標題（置頂）
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("\(account.name) - 交易紀錄")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        
-                        Text("此處顯示所有影響此帳戶餘額的交易。")
-                            .font(.caption)
-                            .foregroundColor(.secondaryText)
-                    }
-                .padding(.horizontal, 20)
-                .padding(.top, 12)
-                .padding(.bottom, 8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                
-                // 交易列表
-                if viewModel.transactions.isEmpty {
-                    Spacer()
-                    VStack(spacing: 12) {
-                        Image(systemName: "doc.text")
-                            .font(.system(size: 48))
-                            .foregroundColor(.secondaryText)
-                        Text("尚無交易紀錄")
-                            .font(.headline)
-                            .foregroundColor(.secondaryText)
-                    }
-                    Spacer()
-                } else {
-                    VStack(spacing: 0) {
-                        // 固定表頭
-                        HStack(alignment: .top, spacing: 8) {
-                                Text("日期")
-                                    .font(.caption)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.secondaryText)
-                                .frame(width: 60, alignment: .leading)
-                                
-                                Text("摘要")
-                                    .font(.caption)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.secondaryText)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                
-                                Text("餘額變化")
-                                    .font(.caption)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.secondaryText)
-                                .frame(width: 80, alignment: .leading)
-                                
-                                Text("餘額")
-                                    .font(.caption)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.secondaryText)
-                                .frame(width: 90, alignment: .leading)
-                        }
-                        .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(Color.secondaryBackground)
-                            
-                        // 可滾動的交易列表
-                        ScrollView {
-                            VStack(alignment: .leading, spacing: 0) {
-                            ForEach(viewModel.transactions) { transaction in
-                                TransactionHistoryRowView(
-                                    transaction: transaction,
-                                        accountId: account.id,
-                                        accountCurrency: account.currency,
-                                        balance: viewModel.getBalance(after: transaction, accountId: account.id, accountCurrency: account.currency),
-                                        isExpanded: expandedTransactionId == transaction.id,
-                                        onTap: {
-                                            withAnimation {
-                                                if expandedTransactionId == transaction.id {
-                                                    expandedTransactionId = nil
-                                                } else {
-                                                    expandedTransactionId = transaction.id
-                                                }
-                                            }
-                                        },
-                                        onEdit: {
-                                            handleEditTransaction(transaction)
-                                        },
-                                        onDelete: { transaction in
-                                            transactionPendingDelete = transaction
-                                            showingDeleteConfirmation = true
-                                        }
-                                    )
-                                
-                                Divider()
-                                }
-                            }
-                        }
-                    }
-                }
+        Group {
+            if viewModel.isLoading && viewModel.transactions.isEmpty {
+                loadingView
+            } else if viewModel.transactions.isEmpty {
+                emptyStateView
+            } else {
+                transactionsListView
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .navigationBarTitleDisplayMode(.inline)
-            .tint(.appPrimary)
-            .task {
-                await viewModel.loadTransactions(accountId: account.id, userId: account.userId)
-                await transactionsViewModel.loadTransactions(userId: account.userId)
-            }
-            .sheet(isPresented: $showingEditIncome) {
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color.mainBackground)
+        .navigationTitle("交易紀錄")
+        .navigationBarTitleDisplayMode(.inline)
+        .tint(.appPrimary)
+        .task {
+            await viewModel.loadTransactions(accountId: account.id, userId: account.userId)
+            await transactionsViewModel.loadTransactions(userId: account.userId)
+        }
+        .sheet(isPresented: $showingEditIncome) {
                 if let transaction = editingIncomeTransaction {
                     IncomeView(account: account, viewModel: editingAccountViewModel, editingTransaction: transaction)
                         .onAppear {
@@ -216,7 +150,115 @@ struct TransactionHistoryView: View {
                     Text(errorMessage)
                 }
             }
+    }
+    
+    private var loadingView: some View {
+        VStack(spacing: 16) {
+            ProgressView()
+            Text("載入中...")
+                .font(.headline)
+                .foregroundColor(.secondaryText)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    
+    private var emptyStateView: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "list.bullet.clipboard")
+                .font(.system(size: 50))
+                .foregroundColor(.secondaryText)
+            Text("尚無交易紀錄")
+                .font(.headline)
+                .foregroundColor(.secondaryText)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    
+    private var accountSummaryHeader: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(account.name)
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primaryText)
+                Text(account.accountType.displayName)
+                    .font(.caption)
+                    .foregroundColor(.secondaryText)
+            }
+            Spacer(minLength: 8)
+            Text("\(viewModel.transactions.count) 筆")
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundColor(.secondaryText)
+        }
+        .padding(14)
+        .background(Color.cardBackground)
+        .cornerRadius(12)
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(account.accountType.color)
+                .frame(width: 4)
+        }
+        .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 2)
+    }
+    
+    private var transactionsListView: some View {
+        List {
+            Section {
+                accountSummaryHeader
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            }
+            
+            ForEach(transactionDayGroups) { group in
+                Section {
+                    ForEach(group.transactions) { transaction in
+                        TransactionHistoryRowView(
+                            transaction: transaction,
+                            accountId: account.id,
+                            accountCurrency: account.currency,
+                            balance: viewModel.getBalance(
+                                after: transaction,
+                                accountId: account.id,
+                                accountCurrency: account.currency
+                            ),
+                            isExpanded: expandedTransactionId == transaction.id,
+                            onTap: {
+                                guard transaction.notes?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
+                                    return
+                                }
+                                withAnimation {
+                                    if expandedTransactionId == transaction.id {
+                                        expandedTransactionId = nil
+                                    } else {
+                                        expandedTransactionId = transaction.id
+                                    }
+                                }
+                            },
+                            onEdit: {
+                                handleEditTransaction(transaction)
+                            },
+                            onDelete: { transaction in
+                                transactionPendingDelete = transaction
+                                showingDeleteConfirmation = true
+                            }
+                        )
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+                        .listRowBackground(Color.clear)
+                    }
+                } header: {
+                    TransactionDateSectionHeader(
+                        date: group.day,
+                        count: group.transactions.count
+                    )
+                }
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(Color.mainBackground)
     }
     
     private func handleEditTransaction(_ transaction: Transaction) {
@@ -406,75 +448,85 @@ struct TransactionHistoryView: View {
 // MARK: - 交易行視圖（交易紀錄專用）
 struct TransactionHistoryRowView: View {
     let transaction: Transaction
-    let accountId: String  // 當前帳戶ID，用於判斷轉帳/還款是轉出還是轉入
-    let accountCurrency: Currency  // 當前帳戶的幣別，用於顯示正確的金額
+    let accountId: String
+    let accountCurrency: Currency
     let balance: Decimal
     let isExpanded: Bool
     let onTap: () -> Void
     let onEdit: () -> Void
     let onDelete: ((Transaction) -> Void)?
     
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
+    
+    private var accentColor: Color {
+        typeColor(for: transaction.type)
+    }
+    
+    private var balanceChange: Decimal {
+        getBalanceChange(transaction, accountId: accountId, accountCurrency: accountCurrency)
+    }
+    
+    private var hasNotes: Bool {
+        !(transaction.notes?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+    }
+    
     var body: some View {
         VStack(spacing: 0) {
-            // 主要交易行
             Button(action: onTap) {
-                HStack(alignment: .top, spacing: 8) {
-            // 日期
-            Text(formatDate(transaction.transactionDate))
-                .font(.caption)
-                .foregroundColor(.primaryText)
-                        .frame(width: 60, alignment: .leading)
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(getTransactionSummary(transaction))
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primaryText)
+                            .lineLimit(2)
+                        
+                        Text(rowSubtitle)
+                            .font(.caption)
+                            .foregroundColor(.secondaryText)
+                            .lineLimit(2)
+                    }
                     
-                    // 摘要
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(alignment: .firstTextBaseline, spacing: 4) {
-                            // 顯示統一的圖標
-                            let iconInfo = getTransactionIcon(transaction)
-                            Image(systemName: iconInfo.icon)
+                    Spacer(minLength: 8)
+                    
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text(formatBalanceChange(balanceChange, currency: accountCurrency))
+                            .font(.system(size: 17, weight: .bold))
+                            .foregroundColor(balanceChange >= 0 ? .marketUp : .marketDown)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                        
+                        Text("餘額 \(balance.formatted(currency: accountCurrency))")
+                            .font(.caption)
+                            .foregroundColor(.secondaryText)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                    
+                    if hasNotes {
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                             .font(.caption2)
-                                .foregroundColor(iconInfo.color)
-                    
-                    Text(getTransactionSummary(transaction))
-                        .font(.caption)
-                        .foregroundColor(.primaryText)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .lineLimit(1)
+                            .foregroundColor(.secondaryText)
+                            .padding(.top, 4)
+                    }
                 }
-                
-                if transaction.type == .buy || transaction.type == .sell {
-                    Text("\(transaction.symbol) × \(transaction.quantity.formatted(fractionDigits: 0))")
-                        .font(.caption2)
-                        .foregroundColor(.secondaryText)
+                .padding(14)
+                .background(Color.cardBackground)
+                .cornerRadius(12)
+                .overlay(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(accentColor)
+                        .frame(width: 4)
                 }
+                .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 2)
+                .contentShape(RoundedRectangle(cornerRadius: 12))
             }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            
-            // 餘額變化
-                    let change = getBalanceChange(transaction, accountId: accountId, accountCurrency: accountCurrency)
-                    Text(formatBalanceChange(change, currency: accountCurrency))
-                .font(.caption)
-                .foregroundColor(change >= 0 ? .marketUp : .marketDown)
-                        .frame(width: 80, alignment: .leading)
-            
-            // 餘額
-                    Text(balance.formatted(currency: accountCurrency))
-                .font(.caption)
-                .foregroundColor(.primaryText)
-                        .frame(width: 90, alignment: .leading)
-                    
-                    // 展開/收起圖標
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.caption2)
-                        .foregroundColor(.secondaryText)
-                        .frame(width: 20)
-                }
-                .padding(.vertical, 12)
-                .padding(.horizontal, 16)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(PlainButtonStyle())
+            .buttonStyle(.plain)
             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                // 刪除按鈕（所有交易都可以刪除）
                 if let onDelete = onDelete {
                     Button {
                         onDelete(transaction)
@@ -492,7 +544,6 @@ struct TransactionHistoryRowView: View {
                     .tint(AppColors.actionDestructiveBackground)
                 }
                 
-                // 編輯按鈕（還款和債務交易不能編輯）
                 if transaction.type != .repayment && transaction.type != .liability {
                     Button {
                         onEdit()
@@ -511,44 +562,45 @@ struct TransactionHistoryRowView: View {
                 }
             }
             
-            // 展開的備註區域
             if isExpanded, let notes = transaction.notes, !notes.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("備註")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                .foregroundColor(.secondaryText)
-                        Spacer()
-                    }
-                    
+                    Text("備註")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.secondaryText)
                     Text(notes)
                         .font(.caption)
                         .foregroundColor(.primaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 14)
                 .padding(.vertical, 12)
-                .background(AppColors.secondaryBackground.opacity(0.5))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.secondaryBackground.opacity(0.6))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .padding(.top, 6)
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
     }
     
-    private func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yy/MM/dd"
-        return formatter.string(from: date)
+    private var rowSubtitle: String {
+        var parts: [String] = [Self.timeFormatter.string(from: transaction.transactionDate)]
+        if transaction.type == .buy || transaction.type == .sell {
+            parts.append("\(transaction.symbol) × \(transaction.quantity.formatted(fractionDigits: 0))")
+        }
+        return parts.joined(separator: " · ")
     }
     
-    private func isTransferTransaction(_ transaction: Transaction) -> Bool {
-        // 檢查是否為轉帳類型
-        return transaction.type == .transfer
-    }
-    
-    private func isRepaymentTransaction(_ transaction: Transaction) -> Bool {
-        // 檢查是否為還款類型
-        return transaction.type == .repayment
+    private func typeColor(for type: TransactionType) -> Color {
+        switch type {
+        case .transfer:
+            return .appPrimary
+        case .repayment, .withdraw, .fee, .liability, .buy:
+            return .lossRed
+        case .deposit, .dividend, .sell:
+            return .profitGreen
+        }
     }
     
     private func getTransactionSummary(_ transaction: Transaction) -> String {
@@ -571,26 +623,6 @@ struct TransactionHistoryRowView: View {
             return "手續費"
         case .liability:
             return "債務"
-        }
-    }
-    
-    private func getTransactionIcon(_ transaction: Transaction) -> (icon: String, color: Color) {
-        // 統一的圖標和顏色邏輯，與 TransactionsView 保持一致
-        switch transaction.type {
-        case .transfer:
-            return ("arrow.left.arrow.right", .appPrimary)
-        case .repayment:
-            return ("creditcard.fill", .lossRed)
-        case .deposit, .dividend:
-            return ("arrow.up", .profitGreen)  // 收入、股利：向上箭頭，綠色（收入）
-        case .withdraw, .fee:
-            return ("arrow.down", .lossRed)  // 支出、手續費：向下箭頭，紅色（支出）
-        case .liability:
-            return ("creditcard", .lossRed)
-        case .buy:
-            return ("arrow.down", .lossRed)  // 買入：向下箭頭，紅色（支出）
-        case .sell:
-            return ("arrow.up", .profitGreen)  // 賣出：向上箭頭，綠色（收入）
         }
     }
     
@@ -797,8 +829,10 @@ class TransactionHistoryViewModel: ObservableObject {
 }
 
 #Preview {
-    TransactionHistoryView(
-        account: Account(userId: "test", name: "國泰證券", type: .stockTW, currency: .TWD)
-    )
+    NavigationStack {
+        TransactionHistoryView(
+            account: Account(userId: "test", name: "國泰證券", type: .stockTW, currency: .TWD)
+        )
+    }
 }
 

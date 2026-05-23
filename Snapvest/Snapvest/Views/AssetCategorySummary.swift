@@ -53,6 +53,35 @@ enum AssetCategoryFilterSelection {
 
 // MARK: - 小 chip 按鈕（與「所有持股」排序鈕同款）
 
+struct AssetsFilterChipLabel: View {
+    let title: String
+    var icon: String? = nil
+    var isActive: Bool
+    
+    var body: some View {
+        HStack(spacing: 5) {
+            if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .semibold))
+                    .contentTransition(.symbolEffect(.replace))
+            }
+            Text(title)
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .contentTransition(.interpolate)
+        }
+        .foregroundColor(isActive ? .appPrimary : .secondaryText)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(isActive ? Color.appPrimary.opacity(0.12) : Color.secondaryBackground)
+        .cornerRadius(8)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isActive ? Color.appPrimary.opacity(0.35) : Color.separator.opacity(0.35), lineWidth: 1)
+        )
+    }
+}
+
 struct AssetsFilterChipButton: View {
     let title: String
     var icon: String? = nil
@@ -61,26 +90,19 @@ struct AssetsFilterChipButton: View {
     
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 5) {
-                if let icon {
-                    Image(systemName: icon)
-                        .font(.system(size: 11, weight: .semibold))
-                        .contentTransition(.symbolEffect(.replace))
-                }
-                Text(title)
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .contentTransition(.interpolate)
-            }
-            .foregroundColor(isActive ? .appPrimary : .secondaryText)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(isActive ? Color.appPrimary.opacity(0.12) : Color.secondaryBackground)
-            .cornerRadius(8)
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(isActive ? Color.appPrimary.opacity(0.35) : Color.separator.opacity(0.35), lineWidth: 1)
-            )
+            AssetsFilterChipLabel(title: title, icon: icon, isActive: isActive)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Toolbar 用 chip（避免 NavigationLink 在導航列外層多一圈系統泡泡）
+struct TransactionHistoryToolbarChip: View {
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            AssetsFilterChipLabel(title: "交易紀錄", icon: "clock.fill", isActive: false)
         }
         .buttonStyle(.plain)
     }

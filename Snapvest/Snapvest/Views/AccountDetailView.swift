@@ -24,6 +24,7 @@ struct AccountDetailView: View {
     @State private var currentLiability: Liability?
     @State private var repaymentAccountName: String = ""
     @State private var isDetailsExpanded: Bool = false
+    @State private var showTransactionHistory = false
     
     init(account: Account, prefilledBalance: AccountBalanceDisplay? = nil) {
         self.account = account
@@ -44,6 +45,9 @@ struct AccountDetailView: View {
                 // 一般帳戶：顯示原本的樣式
                 regularAccountView
             }
+        }
+        .navigationDestination(isPresented: $showTransactionHistory) {
+            TransactionHistoryView(account: account)
         }
         .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { _ in
             Task {
@@ -82,17 +86,8 @@ struct AccountDetailView: View {
         .tint(.appPrimary)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                NavigationLink(destination: TransactionHistoryView(account: account)) {
-                    HStack {
-                        Image(systemName: "clock")
-                        Text("交易紀錄")
-                    }
-                    .font(.subheadline)
-                    .foregroundColor(AppColors.noticeForeground)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(AppColors.noticeBackground)
-                    .cornerRadius(8)
+                TransactionHistoryToolbarChip {
+                    showTransactionHistory = true
                 }
             }
         }
@@ -290,17 +285,8 @@ struct AccountDetailView: View {
         .tint(.appPrimary)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                NavigationLink(destination: TransactionHistoryView(account: account)) {
-                    HStack {
-                        Image(systemName: "clock")
-                        Text("交易紀錄")
-                    }
-                    .font(.subheadline)
-                    .foregroundColor(AppColors.noticeForeground)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(AppColors.noticeBackground)
-                    .cornerRadius(8)
+                TransactionHistoryToolbarChip {
+                    showTransactionHistory = true
                 }
             }
         }
