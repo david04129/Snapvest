@@ -29,6 +29,8 @@ struct AccountsView: View {
                     ForEach(accountOrder, id: \.self) { accountType in
                         accountCategorySection(for: accountType)
                     }
+                    
+                    archivedDebtAccountsSection
                 }
                 .padding()
             }
@@ -65,7 +67,7 @@ struct AccountsView: View {
     
     @ViewBuilder
     private func accountCategorySection(for accountType: AccountType) -> some View {
-        let typeAccounts = viewModel.accounts.filter { $0.accountType == accountType }
+        let typeAccounts = viewModel.accounts.activeAccounts(ofType: accountType)
         if typeAccounts.isEmpty { EmptyView() } else {
             let isLoading = viewModel.balancesLoading && !viewModel.balancesLoadedOnce
             let categoryTotal: Decimal = accountType == .debt
@@ -99,13 +101,29 @@ struct AccountsView: View {
 
     private func reloadAccountsTabData() async {
         await viewModel.loadAccounts(userId: userId)
-        if !portfolioViewModel.hasLoadedOnce {
+        if portfolioViewModel.hasLoadedOnce {
+            await portfolioViewModel.reloadLiabilities(userId: userId)
+        } else {
             await portfolioViewModel.loadData(userId: userId)
         }
         await viewModel.refreshBalances(
             userId: userId,
             preloadedLiabilities: portfolioViewModel.liabilities
         )
+    }
+    
+    @ViewBuilder
+    private var archivedDebtAccountsSection: some View {
+        let archived = viewModel.accounts.archivedDebtAccounts
+        if archived.isEmpty {
+            EmptyView()
+        } else {
+            ArchivedDebtAccountsSection(
+                accounts: archived,
+                balancesByAccountId: viewModel.balancesByAccountId,
+                currencyDisplay: accountsCurrencyDisplay
+            )
+        }
     }
     
     // MARK: - 自定義標題欄（帶新增按鈕）
@@ -208,6 +226,73 @@ struct AccountsView: View {
     }
 }
 
+
+// MARK: - 已封存債務帳戶
+
+struct ArchivedDebtAccountsSection: View {
+    let accounts: [Account]
+    let balancesByAccountId: [String: AccountBalanceDisplay]
+    let currencyDisplay: AssetsCurrencyDisplay
+    @State private var isExpanded = false
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            Button {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    isExpanded.toggle()
+                }
+            } label: {
+                HStack {
+                    Image(systemName: "archivebox.fill")
+                        .foregroundColor(.secondaryText)
+                    Text("已封存債務")
+                        .font(.headline)
+                        .foregroundColor(.primaryText)
+                    Text("(\(accounts.count))")
+                        .font(.subheadline)
+                        .foregroundColor(.secondaryText)
+                    Spacer()
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                }
+                .padding(16)
+                .background(Color.cardBackground)
+                .cornerRadius(16)
+                .overlay(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color.secondaryText.opacity(0.5))
+                        .frame(width: 4)
+                }
+                .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 1)
+            }
+            .buttonStyle(.plain)
+            
+            if isExpanded {
+                VStack(spacing: 8) {
+                    ForEach(accounts) { account in
+                        NavigationLink(
+                            destination: AccountDetailView(
+                                account: account,
+                                prefilledBalance: balancesByAccountId[account.id]
+                            )
+                        ) {
+                            AccountCardView(
+                                account: account,
+                                balance: balancesByAccountId[account.id],
+                                currencyDisplay: currencyDisplay,
+                                isBalanceLoading: false,
+                                showsArchivedBadge: true
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+}
 
 // MARK: - 帳戶列表顯示用（台幣 / 原幣）
 
@@ -377,6 +462,7 @@ struct AccountCardView: View {
     let balance: AccountBalanceDisplay?
     let currencyDisplay: AssetsCurrencyDisplay
     let isBalanceLoading: Bool
+    var showsArchivedBadge: Bool = false
     
     private var showLoadingPlaceholder: Bool {
         isBalanceLoading && balance == nil
@@ -390,9 +476,21 @@ struct AccountCardView: View {
                     .font(.title3)
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(account.name)
-                        .font(.headline)
-                        .foregroundColor(.primaryText)
+                    HStack(spacing: 6) {
+                        Text(account.name)
+                            .font(.headline)
+                            .foregroundColor(.primaryText)
+                        if showsArchivedBadge || account.isArchived {
+                            Text("已封存")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.secondaryText)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.secondaryBackground)
+                                .clipShape(Capsule())
+                        }
+                    }
                     Text(accountSubtitle)
                         .font(.caption)
                         .foregroundColor(.secondaryText)

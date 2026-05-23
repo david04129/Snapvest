@@ -1163,6 +1163,8 @@ struct TransactionRowView: View {
     let onEdit: (Transaction) -> Void
     let onDelete: (Transaction) -> Void
     
+    @State private var isExpanded = false
+    
     private var display: TransactionDisplayFormatter {
         TransactionDisplayFormatter(transaction: transaction)
     }
@@ -1172,43 +1174,22 @@ struct TransactionRowView: View {
     }
     
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(display.primaryTitle)
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primaryText)
-                    .lineLimit(2)
-                
-                Text(display.detailSubtitle(accountName: accountName))
-                    .font(.caption)
-                    .foregroundColor(.secondaryText)
-                    .lineLimit(2)
-            }
-            
-            Spacer(minLength: 8)
-            
-            VStack(alignment: .trailing, spacing: 4) {
-                Text(transactionAmount)
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundColor(amountColor)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                
-                Text(transaction.transactionDate, style: .date)
-                    .font(.caption)
-                    .foregroundColor(.secondaryText)
+        Group {
+            if display.shouldShowExpandedDetail, let detail = display.expandedNotes {
+                cardContent {
+                    DisclosureGroup(isExpanded: $isExpanded) {
+                        detailSection(detail)
+                    } label: {
+                        rowHeader()
+                    }
+                    .tint(.secondaryText)
+                }
+            } else {
+                cardContent {
+                    rowHeader()
+                }
             }
         }
-        .padding(14)
-        .background(Color.cardBackground)
-        .cornerRadius(12)
-        .overlay(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 12)
-                .fill(accentColor)
-                .frame(width: 4)
-        }
-        .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 2)
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             Button {
                 onDelete(transaction)
@@ -1244,6 +1225,68 @@ struct TransactionRowView: View {
                 }
                 .tint(AppColors.actionEditBackground)
             }
+        }
+    }
+    
+    @ViewBuilder
+    private func cardContent<C: View>(@ViewBuilder content: () -> C) -> some View {
+        content()
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.cardBackground)
+            .cornerRadius(12)
+            .overlay(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(accentColor)
+                    .frame(width: 4)
+            }
+            .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 2)
+    }
+    
+    private func rowHeader() -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(display.primaryTitle)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primaryText)
+                    .lineLimit(2)
+                
+                Text(display.detailSubtitle(accountName: accountName))
+                    .font(.caption)
+                    .foregroundColor(.secondaryText)
+                    .lineLimit(2)
+            }
+            
+            Spacer(minLength: 8)
+            
+            VStack(alignment: .trailing, spacing: 4) {
+                Text(transactionAmount)
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundColor(amountColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                
+                Text(transaction.transactionDate, style: .date)
+                    .font(.caption)
+                    .foregroundColor(.secondaryText)
+            }
+        }
+        .contentShape(Rectangle())
+    }
+    
+    private func detailSection(_ detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Divider()
+            Text("明細")
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundColor(.secondaryText)
+            Text(detail)
+                .font(.caption)
+                .foregroundColor(.primaryText)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
     

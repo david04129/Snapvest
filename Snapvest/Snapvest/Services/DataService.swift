@@ -8,6 +8,17 @@
 import Foundation
 import Combine
 
+enum DataServiceError: LocalizedError {
+    case invalidOperation(String)
+    
+    var errorDescription: String? {
+        switch self {
+        case .invalidOperation(let message):
+            return message
+        }
+    }
+}
+
 /// 資料服務協議
 protocol DataServiceProtocol {
     // 使用者
@@ -19,6 +30,7 @@ protocol DataServiceProtocol {
     func createAccount(_ account: Account) async throws
     func updateAccount(_ account: Account) async throws
     func deleteAccount(_ accountId: String) async throws
+    func archiveDebtAccount(_ account: Account) async throws
     
     // 交易
     func fetchTransactions(accountId: String) async throws -> [Transaction]
@@ -300,6 +312,31 @@ class MockDataService: DataServiceProtocol {
                 break
             }
         }
+    }
+    
+    func archiveDebtAccount(_ account: Account) async throws {
+        guard account.accountType == .debt else {
+            throw DataServiceError.invalidOperation("僅債務帳戶可封存")
+        }
+        guard !account.isArchived else { return }
+        
+        var allLiabilities: [Liability] = []
+        if let userAccounts = accounts[account.userId] {
+            for repaymentAccount in userAccounts where repaymentAccount.accountType != .debt {
+                allLiabilities.append(contentsOf: liabilities[repaymentAccount.id] ?? [])
+            }
+        }
+        let matchedLiability = DebtAccountArchive.liability(forDebtAccount: account, in: allLiabilities)
+        let (allowed, reason) = DebtAccountArchive.canArchive(debtAccount: account, liability: matchedLiability)
+        guard allowed else {
+            throw DataServiceError.invalidOperation(reason ?? "無法封存此帳戶")
+        }
+        
+        var updated = account
+        updated.isArchived = true
+        updated.archivedAt = Date()
+        updated.updatedAt = Date()
+        try await updateAccount(updated)
     }
     
     func fetchTransactions(accountId: String) async throws -> [Transaction] {

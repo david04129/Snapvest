@@ -75,5 +75,76 @@ class AccountsViewModel: ObservableObject {
             errorMessage = "刪除帳戶失敗：\(error.localizedDescription)"
         }
     }
+    
+    func archiveDebtAccount(_ account: Account) async -> String? {
+        do {
+            try await dataService.archiveDebtAccount(account)
+            await loadAccounts(userId: account.userId)
+            let priceService = PriceService(dataService: dataService)
+            _ = try? await SnapshotUpdater.rebuildSnapshots(
+                userId: account.userId,
+                dataService: dataService,
+                priceService: priceService
+            )
+            NotificationCenter.default.post(name: .snapshotsDidUpdate, object: nil)
+            await refreshBalances(userId: account.userId)
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+    
+    func renameAccount(accountId: String, userId: String, to newName: String) async -> String? {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "請輸入帳戶名稱" }
+        
+        if accounts.isEmpty {
+            await loadAccounts(userId: userId)
+        }
+        
+        guard var account = accounts.first(where: { $0.id == accountId }) else {
+            return "找不到帳戶"
+        }
+        guard trimmed != account.name else { return nil }
+        
+        let isDuplicate = accounts.contains {
+            $0.id != accountId && $0.accountType == account.accountType && $0.name == trimmed
+        }
+        if isDuplicate {
+            return "此類別已有相同名稱的帳戶"
+        }
+        
+        do {
+            if account.accountType == .debt {
+                if let liability = try await findLiability(matchingDebtAccount: account) {
+                    var updatedLiability = liability
+                    updatedLiability.name = trimmed
+                    updatedLiability.updatedAt = Date()
+                    try await dataService.updateLiability(updatedLiability)
+                }
+            }
+            
+            account.name = trimmed
+            account.updatedAt = Date()
+            try await dataService.updateAccount(account)
+            
+            await loadAccounts(userId: userId)
+            NotificationCenter.default.post(name: .snapshotsDidUpdate, object: nil)
+            await refreshBalances(userId: userId)
+            return nil
+        } catch {
+            return "重新命名失敗：\(error.localizedDescription)"
+        }
+    }
+    
+    private func findLiability(matchingDebtAccount account: Account) async throws -> Liability? {
+        for repaymentAccount in accounts where repaymentAccount.accountType != .debt {
+            let batch = try await dataService.fetchLiabilities(accountId: repaymentAccount.id)
+            if let liability = batch.first(where: { $0.name == account.name }) {
+                return liability
+            }
+        }
+        return nil
+    }
 }
 

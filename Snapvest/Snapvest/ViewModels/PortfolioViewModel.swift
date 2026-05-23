@@ -152,6 +152,17 @@ class PortfolioViewModel: ObservableObject {
         )
     }
     
+    /// 重新載入負債（帳戶改名等操作後需刷新，避免與 debt 帳戶名稱配對失敗）
+    func reloadLiabilities(userId: String) async {
+        do {
+            liabilities = try await loadLiabilities(userId: userId)
+            await calculateSummary()
+            await saveHomeDashboardSnapshot(userId: userId)
+        } catch {
+            // 保留現有資料
+        }
+    }
+    
     /// 載入所有負債
     private func loadLiabilities(userId: String) async throws -> [Liability] {
         let accounts = try await dataService.fetchAccounts(userId: userId)
@@ -261,9 +272,12 @@ class PortfolioViewModel: ObservableObject {
             totalCash = 0
         }
         
-        // 計算總負債（轉換為 TWD）
+        // 計算總負債（轉換為 TWD；已封存債務不計入）
         var totalLiabilitiesValue: Decimal = 0
         for liability in liabilities {
+            if DebtAccountArchive.isDebtAccountArchived(named: liability.name, accounts: accounts) {
+                continue
+            }
             if liability.currency == .TWD {
                 totalLiabilitiesValue += liability.remainingBalance
             } else if liability.currency == .USD {

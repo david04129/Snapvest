@@ -54,6 +54,7 @@ enum AccountsBalancesCalculator {
 
         for account in accounts {
             if account.accountType == .debt {
+                if account.isArchived { continue }
                 let remaining = remainingBalance(forDebtAccount: account, in: allLiabilities)
                 debtCategoryTotalBalance += remaining
                 byAccountId[account.id] = AccountBalanceDisplay(

@@ -16,6 +16,7 @@ private struct DebtRepaymentSheetItem: Identifiable {
 
 struct AccountDetailView: View {
     let account: Account
+    @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel: AccountDetailViewModel
     @StateObject private var accountsViewModel = AccountsViewModel()
     @State private var showingAdjustCashBalance = false
@@ -27,9 +28,15 @@ struct AccountDetailView: View {
     @State private var showTransactionHistory = false
     @State private var selectedHolding: HoldingNavigationItem?
     @State private var isLoadingHoldingDetail = false
+    @State private var showArchiveConfirmation = false
+    @State private var archiveErrorMessage: String?
+    @State private var isArchiving = false
+    @State private var displayAccountName: String
+    @State private var showingRenameSheet = false
     
     init(account: Account, prefilledBalance: AccountBalanceDisplay? = nil) {
         self.account = account
+        _displayAccountName = State(initialValue: account.name)
         let vm = AccountDetailViewModel()
         if let prefilledBalance {
             vm.applyPrefill(prefilledBalance)
@@ -66,7 +73,46 @@ struct AccountDetailView: View {
                 } else {
                     await viewModel.refresh(accountId: account.id)
                 }
+                if let updated = accountsViewModel.accounts.first(where: { $0.id == account.id }) {
+                    displayAccountName = updated.name
+                }
             }
+        }
+        .sheet(isPresented: $showingRenameSheet) {
+            RenameAccountSheet(
+                viewModel: accountsViewModel,
+                accountId: account.id,
+                userId: account.userId,
+                accountType: account.accountType,
+                initialName: displayAccountName
+            ) { newName in
+                displayAccountName = newName
+                if account.accountType == .debt, var liability = currentLiability {
+                    liability.name = newName
+                    currentLiability = liability
+                }
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func accountNameTitleRow(name: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(name)
+                .font(.title2)
+                .fontWeight(.bold)
+                .foregroundColor(.primaryText)
+            
+            Button {
+                showingRenameSheet = true
+            } label: {
+                Image(systemName: "pencil")
+                    .font(.body.weight(.semibold))
+                    .foregroundColor(.appPrimary)
+                    .padding(6)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("重新命名帳戶")
         }
     }
     
@@ -114,6 +160,7 @@ struct AccountDetailView: View {
         }
         .task {
             await viewModel.loadAccountData(accountId: account.id)
+            await accountsViewModel.loadAccounts(userId: account.userId)
         }
     }
     
@@ -199,10 +246,7 @@ struct AccountDetailView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(account.name)
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.primaryText)
+                    accountNameTitleRow(name: displayAccountName)
                 }
                 Spacer()
                 Text(account.accountType.displayName)
@@ -346,6 +390,35 @@ struct AccountDetailView: View {
         .task {
             await loadDebtAccountData()
         }
+        .alert("封存帳戶", isPresented: $showArchiveConfirmation) {
+            Button("取消", role: .cancel) {}
+            Button("封存", role: .destructive) {
+                Task { await performArchiveDebtAccount() }
+            }
+        } message: {
+            Text("封存後將自帳戶列表隱藏，還款紀錄會保留。確定要封存「\(liveDebtAccount.name)」嗎？")
+        }
+        .alert("無法封存", isPresented: Binding(
+            get: { archiveErrorMessage != nil },
+            set: { if !$0 { archiveErrorMessage = nil } }
+        )) {
+            Button("好", role: .cancel) {}
+        } message: {
+            Text(archiveErrorMessage ?? "")
+        }
+    }
+    
+    private var liveDebtAccount: Account {
+        accountsViewModel.accounts.first(where: { $0.id == account.id }) ?? account
+    }
+    
+    private var isDebtArchived: Bool {
+        liveDebtAccount.isArchived
+    }
+    
+    private var canArchiveDebtAccount: Bool {
+        guard let liability = currentLiability else { return false }
+        return DebtAccountArchive.canArchive(debtAccount: liveDebtAccount, liability: liability).allowed
     }
     
     // MARK: - 債務帳戶標題
@@ -353,20 +426,28 @@ struct AccountDetailView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(currentLiability?.name ?? account.name)
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.primaryText)
+                    accountNameTitleRow(name: displayAccountName)
                 }
                 Spacer()
-                Text(account.accountType.displayName)
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundColor(account.accountType.color)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(account.accountType.color.opacity(0.15))
-                    .clipShape(Capsule())
+                if isDebtArchived {
+                    Text("已封存")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.secondaryText)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.secondaryBackground)
+                        .clipShape(Capsule())
+                } else {
+                    Text(account.accountType.displayName)
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(account.accountType.color)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(account.accountType.color.opacity(0.15))
+                        .clipShape(Capsule())
+                }
             }
         }
         .padding(16)
@@ -405,7 +486,18 @@ struct AccountDetailView: View {
     }
     
     // MARK: - 債務帳戶底部按鈕
+    @ViewBuilder
     private var debtAccountBottomButtons: some View {
+        if isDebtArchived {
+            archivedDebtBottomNotice
+        } else if canArchiveDebtAccount {
+            archiveDebtBottomBar
+        } else {
+            debtRepaymentBottomButtons
+        }
+    }
+    
+    private var debtRepaymentBottomButtons: some View {
         HStack(spacing: 12) {
             Button(action: {
                 presentRepaymentSheet(type: .prepayment)
@@ -448,6 +540,65 @@ struct AccountDetailView: View {
         )
     }
     
+    private var archiveDebtBottomBar: some View {
+        HStack {
+            Spacer(minLength: 0)
+            Button {
+                showArchiveConfirmation = true
+            } label: {
+                HStack {
+                    Image(systemName: "archivebox.fill")
+                    Text("封存帳戶")
+                }
+                .font(.headline)
+                .foregroundColor(AppColors.actionForeground)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(Color.appPrimary)
+                .cornerRadius(12)
+            }
+            .buttonStyle(.plain)
+            .disabled(isArchiving)
+            .containerRelativeFrame(.horizontal, count: 2, span: 1, spacing: 12)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(Color.mainBackground)
+        .overlay(
+            Rectangle()
+                .frame(height: 1)
+                .foregroundColor(Color.separator.opacity(0.3)),
+            alignment: .top
+        )
+    }
+    
+    private var archivedDebtBottomNotice: some View {
+        Text("此債務帳戶已封存，僅供查閱紀錄。")
+            .font(.subheadline)
+            .foregroundColor(.secondaryText)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .padding(.horizontal, 20)
+            .background(Color.mainBackground)
+            .overlay(
+                Rectangle()
+                    .frame(height: 1)
+                    .foregroundColor(Color.separator.opacity(0.3)),
+                alignment: .top
+            )
+    }
+    
+    private func performArchiveDebtAccount() async {
+        isArchiving = true
+        defer { isArchiving = false }
+        if let error = await accountsViewModel.archiveDebtAccount(liveDebtAccount) {
+            archiveErrorMessage = error
+        } else {
+            dismiss()
+        }
+    }
+    
     // MARK: - 載入債務帳戶數據
     private func presentRepaymentSheet(type: RepaymentType) {
         guard let liability = currentLiability else { return }
@@ -459,15 +610,20 @@ struct AccountDetailView: View {
     }
     
     private func loadDebtAccountData() async {
-        await accountsViewModel.loadAccounts(userId: "test-user-id")
+        await accountsViewModel.loadAccounts(userId: account.userId)
+        
+        if let updated = accountsViewModel.accounts.first(where: { $0.id == account.id }) {
+            displayAccountName = updated.name
+        }
         
         // 找到債務帳戶
         if account.accountType == .debt {
+            let debtName = displayAccountName
             // 在所有還款帳戶中查找對應的債務記錄
-            for repaymentAccount in accountsViewModel.accounts {
+            for repaymentAccount in accountsViewModel.accounts where repaymentAccount.accountType != .debt {
                 do {
                     let liabilities = try await MockDataService.shared.fetchLiabilities(accountId: repaymentAccount.id)
-                    if let liability = liabilities.first(where: { $0.name == account.name }) {
+                    if let liability = liabilities.first(where: { $0.name == debtName }) {
                         await MainActor.run {
                             currentLiability = liability
                             repaymentAccountName = repaymentAccount.name

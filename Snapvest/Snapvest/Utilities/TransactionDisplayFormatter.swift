@@ -106,13 +106,9 @@ struct TransactionDisplayFormatter {
         return nil
     }
     
-    /// 帳戶交易紀錄：是否顯示可展開明細（比副標有更多內容時）
+    /// 有自訂備註時可展開完整明細（紀錄分頁、帳戶交易紀錄共用）
     var shouldShowExpandedDetail: Bool {
-        guard expandedNotes != nil else { return false }
-        if transaction.type == .buy || transaction.type == .sell {
-            return userNotePreview != nil
-        }
-        return false
+        expandedNotes != nil && userNotePreview != nil
     }
     
     // MARK: - 樣式
