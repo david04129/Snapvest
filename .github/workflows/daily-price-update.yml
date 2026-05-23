@@ -5,6 +5,12 @@ on:
   schedule:
     - cron: '0 8 * * *'  # UTC 08:00 = 台灣 16:00
   workflow_dispatch:  # 允許手動觸發
+
+# 避免排程重複觸發或手動+排程同時執行，導致 previous_date 與 current_date 只差幾秒
+concurrency:
+  group: daily-price-update
+  cancel-in-progress: true
+
 jobs:
   update:
     runs-on: ubuntu-latest
@@ -18,7 +24,26 @@ jobs:
       - name: Install dependencies
         run: pip install -r backend/scripts/requirements.txt
 
-      - name: Run daily price update
+      - name: Update exchange rates (Edge Function)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          url="${SUPABASE_URL%/}"
+          code=$(curl -sS -o /tmp/fx_resp.json -w "%{http_code}" -X POST \
+            "${url}/functions/v1/update-exchange-rates" \
+            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
+            -H "Content-Type: application/json")
+          cat /tmp/fx_resp.json
+          echo ""
+          if [ "$code" != "200" ]; then
+            echo "::error::update-exchange-rates failed HTTP ${code}. 請先部署: supabase functions deploy update-exchange-rates"
+            exit 1
+          fi
+
+      - name: Run daily stock price update
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

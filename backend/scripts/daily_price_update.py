@@ -6,10 +6,14 @@ Snapvest 每日股價更新腳本
 - 去重，使用 batch API 節省請求
 - API: 美股+台股 yfinance, 加密貨幣 CoinGecko
 """
+import math
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
+
+# 台灣時區 UTC+8
+TW_TZ = timezone(timedelta(hours=8))
 
 try:
     from supabase import create_client, Client
@@ -25,6 +29,94 @@ SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 
 COINGECKO_BASE = "https://api.coingecko.com/api/v3"
 YAHOO_TW_SUFFIX = ".TW"  # 台股 Yahoo symbol 格式
+# 與 migration 003_exchange_rates.sql 註解一致
+EXCHANGE_RATE_API_URL = "https://open.er-api.com/v6/latest/USD"
+
+
+def _is_valid_price(val) -> bool:
+    """股價／匯率數值檢查（過濾 nan、inf、非正數）"""
+    if val is None:
+        return False
+    try:
+        f = float(val)
+    except (TypeError, ValueError):
+        return False
+    if math.isnan(f) or math.isinf(f):
+        return False
+    return f > 0
+
+
+def fetch_usd_exchange_rates() -> dict[str, float]:
+    """從 open.er-api.com 取得以 USD 為基準的各幣匯率（1 USD = rate 單位外幣）"""
+    resp = requests.get(EXCHANGE_RATE_API_URL, timeout=20)
+    resp.raise_for_status()
+    payload = resp.json()
+    if payload.get("result") != "success":
+        raise RuntimeError(f"匯率 API 回應異常: {payload.get('error-type', payload)}")
+    rates = payload.get("rates") or {}
+    return {k: float(v) for k, v in rates.items() if _is_valid_price(v)}
+
+
+def _raise_on_supabase_error(response, context: str) -> None:
+    """Supabase 2.x：RLS 拒絕或 schema 錯誤時 error 不為空，需主動檢查"""
+    err = getattr(response, "error", None)
+    if err is not None:
+        raise RuntimeError(f"{context}: {err}")
+
+
+def update_exchange_rates(supabase: Client) -> int:
+    """寫入 exchange_rates（from_currency=USD），供 App 讀取"""
+    rates = fetch_usd_exchange_rates()
+    if not rates:
+        raise RuntimeError("匯率 API 無有效資料")
+
+    now = datetime.now(TW_TZ).isoformat()
+    rows = [
+        {
+            "from_currency": "USD",
+            "to_currency": to_currency,
+            "rate": str(rate),
+            "updated_at": now,
+        }
+        for to_currency, rate in rates.items()
+    ]
+
+    chunk_size = 100
+    written = 0
+    for i in range(0, len(rows), chunk_size):
+        chunk = rows[i : i + chunk_size]
+        resp = supabase.table("exchange_rates").upsert(
+            chunk,
+            on_conflict="from_currency,to_currency",
+        ).execute()
+        _raise_on_supabase_error(resp, f"exchange_rates upsert chunk {i // chunk_size + 1}")
+        written += len(chunk)
+
+    # 讓 App 的 shouldFetchPrices() 判定 DB 較新，一併刷新匯率快取
+    meta_resp = supabase.table("price_update_metadata").upsert(
+        {"id": "global", "last_updated_at": now},
+        on_conflict="id",
+    ).execute()
+    _raise_on_supabase_error(meta_resp, "price_update_metadata upsert")
+
+    twd = rates.get("TWD")
+    if twd:
+        print(f"  USD/TWD ≈ {twd:.4f}（updated_at={now}）")
+
+    # 寫入後驗證（anon 可讀）
+    verify = (
+        supabase.table("exchange_rates")
+        .select("rate,updated_at")
+        .eq("from_currency", "USD")
+        .eq("to_currency", "TWD")
+        .limit(1)
+        .execute()
+    )
+    _raise_on_supabase_error(verify, "exchange_rates verify read")
+    if verify.data:
+        row = verify.data[0]
+        print(f"  DB 驗證 TWD: rate={row.get('rate')} updated_at={row.get('updated_at')}")
+    return written
 
 
 def get_supabase() -> Client:
@@ -33,20 +125,25 @@ def get_supabase() -> Client:
     return create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 
+def _normalize_symbol(asset_type: str, symbol: str) -> str:
+    """加密貨幣統一大寫，避免 doge/DOGE 重複"""
+    return symbol.upper() if asset_type == "crypto" else symbol
+
+
 def get_symbols_to_update(supabase: Client) -> list[dict]:
-    """取得要更新的 symbol 清單：使用者持有 ∪ 熱門，去重"""
-    symbols_set = set()  # (asset_type, symbol)
+    """取得要更新的 symbol 清單：使用者持有 ∪ 熱門，去重，加密貨幣 symbol 統一大寫"""
+    symbols_set = set()
     symbols_list = []
 
-    # 1. 使用者持有（從 transactions 推算 distinct asset_type, symbol where type=buy）
+    # 1. 使用者持有
     try:
-        # holdings 表若有則從 holdings，否則從 transactions 推算
         r = supabase.table("holdings").select("asset_type, symbol").execute()
         for row in r.data or []:
-            key = (row["asset_type"], row["symbol"])
+            sym = _normalize_symbol(row["asset_type"], row["symbol"])
+            key = (row["asset_type"], sym)
             if key not in symbols_set:
                 symbols_set.add(key)
-                symbols_list.append({"asset_type": row["asset_type"], "symbol": row["symbol"]})
+                symbols_list.append({"asset_type": row["asset_type"], "symbol": sym})
     except Exception as e:
         print(f"取得 holdings 時出錯（可能表尚未建立）: {e}")
 
@@ -54,10 +151,11 @@ def get_symbols_to_update(supabase: Client) -> list[dict]:
     try:
         r = supabase.table("hot_stocks").select("asset_type, symbol").execute()
         for row in r.data or []:
-            key = (row["asset_type"], row["symbol"])
+            sym = _normalize_symbol(row["asset_type"], row["symbol"])
+            key = (row["asset_type"], sym)
             if key not in symbols_set:
                 symbols_set.add(key)
-                symbols_list.append({"asset_type": row["asset_type"], "symbol": row["symbol"]})
+                symbols_list.append({"asset_type": row["asset_type"], "symbol": sym})
     except Exception as e:
         print(f"取得 hot_stocks 時出錯: {e}")
 
@@ -130,10 +228,10 @@ def upsert_prices(supabase: Client, updates: list[dict]):
     for row in updates:
         try:
             # 若已存在，將舊的 current_price 當作 previous_price
-            existing = supabase.table("asset_price_snapshots").select("current_price").eq("asset_type", row["asset_type"]).eq("symbol", row["symbol"]).execute()
+            existing = supabase.table("asset_price_snapshots").select("current_price, current_price_date").eq("asset_type", row["asset_type"]).eq("symbol", row["symbol"]).execute()
             if existing.data and len(existing.data) > 0 and existing.data[0].get("current_price"):
                 row["previous_price"] = str(existing.data[0]["current_price"])
-                row["previous_price_date"] = row.get("current_price_date")
+                row["previous_price_date"] = existing.data[0].get("current_price_date")  # 使用 DB 舊值
             supabase.table("asset_price_snapshots").upsert(
                 row,
                 on_conflict="asset_type,symbol",
@@ -144,14 +242,17 @@ def upsert_prices(supabase: Client, updates: list[dict]):
         time.sleep(0.05)
     # 更新 global 最後更新時間
     supabase.table("price_update_metadata").upsert(
-        {"id": "global", "last_updated_at": datetime.utcnow().isoformat()},
+        {"id": "global", "last_updated_at": datetime.now(TW_TZ).isoformat()},
         on_conflict="id"
     ).execute()
 
 
 def main():
-    print(f"[{datetime.now()}] 開始每日股價更新")
+    print(f"[{datetime.now()}] 開始每日股價與匯率更新")
     supabase = get_supabase()
+
+    n_rates = update_exchange_rates(supabase)
+    print(f"匯率: 已 upsert {n_rates} 筆至 exchange_rates")
 
     symbols = get_symbols_to_update(supabase)
     print(f"共 {len(symbols)} 檔待更新（已去重）")
@@ -180,9 +281,9 @@ def main():
             "currency": currency_map.get(asset_type, "USD"),
             "current_price": str(price),
             "previous_price": None,  # 可由 DB 觸發或在此讀取舊值後填入
-            "current_price_date": datetime.utcnow().isoformat(),
-            "last_updated": datetime.utcnow().isoformat(),
-            "last_successful_update": datetime.utcnow().isoformat(),
+            "current_price_date": datetime.now(TW_TZ).isoformat(),
+            "last_updated": datetime.now(TW_TZ).isoformat(),
+            "last_successful_update": datetime.now(TW_TZ).isoformat(),
         })
 
     upsert_prices(supabase, rows)
