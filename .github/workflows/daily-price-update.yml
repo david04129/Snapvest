@@ -24,24 +24,21 @@ jobs:
       - name: Install dependencies
         run: pip install -r backend/scripts/requirements.txt
 
-      - name: Update exchange rates (Edge Function)
+      - name: Update exchange rates
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           set -euo pipefail
-          url="${SUPABASE_URL%/}"
-          code=$(curl -sS -o /tmp/fx_resp.json -w "%{http_code}" -X POST \
-            "${url}/functions/v1/update-exchange-rates" \
-            -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
-            -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
-            -H "Content-Type: application/json")
-          cat /tmp/fx_resp.json
-          echo ""
-          if [ "$code" != "200" ]; then
-            echo "::error::update-exchange-rates failed HTTP ${code}. 請先部署: supabase functions deploy update-exchange-rates"
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "::error::未設定 GitHub Secrets。請到 repo Settings → Secrets and variables → Actions 新增："
+            echo "  SUPABASE_URL = https://你的專案.supabase.co"
+            echo "  SUPABASE_SERVICE_ROLE_KEY = Supabase Dashboard → Project Settings → API → service_role（點 Reveal）"
+            echo "注意：不要用 anon / publishable key，也不要加引號或空白。"
             exit 1
           fi
+          # 與本機第二步相同：直接用 service_role 寫入 exchange_rates
+          cd backend/scripts && python update_exchange_rates_only.py
 
       - name: Run daily stock price update
         env:
