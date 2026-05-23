@@ -90,6 +90,7 @@ struct AccountDetailView: View {
                     showTransactionHistory = true
                 }
             }
+            .sharedBackgroundVisibility(.hidden)
         }
         .safeAreaInset(edge: .bottom) {
             adjustCashBalanceBottomBar
@@ -289,6 +290,7 @@ struct AccountDetailView: View {
                     showTransactionHistory = true
                 }
             }
+            .sharedBackgroundVisibility(.hidden)
         }
         .safeAreaInset(edge: .bottom) {
             debtAccountBottomButtons

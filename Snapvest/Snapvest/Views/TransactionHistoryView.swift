@@ -223,19 +223,7 @@ struct TransactionHistoryView: View {
                                 accountId: account.id,
                                 accountCurrency: account.currency
                             ),
-                            isExpanded: expandedTransactionId == transaction.id,
-                            onTap: {
-                                guard transaction.notes?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
-                                    return
-                                }
-                                withAnimation {
-                                    if expandedTransactionId == transaction.id {
-                                        expandedTransactionId = nil
-                                    } else {
-                                        expandedTransactionId = transaction.id
-                                    }
-                                }
-                            },
+                            isExpanded: expansionBinding(for: transaction),
                             onEdit: {
                                 handleEditTransaction(transaction)
                             },
@@ -259,6 +247,15 @@ struct TransactionHistoryView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(Color.mainBackground)
+    }
+    
+    private func expansionBinding(for transaction: Transaction) -> Binding<Bool> {
+        Binding(
+            get: { expandedTransactionId == transaction.id },
+            set: { isExpanded in
+                expandedTransactionId = isExpanded ? transaction.id : nil
+            }
+        )
     }
     
     private func handleEditTransaction(_ transaction: Transaction) {
@@ -446,13 +443,13 @@ struct TransactionHistoryView: View {
 }
 
 // MARK: - 交易行視圖（交易紀錄專用）
+
 struct TransactionHistoryRowView: View {
     let transaction: Transaction
     let accountId: String
     let accountCurrency: Currency
     let balance: Decimal
-    let isExpanded: Bool
-    let onTap: () -> Void
+    @Binding var isExpanded: Bool
     let onEdit: () -> Void
     let onDelete: ((Transaction) -> Void)?
     
@@ -470,117 +467,131 @@ struct TransactionHistoryRowView: View {
         getBalanceChange(transaction, accountId: accountId, accountCurrency: accountCurrency)
     }
     
+    private var trimmedNotes: String? {
+        guard let notes = transaction.notes?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !notes.isEmpty else { return nil }
+        return notes
+    }
+    
     private var hasNotes: Bool {
-        !(transaction.notes?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        trimmedNotes != nil
     }
     
     var body: some View {
-        VStack(spacing: 0) {
-            Button(action: onTap) {
-                HStack(alignment: .top, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(getTransactionSummary(transaction))
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.primaryText)
-                            .lineLimit(2)
-                        
-                        Text(rowSubtitle)
-                            .font(.caption)
-                            .foregroundColor(.secondaryText)
-                            .lineLimit(2)
+        Group {
+            if let notes = trimmedNotes {
+                cardContent {
+                    DisclosureGroup(isExpanded: $isExpanded) {
+                        notesSection(notes)
+                    } label: {
+                        rowHeader()
                     }
-                    
-                    Spacer(minLength: 8)
-                    
-                    VStack(alignment: .trailing, spacing: 4) {
-                        Text(formatBalanceChange(balanceChange, currency: accountCurrency))
-                            .font(.system(size: 17, weight: .bold))
-                            .foregroundColor(balanceChange >= 0 ? .marketUp : .marketDown)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
-                        
-                        Text("餘額 \(balance.formatted(currency: accountCurrency))")
-                            .font(.caption)
-                            .foregroundColor(.secondaryText)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
-                    }
-                    
-                    if hasNotes {
-                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                            .font(.caption2)
-                            .foregroundColor(.secondaryText)
-                            .padding(.top, 4)
-                    }
+                    .tint(.secondaryText)
                 }
-                .padding(14)
-                .background(Color.cardBackground)
-                .cornerRadius(12)
-                .overlay(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(accentColor)
-                        .frame(width: 4)
+            } else {
+                cardContent {
+                    rowHeader()
                 }
-                .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 2)
-                .contentShape(RoundedRectangle(cornerRadius: 12))
             }
-            .buttonStyle(.plain)
-            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                if let onDelete = onDelete {
-                    Button {
-                        onDelete(transaction)
-                    } label: {
-                        VStack(spacing: 4) {
-                            Image(systemName: "trash.fill")
-                                .font(.system(size: 18, weight: .medium))
-                            Text("刪除")
-                                .font(.system(size: 10, weight: .medium))
-                        }
-                        .foregroundColor(AppColors.actionForeground)
-                        .frame(width: 70, height: 70)
-                        .background(AppColors.actionDestructiveBackground)
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            if let onDelete = onDelete {
+                Button {
+                    onDelete(transaction)
+                } label: {
+                    VStack(spacing: 4) {
+                        Image(systemName: "trash.fill")
+                            .font(.system(size: 18, weight: .medium))
+                        Text("刪除")
+                            .font(.system(size: 10, weight: .medium))
                     }
-                    .tint(AppColors.actionDestructiveBackground)
+                    .foregroundColor(AppColors.actionForeground)
+                    .frame(width: 70, height: 70)
+                    .background(AppColors.actionDestructiveBackground)
                 }
-                
-                if transaction.type != .repayment && transaction.type != .liability {
-                    Button {
-                        onEdit()
-                    } label: {
-                        VStack(spacing: 4) {
-                            Image(systemName: "pencil")
-                                .font(.system(size: 18, weight: .medium))
-                            Text("編輯")
-                                .font(.system(size: 10, weight: .medium))
-                        }
-                        .foregroundColor(AppColors.actionForeground)
-                        .frame(width: 70, height: 70)
-                        .background(AppColors.actionEditBackground)
-                    }
-                    .tint(AppColors.actionEditBackground)
-                }
+                .tint(AppColors.actionDestructiveBackground)
             }
             
-            if isExpanded, let notes = transaction.notes, !notes.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("備註")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.secondaryText)
-                    Text(notes)
-                        .font(.caption)
-                        .foregroundColor(.primaryText)
-                        .fixedSize(horizontal: false, vertical: true)
+            if transaction.type != .repayment && transaction.type != .liability {
+                Button {
+                    onEdit()
+                } label: {
+                    VStack(spacing: 4) {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 18, weight: .medium))
+                        Text("編輯")
+                            .font(.system(size: 10, weight: .medium))
+                    }
+                    .foregroundColor(AppColors.actionForeground)
+                    .frame(width: 70, height: 70)
+                    .background(AppColors.actionEditBackground)
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.secondaryBackground.opacity(0.6))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .padding(.top, 6)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .tint(AppColors.actionEditBackground)
             }
+        }
+    }
+    
+    @ViewBuilder
+    private func cardContent<C: View>(@ViewBuilder content: () -> C) -> some View {
+        content()
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.cardBackground)
+            .cornerRadius(12)
+            .overlay(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(accentColor)
+                    .frame(width: 4)
+            }
+            .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 2)
+    }
+    
+    private func rowHeader() -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(getTransactionSummary(transaction))
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primaryText)
+                    .lineLimit(2)
+                
+                Text(rowSubtitle)
+                    .font(.caption)
+                    .foregroundColor(.secondaryText)
+                    .lineLimit(2)
+            }
+            
+            Spacer(minLength: 8)
+            
+            VStack(alignment: .trailing, spacing: 4) {
+                Text(formatBalanceChange(balanceChange, currency: accountCurrency))
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundColor(balanceChange >= 0 ? .marketUp : .marketDown)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                
+                Text("餘額 \(balance.formatted(currency: accountCurrency))")
+                    .font(.caption)
+                    .foregroundColor(.secondaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+        }
+        .contentShape(Rectangle())
+    }
+    
+    private func notesSection(_ notes: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Divider()
+            Text("備註")
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundColor(.secondaryText)
+            Text(notes)
+                .font(.caption)
+                .foregroundColor(.primaryText)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
     

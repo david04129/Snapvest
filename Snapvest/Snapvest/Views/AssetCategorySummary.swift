@@ -96,15 +96,30 @@ struct AssetsFilterChipButton: View {
     }
 }
 
-/// Toolbar 用 chip（避免 NavigationLink 在導航列外層多一圈系統泡泡）
+/// Toolbar 用 chip（透明底 + 描邊，避免與導航列 glass 背景疊成雙層泡泡）
 struct TransactionHistoryToolbarChip: View {
     let action: () -> Void
     
     var body: some View {
         Button(action: action) {
-            AssetsFilterChipLabel(title: "交易紀錄", icon: "clock.fill", isActive: false)
+            HStack(spacing: 5) {
+                Image(systemName: "clock.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                Text("交易紀錄")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+            }
+            .foregroundColor(.appPrimary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Color.clear)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.appPrimary.opacity(0.35), lineWidth: 1)
+            )
         }
         .buttonStyle(.plain)
+        .fixedSize()
     }
 }
 
