@@ -533,31 +533,21 @@ struct AllHoldingCard: View {
     let showOriginalCurrency: Bool // false = 台幣, true = 原幣
     let onTap: () -> Void
     
-    // 獲取固定顏色（根據資產類型，使用14色中的顏色）
     var holdingColor: Color {
         switch item.aggregatedHolding.assetType {
-        case .stockTW:
-            return Color.stockTWColor // 使用14色中的深藍色
-        case .stockUS:
-            return Color.stockUSColor // 使用14色中的藍綠色
-        case .crypto:
-            return Color.cryptoColor // 使用14色中的深青綠色（較暗）
-        case .cash:
-            return Color.appPrimary // 預設
+        case .stockTW: return Color.stockTWColor
+        case .stockUS: return Color.stockUSColor
+        case .crypto: return Color.cryptoColor
+        case .cash: return Color.appPrimary
         }
     }
     
-    /// 根據資產類型返回文字顏色
     private func textColorForAssetType(_ assetType: AssetType) -> Color {
         switch assetType {
-        case .stockTW:
-            return .stockTWDeepBlue
-        case .stockUS:
-            return .stockUSDeepGreen // 使用14色中的藍綠色
-        case .crypto:
-            return .cryptoDeepBrown // 使用14色中的深綠色
-        case .cash:
-            return .primaryText
+        case .stockTW: return .stockTWDeepAmber
+        case .stockUS: return .stockUSDeep
+        case .crypto: return .cryptoDeep
+        case .cash: return .primaryText
         }
     }
     

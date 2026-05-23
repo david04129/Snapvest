@@ -7,25 +7,29 @@
 
 import SwiftUI
 
-// MARK: - 集中化顏色集合（隨 ThemeManager 切換淺色 / 深色）
+// MARK: - 集中化顏色集合（隨 ThemeManager 切換淺色 / 深色，方向 A）
 enum AppColors {
     private static var p: ThemePalette { ThemeManager.shared.palette }
     
+    // 美股（藍系，與 appPrimary 青綠品牌色分離）
     static var stockUSColor: Color { p.stockUSColor }
     static var stockUSDeep: Color { p.stockUSDeep }
     static var stockUSLight: Color { p.stockUSLight }
     
+    // 台股（琥珀系）
     static var stockTWColor: Color { p.stockTWColor }
     static var stockTWDeepAmber: Color { p.stockTWDeepAmber }
     static var stockTWLight: Color { p.stockTWLight }
     
+    // 加密（青綠系，與品牌同族）
     static var cryptoColor: Color { p.cryptoColor }
     static var cryptoDeep: Color { p.cryptoDeep }
     static var cryptoLight: Color { p.cryptoLight }
     
+    /// 舊名稱相容：文字強調色
     static var stockTWDeepBlue: Color { p.stockTWDeepAmber }
     static var stockUSDeepGreen: Color { p.stockUSDeep }
-    static var stockUSDeepPurple: Color { p.stockUSColor }
+    static var stockUSDeepPurple: Color { p.stockUSDeep }
     static var cryptoDeepBrown: Color { p.cryptoDeep }
     
     static var pieChartTWColors: [Color] { p.pieChartTWColors }

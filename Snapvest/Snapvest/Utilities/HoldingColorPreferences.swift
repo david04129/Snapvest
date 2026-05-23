@@ -62,19 +62,13 @@ struct HoldingColorPreferences {
         #endif
     }
     
-    /// 獲取預設顏色（依 assetType，使用14色中的顏色）
-    /// - Parameter assetType: 資產類型
-    /// - Returns: 預設顏色
+    /// 預設色（依 assetType，見 ThemePalette）
     private static func getDefaultColor(for assetType: AssetType) -> Color {
         switch assetType {
-        case .stockTW:
-            return Color.stockTWColor  // 台股：使用14色中的深藍色
-        case .stockUS:
-            return Color.stockUSColor  // 美股：使用14色中的藍綠色
-        case .crypto:
-            return Color.cryptoColor  // 加密貨幣：使用14色中的深青綠色（較暗）
-        case .cash:
-            return Color.appPrimary  // 現金：預設顏色
+        case .stockTW: return Color.stockTWColor
+        case .stockUS: return Color.stockUSColor
+        case .crypto: return Color.cryptoColor
+        case .cash: return Color.appPrimary
         }
     }
     

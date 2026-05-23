@@ -135,7 +135,7 @@ struct NetWorthCardView: View {
                             .stroke(Color.lossRed, lineWidth: 7)
                             .frame(width: 50, height: 50)
                         
-                        // 淨資產部分（使用14色中的藍色）
+                        // 淨資產弧段
                         Circle()
                             .trim(from: 0, to: CGFloat(NSDecimalNumber(decimal: netWorthRatio / 100).doubleValue))
                             .stroke(Color.appPrimary, style: StrokeStyle(lineWidth: 7, lineCap: .round))
@@ -285,13 +285,13 @@ struct InvestmentAssetsCardView: View {
                     ZStack {
                         let investmentRatioDouble = CGFloat(NSDecimalNumber(decimal: investmentRatio / 100).doubleValue)
                         
-                        // 背景圓圈（淺綠色，代表未畫到的部分，使用14色中的綠色）
+                        // 背景圓圈（未填滿部分）
                         Circle()
                             .trim(from: 0, to: 1.0)
                             .stroke(Color.stockUSColor.opacity(0.15), lineWidth: 7)
                             .frame(width: 50, height: 50)
                         
-                        // 投資資產部分（使用14色中的深綠色）
+                        // 投資資產弧段
                         Circle()
                             .trim(from: 0, to: investmentRatioDouble)
                             .stroke(Color.stockUSColor, style: StrokeStyle(lineWidth: 7, lineCap: .round))
@@ -438,9 +438,8 @@ struct CashCardView: View {
             VStack(spacing: 16) {
                 // 標題和圓圈比例ICON
                 HStack(alignment: .center, spacing: 16) {
-                    // 圓圈比例ICON（使用14色中的藍綠色，從12點開始逆時針繪製）
                     ZStack {
-                        let cashColor = Color.allocationTwdCash  // 使用14色中的藍綠色
+                        let cashColor = Color.allocationTwdCash
                         let cashRatioDouble = CGFloat(NSDecimalNumber(decimal: cashRatio / 100).doubleValue)
                         
                         // 背景圓圈（淺藍綠色，代表未畫到的部分）
@@ -494,8 +493,8 @@ struct CashCardView: View {
                     
                     InteractiveProgressBar(
                         segments: [
-                            (progress: animatedTWDCashProgress, color: Color.allocationTwdCash, gradient: [Color.allocationTwdCash, Color.allocationTwdCash.opacity(0.8)]),  // 台幣：使用14色中的藍綠色
-                            (progress: animatedUSDCashProgress, color: Color.allocationUsdCash, gradient: [Color.allocationUsdCash, Color.allocationUsdCash.opacity(0.8)])  // 美金：使用14色中的較深藍綠色
+                            (progress: animatedTWDCashProgress, color: Color.allocationTwdCash, gradient: [Color.allocationTwdCash, Color.allocationTwdCash.opacity(0.8)]),
+                            (progress: animatedUSDCashProgress, color: Color.allocationUsdCash, gradient: [Color.allocationUsdCash, Color.allocationUsdCash.opacity(0.8)])
                         ],
                         cornerRadius: 4,
                         height: 8,
@@ -532,7 +531,7 @@ struct CashCardView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             HStack(spacing: 4) {
                                 Circle()
-                                    .fill(Color.allocationTwdCash)  // 使用14色中的藍綠色
+                                    .fill(Color.allocationTwdCash)
                                     .frame(width: 8, height: 8)
                                 Text("台幣餘額")
                                     .font(.caption)
@@ -557,7 +556,7 @@ struct CashCardView: View {
                                     .font(.caption)
                                     .foregroundColor(.secondaryText)
                                 Circle()
-                                    .fill(Color.allocationUsdCash)  // 使用14色中的較深藍綠色
+                                    .fill(Color.allocationUsdCash)
                                     .frame(width: 8, height: 8)
                             }
                             let usdCash = viewModel.cashByCurrency[.USD] ?? 0

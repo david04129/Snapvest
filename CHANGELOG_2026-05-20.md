@@ -138,14 +138,24 @@ Snapvest/Snapvest/Views/ThemeToggleButton.swift
 
 - [ ] 今日損益卡片仍為 placeholder（固定 0），需接真實計算
 - [ ] 開機／載入時圓環 0.0% 與「—」不同步問題（已由 Splash 緩解，可再統一 loading UI）
-- [ ] 散落硬編碼顏色收斂至 `AppColors`
-- [ ] 淺色主題配色改版（方向 A/B 擇一後改 `ThemePalette.light`）
+- [x] 散落硬編碼顏色收斂至 `AppColors`（階段 4b）
+- [x] 淺色主題配色改版方向 A（`ThemePalette` / `THEME_TOKENS.md`）
 - [ ] `daily_price_update_batch.py` 若本地僅 1 行需確認是否誤刪
 - [ ] 股價 `previous_price_date` 與同日重跑仍相同時的除錯（若仍發生）
 
 ---
 
-## 八、測試提醒
+## 八、配色收斂（方向 A，2026/05/23）
+
+- **品牌主色** `appPrimary` 改為青綠 `#0F766E`，與美股藍分離
+- **三類資產**：台股琥珀、美股藍、加密青綠
+- **圓餅五段** `allocation*` 與三類資產色對齊（修正台股圓餅曾用粉紅）
+- **深色模式** 同語意提高亮度
+- 詳見 `THEME_TOKENS.md`
+
+---
+
+## 九、測試提醒
 
 1. **iOS**：Xcode Clean Build → Run；試首頁圖表切換、開機 Splash、深色切換
 2. **主題**：切深色後切換分頁，確認卡片與 Tab 色一致

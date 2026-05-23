@@ -1,79 +1,58 @@
-# Snapvest UI 顏色對照表
+# Snapvest UI 顏色對照表（方向 A：沉穩理財）
 
-以下所有顏色定義集中在 `AppColors`（`Snapvest/Snapvest/Utilities/ColorTheme.swift`）。
-實際色值依 `ThemePalette`（`ThemePalette.swift`）的 **淺色 `.light`** / **深色 `.dark`** 兩套，由 `ThemeManager` 切換。
-`Color.*` 僅作為相容入口，實際色值以當前主題的 `AppColors` 為準。
+色值定義在 `Snapvest/Snapvest/Utilities/ThemePalette.swift`（`.light` / `.dark`）。  
+`AppColors`（`ColorTheme.swift`）為唯一取用入口；`Color.*` 僅相容舊呼叫。  
+切換主題：`ThemeManager` + `ThemeToggleButton`。
 
-## 配色盤（14 色）
-- `AppColors.blue1`：最深藍
-- `AppColors.blue2`：深藍
-- `AppColors.blue3`：中深藍
-- `AppColors.blue4`：中藍
-- `AppColors.blueGreen1`：藍綠 1
-- `AppColors.blueGreen2`：藍綠 2
-- `AppColors.blueGreen3`：藍綠 3
-- `AppColors.blueGreen4`：藍綠 4
-- `AppColors.green1`：淺青綠
-- `AppColors.green2`：中青綠
-- `AppColors.green3`：深青綠
-- `AppColors.green4`：深綠
-- `AppColors.green5`：最深綠
-- `AppColors.bluePale`：極淺藍（背景用）
+## 設計原則
 
-## 全局主色
-- `AppColors.appPrimary`：主要交互色（按鈕、重點圖示）
-- `AppColors.appSecondary`：次要交互色（輔助元素）
+1. **品牌主色**（`appPrimary` 青綠 `#0F766E`）≠ 美股藍，用於 Tab、按鈕、選中 chip。  
+2. **三類資產**同屏可辨識但不搶戲：台股琥珀、美股藍、加密青綠。  
+3. **圓餅五段**（`allocation*`）與三類資產色一致，不再出現「列表金黃、圓餅粉紅台股」。  
+4. **漲跌**固定用 `profitGreen` / `lossRed`，不混用資產色。
 
-## 背景與卡片
-- `AppColors.mainBackground`：主畫面背景
-- `AppColors.cardBackground`：卡片背景
-- `AppColors.secondaryBackground`：次要區塊背景
-- `AppColors.tertiaryBackground`：第三級背景
+## 品牌與全局
 
-## 文字層級
-- `AppColors.primaryText`：主要文字
-- `AppColors.secondaryText`：次要文字
-- `AppColors.tertiaryText`：輔助文字
+| Token | 淺色 | 用途 |
+|-------|------|------|
+| `appPrimary` | `#0F766E` | 主要交互、Tab tint、選中狀態 |
+| `appSecondary` | `#0D9488` | 次要強調 |
+| `mainBackground` | `#F4F6F8` | 主畫面背景（暖灰） |
+| `cardBackground` | `#FFFFFF` | 卡片 |
+| `primaryText` | `#111827` | 主文字 |
+| `secondaryText` | `#64748B` | 次文字 |
 
-## 分隔與邊框
-- `AppColors.separator`：分隔線
-- `AppColors.borderLight`：輕邊框
-- `AppColors.strokeSubtle`：淡描邊（細線）
-- `AppColors.strokeMuted`：弱描邊（卡片/選取）
+## 資產類別（列表、三格摘要、持股色條）
 
-## 漲跌幅狀態
-- `AppColors.profitGreen`：獲利/正向
-- `AppColors.lossRed`：虧損/負向
+| Token | 淺色 | 類別 |
+|-------|------|------|
+| `stockTWColor` | `#D97706` | 台股區塊／圖示 |
+| `stockTWDeepAmber` | `#B45309` | 台股數字強調 |
+| `stockUSColor` | `#2563EB` | 美股區塊／圖示 |
+| `stockUSDeep` | `#1D4ED8` | 美股數字強調 |
+| `cryptoColor` | `#0D9488` | 加密區塊／圖示 |
+| `cryptoDeep` | `#0F766E` | 加密數字強調 |
 
-## 資產與帳戶類型
-- `AppColors.stockTWColor`：台股類別色
-- `AppColors.stockTWDeepBlue`：台股文字/數字色
-- `AppColors.stockUSColor`：美股類別色
-- `AppColors.stockUSDeepGreen`：美股文字/數字色
-- `AppColors.stockUSDeepPurple`：美金帳戶色
-- `AppColors.cryptoColor`：加密貨幣類別色
-- `AppColors.cryptoDeepBrown`：加密貨幣文字/數字色
+相容別名（請新程式改用上表）：`stockTWDeepBlue` → `stockTWDeepAmber`；`stockUSDeepPurple` → `stockUSDeep`；`cryptoDeepBrown` → `cryptoDeep`。
 
-## 圖表
-- `AppColors.pieChartColors`：圓餅圖預設輪播色
-- `AppColors.placeholderFill`：圖表佔位/空狀態填色
+## 首頁圓餅圖（總資產五段）
 
-## 互動/狀態
-- `AppColors.disabledBackground`：停用按鈕背景
-- `AppColors.disabledForeground`：停用文字
-- `AppColors.overlayDark`：深色遮罩
+| Token | 淺色 | 區塊 |
+|-------|------|------|
+| `allocationTwdCash` | `#059669` | 台幣現金 |
+| `allocationUsdCash` | `#34D399` | 美金現金 |
+| `allocationStockTW` | `#D97706` | 台股（= `stockTWColor`） |
+| `allocationStockUS` | `#2563EB` | 美股（= `stockUSColor`） |
+| `allocationCrypto` | `#0D9488` | 加密（= `cryptoColor`） |
 
-## 按鈕與操作
-- `AppColors.noticeForeground`：提示文字（如「交易紀錄」）
-- `AppColors.noticeBackground`：提示背景
-- `AppColors.actionEditBackground`：編輯動作背景
-- `AppColors.actionDestructiveBackground`：刪除/危險動作背景
-- `AppColors.actionForeground`：動作按鈕文字（白字）
-- `AppColors.chipBackground`：小標籤/膠囊背景
+## 圖表輔助
 
-## 陰影
-- `AppColors.shadowLow`：非常淺陰影
-- `AppColors.shadowMedium`：一般陰影
-- `AppColors.shadowSoft`：柔和陰影
-- `AppColors.shadowCard`：卡片陰影
-- `AppColors.shadowHigh`：較強陰影
+| Token | 用途 |
+|-------|------|
+| `pieChartTWColors` / `pieChartUSColors` / `pieChartCryptoColors` | 同類持倉多檔時的色階 |
+| `pieChartVibrantColors` | 細項模式輪播 |
+| `profitGreen` / `lossRed` | 損益正負 |
+
+## 深色模式
+
+同一語意，提高亮度與對比；詳見 `ThemePalette.dark`。
