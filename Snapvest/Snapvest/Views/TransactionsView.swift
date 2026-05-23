@@ -1163,20 +1163,24 @@ struct TransactionRowView: View {
     let onEdit: (Transaction) -> Void
     let onDelete: (Transaction) -> Void
     
+    private var display: TransactionDisplayFormatter {
+        TransactionDisplayFormatter(transaction: transaction)
+    }
+    
     private var accentColor: Color {
-        typeColor(for: transaction.type)
+        display.typeAccentColor
     }
     
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(primaryTitle)
+                Text(display.primaryTitle)
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.primaryText)
                     .lineLimit(2)
                 
-                Text(detailSubtitle)
+                Text(display.detailSubtitle(accountName: accountName))
                     .font(.caption)
                     .foregroundColor(.secondaryText)
                     .lineLimit(2)
@@ -1243,70 +1247,9 @@ struct TransactionRowView: View {
         }
     }
     
-    private var primaryTitle: String {
-        switch transaction.type {
-        case .buy:
-            return "買入 \(tradeTitleSuffix)"
-        case .sell:
-            return "賣出 \(tradeTitleSuffix)"
-        case .transfer:
-            return "轉帳"
-        case .repayment:
-            return "還款"
-        case .deposit:
-            return "收入"
-        case .withdraw:
-            return "支出"
-        case .dividend:
-            return "股利"
-        case .fee:
-            return "手續費"
-        case .liability:
-            return "債務"
-        }
-    }
-    
-    private var tradeTitleSuffix: String {
-        let name = tradeDisplayName
-        if transaction.assetType == .stockTW, name != transaction.symbol {
-            return "\(name) \(transaction.symbol)"
-        }
-        return name
-    }
-    
-    private var detailSubtitle: String {
-        var parts: [String] = [accountName]
-        if let tradeLine = tradeDetailLine {
-            parts.append(tradeLine)
-        }
-        if let note = userNotePreview {
-            parts.append(note)
-        }
-        return parts.joined(separator: " · ")
-    }
-    
-    private var tradeDetailLine: String? {
-        guard transaction.type == .buy || transaction.type == .sell else { return nil }
-        let qty = formatQuantity(transaction.quantity)
-        let price = transaction.price.formatted(currency: transaction.currency, fractionDigits: 2)
-        return "\(qty) 股 @ \(price)"
-    }
-    
-    private var userNotePreview: String? {
-        guard let raw = transaction.notes?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !raw.isEmpty else { return nil }
-        if transaction.type == .buy || transaction.type == .sell {
-            if raw.contains("自訂備註：") {
-                return raw.components(separatedBy: "自訂備註：").last?.trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-            if raw.hasPrefix("買入") || raw.hasPrefix("賣出") { return nil }
-        }
-        return raw
-    }
-    
     private var amountColor: Color {
         if transaction.type == .repayment { return .lossRed }
-        return typeColor(for: transaction.type)
+        return display.typeAccentColor
     }
     
     private var transactionAmount: String {
@@ -1337,93 +1280,6 @@ struct TransactionRowView: View {
         let formattedAmount = absAmount.formatted(currency: transaction.currency)
         // 如果 sign 為空，直接返回金額，否則返回帶符號的金額
         return sign.isEmpty ? formattedAmount : "\(sign) \(formattedAmount)"
-    }
-    
-    private func isTransferTransaction(_ transaction: Transaction) -> Bool {
-        // 檢查是否為轉帳類型
-        return transaction.type == .transfer
-    }
-    
-    private func isRepaymentTransaction(_ transaction: Transaction) -> Bool {
-        // 檢查是否為還款類型
-        return transaction.type == .repayment
-    }
-
-    private var expandedNotes: String? {
-        let userNote = transaction.notes?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let hasUserNote = !(userNote?.isEmpty ?? true)
-        
-        if transaction.type == .buy || transaction.type == .sell {
-            let action = transaction.type == .buy ? "買入" : "賣出"
-            let name = tradeDisplayName
-            let quantityText = formatQuantity(transaction.quantity)
-            let priceText = transaction.price.formatted(currency: transaction.currency)
-            let autoNote = "\(action)\(quantityText)股\(name)，股價\(priceText)"
-            
-            if hasUserNote {
-                return "\(autoNote)\n自訂備註：\(userNote!)"
-            }
-            return autoNote
-        }
-        
-        if hasUserNote {
-            return userNote
-        }
-        return nil
-    }
-    
-    private var tradeDisplayName: String {
-        if transaction.assetType == .stockTW {
-            return twStockNameMap[transaction.symbol] ?? transaction.symbol
-        }
-        return transaction.symbol
-    }
-    
-    private func formatQuantity(_ quantity: Decimal) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.minimumFractionDigits = 0
-        formatter.maximumFractionDigits = 3
-        formatter.usesGroupingSeparator = true
-        return formatter.string(from: quantity as NSDecimalNumber) ?? "\(quantity)"
-    }
-    
-    private var twStockNameMap: [String: String] {
-        [
-            "2330": "台積電",
-            "2317": "鴻海",
-            "2454": "聯發科",
-            "2308": "台達電",
-            "2891": "中信金",
-            "2882": "國泰金",
-            "2886": "兆豐金",
-            "1301": "台塑",
-            "1303": "南亞",
-            "2002": "中鋼",
-            "2412": "中華電",
-            "2382": "廣達",
-            "2379": "瑞昱",
-            "3008": "大立光",
-            "2884": "玉山金"
-        ]
-    }
-    
-    private func typeColor(for type: TransactionType) -> Color {
-        // 統一的顏色邏輯，與 TransactionHistoryView 保持一致
-        switch type {
-        case .transfer:
-            return .appPrimary
-        case .repayment:
-            return .lossRed
-        case .buy:
-            return .lossRed  // 買入：紅色（支出）
-        case .sell:
-            return .profitGreen  // 賣出：綠色（收入）
-        case .deposit, .dividend:
-            return .profitGreen  // 收入、股利：綠色（收入）
-        case .withdraw, .fee, .liability:
-            return .lossRed  // 支出、手續費、債務：紅色（支出）
-        }
     }
 }
 

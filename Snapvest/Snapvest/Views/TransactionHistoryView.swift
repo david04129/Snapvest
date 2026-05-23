@@ -453,36 +453,24 @@ struct TransactionHistoryRowView: View {
     let onEdit: () -> Void
     let onDelete: ((Transaction) -> Void)?
     
-    private static let timeFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        return formatter
-    }()
+    private var display: TransactionDisplayFormatter {
+        TransactionDisplayFormatter(transaction: transaction)
+    }
     
     private var accentColor: Color {
-        typeColor(for: transaction.type)
+        display.typeAccentColor
     }
     
     private var balanceChange: Decimal {
         getBalanceChange(transaction, accountId: accountId, accountCurrency: accountCurrency)
     }
     
-    private var trimmedNotes: String? {
-        guard let notes = transaction.notes?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !notes.isEmpty else { return nil }
-        return notes
-    }
-    
-    private var hasNotes: Bool {
-        trimmedNotes != nil
-    }
-    
     var body: some View {
         Group {
-            if let notes = trimmedNotes {
+            if display.shouldShowExpandedDetail, let detail = display.expandedNotes {
                 cardContent {
                     DisclosureGroup(isExpanded: $isExpanded) {
-                        notesSection(notes)
+                        detailSection(detail)
                     } label: {
                         rowHeader()
                     }
@@ -549,16 +537,18 @@ struct TransactionHistoryRowView: View {
     private func rowHeader() -> some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(getTransactionSummary(transaction))
+                Text(display.primaryTitle)
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.primaryText)
                     .lineLimit(2)
                 
-                Text(rowSubtitle)
-                    .font(.caption)
-                    .foregroundColor(.secondaryText)
-                    .lineLimit(2)
+                if !display.accountHistorySubtitle.isEmpty {
+                    Text(display.accountHistorySubtitle)
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                        .lineLimit(2)
+                }
             }
             
             Spacer(minLength: 8)
@@ -575,65 +565,27 @@ struct TransactionHistoryRowView: View {
                     .foregroundColor(.secondaryText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
+                
+                Text(transaction.transactionDate, style: .date)
+                    .font(.caption)
+                    .foregroundColor(.secondaryText)
             }
         }
         .contentShape(Rectangle())
     }
     
-    private func notesSection(_ notes: String) -> some View {
+    private func detailSection(_ detail: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Divider()
-            Text("備註")
+            Text("明細")
                 .font(.caption)
                 .fontWeight(.semibold)
                 .foregroundColor(.secondaryText)
-            Text(notes)
+            Text(detail)
                 .font(.caption)
                 .foregroundColor(.primaryText)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-    
-    private var rowSubtitle: String {
-        var parts: [String] = [Self.timeFormatter.string(from: transaction.transactionDate)]
-        if transaction.type == .buy || transaction.type == .sell {
-            parts.append("\(transaction.symbol) × \(transaction.quantity.formatted(fractionDigits: 0))")
-        }
-        return parts.joined(separator: " · ")
-    }
-    
-    private func typeColor(for type: TransactionType) -> Color {
-        switch type {
-        case .transfer:
-            return .appPrimary
-        case .repayment, .withdraw, .fee, .liability, .buy:
-            return .lossRed
-        case .deposit, .dividend, .sell:
-            return .profitGreen
-        }
-    }
-    
-    private func getTransactionSummary(_ transaction: Transaction) -> String {
-        // 統一的簡化標題顯示，與 TransactionsView 保持一致
-        switch transaction.type {
-        case .transfer:
-            return "轉帳"
-        case .repayment:
-            return "還款"
-        case .deposit:
-            return "收入"
-        case .withdraw:
-            return "支出"
-        case .buy, .sell:
-            // 買賣股票：顯示股票代碼（symbol）
-            return transaction.symbol
-        case .dividend:
-            return "股利"
-        case .fee:
-            return "手續費"
-        case .liability:
-            return "債務"
         }
     }
     
