@@ -125,7 +125,7 @@ struct NetWorthCardView: View {
     }
     
     var body: some View {
-        TitledCardView(title: "淨資產", backgroundColor: Color.cardBackground, borderColor: Color.appPrimary.opacity(0.2)) {
+        AccentBarCard(title: "淨資產", accentColor: .appPrimary) {
             VStack(spacing: 16) {
                 // 標題和圓圈比例ICON
                 HStack(alignment: .center, spacing: 16) {
@@ -162,7 +162,7 @@ struct NetWorthCardView: View {
                     
                     // 主要數字
                     Text(netWorth.formatted(currency: viewModel.viewCurrency))
-                        .font(.system(size: 28, weight: .bold))
+                        .font(.snapAmountHero)
                         .foregroundColor(.primaryText)
                     
                     Spacer()
@@ -280,7 +280,7 @@ struct InvestmentAssetsCardView: View {
     }
     
     var body: some View {
-        TitledCardView(title: "投資資產", backgroundColor: Color.cardBackground, borderColor: Color.stockUSColor.opacity(0.2)) {
+        AccentBarCard(title: "投資資產", accentColor: .stockUSColor) {
             VStack(spacing: 16) {
                 // 標題和圓圈比例ICON
                 HStack(alignment: .center, spacing: 16) {
@@ -309,7 +309,7 @@ struct InvestmentAssetsCardView: View {
                     
                     // 主要數字
                     Text(viewModel.totalInvestments.formatted(currency: viewModel.viewCurrency))
-                        .font(.system(size: 28, weight: .bold))
+                        .font(.snapAmountHero)
                         .foregroundColor(.primaryText)
                     
                     Spacer()
@@ -437,7 +437,7 @@ struct CashCardView: View {
     }
     
     var body: some View {
-        TitledCardView(title: "現金", backgroundColor: Color.cardBackground, borderColor: Color.allocationTwdCash.opacity(0.2)) {
+        AccentBarCard(title: "現金", accentColor: .allocationTwdCash) {
             VStack(spacing: 16) {
                 // 標題和圓圈比例ICON
                 HStack(alignment: .center, spacing: 16) {
@@ -466,7 +466,7 @@ struct CashCardView: View {
                     
                     // 主要數字
                     Text(viewModel.totalCash.formatted(currency: viewModel.viewCurrency))
-                        .font(.system(size: 28, weight: .bold))
+                        .font(.snapAmountHero)
                         .foregroundColor(.primaryText)
                     
                     Spacer()
@@ -587,13 +587,24 @@ struct TodayPLCardView: View {
     var todayPLPercent: Decimal = 0
     
     var body: some View {
-        StatCardView(
-            title: "今日損益",
-            value: todayPL.formatted(currency: viewModel.viewCurrency),
-            subtitle: "↑ \(todayPLPercent.formatted(fractionDigits: 2))%",
-            valueColor: Color.marketColor(for: todayPL),
-            icon: "chart.line.uptrend.xyaxis"
-        )
+        AccentBarCard(title: "今日損益", accentColor: .appPrimary) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "chart.line.uptrend.xyaxis")
+                        .foregroundColor(.secondaryText)
+                        .font(.caption)
+                    Spacer()
+                }
+                
+                Text(todayPL.formatted(currency: viewModel.viewCurrency))
+                    .font(.snapAmountHero)
+                    .foregroundColor(Color.marketColor(for: todayPL))
+                
+                Text("↑ \(todayPLPercent.formatted(fractionDigits: 2))%")
+                    .font(.caption)
+                    .foregroundColor(.secondaryText)
+            }
+        }
     }
 }
 
@@ -611,11 +622,11 @@ struct RealizedPLCardView: View {
     }
     
     var body: some View {
-        TitledCardView(title: "已實現損益") {
+        AccentBarCard(title: "已實現損益", accentColor: .appPrimary) {
             VStack(spacing: 16) {
                 HStack {
                     Text(viewModel.realizedGainLoss.formatted(currency: viewModel.viewCurrency))
-                        .font(.system(size: 24, weight: .bold))
+                        .font(.snapAmountHero)
                         .foregroundColor(Color.marketColor(for: viewModel.realizedGainLoss))
                     
                     Spacer()

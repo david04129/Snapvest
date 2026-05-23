@@ -511,15 +511,6 @@ struct AllHoldingCard: View {
         }
     }
     
-    private func textColorForAssetType(_ assetType: AssetType) -> Color {
-        switch assetType {
-        case .stockTW: return .stockTWDeepAmber
-        case .stockUS: return .stockUSDeep
-        case .crypto: return .cryptoDeep
-        case .cash: return .primaryText
-        }
-    }
-    
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 12) {
@@ -545,7 +536,7 @@ struct AllHoldingCard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(item.displayName)
                         .font(.headline)
-                        .foregroundColor(textColorForAssetType(item.aggregatedHolding.assetType))
+                        .foregroundColor(.primaryText)
                 }
                 
                 Spacer()
@@ -557,12 +548,12 @@ struct AllHoldingCard: View {
                         // 顯示原幣市值
                         let originalMarketValue = item.aggregatedHolding.totalQuantity * item.currentPrice
                         Text(originalMarketValue.formatted(currency: item.currency))
-                            .font(.system(size: 17, weight: .bold))
-                            .foregroundColor(textColorForAssetType(item.aggregatedHolding.assetType))
+                            .font(.snapAmountRow)
+                            .foregroundColor(.primaryText)
                     } else {
                         Text(item.marketValue.formatted(currency: .TWD))
-                            .font(.system(size: 17, weight: .bold))
-                            .foregroundColor(textColorForAssetType(item.aggregatedHolding.assetType))
+                            .font(.snapAmountRow)
+                            .foregroundColor(.primaryText)
                     }
                     
                     HStack(spacing: 4) {

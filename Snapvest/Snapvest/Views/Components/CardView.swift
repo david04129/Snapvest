@@ -45,8 +45,8 @@ struct CardView<Content: View>: View {
             }
         )
         .shadow(
-            color: AppColors.shadowHigh,
-            radius: 5,
+            color: AppColors.shadowMedium,
+            radius: 8,
             x: 0,
             y: 2
         )
@@ -111,8 +111,7 @@ struct StatCardView: View {
                 }
                 
                 Text(value)
-                    .font(.title2)
-                    .fontWeight(.semibold)
+                    .font(.snapAmountHero)
                     .foregroundColor(valueColor)
                 
                 if let subtitle = subtitle {

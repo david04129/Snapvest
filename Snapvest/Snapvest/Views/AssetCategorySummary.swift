@@ -386,8 +386,7 @@ struct AssetCategorySummaryCard: View {
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(assetType.displayName)
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
+                        .font(.headline)
                         .foregroundColor(.primaryText)
                     Text(countLabel)
                         .font(.caption)
@@ -398,7 +397,7 @@ struct AssetCategorySummaryCard: View {
                 
                 VStack(alignment: .trailing, spacing: 4) {
                     Text(displayMarketValue.formatted(currency: displayCurrency, fractionDigits: marketValueFractionDigits))
-                        .font(.system(size: 22, weight: .bold))
+                        .font(.snapAmountRow)
                         .foregroundColor(.primaryText)
                         .contentTransition(.numericText())
                         .lineLimit(1)

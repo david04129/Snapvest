@@ -275,16 +275,6 @@ struct ExpandableAccountCategorySection: View {
     let isBalanceLoading: Bool
     @Binding var isExpanded: Bool
     
-    private func textColorForAccountType(_ accountType: AccountType) -> Color {
-        switch accountType {
-        case .twdSecurities: return .stockTWDeepBlue
-        case .usdAccount: return .stockUSDeepPurple
-        case .cryptoWallet: return .cryptoDeepBrown
-        case .twdDeposit: return .primaryText
-        case .debt: return .lossRed
-        }
-    }
-    
     private var categoryTotalText: String {
         if isCategoryLoading { return "—" }
         let display = AccountListAmountDisplay.categoryTotal(
@@ -295,6 +285,10 @@ struct ExpandableAccountCategorySection: View {
             currencyDisplay: currencyDisplay
         )
         return display.amount.formatted(currency: display.currency)
+    }
+    
+    private var categoryAmountColor: Color {
+        accountType == .debt ? .lossRed : .primaryText
     }
     
     var body: some View {
@@ -317,7 +311,7 @@ struct ExpandableAccountCategorySection: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(accountType.displayName)
                             .font(.headline)
-                            .foregroundColor(textColorForAccountType(accountType))
+                            .foregroundColor(.primaryText)
                         Text("\(accounts.count)個帳戶")
                             .font(.caption)
                             .foregroundColor(.secondaryText)
@@ -330,8 +324,8 @@ struct ExpandableAccountCategorySection: View {
                             .font(.caption)
                             .foregroundColor(.secondaryText)
                         Text(categoryTotalText)
-                            .font(.system(size: 17, weight: .bold))
-                            .foregroundColor(textColorForAccountType(accountType))
+                            .font(.snapAmountRow)
+                            .foregroundColor(categoryAmountColor)
                     }
                     
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
@@ -368,6 +362,11 @@ struct ExpandableAccountCategorySection: View {
         }
         .background(Color.cardBackground)
         .cornerRadius(16)
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 16)
+                .fill(accountType.color)
+                .frame(width: 4)
+        }
         .shadow(color: AppColors.shadowMedium, radius: 8, x: 0, y: 2)
     }
 }
@@ -383,16 +382,6 @@ struct AccountCardView: View {
         isBalanceLoading && balance == nil
     }
     
-    private func textColorForAccountType(_ accountType: AccountType) -> Color {
-        switch accountType {
-        case .twdSecurities: return .stockTWDeepBlue
-        case .usdAccount: return .stockUSDeepPurple
-        case .cryptoWallet: return .cryptoDeepBrown
-        case .twdDeposit: return .primaryText
-        case .debt: return .lossRed
-        }
-    }
-    
     var body: some View {
         VStack {
             HStack {
@@ -403,7 +392,7 @@ struct AccountCardView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(account.name)
                         .font(.headline)
-                        .foregroundColor(textColorForAccountType(account.accountType))
+                        .foregroundColor(.primaryText)
                     Text(accountSubtitle)
                         .font(.caption)
                         .foregroundColor(.secondaryText)
@@ -452,7 +441,7 @@ struct AccountCardView: View {
     private var amountPrimaryText: some View {
         if showLoadingPlaceholder {
             Text("—")
-                .font(.headline)
+                .font(.snapAmountRow)
                 .foregroundColor(.secondaryText)
         } else if account.accountType == .debt, let balance {
             let display = AccountListAmountDisplay.cardAmount(
@@ -461,7 +450,7 @@ struct AccountCardView: View {
                 currencyDisplay: currencyDisplay
             )
             Text(display.amount.formatted(currency: display.currency))
-                .font(.headline)
+                .font(.snapAmountRow)
                 .foregroundColor(.lossRed)
         } else if account.accountType == .twdDeposit, let balance {
             let display = AccountListAmountDisplay.cardAmount(
@@ -470,7 +459,7 @@ struct AccountCardView: View {
                 currencyDisplay: currencyDisplay
             )
             Text(display.amount.formatted(currency: display.currency))
-                .font(.headline)
+                .font(.snapAmountRow)
                 .foregroundColor(.primaryText)
         } else if let balance {
             let display = AccountListAmountDisplay.cardAmount(
@@ -479,11 +468,11 @@ struct AccountCardView: View {
                 currencyDisplay: currencyDisplay
             )
             Text(display.amount.formatted(currency: display.currency))
-                .font(.headline)
-                .foregroundColor(textColorForAccountType(account.accountType))
+                .font(.snapAmountRow)
+                .foregroundColor(.primaryText)
         } else {
             Text("—")
-                .font(.headline)
+                .font(.snapAmountRow)
                 .foregroundColor(.secondaryText)
         }
     }
@@ -537,8 +526,8 @@ struct ExpandableDebtAccountSection: View {
                             .foregroundColor(.secondaryText)
                         
                         Text((-totalDebt).formatted(currency: .TWD))
-                            .font(.system(size: 17, weight: .bold))
-                            .foregroundColor(accountType.color)
+                            .font(.snapAmountRow)
+                            .foregroundColor(.lossRed)
                     }
                     
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
@@ -577,36 +566,43 @@ struct DebtCardView: View {
     let liability: Liability
     
     var body: some View {
-        CardView {
-            HStack {
-                Image(systemName: "creditcard.fill")
+        HStack {
+            Image(systemName: "creditcard.fill")
+                .foregroundColor(.lossRed)
+                .font(.title3)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(liability.name)
+                    .font(.headline)
+                    .foregroundColor(.primaryText)
+                
+                Text("剩餘本金")
+                    .font(.caption)
+                    .foregroundColor(.secondaryText)
+            }
+            
+            Spacer()
+            
+            VStack(alignment: .trailing, spacing: 4) {
+                let negativeBalance = -liability.remainingBalance
+                Text(negativeBalance.formatted(currency: liability.currency))
+                    .font(.snapAmountRow)
                     .foregroundColor(.lossRed)
-                    .font(.title3)
                 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(liability.name)
-                        .font(.headline)
-                    
-                    Text("剩餘本金")
-                        .font(.caption)
-                        .foregroundColor(.secondaryText)
-                }
-                
-                Spacer()
-                
-                VStack(alignment: .trailing, spacing: 4) {
-                    // 確保顯示負號：對於債務，金額應該是負數
-                    let negativeBalance = -liability.remainingBalance
-                    Text(negativeBalance.formatted(currency: liability.currency))
-                        .font(.headline)
-                        .foregroundColor(.lossRed)
-                    
-                    Text(liability.currency.rawValue)
-                        .font(.caption)
-                        .foregroundColor(.secondaryText)
-                }
+                Text(liability.currency.rawValue)
+                    .font(.caption)
+                    .foregroundColor(.secondaryText)
             }
         }
+        .padding(16)
+        .background(Color.cardBackground)
+        .cornerRadius(16)
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.lossRed)
+                .frame(width: 4)
+        }
+        .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 1)
     }
 }
 

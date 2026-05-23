@@ -27,7 +27,7 @@ struct MetricTile: View {
                 .fixedSize(horizontal: false, vertical: true)
             
             Text(value)
-                .font(.system(size: 20, weight: .bold))
+                .font(.snapAmountTile)
                 .foregroundColor(valueColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)

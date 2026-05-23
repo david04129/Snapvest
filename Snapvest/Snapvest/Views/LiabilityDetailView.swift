@@ -9,11 +9,11 @@ import SwiftUI
 
 struct LiabilityDetailView: View {
     let liability: Liability
-    @StateObject private var portfolioViewModel = PortfolioViewModel()
     @StateObject private var accountsViewModel = AccountsViewModel()
     @State private var showingRepayment = false
     @State private var repaymentAccountName: String = ""
-    @State private var currentLiability: Liability // 用於顯示最新的債務數據
+    @State private var currentLiability: Liability
+    @State private var isDetailsExpanded: Bool = false
     
     init(liability: Liability) {
         self.liability = liability
@@ -22,128 +22,28 @@ struct LiabilityDetailView: View {
     
     var body: some View {
         ScrollView {
-            VStack(spacing: 20) {
-                // 標題
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(currentLiability.name)
-                        .font(.title2)
-                        .fontWeight(.bold)
-                    
-                    Text("貸款詳情與狀態")
-                        .font(.caption)
-                        .foregroundColor(.secondaryText)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
+            VStack(spacing: 16) {
+                liabilityHeroHeader
                 
-                // 剩餘本金卡片
-                CardView {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("剩餘本金")
-                                .font(.subheadline)
-                                .foregroundColor(.secondaryText)
-                            
-                            Spacer()
-                            
-                            Image(systemName: "target")
-                                .foregroundColor(.lossRed)
-                        }
-                        
-                        Text(currentLiability.remainingBalance.formatted(currency: currentLiability.currency))
-                            .font(.system(size: 28, weight: .bold))
-                            .foregroundColor(.lossRed)
-                    }
-                }
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.lossRed, lineWidth: 2)
-                )
+                liabilityMetricsGrid
                 
-                // 每月應繳金額卡片
-                CardView {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("每月應繳金額")
-                                .font(.subheadline)
-                                .foregroundColor(.secondaryText)
-                            
-                            Spacer()
-                            
-                            Image(systemName: "doc.text")
-                                .foregroundColor(.appPrimary)
-                        }
-                        
-                        Text(currentLiability.monthlyPayment.formatted(currency: currentLiability.currency))
-                            .font(.system(size: 28, weight: .bold))
-                            .foregroundColor(.primaryText)
-                    }
+                if currentLiability.totalPeriods > 0 {
+                    RepaymentProgressCard(liability: currentLiability)
                 }
                 
-                // 詳細資訊
-                TitledCardView(title: "貸款資訊") {
-                    VStack(spacing: 16) {
-                        InfoRow(
-                            icon: "target",
-                            label: "原始貸款金額",
-                            value: currentLiability.principal.formatted(currency: currentLiability.currency)
-                        )
-                        
-                        Divider()
-                        
-                        InfoRow(
-                            icon: "percent",
-                            label: "年利率",
-                            value: "\(currentLiability.interestRate.formatted(fractionDigits: 2))%"
-                        )
-                        
-                        Divider()
-                        
-                        InfoRow(
-                            icon: "calendar",
-                            label: "總期數",
-                            value: "\(calculateTotalMonths()) 個月"
-                        )
-                        
-                        Divider()
-                        
-                        InfoRow(
-                            icon: "creditcard",
-                            label: "還款帳戶",
-                            value: repaymentAccountName.isEmpty ? "載入中..." : repaymentAccountName
-                        )
-                        
-                        Divider()
-                        
-                        InfoRow(
-                            icon: "calendar",
-                            label: "每月還款日",
-                            value: "每月 \(calculateRepaymentDay()) 日"
-                        )
-                    }
-                    .padding(.vertical, 8)
-                }
+                liabilityInfoSection
             }
             .padding()
         }
+        .background(Color.mainBackground)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button(action: {
+                TransactionHistoryToolbarChip {
                     // TODO: 導航到交易紀錄
-                }) {
-                    HStack {
-                        Image(systemName: "clock")
-                        Text("交易紀錄")
-                    }
-                    .font(.subheadline)
-                    .foregroundColor(AppColors.noticeForeground)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(AppColors.noticeBackground)
-                    .cornerRadius(8)
                 }
             }
+            .sharedBackgroundVisibility(.hidden)
         }
         .safeAreaInset(edge: .bottom) {
             Button(action: {
@@ -156,12 +56,19 @@ struct LiabilityDetailView: View {
                 .font(.headline)
                 .foregroundColor(AppColors.actionForeground)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
+                .padding(.vertical, 14)
                 .background(Color.lossRed)
                 .cornerRadius(12)
             }
-            .padding()
-            .background(Color.cardBackground)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .background(Color.mainBackground)
+            .overlay(
+                Rectangle()
+                    .frame(height: 1)
+                    .foregroundColor(Color.separator.opacity(0.3)),
+                alignment: .top
+            )
         }
         .sheet(isPresented: $showingRepayment) {
             if let repaymentAccount = accountsViewModel.accounts.first(where: { $0.id == currentLiability.accountId }) {
@@ -170,24 +77,137 @@ struct LiabilityDetailView: View {
                     repaymentAccount: repaymentAccount
                 )
                 .onDisappear {
-                    // 還款完成後刷新數據
                     Task {
-                        await portfolioViewModel.loadData(userId: "test-user-id")
                         await loadLiabilityData()
                     }
                 }
             }
         }
         .task {
-            // 初始化當前債務數據
             currentLiability = liability
-            // 載入帳戶資訊以獲取還款帳戶名稱
             await accountsViewModel.loadAccounts(userId: "test-user-id")
             if let account = accountsViewModel.accounts.first(where: { $0.id == liability.accountId }) {
                 repaymentAccountName = account.name
             }
-            // 載入最新的債務數據
             await loadLiabilityData()
+        }
+    }
+    
+    private var liabilityHeroHeader: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(currentLiability.name)
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.primaryText)
+                    Text("貸款詳情與狀態")
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                }
+                Spacer()
+                Text(AccountType.debt.displayName)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(AccountType.debt.color)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(AccountType.debt.color.opacity(0.15))
+                    .clipShape(Capsule())
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.cardBackground)
+        .cornerRadius(16)
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 16)
+                .fill(AccountType.debt.color)
+                .frame(width: 4)
+        }
+        .shadow(color: AppColors.shadowMedium, radius: 8, x: 0, y: 2)
+    }
+    
+    private var liabilityMetricsGrid: some View {
+        LazyVGrid(
+            columns: [
+                GridItem(.flexible(), spacing: 10),
+                GridItem(.flexible(), spacing: 10)
+            ],
+            spacing: 10
+        ) {
+            MetricTile(
+                title: "剩餘本金",
+                value: currentLiability.remainingBalance.formatted(currency: currentLiability.currency),
+                valueColor: .lossRed
+            )
+            MetricTile(
+                title: "每月應繳",
+                value: currentLiability.monthlyPayment.formatted(currency: currentLiability.currency)
+            )
+        }
+    }
+    
+    private var liabilityInfoSection: some View {
+        AccountSectionCard {
+            VStack(alignment: .leading, spacing: 0) {
+                Button(action: {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        isDetailsExpanded.toggle()
+                    }
+                }) {
+                    HStack {
+                        Text("貸款資訊")
+                            .font(.headline)
+                            .foregroundColor(.primaryText)
+                        Spacer()
+                        Image(systemName: isDetailsExpanded ? "chevron.up" : "chevron.down")
+                            .foregroundColor(.secondaryText)
+                            .font(.caption)
+                    }
+                }
+                .buttonStyle(.plain)
+                
+                if isDetailsExpanded {
+                    VStack(spacing: 16) {
+                        Divider()
+                            .padding(.top, 8)
+                        
+                        InfoRowWithoutIcon(
+                            label: "原始貸款金額",
+                            value: currentLiability.principal.formatted(currency: currentLiability.currency)
+                        )
+                        
+                        Divider()
+                        
+                        InfoRowWithoutIcon(
+                            label: "年利率",
+                            value: "\(currentLiability.interestRate.formatted(fractionDigits: 2))%"
+                        )
+                        
+                        Divider()
+                        
+                        InfoRowWithoutIcon(
+                            label: "總期數",
+                            value: "\(calculateTotalMonths()) 個月"
+                        )
+                        
+                        Divider()
+                        
+                        InfoRowWithoutIcon(
+                            label: "還款帳戶",
+                            value: repaymentAccountName.isEmpty ? "載入中..." : repaymentAccountName
+                        )
+                        
+                        Divider()
+                        
+                        InfoRowWithoutIcon(
+                            label: "每月還款日",
+                            value: "每月 \(calculateRepaymentDay()) 日"
+                        )
+                    }
+                }
+            }
         }
     }
     
@@ -207,7 +227,6 @@ struct LiabilityDetailView: View {
     
     private func calculateTotalMonths() -> Int {
         guard let endDate = liability.endDate else {
-            // 如果沒有結束日期，根據原始本金和每月還款計算
             if liability.monthlyPayment > 0 {
                 let principalNS = NSDecimalNumber(decimal: liability.principal)
                 let monthlyPaymentNS = NSDecimalNumber(decimal: liability.monthlyPayment)
@@ -280,4 +299,3 @@ struct InfoRow: View {
         )
     }
 }
-

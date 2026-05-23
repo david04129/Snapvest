@@ -144,7 +144,6 @@ struct AccountDetailView: View {
             } else if !viewModel.holdings.isEmpty {
                 AccountHoldingsTableSection(
                     holdings: viewModel.holdings,
-                    account: account,
                     displayCurrency: viewModel.displayCurrency,
                     exchangeRate: viewModel.exchangeRate,
                     onHoldingTap: { holding in
@@ -221,7 +220,7 @@ struct AccountDetailView: View {
                     .font(.caption)
                     .foregroundColor(.secondaryText)
                 Text(accountHeroPrimaryAmount.formatted(currency: viewModel.displayCurrency))
-                    .font(.system(size: 28, weight: .bold))
+                    .font(.snapAmountHero)
                     .foregroundColor(.primaryText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
@@ -260,19 +259,25 @@ struct AccountDetailView: View {
     }
     
     private var adjustCashBalanceBottomBar: some View {
-        Button(action: {
-            showingAdjustCashBalance = true
-        }) {
-            HStack {
-                Image(systemName: "pencil.circle.fill")
-                Text("調整餘額")
+        HStack {
+            Spacer(minLength: 0)
+            Button(action: {
+                showingAdjustCashBalance = true
+            }) {
+                HStack {
+                    Image(systemName: "pencil.circle.fill")
+                    Text("調整餘額")
+                }
+                .font(.headline)
+                .foregroundColor(AppColors.actionForeground)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(Color.appPrimary)
+                .cornerRadius(12)
             }
-            .font(.headline)
-            .foregroundColor(AppColors.actionForeground)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-            .background(Color.appPrimary)
-            .cornerRadius(12)
+            .buttonStyle(.plain)
+            .containerRelativeFrame(.horizontal, count: 2, span: 1, spacing: 12)
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
@@ -557,10 +562,9 @@ struct AccountHoldingsLoadingSection: View {
     }
 }
 
-// MARK: - 帳戶詳情：持有標的表
+// MARK: - 帳戶詳情：持有標的列表
 struct AccountHoldingsTableSection: View {
     let holdings: [HoldingSnapshot]
-    let account: Account
     let displayCurrency: Currency
     let exchangeRate: Decimal
     let onHoldingTap: (HoldingSnapshot) -> Void
@@ -576,68 +580,36 @@ struct AccountHoldingsTableSection: View {
                     .foregroundColor(.secondaryText)
             }
             
-            VStack(spacing: 0) {
-                holdingsTableHeader
-                Divider()
-                ForEach(Array(holdings.enumerated()), id: \.element.id) { index, holding in
-                    HoldingTableRow(
+            VStack(spacing: 8) {
+                ForEach(holdings) { holding in
+                    AccountHoldingCardRow(
                         holding: holding,
-                        account: account,
                         displayCurrency: displayCurrency,
                         exchangeRate: exchangeRate,
                         onTap: { onHoldingTap(holding) }
                     )
-                    if index < holdings.count - 1 {
-                        Divider()
-                    }
                 }
             }
-            .background(Color.secondaryBackground)
-            .cornerRadius(10)
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(Color.separator.opacity(0.5), lineWidth: 1)
-            )
         }
-    }
-    
-    private var holdingsTableHeader: some View {
-        HStack(spacing: 8) {
-            headerCell("名稱", alignment: .leading)
-                .frame(width: 60, alignment: .leading)
-            headerCell("數量", alignment: .center)
-                .frame(width: 45, alignment: .center)
-            Spacer(minLength: 8)
-            headerCell("現值", alignment: .trailing)
-                .frame(width: 90, alignment: .trailing)
-            headerCell("損益", alignment: .trailing)
-                .frame(width: 110, alignment: .trailing)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 10)
-        .background(Color.tertiaryBackground.opacity(0.6))
-    }
-    
-    private func headerCell(_ title: String, alignment: HorizontalAlignment) -> some View {
-        Text(title)
-            .font(.caption)
-            .fontWeight(.semibold)
-            .foregroundColor(.primaryText.opacity(0.75))
-            .frame(maxWidth: .infinity, alignment: Alignment(horizontal: alignment, vertical: .center))
-            .lineLimit(1)
-            .minimumScaleFactor(0.8)
     }
 }
 
-// MARK: - 持股表格行
-struct HoldingTableRow: View {
+// MARK: - 帳戶持股卡片列（與資產 Tab 列表同款）
+struct AccountHoldingCardRow: View {
     let holding: HoldingSnapshot
-    let account: Account
     let displayCurrency: Currency
     let exchangeRate: Decimal
     let onTap: () -> Void
     
-    // 轉換金額用於顯示
+    private var assetAccentColor: Color {
+        switch holding.holding.assetType {
+        case .stockTW: return .stockTWColor
+        case .stockUS: return .stockUSColor
+        case .crypto: return .cryptoColor
+        case .cash: return .appPrimary
+        }
+    }
+    
     private func convertAmount(_ amount: Decimal, from: Currency) -> Decimal {
         if from == .USD && displayCurrency == .TWD {
             return amount * exchangeRate
@@ -645,91 +617,74 @@ struct HoldingTableRow: View {
         return amount
     }
     
-    var displayMarketValue: Decimal? {
+    private var displayMarketValue: Decimal? {
         guard let marketValue = holding.marketValue else { return nil }
         return convertAmount(marketValue, from: holding.holding.currency)
     }
     
-    var displayGainLoss: Decimal? {
+    private var displayGainLoss: Decimal? {
         guard let gainLoss = holding.unrealizedGainLoss else { return nil }
         return convertAmount(gainLoss, from: holding.holding.currency)
     }
     
     var body: some View {
         Button(action: onTap) {
-            rowContent
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(holding.displayName)
+                        .font(.headline)
+                        .foregroundColor(.primaryText)
+                    Text(holding.holding.assetType.displayName)
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                }
+                
+                Spacer(minLength: 8)
+                
+                VStack(alignment: .trailing, spacing: 4) {
+                    if let displayValue = displayMarketValue {
+                        Text(displayValue.formatted(currency: displayCurrency))
+                            .font(.snapAmountRow)
+                            .foregroundColor(.primaryText)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    } else {
+                        Text("—")
+                            .font(.snapAmountRow)
+                            .foregroundColor(.secondaryText)
+                    }
+                    
+                    if let displayGainLoss = displayGainLoss,
+                       let percent = holding.unrealizedGainLossPercent {
+                        HStack(spacing: 4) {
+                            Image(systemName: displayGainLoss >= 0 ? "arrow.up" : "arrow.down")
+                                .font(.caption2)
+                            Text(displayGainLoss.formatted(currency: displayCurrency))
+                            Text("(\(percent.formatted(fractionDigits: 1))%)")
+                        }
+                        .font(.caption)
+                        .foregroundColor(Color.marketColor(for: displayGainLoss))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    }
+                }
+                
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundColor(.secondaryText)
+            }
+            .padding(16)
+            .background(Color.cardBackground)
+            .cornerRadius(16)
+            .overlay(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(assetAccentColor)
+                    .frame(width: 4)
+            }
+            .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 1)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-    }
-    
-    private var rowContent: some View {
-        HStack(spacing: 8) {
-            // 名稱
-            VStack(alignment: .leading, spacing: 2) {
-                Text(holding.displayName)
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                Text(holding.holding.assetType.displayName)
-                    .font(.caption2)
-                    .foregroundColor(.secondaryText)
-            }
-            .frame(width: 60, alignment: .leading)
-            
-            // 數量
-            Text(holding.holding.quantity.formatted(fractionDigits: 0))
-                .font(.caption)
-                .frame(width: 45, alignment: .center)
-            
-            Spacer(minLength: 8)
-            
-            // 現值
-            if let displayValue = displayMarketValue {
-                Text(displayValue.formatted(currency: displayCurrency))
-                    .font(.caption)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                    .frame(width: 90, alignment: .trailing)
-            } else {
-                Text("-")
-                    .font(.caption)
-                    .foregroundColor(.secondaryText)
-                    .frame(width: 90, alignment: .trailing)
-            }
-            
-            // 損益
-            if let displayGainLoss = displayGainLoss,
-               let percent = holding.unrealizedGainLossPercent {
-                VStack(alignment: .trailing, spacing: 2) {
-                    HStack(spacing: 4) {
-                        Image(systemName: displayGainLoss >= 0 ? "arrow.up" : "arrow.down")
-                            .font(.caption2)
-                        Text(displayGainLoss.formatted(currency: displayCurrency))
-                    }
-                    .font(.caption)
-                    
-                    Text("(\(percent.formatted(fractionDigits: 2))%)")
-                        .font(.caption2)
-                }
-                .foregroundColor(Color.marketColor(for: displayGainLoss))
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .frame(width: 110, alignment: .trailing)
-            } else {
-                Text("-")
-                    .font(.caption)
-                    .foregroundColor(.secondaryText)
-                    .frame(width: 110, alignment: .trailing)
-            }
-            
-            Image(systemName: "chevron.right")
-                .font(.caption2.weight(.semibold))
-                .foregroundColor(.secondaryText)
-        }
-        .padding(.vertical, 12)
-        .padding(.horizontal, 16)
-        .contentShape(Rectangle())
     }
 }
 
