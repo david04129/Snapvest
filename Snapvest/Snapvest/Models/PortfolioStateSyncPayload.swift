@@ -26,6 +26,8 @@ struct PortfolioHoldingItem: Codable, Equatable {
     let symbol: String
     let quantity: String
     let currency: String
+    /// 加權平均成本（原幣），供後端算未實現損益
+    let averageCost: String?
 }
 
 struct PortfolioLiabilityItem: Codable, Equatable {
@@ -73,7 +75,8 @@ enum PortfolioStateSyncBuilder {
                     assetType: holding.assetType.rawValue,
                     symbol: holding.symbol,
                     quantity: decimalString(holding.totalQuantity),
-                    currency: holding.currency.rawValue
+                    currency: holding.currency.rawValue,
+                    averageCost: decimalString(holding.weightedAverageCost)
                 )
             }
         

@@ -17,8 +17,8 @@ struct HomeView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
-                    // 走勢圖（Mock 資料）
-                    HomeTrendChartSection(currency: viewModel.viewCurrency)
+                    // 走勢圖（Supabase 每日快照）
+                    HomeTrendChartSection(userId: userId, currency: viewModel.viewCurrency)
                     
                     // 淨資產卡片
                     NetWorthCardView(viewModel: viewModel)

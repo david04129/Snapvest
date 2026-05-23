@@ -96,8 +96,12 @@ enum TrendChartMockData {
 // MARK: - 首頁走勢圖區塊
 
 struct HomeTrendChartSection: View {
+    var userId: String
     var currency: Currency = .TWD
-    var mockPoints: [TrendChartPoint] = TrendChartMockData.allPoints
+    
+    @State private var trendPoints: [TrendChartPoint] = []
+    @State private var isLoading = true
+    @State private var loadFailed = false
     
     @State private var metricMode: TrendMetricMode = .netWorth
     @State private var timeRange: DateRangePreset = .sevenDays
@@ -109,11 +113,17 @@ struct HomeTrendChartSection: View {
     
     private var filteredPoints: [TrendChartPoint] {
         TrendChartMockData.filtered(
-            points: mockPoints,
+            points: trendPoints,
             range: timeRange,
             customStart: customStartDate,
             customEnd: customEndDate
         )
+    }
+    
+    private var earliestChartDate: Date {
+        trendPoints.map(\.date).min()
+            ?? Calendar.current.date(byAdding: .day, value: -120, to: Date())
+            ?? Date()
     }
     
     private var displayPoint: TrendChartPoint? {
@@ -148,7 +158,11 @@ struct HomeTrendChartSection: View {
                 .opacity(contentPhase)
             }
             
-            if filteredPoints.count < 2 {
+            if isLoading {
+                ProgressView()
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 32)
+            } else if filteredPoints.count < 2 {
                 emptyState
             } else {
                 trendChart
@@ -190,7 +204,7 @@ struct HomeTrendChartSection: View {
             WheelDatePickerSheet(
                 title: field.title,
                 selection: field == .start ? $customStartDate : $customEndDate,
-                earliestDate: TrendChartMockData.launchDate,
+                earliestDate: earliestChartDate,
                 onDone: {
                     normalizeCustomRange()
                     activeCustomDateField = nil
@@ -200,6 +214,9 @@ struct HomeTrendChartSection: View {
             )
         }
         .onAppear { resetSelectionToLatest() }
+        .task(id: userId) {
+            await loadTrendPoints()
+        }
         .onChange(of: filteredPoints.count) { _, _ in resetSelectionToLatest() }
         .animation(ChartMotion.switchSpring, value: timeRange == .custom)
     }
@@ -313,11 +330,37 @@ struct HomeTrendChartSection: View {
     }
     
     private var emptyState: some View {
-        Text("尚無足夠資料顯示走勢")
+        Text(loadFailed ? "無法載入走勢資料" : "尚無足夠資料顯示走勢")
             .font(.subheadline)
             .foregroundColor(.secondaryText)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 32)
+    }
+    
+    private func loadTrendPoints() async {
+        isLoading = true
+        loadFailed = false
+        defer { isLoading = false }
+        
+        guard SupabaseConfig.isConfigured else {
+            trendPoints = []
+            return
+        }
+        
+        do {
+            let start = Calendar.current.date(byAdding: .day, value: -400, to: Date())
+            trendPoints = try await SupabaseDailySnapshotService.fetchTrendPoints(
+                userId: userId,
+                startDate: start,
+                endDate: Date()
+            )
+        } catch {
+            loadFailed = true
+            trendPoints = []
+            #if DEBUG
+            print("[HomeTrendChart] load failed: \(error.localizedDescription)")
+            #endif
+        }
     }
     
     /// Y 軸標籤：台幣優先用「萬」，並依區間跨度決定小數位，避免 1.8M～2.0M 全部顯示成 2M
