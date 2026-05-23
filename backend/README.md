@@ -39,35 +39,27 @@ SUPABASE_SERVICE_ROLE_KEY=eyJ...
 ### 執行
 
 ```bash
+# 完整更新（匯率 + 台股 + 美股 + 加密）
 python daily_price_update.py
+
+# 只更新匯率
+python daily_price_update.py --exchange-only
+
+# 分市場（不含匯率，與 GitHub Actions 排程一致）
+python daily_price_update.py --markets tw,crypto
+python daily_price_update.py --markets us
+python daily_price_update.py --markets crypto
 ```
 
-### 排程（範例：每日 16:00）
+### 排程（GitHub Actions：`.github/workflows/daily-price-update.yml`）
 
-**GitHub Actions**（`.github/workflows/daily-price.yml`）：
+| 台灣時間 | 星期 | 內容 |
+|----------|------|------|
+| 16:00 | 週一～五 | 匯率 + 台股 + 加密 |
+| 16:00 | 週六、週日 | 僅加密 |
+| 07:00 | 週二～六 | 僅美股 |
 
-```yaml
-name: Daily Price Update
-on:
-  schedule:
-    - cron: '0 8 * * *'  # UTC 08:00 = 台灣 16:00
-  workflow_dispatch:
-jobs:
-  update:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - run: pip install -r backend/scripts/requirements.txt
-      - run: python backend/scripts/daily_price_update.py
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-```
-
-**本機 cron**：`0 16 * * * cd /path/to/Snapvest && python backend/scripts/daily_price_update.py`
+手動觸發（Actions → Run workflow）會跑完整更新（匯率 + 全部市場）。
 
 ## 三、新增股票即時取價（Edge Function）
 
@@ -76,7 +68,9 @@ jobs:
 ### 部署
 
 ```bash
-supabase functions deploy fetch-or-create-price
+# 函式原始碼在 backend/supabase/functions/；根目錄 supabase/functions 為符號連結
+cd backend && supabase functions deploy fetch-or-create-price
+# 或在專案根目錄：supabase functions deploy fetch-or-create-price
 ```
 
 ### 呼叫

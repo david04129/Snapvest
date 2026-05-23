@@ -6,11 +6,14 @@ Snapvest 每日股價更新腳本
 - 去重，使用 batch API 節省請求
 - API: 美股+台股 yfinance, 加密貨幣 CoinGecko
 """
+import json
 import math
 import os
 import time
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
+from pathlib import Path
+from typing import Optional, Set
 
 # 台灣時區 UTC+8
 TW_TZ = timezone(timedelta(hours=8))
@@ -28,6 +31,7 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 
 COINGECKO_BASE = "https://api.coingecko.com/api/v3"
+CRYPTO_ID_MAP_PATH = Path(__file__).parent / "data" / "crypto_coingecko_map.json"
 YAHOO_TW_SUFFIX = ".TW"  # 台股 Yahoo symbol 格式
 # 與 migration 003_exchange_rates.sql 註解一致
 EXCHANGE_RATE_API_URL = "https://open.er-api.com/v6/latest/USD"
@@ -183,40 +187,70 @@ def fetch_stock_prices_yahoo(symbols: list[dict]) -> dict[tuple, float]:
     return result
 
 
+def load_crypto_coingecko_map() -> dict[str, str]:
+    """symbol（大寫）→ CoinGecko id；由 scripts/build_symbols_crypto.py 產生"""
+    fallback = {
+        "BTC": "bitcoin", "ETH": "ethereum", "BNB": "binancecoin", "SOL": "solana",
+        "XRP": "ripple", "ADA": "cardano", "DOGE": "dogecoin", "AVAX": "avalanche-2",
+        "DOT": "polkadot", "LINK": "chainlink", "MATIC": "matic-network",
+        "UNI": "uniswap", "USDC": "usd-coin", "USDT": "tether",
+    }
+    if not CRYPTO_ID_MAP_PATH.exists():
+        print(f"  ⚠️ 未找到 {CRYPTO_ID_MAP_PATH.name}，請執行 scripts/build_symbols_crypto.py")
+        return fallback
+    try:
+        with open(CRYPTO_ID_MAP_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict) and data:
+            return {k.upper(): v for k, v in data.items()}
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"  ⚠️ 讀取 crypto 映射失敗: {e}")
+    return fallback
+
+
 def fetch_crypto_prices_coingecko(symbols: list[dict]) -> dict[tuple, float]:
-    """用 CoinGecko 批次抓加密貨幣"""
+    """用 CoinGecko 批次抓加密貨幣（需正確的 CoinGecko id，非 ticker）"""
     result = {}
     cryptos = [s for s in symbols if s["asset_type"] == "crypto"]
     if not cryptos:
         return result
 
-    # CoinGecko id 映射（symbol -> coingecko id）
-    id_map = {
-        "BTC": "bitcoin", "ETH": "ethereum", "BNB": "binancecoin", "SOL": "solana",
-        "XRP": "ripple", "ADA": "cardano", "DOGE": "dogecoin", "AVAX": "avalanche-2",
-        "DOT": "polkadot", "LINK": "chainlink", "MATIC": "matic-network",
-        "UNI": "uniswap", "ATOM": "cosmos", "LTC": "litecoin"
-    }
+    id_map = load_crypto_coingecko_map()
     ids = []
     mapping = {}
+    skipped = []
     for s in cryptos:
-        cg_id = id_map.get(s["symbol"].upper(), s["symbol"].lower())
+        sym = s["symbol"].upper()
+        cg_id = id_map.get(sym)
+        if not cg_id:
+            skipped.append(sym)
+            continue
         ids.append(cg_id)
         mapping[cg_id] = (s["asset_type"], s["symbol"])
 
-    ids_str = ",".join(ids)
-    url = f"{COINGECKO_BASE}/simple/price?ids={ids_str}&vs_currencies=usd"
-    try:
-        resp = requests.get(url, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-        for cg_id, prices in data.items():
-            key = mapping.get(cg_id)
-            if key and "usd" in prices:
-                result[key] = float(prices["usd"])
-        time.sleep(1.2)  # CoinGecko 免費版約 10-30/min
-    except Exception as e:
-        print(f"CoinGecko 請求失敗: {e}")
+    if skipped:
+        print(f"  CoinGecko 略過 {len(skipped)} 筆（無映射）: {', '.join(skipped[:8])}{'...' if len(skipped) > 8 else ''}")
+
+    if not ids:
+        return result
+
+    # CoinGecko 單次 ids 不宜過多，分批請求
+    batch_size = 100
+    for i in range(0, len(ids), batch_size):
+        batch = ids[i : i + batch_size]
+        ids_str = ",".join(batch)
+        url = f"{COINGECKO_BASE}/simple/price?ids={ids_str}&vs_currencies=usd"
+        try:
+            resp = requests.get(url, timeout=30, headers={"User-Agent": "Snapvest-DailyPrice/1.0"})
+            resp.raise_for_status()
+            data = resp.json()
+            for cg_id, prices in data.items():
+                key = mapping.get(cg_id)
+                if key and "usd" in prices:
+                    result[key] = float(prices["usd"])
+            time.sleep(1.2)
+        except Exception as e:
+            print(f"CoinGecko 請求失敗: {e}")
 
     return result
 
@@ -247,27 +281,56 @@ def upsert_prices(supabase: Client, updates: list[dict]):
     ).execute()
 
 
-def main():
-    print(f"[{datetime.now()}] 開始每日股價與匯率更新")
+MARKET_ALIASES = {
+    "tw": "stock_tw",
+    "us": "stock_us",
+    "crypto": "crypto",
+}
+
+
+def parse_markets_arg(markets_str: Optional[str]) -> Optional[Set[str]]:
+    """解析 --markets tw,crypto → {'tw','crypto'}；None 表示全部"""
+    if not markets_str or not markets_str.strip():
+        return None
+    parts = {p.strip().lower() for p in markets_str.split(",") if p.strip()}
+    unknown = parts - set(MARKET_ALIASES)
+    if unknown:
+        raise ValueError(f"不支援的 markets: {unknown}，請用 tw, us, crypto")
+    return parts
+
+
+def filter_symbols_by_markets(symbols: list[dict], markets: Optional[Set[str]]) -> list[dict]:
+    if markets is None:
+        return symbols
+    allowed = {MARKET_ALIASES[m] for m in markets}
+    return [s for s in symbols if s["asset_type"] in allowed]
+
+
+def run_price_update(markets: Optional[Set[str]] = None) -> None:
+    """更新股價。markets: {'tw','us','crypto'} 子集；None = 全部。不含匯率。"""
+    label = ",".join(sorted(markets)) if markets else "all"
+    print(f"[{datetime.now()}] 開始股價更新（markets={label}）")
     supabase = get_supabase()
 
-    n_rates = update_exchange_rates(supabase)
-    print(f"匯率: 已 upsert {n_rates} 筆至 exchange_rates")
-
-    symbols = get_symbols_to_update(supabase)
+    symbols = filter_symbols_by_markets(get_symbols_to_update(supabase), markets)
     print(f"共 {len(symbols)} 檔待更新（已去重）")
+    if not symbols:
+        print("無符合條件的標的，結束")
+        return
 
     all_prices = {}
+    include_stocks = markets is None or "tw" in markets or "us" in markets
+    include_crypto = markets is None or "crypto" in markets
 
-    # 美股+台股
-    stock_prices = fetch_stock_prices_yahoo(symbols)
-    all_prices.update(stock_prices)
-    print(f"Yahoo: 取得 {len(stock_prices)} 筆")
+    if include_stocks:
+        stock_prices = fetch_stock_prices_yahoo(symbols)
+        all_prices.update(stock_prices)
+        print(f"Yahoo: 取得 {len(stock_prices)} 筆")
 
-    # 加密貨幣
-    crypto_prices = fetch_crypto_prices_coingecko(symbols)
-    all_prices.update(crypto_prices)
-    print(f"CoinGecko: 取得 {len(crypto_prices)} 筆")
+    if include_crypto:
+        crypto_prices = fetch_crypto_prices_coingecko(symbols)
+        all_prices.update(crypto_prices)
+        print(f"CoinGecko: 取得 {len(crypto_prices)} 筆")
 
     # 組裝 upsert 資料
     currency_map = {"stock_tw": "TWD", "stock_us": "USD", "crypto": "USD"}
@@ -291,12 +354,32 @@ def main():
     print("更新完成")
 
 
-if __name__ == "__main__":
-    import sys
+def main() -> None:
+    """更新匯率 + 全部市場股價（本機手動或 workflow_dispatch 用）"""
+    print(f"[{datetime.now()}] 開始完整更新（匯率 + 全部股價）")
+    supabase = get_supabase()
+    n_rates = update_exchange_rates(supabase)
+    print(f"匯率: 已 upsert {n_rates} 筆至 exchange_rates")
+    run_price_update(markets=None)
 
-    if len(sys.argv) > 1 and sys.argv[1] == "--exchange-only":
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Snapvest 每日股價／匯率更新")
+    parser.add_argument("--exchange-only", action="store_true", help="只更新匯率")
+    parser.add_argument(
+        "--markets",
+        metavar="LIST",
+        help="只更新指定市場，逗號分隔：tw, us, crypto（不含匯率）",
+    )
+    args = parser.parse_args()
+
+    if args.exchange_only:
         supabase = get_supabase()
         n = update_exchange_rates(supabase)
         print(f"完成：已 upsert {n} 筆匯率")
+    elif args.markets:
+        run_price_update(markets=parse_markets_arg(args.markets))
     else:
         main()

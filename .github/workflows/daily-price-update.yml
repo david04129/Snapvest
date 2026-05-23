@@ -1,45 +1,100 @@
-# 每日 16:00 (台灣時間) 更新股價
+# 股價／匯率排程（台灣時間）
+# - 週一～五 16:00：匯率 + 台股 + 加密
+# - 週六、週日 16:00：僅加密
+# - 週二～六 07:00：僅美股（UTC 週一～五 23:00）
 # 需在 repo Settings > Secrets 設定 SUPABASE_URL、SUPABASE_SERVICE_ROLE_KEY
 name: Daily Price Update
+
 on:
   schedule:
-    - cron: '0 8 * * *'  # UTC 08:00 = 台灣 16:00
-  workflow_dispatch:  # 允許手動觸發
+    - cron: '0 8 * * 1-5'   # 台灣 週一～五 16:00
+    - cron: '0 8 * * 0,6'   # 台灣 週六、週日 16:00（僅加密）
+    - cron: '0 23 * * 1-5'  # 台灣 週二～六 07:00（美股）
+  workflow_dispatch:
 
-# 避免排程重複觸發或手動+排程同時執行，導致 previous_date 與 current_date 只差幾秒
 concurrency:
-  group: daily-price-update
+  group: daily-price-${{ github.event.schedule || github.run_id }}
   cancel-in-progress: true
 
 jobs:
-  update:
+  weekday-afternoon:
+    name: 週一～五 16:00 匯率+台股+加密
+    if: github.event.schedule == '0 8 * * 1-5'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-
       - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
-
       - name: Install dependencies
         run: pip install -r backend/scripts/requirements.txt
-
+      - name: Verify secrets
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "::error::未設定 SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY"
+            exit 1
+          fi
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       - name: Update exchange rates
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: |
-          set -euo pipefail
-          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
-            echo "::error::未設定 GitHub Secrets。請到 repo Settings → Secrets and variables → Actions 新增："
-            echo "  SUPABASE_URL = https://你的專案.supabase.co"
-            echo "  SUPABASE_SERVICE_ROLE_KEY = Supabase Dashboard → Project Settings → API → service_role（點 Reveal）"
-            echo "注意：不要用 anon / publishable key，也不要加引號或空白。"
-            exit 1
-          fi
-          python backend/scripts/daily_price_update.py --exchange-only
+        run: python backend/scripts/daily_price_update.py --exchange-only
+      - name: Update TW stocks and crypto
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python backend/scripts/daily_price_update.py --markets tw,crypto
 
-      - name: Run daily stock price update
+  weekend-crypto:
+    name: 週六日 16:00 僅加密
+    if: github.event.schedule == '0 8 * * 0,6'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: pip install -r backend/scripts/requirements.txt
+      - name: Update crypto only
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python backend/scripts/daily_price_update.py --markets crypto
+
+  us-morning:
+    name: 週二～六 07:00 僅美股
+    if: github.event.schedule == '0 23 * * 1-5'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: pip install -r backend/scripts/requirements.txt
+      - name: Update US stocks only
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python backend/scripts/daily_price_update.py --markets us
+
+  manual-full:
+    name: 手動觸發（完整更新）
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: pip install -r backend/scripts/requirements.txt
+      - name: Full update (exchange + all markets)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
