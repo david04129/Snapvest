@@ -58,19 +58,47 @@ enum HoldingChartMetrics {
         return nil
     }
     
-    static func colorForHolding(_ holding: AggregatedHoldingSnapshot, index: Int) -> Color {
-        let key = "\(holding.assetType.rawValue)_\(holding.symbol)"
-        if UserDefaults.standard.data(forKey: key) != nil {
+    static func colorForHolding(_ holding: AggregatedHoldingSnapshot, inputs: PieChartInputs) -> Color {
+        let itemId = "\(holding.assetType.rawValue)_\(holding.symbol)"
+        return chartColor(forItemId: itemId, inputs: inputs)
+    }
+    
+    /// 依固定 item id 取色，切換圓餅圖模式時同一持股顏色不變
+    static func chartColor(forItemId itemId: String, inputs: PieChartInputs) -> Color {
+        if let slot = categoryChartColorSlot[itemId] {
+            return AppColors.holdingChartColor(at: slot)
+        }
+        if UserDefaults.standard.data(forKey: itemId) != nil,
+           let holding = holding(matchingItemId: itemId, inputs: inputs) {
             return HoldingColorPreferences.getColor(for: holding.symbol, assetType: holding.assetType)
         }
-        let palette: [Color]
-        switch holding.assetType {
-        case .stockTW: palette = AppColors.pieChartTWColors
-        case .stockUS: palette = AppColors.pieChartUSColors
-        case .crypto: palette = AppColors.pieChartCryptoColors
-        case .cash: palette = AppColors.pieChartVibrantColors
+        let sortedIds = stableHoldingItemIds(inputs: inputs)
+        let index = sortedIds.firstIndex(of: itemId) ?? 0
+        return AppColors.holdingChartColor(at: index)
+    }
+    
+    private static let categoryChartColorSlot: [String: Int] = [
+        "twd_cash": 0,
+        "usd_cash": 4,
+        "stock_us": 1,
+        "stock_tw": 2,
+        "crypto": 3
+    ]
+    
+    private static func stableHoldingItemIds(inputs: PieChartInputs) -> [String] {
+        inputs.aggregatedHoldings
+            .filter { $0.assetType != .cash }
+            .map { "\($0.assetType.rawValue)_\($0.symbol)" }
+            .sorted()
+    }
+    
+    private static func holding(
+        matchingItemId itemId: String,
+        inputs: PieChartInputs
+    ) -> AggregatedHoldingSnapshot? {
+        inputs.aggregatedHoldings.first {
+            $0.assetType != .cash && "\($0.assetType.rawValue)_\($0.symbol)" == itemId
         }
-        return palette[index % palette.count]
     }
     
     /// 各檔未實現績效（台幣），已依損益由高到低排序
@@ -78,7 +106,6 @@ enum HoldingChartMetrics {
         let rate = inputs.usdToTwdRate
         let priceMap = priceMap(from: inputs.assetPriceSnapshots)
         var rows: [HoldingPerformanceRow] = []
-        var index = 0
         for h in inputs.aggregatedHoldings {
             guard h.assetType != .cash,
                   let marketValueTWD = marketValueTWD(holding: h, priceMap: priceMap, rate: rate),
@@ -93,9 +120,8 @@ enum HoldingChartMetrics {
                 displayName: displayName,
                 unrealizedGainLossTWD: gainLoss,
                 returnPercent: pct,
-                color: colorForHolding(h, index: index)
+                color: colorForHolding(h, inputs: inputs)
             ))
-            index += 1
         }
         return rows.sorted {
             NSDecimalNumber(decimal: $0.unrealizedGainLossTWD).doubleValue >

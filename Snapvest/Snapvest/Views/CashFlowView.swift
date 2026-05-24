@@ -225,14 +225,7 @@ struct CashFlowView: View {
             }
             
             CardView {
-                HStack(spacing: 12) {
-                    Image(systemName: "calendar.badge.clock")
-                        .font(.system(size: 18))
-                        .foregroundColor(.secondaryText)
-                    
-                    DatePicker("", selection: $transactionDate, displayedComponents: .date)
-                        .datePickerStyle(.compact)
-                }
+                SnapTappableDateField(date: $transactionDate, sheetTitle: "日期")
             }
         }
         .padding(.horizontal)
@@ -290,6 +283,7 @@ struct CashFlowView: View {
                     errorMessageSection
                 }
             }
+            .snapFormScrollDismissesKeyboard()
             .navigationTitle(editingTransaction != nil ? "編輯\(selectedType.title)" : "收/支")
             .navigationBarTitleDisplayMode(.inline)
             .tint(.appPrimary)
@@ -342,6 +336,7 @@ struct CashFlowView: View {
                 }
             }
         }
+        .snapFormSheetChrome()
     }
     
     // MARK: - Helper Methods

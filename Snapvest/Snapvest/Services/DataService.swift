@@ -101,6 +101,12 @@ protocol DataServiceProtocol {
     
     /// 本機對齊過的 `price_update_metadata.last_updated_at`
     func fetchPriceSourceUpdatedAt(userId: String) -> Date?
+    /// 本機成功同步股價的時間
+    func fetchPriceSyncedAt(userId: String) -> Date?
+    /// 估值快照 B 最後寫入時間
+    func fetchValuationUpdatedAt(userId: String) -> Date?
+    /// 結構快照 A 最後寫入時間
+    func fetchStructureUpdatedAt(userId: String) -> Date?
     /// 成功同步股價後更新本機 metadata
     func updatePriceSyncMetadata(userId: String, sourceUpdatedAt: Date?)
 }
@@ -125,6 +131,8 @@ class MockDataService: DataServiceProtocol {
     private var portfolioStates: [String: PortfolioStateSyncPayload] = [:] // userId: latest state
     private var priceSyncedAtByUserId: [String: Date] = [:]
     private var priceSourceUpdatedAtByUserId: [String: Date] = [:]
+    private var valuationUpdatedAtByUserId: [String: Date] = [:]
+    private var structureUpdatedAtByUserId: [String: Date] = [:]
     private var pendingStructurePersistWorkItem: DispatchWorkItem?
     
     private init() {
@@ -146,6 +154,8 @@ class MockDataService: DataServiceProtocol {
         applyValuationStore(saved.valuation, userId: userId)
         priceSyncedAtByUserId[userId] = saved.valuation.priceSyncedAt
         priceSourceUpdatedAtByUserId[userId] = saved.valuation.priceSourceUpdatedAt
+        valuationUpdatedAtByUserId[userId] = saved.valuation.updatedAt
+        structureUpdatedAtByUserId[userId] = saved.structure.updatedAt
     }
     
     private func applyValuationStore(_ store: LocalUserValuationStore, userId: String) {
@@ -228,18 +238,26 @@ class MockDataService: DataServiceProtocol {
     }
     
     private func persistStructureStore(for userId: String) {
-        LocalUserDataStore.saveStructure(buildStructureStore(for: userId), userId: userId)
+        let store = buildStructureStore(for: userId)
+        structureUpdatedAtByUserId[userId] = store.updatedAt
+        LocalUserDataStore.saveStructure(store, userId: userId)
     }
     
     private func persistValuationStore(for userId: String) {
-        LocalUserDataStore.saveValuation(buildValuationStore(for: userId), userId: userId)
+        let store = buildValuationStore(for: userId)
+        valuationUpdatedAtByUserId[userId] = store.updatedAt
+        LocalUserDataStore.saveValuation(store, userId: userId)
     }
     
     private func persistFullStore(for userId: String) {
+        let structure = buildStructureStore(for: userId)
+        let valuation = buildValuationStore(for: userId)
+        structureUpdatedAtByUserId[userId] = structure.updatedAt
+        valuationUpdatedAtByUserId[userId] = valuation.updatedAt
         let payload = LocalUserData(
             userId: userId,
-            structure: buildStructureStore(for: userId),
-            valuation: buildValuationStore(for: userId)
+            structure: structure,
+            valuation: valuation
         )
         LocalUserDataStore.save(payload)
     }
@@ -265,6 +283,18 @@ class MockDataService: DataServiceProtocol {
     
     func fetchPriceSourceUpdatedAt(userId: String) -> Date? {
         priceSourceUpdatedAtByUserId[userId]
+    }
+    
+    func fetchPriceSyncedAt(userId: String) -> Date? {
+        priceSyncedAtByUserId[userId]
+    }
+    
+    func fetchValuationUpdatedAt(userId: String) -> Date? {
+        valuationUpdatedAtByUserId[userId]
+    }
+    
+    func fetchStructureUpdatedAt(userId: String) -> Date? {
+        structureUpdatedAtByUserId[userId]
     }
     
     func updatePriceSyncMetadata(userId: String, sourceUpdatedAt: Date?) {
@@ -506,18 +536,18 @@ class MockDataService: DataServiceProtocol {
                 fromCurrency: from,
                 toCurrency: to,
                 rate: cached,
-                rateDate: date ?? Date()
+                rateDate: ExchangeRateSessionCache.usdToTwdUpdatedAt ?? date ?? Date()
             )
         }
-        if let rate = await SupabaseExchangeRateService.fetchRate(from: from, to: to) {
+        if let quote = await SupabaseExchangeRateService.fetchQuote(from: from, to: to) {
             if from == .USD, to == .TWD {
-                ExchangeRateSessionCache.update(usdToTwd: rate)
+                ExchangeRateSessionCache.update(usdToTwd: quote.rate, updatedAt: quote.updatedAt)
             }
             return ExchangeRate(
                 fromCurrency: from,
                 toCurrency: to,
-                rate: rate,
-                rateDate: date ?? Date()
+                rate: quote.rate,
+                rateDate: quote.updatedAt ?? date ?? Date()
             )
         }
         return nil

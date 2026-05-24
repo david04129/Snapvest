@@ -29,6 +29,8 @@ struct AppRootView: View {
                     .environmentObject(assetsViewModel)
                     .environmentObject(themeManager)
                     .environmentObject(LaunchSessionState.shared)
+                    .environmentObject(DataFreshnessStore.shared)
+                    .snapDismissKeyboardOnTap()
                     .transition(.opacity)
             } else {
                 LaunchSplashView(
@@ -85,6 +87,8 @@ struct AppRootView: View {
             blockedLaunchAllowsRetry = allowsRetry
             return
         }
+        
+        DataFreshnessStore.shared.refresh(userId: userId)
         
         let elapsed = ContinuousClock.now - splashStarted
         if elapsed < LaunchSplashTiming.minimumDuration {

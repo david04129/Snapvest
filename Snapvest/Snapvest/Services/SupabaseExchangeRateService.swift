@@ -7,13 +7,19 @@
 
 import Foundation
 
+struct ExchangeRateQuote: Sendable {
+    let rate: Decimal
+    let updatedAt: Date?
+}
+
 private struct SupabaseExchangeRateRow: Decodable {
     let from_currency: String
     let to_currency: String
     let rate: Decimal?
+    let updated_at: String?
 
     enum CodingKeys: String, CodingKey {
-        case from_currency, to_currency, rate
+        case from_currency, to_currency, rate, updated_at
     }
 
     init(from decoder: Decoder) throws {
@@ -28,44 +34,65 @@ private struct SupabaseExchangeRateRow: Decodable {
         } else {
             rate = nil
         }
+        updated_at = try container.decodeIfPresent(String.self, forKey: .updated_at)
+    }
+}
+
+private enum ExchangeRateRESTTimestampParser {
+    nonisolated static func parse(_ string: String?) -> Date? {
+        guard let string else { return nil }
+        let withFraction = ISO8601DateFormatter()
+        withFraction.formatOptions = [
+            .withInternetDateTime,
+            .withFractionalSeconds,
+            .withColonSeparatorInTime
+        ]
+        withFraction.timeZone = TimeZone(identifier: "UTC")
+        let withoutFraction = ISO8601DateFormatter()
+        withoutFraction.formatOptions = [.withInternetDateTime, .withColonSeparatorInTime]
+        withoutFraction.timeZone = TimeZone(identifier: "UTC")
+        return withFraction.date(from: string) ?? withoutFraction.date(from: string)
     }
 }
 
 enum SupabaseExchangeRateService {
     static func fetchRate(from: Currency, to: Currency) async -> Decimal? {
-        guard from != to else { return 1 }
+        await fetchQuote(from: from, to: to)?.rate
+    }
+
+    static func fetchQuote(from: Currency, to: Currency) async -> ExchangeRateQuote? {
+        guard from != to else { return ExchangeRateQuote(rate: 1, updatedAt: nil) }
         guard SupabaseConfig.isConfigured,
               let baseUrl = SupabaseConfig.url,
               let key = SupabaseConfig.anonKey else { return nil }
 
-        if let direct = await fetchDirectRate(baseUrl: baseUrl, key: key, from: from, to: to) {
+        if let direct = await fetchDirectQuote(baseUrl: baseUrl, key: key, from: from, to: to) {
             return direct
         }
 
-        // 常見路徑：USD → TWD 透過 exchange_rates 表
         if from == .USD, to == .TWD {
-            return await fetchDirectRate(baseUrl: baseUrl, key: key, from: .USD, to: .TWD)
+            return await fetchDirectQuote(baseUrl: baseUrl, key: key, from: .USD, to: .TWD)
         }
         if from == .TWD, to == .USD {
-            guard let usdToTwd = await fetchDirectRate(baseUrl: baseUrl, key: key, from: .USD, to: .TWD),
-                  usdToTwd > 0 else { return nil }
-            return 1 / usdToTwd
+            guard let usdToTwd = await fetchDirectQuote(baseUrl: baseUrl, key: key, from: .USD, to: .TWD),
+                  usdToTwd.rate > 0 else { return nil }
+            return ExchangeRateQuote(rate: 1 / usdToTwd.rate, updatedAt: usdToTwd.updatedAt)
         }
 
         return nil
     }
 
-    private static func fetchDirectRate(
+    private static func fetchDirectQuote(
         baseUrl: String,
         key: String,
         from: Currency,
         to: Currency
-    ) async -> Decimal? {
+    ) async -> ExchangeRateQuote? {
         var components = URLComponents(string: "\(baseUrl)/rest/v1/exchange_rates")!
         components.queryItems = [
             URLQueryItem(name: "from_currency", value: "eq.\(from.rawValue)"),
             URLQueryItem(name: "to_currency", value: "eq.\(to.rawValue)"),
-            URLQueryItem(name: "select", value: "from_currency,to_currency,rate"),
+            URLQueryItem(name: "select", value: "from_currency,to_currency,rate,updated_at"),
             URLQueryItem(name: "limit", value: "1"),
         ]
         guard let url = components.url else { return nil }
@@ -81,10 +108,13 @@ enum SupabaseExchangeRateService {
                 return nil
             }
             let rows = try JSONDecoder().decode([SupabaseExchangeRateRow].self, from: data)
-            guard let rate = rows.first?.rate, rate > 0 else {
+            guard let row = rows.first, let rate = row.rate, rate > 0 else {
                 return nil
             }
-            return rate
+            return ExchangeRateQuote(
+                rate: rate,
+                updatedAt: ExchangeRateRESTTimestampParser.parse(row.updated_at)
+            )
         } catch {
             return nil
         }

@@ -88,9 +88,13 @@ enum LaunchCoordinator {
         dataService: DataServiceProtocol? = nil
     ) async {
         let resolvedDataService = dataService ?? MockDataService.shared
-        let usdToTwdRate = (try? await resolvedDataService.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate) ?? 0
-        if usdToTwdRate > 0 {
-            ExchangeRateSessionCache.update(usdToTwd: usdToTwdRate)
+        let usdToTwdRate: Decimal
+        if let exchangeRate = try? await resolvedDataService.fetchExchangeRate(from: .USD, to: .TWD, date: nil),
+           exchangeRate.rate > 0 {
+            ExchangeRateSessionCache.update(usdToTwd: exchangeRate.rate, updatedAt: exchangeRate.rateDate)
+            usdToTwdRate = exchangeRate.rate
+        } else {
+            usdToTwdRate = ExchangeRateSessionCache.usdToTwd ?? 0
         }
 
         await portfolioViewModel.prepareFromPersisted(userId: userId, usdToTwdRate: usdToTwdRate)

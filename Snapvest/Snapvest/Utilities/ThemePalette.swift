@@ -24,6 +24,8 @@ struct ThemePalette {
     let pieChartUSColors: [Color]
     let pieChartCryptoColors: [Color]
     
+    /// 績效圖、圓餅圖（細項）共用十色輪播
+    let holdingChartColors: [Color]
     let allocationTwdCash: Color
     let allocationUsdCash: Color
     let allocationStockUS: Color
@@ -87,6 +89,12 @@ struct ThemePalette {
             Color(hex: "#0D9488"), Color(hex: "#14B8A6"), Color(hex: "#0F766E"),
             Color(hex: "#2DD4BF"), Color(hex: "#5EEAD4"), Color(hex: "#99F6E4")
         ],
+        holdingChartColors: [
+            Color(hex: "#0F766E"), Color(hex: "#2563EB"), Color(hex: "#D97706"),
+            Color(hex: "#7C3AED"), Color(hex: "#0891B2"), Color(hex: "#4F46E5"),
+            Color(hex: "#EA580C"), Color(hex: "#DB2777"), Color(hex: "#CA8A04"),
+            Color(hex: "#64748B")
+        ],
         allocationTwdCash: Color(hex: "#059669"),
         allocationUsdCash: Color(hex: "#34D399"),
         allocationStockUS: Color(hex: "#2563EB"),
@@ -94,10 +102,9 @@ struct ThemePalette {
         allocationCrypto: Color(hex: "#0D9488"),
         pieChartVibrantColors: [
             Color(hex: "#0F766E"), Color(hex: "#2563EB"), Color(hex: "#D97706"),
-            Color(hex: "#0D9488"), Color(hex: "#059669"), Color(hex: "#1D4ED8"),
-            Color(hex: "#14B8A6"), Color(hex: "#B45309"), Color(hex: "#34D399"),
-            Color(hex: "#3B82F6"), Color(hex: "#F59E0B"), Color(hex: "#2DD4BF"),
-            Color(hex: "#64748B"), Color(hex: "#DC2626"), Color(hex: "#CA8A04")
+            Color(hex: "#7C3AED"), Color(hex: "#0891B2"), Color(hex: "#4F46E5"),
+            Color(hex: "#EA580C"), Color(hex: "#DB2777"), Color(hex: "#CA8A04"),
+            Color(hex: "#64748B")
         ],
         colorOptionsForPicker: [
             Color(hex: "#0F766E"), Color(hex: "#0D9488"), Color(hex: "#14B8A6"),
@@ -155,6 +162,12 @@ struct ThemePalette {
             Color(hex: "#14B8A6"), Color(hex: "#2DD4BF"), Color(hex: "#5EEAD4"),
             Color(hex: "#99F6E4"), Color(hex: "#0D9488"), Color(hex: "#0F766E")
         ],
+        holdingChartColors: [
+            Color(hex: "#2DD4BF"), Color(hex: "#60A5FA"), Color(hex: "#FBBF24"),
+            Color(hex: "#A78BFA"), Color(hex: "#22D3EE"), Color(hex: "#818CF8"),
+            Color(hex: "#FB923C"), Color(hex: "#F472B6"), Color(hex: "#FACC15"),
+            Color(hex: "#94A3B8")
+        ],
         allocationTwdCash: Color(hex: "#34D399"),
         allocationUsdCash: Color(hex: "#6EE7B7"),
         allocationStockUS: Color(hex: "#60A5FA"),
@@ -162,10 +175,9 @@ struct ThemePalette {
         allocationCrypto: Color(hex: "#2DD4BF"),
         pieChartVibrantColors: [
             Color(hex: "#2DD4BF"), Color(hex: "#60A5FA"), Color(hex: "#FBBF24"),
-            Color(hex: "#14B8A6"), Color(hex: "#34D399"), Color(hex: "#93C5FD"),
-            Color(hex: "#5EEAD4"), Color(hex: "#F59E0B"), Color(hex: "#6EE7B7"),
-            Color(hex: "#38BDF8"), Color(hex: "#FCD34D"), Color(hex: "#99F6E4"),
-            Color(hex: "#94A3B8"), Color(hex: "#F87171"), Color(hex: "#4ADE80")
+            Color(hex: "#A78BFA"), Color(hex: "#22D3EE"), Color(hex: "#818CF8"),
+            Color(hex: "#FB923C"), Color(hex: "#F472B6"), Color(hex: "#FACC15"),
+            Color(hex: "#94A3B8")
         ],
         colorOptionsForPicker: [
             Color(hex: "#2DD4BF"), Color(hex: "#14B8A6"), Color(hex: "#5EEAD4"),

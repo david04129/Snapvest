@@ -52,15 +52,20 @@ enum PortfolioPieChartBuilder {
             case .cash: break
             }
         }
-        let segments: [(String, String, Decimal, Color)] = [
-            ("twd_cash", "台幣現金", inputs.twdCash, AppColors.allocationTwdCash),
-            ("usd_cash", "美金現金", inputs.usdCash * rate, AppColors.allocationUsdCash),
-            ("stock_us", "美股", us, AppColors.allocationStockUS),
-            ("stock_tw", "台股", tw, AppColors.allocationStockTW),
-            ("crypto", "加密貨幣", crypto, AppColors.allocationCrypto),
+        let segments: [(String, String, Decimal)] = [
+            ("twd_cash", "台幣現金", inputs.twdCash),
+            ("usd_cash", "美金現金", inputs.usdCash * rate),
+            ("stock_us", "美股", us),
+            ("stock_tw", "台股", tw),
+            ("crypto", "加密貨幣", crypto),
         ]
         return segments.filter { $0.2 > 0 }.map {
-            PieChartDataItem(symbol: $0.0, name: $0.1, marketValue: $0.2, color: $0.3)
+            PieChartDataItem(
+                symbol: $0.0,
+                name: $0.1,
+                marketValue: $0.2,
+                color: HoldingChartMetrics.chartColor(forItemId: $0.0, inputs: inputs)
+            )
         }
     }
     
@@ -105,14 +110,16 @@ enum PortfolioPieChartBuilder {
             if inputs.twdCash > 0 {
                 result.append(PieChartDataItem(
                     symbol: "twd_cash", name: "台幣現金",
-                    marketValue: inputs.twdCash, color: AppColors.allocationTwdCash
+                    marketValue: inputs.twdCash,
+                    color: HoldingChartMetrics.chartColor(forItemId: "twd_cash", inputs: inputs)
                 ))
             }
             let usdTWD = inputs.usdCash * rate
             if usdTWD > 0 {
                 result.append(PieChartDataItem(
                     symbol: "usd_cash", name: "美金現金",
-                    marketValue: usdTWD, color: AppColors.allocationUsdCash
+                    marketValue: usdTWD,
+                    color: HoldingChartMetrics.chartColor(forItemId: "usd_cash", inputs: inputs)
                 ))
             }
         }
@@ -124,17 +131,17 @@ enum PortfolioPieChartBuilder {
             stockRows.append((h, mv))
         }
         stockRows.sort { $0.1 > $1.1 }
-        for (index, row) in stockRows.enumerated() {
+        for row in stockRows {
             let h = row.0
             let displayName: String
             if h.assetType == .stockTW, let n = h.name, !n.isEmpty { displayName = n }
             else { displayName = h.symbol }
-            let color = HoldingChartMetrics.colorForHolding(h, index: index)
+            let itemId = "\(h.assetType.rawValue)_\(h.symbol)"
             result.append(PieChartDataItem(
-                symbol: "\(h.assetType.rawValue)_\(h.symbol)",
+                symbol: itemId,
                 name: displayName,
                 marketValue: row.1,
-                color: color
+                color: HoldingChartMetrics.colorForHolding(h, inputs: inputs)
             ))
         }
         return result
@@ -149,7 +156,6 @@ struct HomePieChartSection: View {
     
     @Binding var mode: PieChartDisplayMode
     @State private var selectedId: String?
-    @State private var contentPhase: CGFloat = 1
     
     private var currentItems: [PieChartDataItem] {
         guard let inputs else { return [] }
@@ -179,11 +185,7 @@ struct HomePieChartSection: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
             .onChange(of: mode) { _, _ in
-                withAnimation(ChartMotion.switchQuick) { contentPhase = 0.72 }
-                withAnimation(ChartMotion.switchSpring) {
-                    contentPhase = 1
-                    selectedId = currentItems.max(by: { $0.value < $1.value })?.id
-                }
+                pickLargest()
             }
             
             if currentItems.isEmpty {
@@ -211,9 +213,6 @@ struct HomePieChartSection: View {
                     .padding(.horizontal, 12)
                     .padding(.bottom, 12)
                 }
-                .animation(ChartMotion.switchSpring, value: mode)
-                .opacity(contentPhase)
-                .scaleEffect(0.98 + contentPhase * 0.02)
             }
         }
         .background(Color.cardBackground)
@@ -278,11 +277,12 @@ struct PortfolioDonutChart: View {
                         outerRadius: .ratio(1.0),
                         angularInset: 2.0
                     )
-                    .foregroundStyle(item.color)
+                    .foregroundStyle(by: .value("項目", item.id))
                     .opacity(selected ? 1.0 : (selectedId == nil ? 1.0 : 0.42))
                 }
             }
-            .animation(ChartMotion.switchSpring, value: displayMode)
+            .chartForegroundStyleScale(domain: data.map(\.id), range: data.map(\.color))
+            .id(displayMode)
             .chartLegend(.hidden)
             .chartAngleSelection(value: $selectedAngle)
             .onChange(of: selectedAngle) { _, v in
@@ -306,7 +306,6 @@ struct PortfolioDonutChart: View {
                 }
                 .frame(width: chartSize * innerRadiusRatio * 1.2)
                 .animation(ChartMotion.switchSpring, value: selectedId)
-                .animation(ChartMotion.switchSpring, value: displayMode)
             }
         }
         .frame(maxWidth: .infinity)
@@ -385,10 +384,8 @@ struct PortfolioAllocationLegend: View {
         VStack(spacing: 6) {
             ForEach(orderedRows) { item in
                 legendRow(item: item)
-                    .transition(.opacity.combined(with: .move(edge: .leading)))
             }
         }
-        .animation(ChartMotion.switchSpring, value: mode)
     }
     
     private func legendRow(item: PieChartDataItem) -> some View {

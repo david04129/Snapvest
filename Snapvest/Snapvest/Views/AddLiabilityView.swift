@@ -232,6 +232,7 @@ struct AddLiabilityView: View {
                     .padding()
                 }
             }
+            .snapFormScrollDismissesKeyboard()
             .navigationBarHidden(true)
             .task {
                 // 如果是編輯模式，預填資料
@@ -282,6 +283,7 @@ struct AddLiabilityView: View {
         }
         .navigationTitle(editingLiability == nil ? "新增債務帳戶" : "編輯債務帳戶")
         .navigationBarTitleDisplayMode(.inline)
+        .snapFormSheetChrome()
     }
     
     // 可選擇的還款帳戶（台幣現金帳戶和台幣證券戶）

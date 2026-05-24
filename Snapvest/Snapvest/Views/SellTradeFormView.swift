@@ -203,6 +203,7 @@ struct SellTradeFormView: View {
             }
             .padding(.top, embedInTradeFlow ? 4 : 0)
         }
+        .snapFormScrollDismissesKeyboard()
         .background(Color.mainBackground)
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 10) {

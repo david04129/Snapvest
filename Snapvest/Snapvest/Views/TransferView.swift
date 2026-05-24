@@ -366,14 +366,7 @@ struct TransferView: View {
             }
             
             CardView {
-                HStack(spacing: 12) {
-                    Image(systemName: "calendar.badge.clock")
-                        .font(.system(size: 18))
-                        .foregroundColor(.secondaryText)
-                    
-                    DatePicker("", selection: $transactionDate, displayedComponents: .date)
-                        .datePickerStyle(.compact)
-                }
+                SnapTappableDateField(date: $transactionDate, sheetTitle: "日期")
             }
         }
         .padding(.horizontal)
@@ -433,6 +426,7 @@ struct TransferView: View {
                     errorMessageSection
                 }
             }
+            .snapFormScrollDismissesKeyboard()
             .navigationTitle(editingTransaction != nil ? "編輯轉帳" : "帳戶轉帳")
             .navigationBarTitleDisplayMode(.inline)
             .tint(.appPrimary)
@@ -552,6 +546,7 @@ struct TransferView: View {
                 }
             }
         }
+        .snapFormSheetChrome()
     }
     
     private var isValid: Bool {

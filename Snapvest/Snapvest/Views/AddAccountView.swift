@@ -198,6 +198,7 @@ struct AddAccountView: View {
         .onAppear {
             resetForm()
         }
+        .snapFormSheetChrome()
     }
     
     private func saveAccount() {
@@ -1148,6 +1149,7 @@ struct DebtAccountDetailsFormView: View {
                 }
                 .padding(.top, 8)
             }
+            .snapFormScrollDismissesKeyboard()
             
             // 儲存按鈕
             Button(action: onSave) {
@@ -1462,6 +1464,7 @@ struct AccountDetailsFormView: View {
                 }
                 .padding(.top, 8)
             }
+            .snapFormScrollDismissesKeyboard()
             
             // 儲存按鈕
             Button(action: onSave) {
@@ -1774,6 +1777,7 @@ struct OtherDebtAccountDetailsFormView: View {
                 }
                 .padding(.top, 8)
             }
+            .snapFormScrollDismissesKeyboard()
             
             Button(action: onSave) {
                 HStack(spacing: 8) {

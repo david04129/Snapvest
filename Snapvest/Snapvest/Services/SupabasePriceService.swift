@@ -7,6 +7,24 @@
 
 import Foundation
 
+/// PostgreSQL / Supabase REST 回傳的 ISO8601 時間（含微秒）
+private enum SupabaseRESTTimestampParser {
+    nonisolated static func parse(_ string: String?) -> Date? {
+        guard let string else { return nil }
+        let withFraction = ISO8601DateFormatter()
+        withFraction.formatOptions = [
+            .withInternetDateTime,
+            .withFractionalSeconds,
+            .withColonSeparatorInTime
+        ]
+        withFraction.timeZone = TimeZone(identifier: "UTC")
+        let withoutFraction = ISO8601DateFormatter()
+        withoutFraction.formatOptions = [.withInternetDateTime, .withColonSeparatorInTime]
+        withoutFraction.timeZone = TimeZone(identifier: "UTC")
+        return withFraction.date(from: string) ?? withoutFraction.date(from: string)
+    }
+}
+
 /// Supabase 連線設定（請在 App 啟動時設定）
 enum SupabaseConfig: Sendable {
     nonisolated(unsafe) static var url: String?
@@ -59,9 +77,8 @@ struct SupabasePriceService {
         do {
             let (data, _) = try await URLSession.shared.data(for: req)
             let decoded = try JSONDecoder().decode([[String: String]].self, from: data)
-            guard let last = decoded.first?["last_updated_at"],
-                  let date = ISO8601DateFormatter().date(from: last) else { return nil }
-            return date
+            guard let last = decoded.first?["last_updated_at"] else { return nil }
+            return SupabaseRESTTimestampParser.parse(last)
         } catch {
             return nil
         }
@@ -293,19 +310,8 @@ private struct SupabasePriceRow: Decodable, Sendable {
         let price = (row.current_price?.decimalValue ?? row.previous_price?.decimalValue)
         guard let _ = price, let curr = Currency(rawValue: row.currency),
               let at = AssetType(rawValue: row.asset_type) else { return nil }
-        let fmt = ISO8601DateFormatter()
-        fmt.formatOptions = [
-            .withInternetDateTime,
-            .withFractionalSeconds,
-            .withColonSeparatorInTime
-        ]
-        fmt.timeZone = TimeZone(identifier: "UTC")
-        let fmtNoFraction = ISO8601DateFormatter()
-        fmtNoFraction.formatOptions = [.withInternetDateTime, .withColonSeparatorInTime]
-        fmtNoFraction.timeZone = TimeZone(identifier: "UTC")
         func parseDate(_ s: String?) -> Date? {
-            guard let s else { return nil }
-            return fmt.date(from: s) ?? fmtNoFraction.date(from: s)
+            SupabaseRESTTimestampParser.parse(s)
         }
         return AssetPriceSnapshot(
             assetType: at,

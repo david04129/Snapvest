@@ -536,6 +536,7 @@ struct HoldingDetailView: View {
                     }
                 }
             }
+            .snapFormSheetChrome()
             .presentationDetents([.large])
         }
     }

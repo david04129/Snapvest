@@ -153,6 +153,7 @@ struct NewTradeFlowView: View {
                 }
             }
         }
+        .snapFormSheetChrome()
     }
     
     private var marketSelectionStep: some View {
@@ -184,6 +185,7 @@ struct NewTradeFlowView: View {
                 }
                 .padding()
             }
+            .snapFormScrollDismissesKeyboard()
         }
     }
     

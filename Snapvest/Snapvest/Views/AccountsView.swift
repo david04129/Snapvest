@@ -32,6 +32,8 @@ struct AccountsView: View {
                     }
                     
                     archivedDebtAccountsSection
+                    
+                    DataFreshnessFooterView(style: .valuationTabs)
                 }
                 .padding()
             }

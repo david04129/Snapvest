@@ -62,6 +62,7 @@ struct RenameAccountSheet: View {
                     }
                 }
             }
+            .scrollDismissesKeyboard(.immediately)
             .navigationTitle("重新命名")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -79,6 +80,7 @@ struct RenameAccountSheet: View {
             }
         }
         .presentationDetents([.medium])
+        .snapFormSheetChrome()
     }
     
     @MainActor

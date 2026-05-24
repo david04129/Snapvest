@@ -67,6 +67,7 @@ struct OtherDebtRepaymentView: View {
                     errorMessageSection
                 }
             }
+            .snapFormScrollDismissesKeyboard()
             .background(Color.mainBackground)
             .navigationTitle("還款")
             .navigationBarTitleDisplayMode(.inline)
@@ -116,6 +117,7 @@ struct OtherDebtRepaymentView: View {
                 }
             }
         }
+        .snapFormSheetChrome()
     }
     
     // MARK: - Sections
@@ -268,9 +270,11 @@ struct OtherDebtRepaymentView: View {
             }
             
             VStack(alignment: .leading, spacing: 0) {
-                DatePicker("", selection: $transactionDate, displayedComponents: .date)
-                    .datePickerStyle(.compact)
-                    .labelsHidden()
+                SnapTappableDateField(
+                    date: $transactionDate,
+                    sheetTitle: "日期",
+                    showsLeadingIcon: false
+                )
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)

@@ -92,6 +92,8 @@ struct AssetsView: View {
                                 onHoldingTap: navigateToHoldingDetail
                             )
                             .id("allHoldings")
+                            
+                            DataFreshnessFooterView(style: .valuationTabs)
                         }
                     }
                     .padding()

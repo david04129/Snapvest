@@ -199,6 +199,7 @@ struct WheelDatePickerSheet: View {
     let title: String
     @Binding var selection: Date
     let earliestDate: Date
+    var maximumDate: Date = Date()
     let onDone: () -> Void
     
     @Environment(\.dismiss) private var dismiss
@@ -209,7 +210,7 @@ struct WheelDatePickerSheet: View {
                 DatePicker(
                     "",
                     selection: $selection,
-                    in: earliestDate...Date(),
+                    in: earliestDate...maximumDate,
                     displayedComponents: .date
                 )
                 .datePickerStyle(.wheel)
@@ -219,6 +220,11 @@ struct WheelDatePickerSheet: View {
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") {
+                        dismiss()
+                    }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("完成") {
                         onDone()
@@ -230,5 +236,57 @@ struct WheelDatePickerSheet: View {
         }
         .presentationDetents([.height(320)])
         .presentationDragIndicator(.visible)
+    }
+}
+
+// MARK: - 點擊開 Sheet 的日期欄（取代 .compact 月曆，點其他地方可關閉）
+
+struct SnapTappableDateField: View {
+    @Binding var date: Date
+    var sheetTitle: String = "日期"
+    var minimumDate: Date = .distantPast
+    var maximumDate: Date = Date()
+    var showsLeadingIcon: Bool = true
+    
+    @State private var showSheet = false
+    
+    private static let displayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_TW")
+        formatter.dateFormat = "yyyy/MM/dd"
+        return formatter
+    }()
+    
+    var body: some View {
+        Button {
+            KeyboardDismiss.dismiss()
+            showSheet = true
+        } label: {
+            HStack(spacing: 12) {
+                if showsLeadingIcon {
+                    Image(systemName: "calendar.badge.clock")
+                        .font(.system(size: 18))
+                        .foregroundColor(.secondaryText)
+                }
+                Text(Self.displayFormatter.string(from: date))
+                    .font(.body)
+                    .foregroundColor(.primaryText)
+                Spacer(minLength: 0)
+                Image(systemName: "calendar")
+                    .font(.system(size: 14))
+                    .foregroundColor(.secondaryText)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .sheet(isPresented: $showSheet) {
+            WheelDatePickerSheet(
+                title: sheetTitle,
+                selection: $date,
+                earliestDate: minimumDate,
+                maximumDate: maximumDate,
+                onDone: { showSheet = false }
+            )
+        }
     }
 }

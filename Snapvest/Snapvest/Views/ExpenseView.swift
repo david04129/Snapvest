@@ -151,14 +151,7 @@ struct ExpenseView: View {
             }
             
             CardView {
-                HStack(spacing: 12) {
-                    Image(systemName: "calendar.badge.clock")
-                        .font(.system(size: 18))
-                        .foregroundColor(.secondaryText)
-                    
-                    DatePicker("", selection: $transactionDate, displayedComponents: .date)
-                        .datePickerStyle(.compact)
-                }
+                SnapTappableDateField(date: $transactionDate, sheetTitle: "日期")
             }
         }
         .padding(.horizontal)
@@ -216,6 +209,7 @@ struct ExpenseView: View {
                     errorMessageSection
                 }
             }
+            .snapFormScrollDismissesKeyboard()
             .navigationTitle(editingTransaction != nil ? "編輯支出" : "支出")
             .navigationBarTitleDisplayMode(.inline)
             .tint(.appPrimary)
@@ -261,6 +255,7 @@ struct ExpenseView: View {
                 }
             }
         }
+        .snapFormSheetChrome()
     }
     
     // MARK: - Helper Methods

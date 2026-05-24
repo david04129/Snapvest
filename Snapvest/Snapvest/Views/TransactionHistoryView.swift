@@ -349,6 +349,7 @@ struct TransactionHistoryView: View {
                 }
             }
         }
+        .snapFormSheetChrome()
         .background(Color.mainBackground)
         .presentationBackground(Color.mainBackground)
     }
@@ -374,6 +375,7 @@ struct TransactionHistoryView: View {
                 }
             }
         }
+        .snapFormSheetChrome()
         .background(Color.mainBackground)
         .presentationBackground(Color.mainBackground)
     }

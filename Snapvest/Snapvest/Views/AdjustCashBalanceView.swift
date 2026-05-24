@@ -197,9 +197,11 @@ struct AdjustCashBalanceView: View {
             }
             
             VStack(alignment: .leading, spacing: 0) {
-                DatePicker("", selection: $transactionDate, displayedComponents: .date)
-                    .datePickerStyle(.compact)
-                    .labelsHidden()
+                SnapTappableDateField(
+                    date: $transactionDate,
+                    sheetTitle: "日期",
+                    showsLeadingIcon: false
+                )
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)
@@ -272,6 +274,7 @@ struct AdjustCashBalanceView: View {
                     errorMessageSection
                 }
             }
+            .snapFormScrollDismissesKeyboard()
             .navigationTitle("調整餘額")
             .navigationBarTitleDisplayMode(.inline)
             .tint(.appPrimary)
@@ -313,6 +316,7 @@ struct AdjustCashBalanceView: View {
                 }
             }
         }
+        .snapFormSheetChrome()
     }
     
     // MARK: - Helper Methods

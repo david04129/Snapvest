@@ -16,8 +16,10 @@ enum HomeShareImageBuilder {
         let content = HomeShareCompositeView(config: config)
             .frame(width: canvasWidth)
             .background(Color.mainBackground)
+            .transaction { $0.animation = nil }
 
         let renderer = ImageRenderer(content: content)
+        renderer.isOpaque = true
         renderer.scale = displayScale
         return renderer.uiImage
     }

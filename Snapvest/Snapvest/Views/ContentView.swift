@@ -10,6 +10,7 @@ import SwiftUI
 struct ContentView: View {
     @ObservedObject private var themeManager = ThemeManager.shared
     @EnvironmentObject private var launchSessionState: LaunchSessionState
+    @EnvironmentObject private var dataFreshness: DataFreshnessStore
     @State private var selectedTab = 0
     
     var body: some View {
@@ -57,6 +58,9 @@ struct ContentView: View {
                 userInfo: [TabResignUserInfoKey.tabIndex: previousTab]
             )
         }
+        .onAppear {
+            dataFreshness.refresh()
+        }
     }
 }
 
@@ -66,4 +70,5 @@ struct ContentView: View {
         .environmentObject(AccountsViewModel())
         .environmentObject(AssetsViewModel())
         .environmentObject(LaunchSessionState.shared)
+        .environmentObject(DataFreshnessStore.shared)
 }

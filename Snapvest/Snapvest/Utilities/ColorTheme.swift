@@ -36,6 +36,15 @@ enum AppColors {
     static var pieChartUSColors: [Color] { p.pieChartUSColors }
     static var pieChartCryptoColors: [Color] { p.pieChartCryptoColors }
     
+    /// 績效圖、圓餅圖共用十色
+    static var holdingChartColors: [Color] { p.holdingChartColors }
+    
+    static func holdingChartColor(at index: Int) -> Color {
+        let palette = holdingChartColors
+        guard !palette.isEmpty else { return secondaryText }
+        return palette[index % palette.count]
+    }
+    
     static var allocationTwdCash: Color { p.allocationTwdCash }
     static var allocationUsdCash: Color { p.allocationUsdCash }
     static var allocationStockUS: Color { p.allocationStockUS }
@@ -43,7 +52,7 @@ enum AppColors {
     static var allocationCrypto: Color { p.allocationCrypto }
     
     static var pieChartVibrantColors: [Color] { p.pieChartVibrantColors }
-    static var pieChartColors: [Color] { p.pieChartVibrantColors }
+    static var pieChartColors: [Color] { p.holdingChartColors }
     static var colorOptionsForPicker: [Color] { p.colorOptionsForPicker }
     
     static var appPrimary: Color { p.appPrimary }

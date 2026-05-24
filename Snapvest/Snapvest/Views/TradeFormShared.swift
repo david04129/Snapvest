@@ -88,17 +88,12 @@ struct TradeFormDatePicker: View {
     var maximumDate: Date = Date()
     
     var body: some View {
-        HStack(spacing: 0) {
-            DatePicker(
-                "",
-                selection: $date,
-                in: ...maximumDate,
-                displayedComponents: .date
-            )
-            .datePickerStyle(.compact)
-            .labelsHidden()
-            Spacer(minLength: 0)
-        }
+        SnapTappableDateField(
+            date: $date,
+            sheetTitle: "交易日期",
+            maximumDate: maximumDate,
+            showsLeadingIcon: false
+        )
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

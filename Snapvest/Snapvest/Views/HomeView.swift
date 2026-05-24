@@ -72,6 +72,8 @@ struct HomeView: View {
                             mode: $performanceMode
                         )
                     }
+                    
+                    DataFreshnessFooterView(style: .valuationTabs)
                 }
                 .padding()
                 .animation(.easeInOut(duration: 0.22), value: homePrivacy.isAmountHidden)
@@ -493,6 +495,12 @@ struct CashCardView: View {
         return (viewModel.totalCash / viewModel.totalAssets) * 100
     }
     
+    private var displayUsdToTwdRate: Decimal {
+        let fromPie = viewModel.pieChartInputs?.usdToTwdRate ?? 0
+        if fromPie > 0 { return fromPie }
+        return ExchangeRateSessionCache.usdToTwd ?? 0
+    }
+    
     var body: some View {
         AccentBarCard(title: "現金", accentColor: .allocationTwdCash) {
             VStack(spacing: 16) {
@@ -523,11 +531,13 @@ struct CashCardView: View {
                         .foregroundColor(.primaryText)
                 }
                 
+                UsdTwdRateCaptionView(preferredRate: displayUsdToTwdRate, alignment: .leading)
+                
                 if isExpanded {
                     // 進度條（台幣 vs 美金，連續形式，帶動畫、觸摸互動）
                     let twdCashValue = viewModel.cashByCurrency[.TWD] ?? 0
                     let usdCashValue = viewModel.cashByCurrency[.USD] ?? 0
-                    let usdToTwdRate = viewModel.pieChartInputs?.usdToTwdRate ?? 0
+                    let usdToTwdRate = displayUsdToTwdRate
                     let totalCashForRatio = twdCashValue + (usdCashValue * usdToTwdRate)
                     let twdRatio = totalCashForRatio > 0 ? (twdCashValue / totalCashForRatio) : 0
                     let usdRatio = totalCashForRatio > 0 ? ((usdCashValue * usdToTwdRate) / totalCashForRatio) : 0

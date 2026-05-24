@@ -63,11 +63,14 @@ struct EditTransactionView: View {
                                 .font(.subheadline)
                                 .foregroundColor(.primaryText)
                             
-                            DatePicker("", selection: $transactionDate, displayedComponents: .date)
-                                .datePickerStyle(.compact)
-                                .padding()
-                                .background(Color.secondaryBackground)
-                                .cornerRadius(12)
+                            SnapTappableDateField(
+                                date: $transactionDate,
+                                sheetTitle: "日期",
+                                showsLeadingIcon: false
+                            )
+                            .padding()
+                            .background(Color.secondaryBackground)
+                            .cornerRadius(12)
                         }
                         .padding(.horizontal)
                         
@@ -134,11 +137,14 @@ struct EditTransactionView: View {
                                 .font(.subheadline)
                                 .foregroundColor(.primaryText)
                             
-                            DatePicker("", selection: $transactionDate, displayedComponents: .date)
-                                .datePickerStyle(.compact)
-                                .padding()
-                                .background(Color.secondaryBackground)
-                                .cornerRadius(12)
+                            SnapTappableDateField(
+                                date: $transactionDate,
+                                sheetTitle: "日期",
+                                showsLeadingIcon: false
+                            )
+                            .padding()
+                            .background(Color.secondaryBackground)
+                            .cornerRadius(12)
                         }
                         .padding(.horizontal)
                         
@@ -155,6 +161,7 @@ struct EditTransactionView: View {
                     }
                 }
             }
+            .snapFormScrollDismissesKeyboard()
             .navigationTitle("編輯交易")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -192,6 +199,7 @@ struct EditTransactionView: View {
                 }
             }
         }
+        .snapFormSheetChrome()
     }
     
     private func loadLiabilityFromTransaction() async {

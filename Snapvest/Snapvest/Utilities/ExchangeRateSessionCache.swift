@@ -9,13 +9,18 @@ import Foundation
 
 enum ExchangeRateSessionCache {
     private(set) static var usdToTwd: Decimal?
+    private(set) static var usdToTwdUpdatedAt: Date?
 
-    static func update(usdToTwd rate: Decimal) {
+    static func update(usdToTwd rate: Decimal, updatedAt: Date? = nil) {
         guard rate > 0 else { return }
         usdToTwd = rate
+        if let updatedAt {
+            usdToTwdUpdatedAt = updatedAt
+        }
     }
 
     static func clear() {
         usdToTwd = nil
+        usdToTwdUpdatedAt = nil
     }
 }

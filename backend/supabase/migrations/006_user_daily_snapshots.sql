@@ -1,4 +1,4 @@
--- 使用者每日淨資產／總資產快照（後端 23:40 TW 排程寫入，供 App 走勢圖）
+-- 使用者每日淨資產／總資產快照（後端 22:30 TW 排程寫入，供 App 走勢圖）
 CREATE TABLE IF NOT EXISTS user_daily_snapshots (
   user_id TEXT NOT NULL,
   snapshot_date DATE NOT NULL,

@@ -53,6 +53,7 @@ struct TransactionImportView: View {
                     }
                     .padding()
                 }
+                .snapFormScrollDismissesKeyboard()
                 .background(Color.mainBackground)
                 .onChange(of: scrollToPreviewTrigger) { _, _ in
                     guard !previewRows.isEmpty else { return }
@@ -83,6 +84,7 @@ struct TransactionImportView: View {
                     Spacer()
                     Button("完成") {
                         isCSVFocused = false
+                        KeyboardDismiss.dismiss()
                     }
                     .foregroundColor(.appPrimary)
                 }
@@ -97,6 +99,7 @@ struct TransactionImportView: View {
                 await viewModel.loadTransactions(userId: account.userId)
             }
         }
+        .snapDismissKeyboardOnTap()
     }
     
     // MARK: - Header & Flow
@@ -662,6 +665,7 @@ struct TransactionImportView: View {
                 }
             }
         }
+        .snapFormSheetChrome()
         .background(Color.mainBackground)
         .presentationBackground(Color.mainBackground)
     }
@@ -691,6 +695,7 @@ struct TransactionImportView: View {
                 }
             }
         }
+        .snapFormSheetChrome()
         .background(Color.mainBackground)
         .presentationBackground(Color.mainBackground)
     }

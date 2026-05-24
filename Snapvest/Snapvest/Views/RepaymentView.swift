@@ -471,9 +471,11 @@ struct RepaymentView: View {
             }
             
             VStack(alignment: .leading, spacing: 0) {
-                DatePicker("", selection: $transactionDate, displayedComponents: .date)
-                    .datePickerStyle(.compact)
-                    .labelsHidden()
+                SnapTappableDateField(
+                    date: $transactionDate,
+                    sheetTitle: "日期",
+                    showsLeadingIcon: false
+                )
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)
@@ -548,6 +550,7 @@ struct RepaymentView: View {
                     errorMessageSection
                 }
             }
+            .snapFormScrollDismissesKeyboard()
             .background(Color.mainBackground)
             .navigationTitle(editingTransaction != nil ? "編輯還款" : (repaymentType == .prepayment ? "提前還款" : "定期還款"))
             .navigationBarTitleDisplayMode(.inline)
@@ -607,6 +610,7 @@ struct RepaymentView: View {
                 }
             }
         }
+        .snapFormSheetChrome()
     }
     
     // MARK: - Computed Properties

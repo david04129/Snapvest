@@ -27,6 +27,9 @@ struct HomeShareSheet: View {
     @State private var selectedKinds: Set<HomeShareChartKind> = [.trend, .pie, .performance]
     @State private var previewImage: UIImage?
     @State private var isRendering = false
+    @State private var isUpdatingPreview = false
+    @State private var previewFade: CGFloat = 1
+    @State private var previewRenderGeneration = 0
     @State private var isSaving = false
     @State private var showActivitySheet = false
     @State private var alertTitle = ""
@@ -242,23 +245,36 @@ struct HomeShareSheet: View {
                 .font(.headline)
                 .foregroundColor(.primaryText)
 
-            if isRendering {
-                ProgressView("產生分享圖…")
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 40)
-            } else if let previewImage {
-                Image(uiImage: previewImage)
-                    .resizable()
-                    .scaledToFit()
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 2)
-            } else {
-                Text("請至少選擇一項有資料的圖表")
-                    .font(.subheadline)
-                    .foregroundColor(.secondaryText)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 32)
+            ZStack {
+                if let previewImage {
+                    Image(uiImage: previewImage)
+                        .resizable()
+                        .scaledToFit()
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 2)
+                        .opacity(previewFade)
+
+                    if isUpdatingPreview {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color.mainBackground.opacity(0.42))
+                        ProgressView()
+                            .controlSize(.regular)
+                            .tint(.appPrimary)
+                    }
+                } else if isRendering {
+                    ProgressView("產生分享圖…")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 40)
+                } else {
+                    Text("請至少選擇一項有資料的圖表")
+                        .font(.subheadline)
+                        .foregroundColor(.secondaryText)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 32)
+                }
             }
+            .animation(.easeInOut(duration: 0.28), value: isUpdatingPreview)
+            .animation(.easeInOut(duration: 0.28), value: previewFade)
         }
     }
 
@@ -280,22 +296,57 @@ struct HomeShareSheet: View {
     }
 
     private func toggle(_ kind: HomeShareChartKind) {
-        if selectedKinds.contains(kind) {
-            selectedKinds.remove(kind)
-        } else {
-            selectedKinds.insert(kind)
+        withAnimation(.easeInOut(duration: 0.2)) {
+            if selectedKinds.contains(kind) {
+                selectedKinds.remove(kind)
+            } else {
+                selectedKinds.insert(kind)
+            }
         }
     }
 
     private func refreshPreview() {
         guard let config = renderConfig, canShare else {
+            previewRenderGeneration += 1
             previewImage = nil
+            isRendering = false
+            isUpdatingPreview = false
+            previewFade = 1
             return
         }
-        isRendering = true
+
+        previewRenderGeneration += 1
+        let generation = previewRenderGeneration
+        let hadPreview = previewImage != nil
+
+        if hadPreview {
+            isUpdatingPreview = true
+        } else {
+            isRendering = true
+        }
+
         Task { @MainActor in
-            previewImage = HomeShareImageBuilder.render(config: config)
+            try? await Task.sleep(for: .milliseconds(180))
+            guard generation == previewRenderGeneration else { return }
+
+            if hadPreview {
+                withAnimation(.easeOut(duration: 0.16)) {
+                    previewFade = 0.62
+                }
+            }
+
+            await Task.yield()
+            guard generation == previewRenderGeneration else { return }
+
+            let image = HomeShareImageBuilder.render(config: config)
+            guard generation == previewRenderGeneration else { return }
+
+            previewImage = image
+            withAnimation(.easeInOut(duration: 0.3)) {
+                previewFade = 1
+            }
             isRendering = false
+            isUpdatingPreview = false
         }
     }
 
