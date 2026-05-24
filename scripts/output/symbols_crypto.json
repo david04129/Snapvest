@@ -1,5 +1,5 @@
 {
-  "version": 5,
+  "version": 6,
   "updatedAt": "2026-05-24",
   "source": "coingecko_markets_top_500",
   "items": [
@@ -967,6 +967,11 @@
       "symbol": "inj",
       "name": "Injective",
       "coingeckoId": "injective-protocol"
+    },
+    {
+      "symbol": "io",
+      "name": "io.net",
+      "coingeckoId": "io"
     },
     {
       "symbol": "iota",
@@ -1987,11 +1992,6 @@
       "symbol": "tibbir",
       "name": "Ribbita by Virtuals",
       "coingeckoId": "ribbita-by-virtuals"
-    },
-    {
-      "symbol": "tig",
-      "name": "The Innovation Game",
-      "coingeckoId": "the-innovation-game"
     },
     {
       "symbol": "tkx",

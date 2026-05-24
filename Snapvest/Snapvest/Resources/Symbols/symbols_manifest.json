@@ -1,16 +1,16 @@
 {
   "tw": {
-    "version": 8,
+    "version": 9,
     "updatedAt": "2026-05-24",
     "url": "https://your-backend.com/symbols/symbols_tw.json"
   },
   "us": {
-    "version": 3,
+    "version": 4,
     "updatedAt": "2026-05-24",
     "url": "https://your-backend.com/symbols/symbols_us.json"
   },
   "crypto": {
-    "version": 5,
+    "version": 6,
     "updatedAt": "2026-05-24",
     "url": "https://your-backend.com/symbols/symbols_crypto.json"
   }
