@@ -308,7 +308,7 @@ struct HoldingDetailView: View {
             bottomActionButtons
         }
         .task {
-            usdToTwdRate = (try? await MockDataService.shared.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate) ?? 32
+            usdToTwdRate = (try? await MockDataService.shared.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate) ?? 0
         }
         .sheet(item: $activeTradeSheet) { sheet in
             holdingTradeSheetContent(for: sheet)

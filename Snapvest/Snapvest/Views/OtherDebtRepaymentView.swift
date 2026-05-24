@@ -440,13 +440,10 @@ struct OtherDebtRepaymentView: View {
             
             try await dataService.createTransaction(transaction)
             
-            let priceService = PriceService(dataService: dataService)
-            await PortfolioStateSync.sync(
+            await SnapshotRefreshCoordinator.rebuildAndNotify(
                 userId: debtAccount.userId,
-                dataService: dataService,
-                priceService: priceService
+                dataService: dataService
             )
-            NotificationCenter.default.post(name: .snapshotsDidUpdate, object: nil)
             dismiss()
         } catch {
             errorMessage = "還款失敗：\(error.localizedDescription)"

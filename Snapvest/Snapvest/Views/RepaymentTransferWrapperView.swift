@@ -57,7 +57,7 @@ struct RepaymentTransferWrapperView: View {
     }
     
     private func loadAccounts() async {
-        await accountsViewModel.loadAccounts(userId: "test-user-id")
+        await accountsViewModel.loadAccounts(userId: AppUser.id)
         
         // 找到債務帳戶
         debtAccount = accountsViewModel.accounts.first(where: { $0.accountType == .debt && $0.name == liability.name })

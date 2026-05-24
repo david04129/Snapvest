@@ -91,16 +91,17 @@ protocol DataServiceProtocol {
     // 投資組合狀態（同步至後端）
     func syncPortfolioState(_ payload: PortfolioStateSyncPayload) async throws
     func fetchLatestPortfolioState(userId: String) async throws -> PortfolioStateSyncPayload?
+    
+    /// 將本機帳戶／交易／快照寫入 JSON（MockDataService 實作；其他實作可為空操作）
+    func persistLocalStore(for userId: String)
 }
 
-/// 資料服務實作（目前為 Mock，之後可替換為 Firebase/Supabase）
+/// 本機記憶體資料服務（帳戶／交易；股價／匯率走 Supabase）
 class MockDataService: DataServiceProtocol {
-    // TODO: 實作 Firebase/Supabase 整合
-    
     // 單例模式，確保資料共享
     static let shared = MockDataService()
     
-    // 記憶體儲存（用於 Mock 測試）
+    // 記憶體儲存
     private var accounts: [String: [Account]] = [:] // userId: [Account]
     private var transactions: [String: [Transaction]] = [:] // accountId: [Transaction]
     private var holdings: [String: [Holding]] = [:] // accountId: [Holding]
@@ -113,15 +114,157 @@ class MockDataService: DataServiceProtocol {
     private var aggregatedHoldingSnapshots: [String: AggregatedHoldingSnapshot] = [:] // "userId_assetType_symbol": AggregatedHoldingSnapshot
     private var homeDashboardSnapshots: [String: HomeDashboardSnapshot] = [:] // userId: HomeDashboardSnapshot
     private var portfolioStates: [String: PortfolioStateSyncPayload] = [:] // userId: latest state
+    private var pendingPersistWorkItem: DispatchWorkItem?
     
-    // 私有初始化，強制使用單例
     private init() {
-        // 預設帳戶會在第一次 fetchAccounts 時建立
+        restorePersistedData(for: AppUser.id)
+    }
+    
+    private func restorePersistedData(for userId: String) {
+        guard let saved = LocalUserDataStore.load(userId: userId) else { return }
+        accounts[userId] = saved.accounts
+        let accountIds = Set(saved.accounts.map(\.id))
+        for accountId in accountIds {
+            if let accountTransactions = saved.transactionsByAccountId[accountId] {
+                transactions[accountId] = accountTransactions
+            }
+            if let accountLiabilities = saved.liabilitiesByAccountId[accountId] {
+                liabilities[accountId] = accountLiabilities
+            }
+        }
+        if let home = saved.homeDashboardSnapshot {
+            homeDashboardSnapshots[userId] = home
+        }
+        if let userHoldings = saved.userHoldingsSnapshot {
+            userHoldingsSnapshots[userId] = userHoldings
+        }
+        for (accountId, snapshot) in saved.accountSnapshotsByAccountId {
+            accountSnapshots[accountId] = snapshot
+        }
+        for (key, snapshot) in saved.assetPriceSnapshotsByKey {
+            assetPriceSnapshots[key] = snapshot
+        }
+        for snapshot in saved.aggregatedHoldingSnapshots {
+            aggregatedHoldingSnapshots[snapshot.id] = snapshot
+        }
+    }
+    
+    private func snapshotPayload(for userId: String) -> (
+        home: HomeDashboardSnapshot?,
+        userHoldings: UserHoldingsSnapshot?,
+        accountSnapshots: [String: AccountSnapshot],
+        assetPrices: [String: AssetPriceSnapshot],
+        aggregated: [AggregatedHoldingSnapshot]
+    ) {
+        let userAccounts = accounts[userId] ?? []
+        let accountIds = Set(userAccounts.map(\.id))
+        var accountSnapshotsByAccountId: [String: AccountSnapshot] = [:]
+        for accountId in accountIds {
+            if let snapshot = accountSnapshots[accountId] {
+                accountSnapshotsByAccountId[accountId] = snapshot
+            }
+        }
+        
+        let aggregated = aggregatedHoldingSnapshots.values.filter { $0.userId == userId }
+        var priceKeys = Set<String>()
+        for snapshot in aggregated {
+            priceKeys.insert("\(snapshot.assetType.rawValue)_\(snapshot.symbol)")
+        }
+        for snapshot in accountSnapshotsByAccountId.values {
+            guard let holdings = snapshot.holdings else { continue }
+            for holding in holdings {
+                priceKeys.insert("\(holding.assetType.rawValue)_\(holding.symbol)")
+            }
+        }
+        var assetPrices: [String: AssetPriceSnapshot] = [:]
+        for key in priceKeys {
+            if let snapshot = assetPriceSnapshots[key] {
+                assetPrices[key] = snapshot
+            }
+        }
+        
+        return (
+            homeDashboardSnapshots[userId],
+            userHoldingsSnapshots[userId],
+            accountSnapshotsByAccountId,
+            assetPrices,
+            aggregated
+        )
+    }
+    
+    private func persistUserData(userId: String) {
+        let userAccounts = accounts[userId] ?? []
+        let accountIds = Set(userAccounts.map(\.id))
+        var transactionsByAccountId: [String: [Transaction]] = [:]
+        var liabilitiesByAccountId: [String: [Liability]] = [:]
+        for accountId in accountIds {
+            if let accountTransactions = transactions[accountId], !accountTransactions.isEmpty {
+                transactionsByAccountId[accountId] = accountTransactions
+            }
+            if let accountLiabilities = liabilities[accountId], !accountLiabilities.isEmpty {
+                liabilitiesByAccountId[accountId] = accountLiabilities
+            }
+        }
+        let snapshots = snapshotPayload(for: userId)
+        let payload = LocalUserData(
+            schemaVersion: LocalUserData.currentSchemaVersion,
+            userId: userId,
+            accounts: userAccounts,
+            transactionsByAccountId: transactionsByAccountId,
+            liabilitiesByAccountId: liabilitiesByAccountId,
+            homeDashboardSnapshot: snapshots.home,
+            userHoldingsSnapshot: snapshots.userHoldings,
+            accountSnapshotsByAccountId: snapshots.accountSnapshots,
+            assetPriceSnapshotsByKey: snapshots.assetPrices,
+            aggregatedHoldingSnapshots: snapshots.aggregated
+        )
+        LocalUserDataStore.save(payload)
+    }
+    
+    func persistLocalStore(for userId: String) {
+        guard userId == AppUser.id else { return }
+        pendingPersistWorkItem?.cancel()
+        pendingPersistWorkItem = nil
+        persistUserData(userId: userId)
+    }
+    
+    private func persistIfActiveUser(_ userId: String, debounce: Bool = false) {
+        guard userId == AppUser.id else { return }
+        if debounce {
+            schedulePersist(userId: userId)
+        } else {
+            pendingPersistWorkItem?.cancel()
+            pendingPersistWorkItem = nil
+            persistUserData(userId: userId)
+        }
+    }
+    
+    private func schedulePersist(userId: String) {
+        pendingPersistWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.persistUserData(userId: userId)
+        }
+        pendingPersistWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: workItem)
+    }
+    
+    private func persistAfterAccountMutation(userId: String?, debounce: Bool = false) {
+        if let userId {
+            persistIfActiveUser(userId, debounce: debounce)
+            return
+        }
+        persistIfActiveUser(AppUser.id, debounce: debounce)
+    }
+    
+    private func userIdForAccountId(_ accountId: String) -> String? {
+        for (userId, userAccounts) in accounts where userAccounts.contains(where: { $0.id == accountId }) {
+            return userId
+        }
+        return nil
     }
     
     func fetchUser(userId: String) async throws -> User? {
-        // Mock 實作
-        return User(id: userId, email: "user@example.com", displayName: "測試使用者")
+        User(id: userId, email: "", displayName: nil)
     }
     
     func updateUser(_ user: User) async throws {
@@ -129,160 +272,8 @@ class MockDataService: DataServiceProtocol {
     }
     
     func fetchAccounts(userId: String) async throws -> [Account] {
-        // 如果沒有帳戶，建立預設帳戶和測試資料
-        if accounts[userId] == nil || accounts[userId]!.isEmpty {
-            let twdDepositAccount = Account(userId: userId, name: "國泰銀行", accountType: .twdDeposit)
-            let twdSecuritiesAccount = Account(userId: userId, name: "台股帳戶", accountType: .twdSecurities)
-            let usdAccount = Account(userId: userId, name: "美股帳戶", accountType: .usdAccount)
-            let cryptoWallet = Account(userId: userId, name: "加密貨幣錢包", accountType: .cryptoWallet)
-            
-            accounts[userId] = [
-                twdDepositAccount,
-                twdSecuritiesAccount,
-                usdAccount,
-                cryptoWallet
-            ]
-            
-            // 創建初始債務數據（10萬貸款）
-            await initializeMockLiabilities(userId: userId, repaymentAccount: twdDepositAccount)
-            
-            // 添加測試交易記錄
-            let calendar = Calendar.current
-            let today = Date()
-            
-            // 台幣存款帳戶：初始存入 10,000 TWD
-            let deposit1 = Transaction(
-                accountId: twdDepositAccount.id,
-                type: .deposit,
-                assetType: .cash,
-                symbol: "CASH",
-                quantity: 10000,
-                price: 1,
-                currency: .TWD,
-                fee: 0,
-                notes: "初始餘額",
-                transactionDate: calendar.date(byAdding: .day, value: -5, to: today) ?? today
-            )
-            
-            // 台股帳戶：初始存入 150,000 TWD（確保足夠買入所有股票）
-            let deposit2 = Transaction(
-                accountId: twdSecuritiesAccount.id,
-                type: .deposit,
-                assetType: .cash,
-                symbol: "CASH",
-                quantity: 150000,
-                price: 1,
-                currency: .TWD,
-                fee: 0,
-                notes: "起始資金",
-                transactionDate: calendar.date(byAdding: .day, value: -20, to: today) ?? today
-            )
-            
-            // 台股帳戶：僅兩檔，每檔多筆交易
-            var twStockTransactions: [Transaction] = [deposit2]
-            let twStockBuys: [(String, String, Decimal, Decimal, Int)] = [
-                ("2330", "台積電", 500, 2, -19),
-                ("2330", "台積電", 520, 1, -12),
-                ("2317", "鴻海", 100, 5, -18),
-                ("2317", "鴻海", 105, 3, -9)
-            ]
-            for (symbol, name, price, quantity, dayOffset) in twStockBuys {
-                let buy = Transaction(
-                    accountId: twdSecuritiesAccount.id,
-                    type: .buy,
-                    assetType: .stockTW,
-                    symbol: symbol,
-                    quantity: quantity,
-                    price: price,
-                    currency: .TWD,
-                    fee: (quantity * price) * 0.001425,
-                    notes: "買入\(name)",
-                    transactionDate: calendar.date(byAdding: .day, value: dayOffset, to: today) ?? today
-                )
-                twStockTransactions.append(buy)
-            }
-            
-            // 美股帳戶：初始存入 5,000 USD（確保足夠買入所有股票）
-            let deposit3 = Transaction(
-                accountId: usdAccount.id,
-                type: .deposit,
-                assetType: .cash,
-                symbol: "CASH",
-                quantity: 5000,
-                price: 1,
-                currency: .USD,
-                fee: 0,
-                notes: "初始資金",
-                transactionDate: calendar.date(byAdding: .day, value: -20, to: today) ?? today
-            )
-            
-            // 美股帳戶：僅兩檔，每檔多筆交易
-            var usStockTransactions: [Transaction] = [deposit3]
-            let usStockBuys: [(String, Decimal, Decimal, Int)] = [
-                ("NVDA", 450, 1, -18),
-                ("NVDA", 470, 1, -10),
-                ("AAPL", 180, 2, -17),
-                ("AAPL", 185, 1, -8)
-            ]
-            for (symbol, price, quantity, dayOffset) in usStockBuys {
-                let buy = Transaction(
-                    accountId: usdAccount.id,
-                    type: .buy,
-                    assetType: .stockUS,
-                    symbol: symbol,
-                    quantity: quantity,
-                    price: price,
-                    currency: .USD,
-                    fee: 1,
-                    notes: "買入\(symbol)",
-                    transactionDate: calendar.date(byAdding: .day, value: dayOffset, to: today) ?? today
-                )
-                usStockTransactions.append(buy)
-            }
-            
-            // 加密貨幣錢包：初始存入 10,000 USD（確保足夠買入所有加密貨幣）
-            let deposit4 = Transaction(
-                accountId: cryptoWallet.id,
-                type: .deposit,
-                assetType: .cash,
-                symbol: "CASH",
-                quantity: 10000,
-                price: 1,
-                currency: .USD,
-                fee: 0,
-                notes: "初始資金",
-                transactionDate: calendar.date(byAdding: .day, value: -20, to: today) ?? today
-            )
-            
-            // 加密貨幣錢包：僅兩檔，每檔多筆交易
-            var cryptoTransactions: [Transaction] = [deposit4]
-            let cryptoBuys: [(String, Decimal, Decimal, Int)] = [
-                ("BTC", 52000, 0.01, -18),
-                ("BTC", 54000, 0.005, -11),
-                ("ETH", 3000, 0.1, -17),
-                ("ETH", 3200, 0.05, -7)
-            ]
-            for (symbol, price, quantity, dayOffset) in cryptoBuys {
-                let buy = Transaction(
-                    accountId: cryptoWallet.id,
-                    type: .buy,
-                    assetType: .crypto,
-                    symbol: symbol,
-                    quantity: quantity,
-                    price: price,
-                    currency: .USD,
-                    fee: (quantity * price) * 0.001,
-                    notes: "買入\(symbol)",
-                    transactionDate: calendar.date(byAdding: .day, value: dayOffset, to: today) ?? today
-                )
-                cryptoTransactions.append(buy)
-            }
-            
-            // 添加交易記錄
-            transactions[twdDepositAccount.id] = [deposit1]
-            transactions[twdSecuritiesAccount.id] = twStockTransactions
-            transactions[usdAccount.id] = usStockTransactions
-            transactions[cryptoWallet.id] = cryptoTransactions
+        if accounts[userId] == nil {
+            accounts[userId] = []
         }
         return accounts[userId] ?? []
     }
@@ -293,6 +284,7 @@ class MockDataService: DataServiceProtocol {
             accounts[account.userId] = []
         }
         accounts[account.userId]?.append(account)
+        persistIfActiveUser(account.userId)
     }
     
     func updateAccount(_ account: Account) async throws {
@@ -301,22 +293,27 @@ class MockDataService: DataServiceProtocol {
             if let index = userAccounts.firstIndex(where: { $0.id == account.id }) {
                 userAccounts[index] = account
                 accounts[account.userId] = userAccounts
+                persistIfActiveUser(account.userId)
             }
         }
     }
     
     func deleteAccount(_ accountId: String) async throws {
         // 從記憶體中刪除帳戶
+        var affectedUserId: String?
         for (userId, userAccounts) in accounts {
             if let index = userAccounts.firstIndex(where: { $0.id == accountId }) {
+                affectedUserId = userId
                 accounts[userId]?.remove(at: index)
                 // 同時刪除相關的交易和持股
                 transactions.removeValue(forKey: accountId)
                 holdings.removeValue(forKey: accountId)
                 liabilities.removeValue(forKey: accountId)
+                accountSnapshots.removeValue(forKey: accountId)
                 break
             }
         }
+        persistAfterAccountMutation(userId: affectedUserId)
     }
     
     func archiveDebtAccount(_ account: Account) async throws {
@@ -363,6 +360,7 @@ class MockDataService: DataServiceProtocol {
             transactions[transaction.accountId] = []
         }
         transactions[transaction.accountId]?.append(transaction)
+        persistAfterAccountMutation(userId: userIdForAccountId(transaction.accountId), debounce: true)
     }
     
     func updateTransaction(_ transaction: Transaction) async throws {
@@ -370,6 +368,7 @@ class MockDataService: DataServiceProtocol {
             if let index = accountTransactions.firstIndex(where: { $0.id == transaction.id }) {
                 accountTransactions[index] = transaction
                 transactions[transaction.accountId] = accountTransactions
+                persistAfterAccountMutation(userId: userIdForAccountId(transaction.accountId), debounce: true)
             }
         }
     }
@@ -378,6 +377,7 @@ class MockDataService: DataServiceProtocol {
         for (accountId, accountTransactions) in transactions {
             if let index = accountTransactions.firstIndex(where: { $0.id == transactionId }) {
                 transactions[accountId]?.remove(at: index)
+                persistAfterAccountMutation(userId: userIdForAccountId(accountId))
                 break
             }
         }
@@ -416,78 +416,12 @@ class MockDataService: DataServiceProtocol {
         return liabilities[accountId] ?? []
     }
     
-    private func initializeMockLiabilities(userId: String, repaymentAccount: Account) async {
-        let calendar = Calendar.current
-        let today = Date()
-        
-        // 10萬貸款，分12期，年利率2.3%
-        let principal: Decimal = 100000
-        let interestRate: Decimal = 2.3
-        let periods = 12
-        let monthlyRate = interestRate / 100 / 12
-        let principalNS = NSDecimalNumber(decimal: principal)
-        let monthlyRateNS = NSDecimalNumber(decimal: monthlyRate)
-        let onePlusRate = NSDecimalNumber.one.adding(monthlyRateNS)
-        let power = onePlusRate.raising(toPower: periods)
-        let numerator = principalNS.multiplying(by: monthlyRateNS).multiplying(by: power)
-        let denominator = power.subtracting(NSDecimalNumber.one)
-        let monthlyPayment = numerator.dividing(by: denominator).decimalValue
-        
-        var dateComponents = calendar.dateComponents([.year, .month], from: today)
-        dateComponents.day = 1
-        let startDate = calendar.date(from: dateComponents) ?? today
-        
-        // 創建債務帳戶
-        let debtAccount = Account(userId: userId, name: "10萬貸款", accountType: .debt)
-        
-        // 將債務帳戶加入帳戶列表
-        if accounts[userId] == nil {
-            accounts[userId] = []
-        }
-        accounts[userId]?.append(debtAccount)
-        
-        // 創建債務記錄
-        let liability = Liability(
-            accountId: repaymentAccount.id,
-            name: "10萬貸款",
-            principal: principal,
-            interestRate: interestRate,
-            monthlyPayment: monthlyPayment,
-            remainingBalance: principal,
-            currency: .TWD,
-            startDate: startDate,
-            totalPeriods: periods,
-            paidPeriods: 0
-        )
-        
-        try? await createLiability(liability)
-        
-        // 創建債務帳戶的初始交易記錄（.liability 類型）
-        let liabilityTransaction = Transaction(
-            accountId: debtAccount.id,
-            type: .liability,
-            assetType: .cash,
-            symbol: "CASH",
-            quantity: principal,
-            price: 1,
-            currency: .TWD,
-            fee: 0,
-            notes: "新增債務：10萬貸款",
-            transactionDate: startDate
-        )
-        
-        // 將交易記錄加入債務帳戶
-        if transactions[debtAccount.id] == nil {
-            transactions[debtAccount.id] = []
-        }
-        transactions[debtAccount.id]?.append(liabilityTransaction)
-    }
-    
     func createLiability(_ liability: Liability) async throws {
         if liabilities[liability.accountId] == nil {
             liabilities[liability.accountId] = []
         }
         liabilities[liability.accountId]?.append(liability)
+        persistAfterAccountMutation(userId: userIdForAccountId(liability.accountId), debounce: true)
     }
     
     func updateLiability(_ liability: Liability) async throws {
@@ -495,6 +429,7 @@ class MockDataService: DataServiceProtocol {
             if let index = accountLiabilities.firstIndex(where: { $0.id == liability.id }) {
                 accountLiabilities[index] = liability
                 liabilities[liability.accountId] = accountLiabilities
+                persistAfterAccountMutation(userId: userIdForAccountId(liability.accountId), debounce: true)
             }
         }
     }
@@ -503,48 +438,14 @@ class MockDataService: DataServiceProtocol {
         for (accountId, accountLiabilities) in liabilities {
             if let index = accountLiabilities.firstIndex(where: { $0.id == liabilityId }) {
                 liabilities[accountId]?.remove(at: index)
+                persistAfterAccountMutation(userId: userIdForAccountId(accountId))
                 break
             }
         }
     }
     
     func fetchPrice(assetType: AssetType, symbol: String, date: Date?) async throws -> Price? {
-        // Mock 實作 - 返回模擬價格
-        let mockPrices: [String: Decimal] = [
-            // 台股
-            "2330": 820, "2317": 60, "2454": 850, "2308": 260, "2891": 26,
-            "2882": 52, "2886": 32, "1301": 95, "1303": 65, "2002": 27,
-            "2412": 125, "2382": 190, "2379": 370, "3008": 2100, "2884": 30,
-            // 美股
-            "AAPL": 120, "MSFT": 360, "GOOGL": 145, "AMZN": 155, "TSLA": 255,
-            "META": 310, "NVDA": 700, "JPM": 155, "V": 255, "JNJ": 165,
-            "WMT": 155, "MA": 410, "PG": 155, "UNH": 510, "HD": 360,
-            // 加密貨幣
-            "BTC": 65000, "ETH": 2000, "BNB": 310, "SOL": 105, "ADA": 0.55,
-            "XRP": 0.65, "DOGE": 0.085, "DOT": 7.5, "MATIC": 0.95, "AVAX": 36,
-            "LINK": 16, "UNI": 6.5, "ATOM": 10.5, "ALGO": 0.22, "VET": 0.035
-        ]
-        
-        let price = mockPrices[symbol] ?? 100
-        
-        // 根據資產類型決定貨幣
-        let currency: Currency
-        switch assetType {
-        case .stockTW:
-            currency = .TWD
-        case .stockUS, .crypto:
-            currency = .USD
-        case .cash:
-            currency = .TWD // 預設
-        }
-        
-        return Price(
-            assetType: assetType,
-            symbol: symbol,
-            price: price,
-            currency: currency,
-            priceDate: date ?? Date()
-        )
+        nil
     }
     
     func fetchPrices(assetType: AssetType, symbol: String, startDate: Date, endDate: Date) async throws -> [Price] {
@@ -553,21 +454,15 @@ class MockDataService: DataServiceProtocol {
     }
     
     func fetchExchangeRate(from: Currency, to: Currency, date: Date?) async throws -> ExchangeRate? {
-        // Mock 實作 - 返回假匯率
-        let rate: Decimal
-        if from == .USD && to == .TWD {
-            rate = 32 // 1 USD = 32 TWD
-        } else if from == .TWD && to == .USD {
-            rate = 0.03125 // 1 TWD = 0.03125 USD (1/32)
-        } else {
-            rate = 1.0 // 相同貨幣或其他情況
+        if let rate = await SupabaseExchangeRateService.fetchRate(from: from, to: to) {
+            return ExchangeRate(
+                fromCurrency: from,
+                toCurrency: to,
+                rate: rate,
+                rateDate: date ?? Date()
+            )
         }
-        return ExchangeRate(
-            fromCurrency: from,
-            toCurrency: to,
-            rate: rate,
-            rateDate: date ?? Date()
-        )
+        return nil
     }
     
     func fetchSnapshots(userId: String, startDate: Date?, endDate: Date?) async throws -> [Snapshot] {

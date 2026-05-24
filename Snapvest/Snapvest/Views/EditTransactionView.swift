@@ -174,7 +174,7 @@ struct EditTransactionView: View {
             }
             .task {
                 // 獲取帳戶資訊
-                await viewModel.loadTransactions(userId: "test-user-id")
+                await viewModel.loadTransactions(userId: AppUser.id)
                 account = viewModel.accounts.first(where: { $0.id == transaction.accountId })
                 
                 // 如果是債務交易，載入債務資訊
@@ -201,7 +201,7 @@ struct EditTransactionView: View {
         let liabilityName = transaction.notes?.replacingOccurrences(of: "新增債務：", with: "") ?? ""
         
         // 從portfolioViewModel載入債務
-        await portfolioViewModel.loadData(userId: "test-user-id")
+        await portfolioViewModel.loadData(userId: AppUser.id)
         
         // 找到對應的債務
         liability = portfolioViewModel.liabilities.first { $0.name == liabilityName || $0.accountId == transaction.accountId }

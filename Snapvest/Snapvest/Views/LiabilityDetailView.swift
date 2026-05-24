@@ -85,7 +85,7 @@ struct LiabilityDetailView: View {
         }
         .task {
             currentLiability = liability
-            await accountsViewModel.loadAccounts(userId: "test-user-id")
+            await accountsViewModel.loadAccounts(userId: AppUser.id)
             if let account = accountsViewModel.accounts.first(where: { $0.id == liability.accountId }) {
                 repaymentAccountName = account.name
             }

@@ -2,11 +2,10 @@
 //  TransactionImportView.swift
 //  Snapvest
 //
-//  於帳戶詳情匯入 CSV 交易流水（貼上 AI 產出的 CSV 文字）
+//  於帳戶詳情匯入交易（貼上 AI 產出的 CSV 文字）
 //
 
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct TransactionImportView: View {
     let account: Account
@@ -21,21 +20,20 @@ struct TransactionImportView: View {
     @State private var previewRows: [TransactionImportValidatedRow] = []
     @State private var importBuyDraftItem: ImportBuyDraftSheetItem?
     @State private var importSellDraftItem: ImportSellDraftSheetItem?
-    @State private var showingFileImporter = false
-    @State private var showingPromptSheet = false
     @State private var isImporting = false
     @State private var showingImportResultAlert = false
     @State private var importResultAlertTitle = ""
     @State private var importResultAlertMessage = ""
     @State private var dismissAfterImportResultAlert = false
-    @State private var copiedPrompt = false
+    @State private var didCopyPrompt = false
     
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    instructionCard
-                    actionButtons
+                VStack(alignment: .leading, spacing: 20) {
+                    accountHeaderCard
+                    flowStepsCard
+                    copyPromptButton
                     pasteSection
                     
                     if let fatal = parseResult?.fatalError {
@@ -45,7 +43,6 @@ struct TransactionImportView: View {
                     if !previewRows.isEmpty {
                         previewSection
                     }
-                    
                 }
                 .padding()
             }
@@ -59,23 +56,13 @@ struct TransactionImportView: View {
             } message: {
                 Text(importResultAlertMessage)
             }
-            .navigationTitle("匯入")
+            .navigationTitle("匯入交易")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("關閉") { dismiss() }
                         .foregroundColor(.appPrimary)
                 }
-            }
-            .fileImporter(
-                isPresented: $showingFileImporter,
-                allowedContentTypes: [.commaSeparatedText, .plainText, .utf8PlainText],
-                allowsMultipleSelection: false
-            ) { result in
-                handleFileImport(result)
-            }
-            .sheet(isPresented: $showingPromptSheet) {
-                aiPromptSheet
             }
             .sheet(item: $importBuyDraftItem) { item in
                 importBuyDraftSheet(item: item)
@@ -91,118 +78,219 @@ struct TransactionImportView: View {
         }
     }
     
-    private var instructionCard: some View {
-        CardView {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("匯入至：\(account.name)")
+    // MARK: - Header & Flow
+    
+    private var accountHeaderCard: some View {
+        HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(account.accountType.color)
+                .frame(width: 4, height: 40)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text("匯入至")
+                    .font(.caption)
+                    .foregroundColor(.secondaryText)
+                Text(account.name)
                     .font(.headline)
                     .foregroundColor(.primaryText)
-                
-                Text("建議流程（手機）：")
+                Text(account.accountType.displayName)
+                    .font(.caption)
+                    .foregroundColor(.secondaryText)
+            }
+            
+            Spacer()
+            
+            Image(systemName: account.accountType.icon)
+                .font(.title2)
+                .foregroundColor(account.accountType.color)
+        }
+        .padding(16)
+        .background(Color.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: AppColors.shadowMedium, radius: 8, x: 0, y: 2)
+    }
+    
+    private var flowStepsCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("怎麼做？")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundColor(.primaryText)
+            
+            importFlowStep(
+                number: 1,
+                title: "複製提示詞",
+                isHighlighted: false
+            )
+            
+            importFlowStep(
+                number: 2,
+                title: "到外部 AI App 轉換對帳單",
+                detail: "貼上提示詞，再附上對帳單（PDF、Excel 或照片），等 AI 產出表格文字。",
+                footnote: "可用 ChatGPT、Gemini...",
+                isHighlighted: true
+            )
+            
+            importFlowStep(
+                number: 3,
+                title: "貼回並匯入",
+                detail: "貼在下方 → 解析預覽 → 確認匯入。",
+                isHighlighted: false
+            )
+        }
+        .padding(16)
+        .background(Color.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: AppColors.shadowMedium, radius: 8, x: 0, y: 2)
+    }
+    
+    private func importFlowStep(
+        number: Int,
+        title: String,
+        detail: String? = nil,
+        footnote: String? = nil,
+        isHighlighted: Bool
+    ) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text("\(number)")
+                .font(.caption)
+                .fontWeight(.bold)
+                .foregroundColor(isHighlighted ? .white : .appPrimary)
+                .frame(width: 24, height: 24)
+                .background(isHighlighted ? Color.appPrimary : Color.appPrimary.opacity(0.12))
+                .clipShape(Circle())
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.primaryText)
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("1. 複製 AI 提示詞 → 到 ChatGPT / Claude 貼上")
-                    Text("2. 附上對帳單 PDF、Excel 或照片")
-                    Text("3. 複製 AI 回覆的 CSV → 貼到下方 → 解析預覽")
-                    Text("4. 點擊明細檢查／修改 → 確認匯入")
+                if let detail {
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .font(.caption)
-                .foregroundColor(.secondaryText)
-                
-                Text("所有交易會寫入此帳戶，CSV 不需要 account_name。僅匯入股票買賣（buy/sell）；存入、提取等會自動略過。")
-                    .font(.caption)
-                    .foregroundColor(.secondaryText)
-                    .padding(.top, 4)
+                if let footnote {
+                    Text(footnote)
+                        .font(.caption2)
+                        .foregroundColor(.tertiaryText)
+                }
+            }
+        }
+        .padding(isHighlighted ? 12 : 0)
+        .background {
+            if isHighlighted {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.appPrimary.opacity(0.08))
             }
         }
     }
     
-    private var actionButtons: some View {
-        VStack(spacing: 10) {
-            Button {
-                showingPromptSheet = true
-            } label: {
-                Label("步驟 1：複製 AI 提示詞（英文）", systemImage: "sparkles")
-                    .frame(maxWidth: .infinity)
+    private var copyPromptButton: some View {
+        Button {
+            UIPasteboard.general.string = Self.aiPromptTemplate(account: account)
+            withAnimation(.easeInOut(duration: 0.2)) {
+                didCopyPrompt = true
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.appPrimary)
-            
-            Button {
-                showingFileImporter = true
-            } label: {
-                Label("或從檔案選擇 CSV", systemImage: "doc.badge.plus")
-                    .frame(maxWidth: .infinity)
+            Task {
+                try? await Task.sleep(for: .seconds(2.5))
+                await MainActor.run {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        didCopyPrompt = false
+                    }
+                }
             }
-            .buttonStyle(.bordered)
-            .tint(.appPrimary)
+        } label: {
+            Label(
+                didCopyPrompt ? "已複製" : "複製提示詞",
+                systemImage: didCopyPrompt ? "checkmark.circle.fill" : "doc.on.doc"
+            )
+            .font(.subheadline.weight(.semibold))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
         }
+        .buttonStyle(.borderedProminent)
+        .tint(.appPrimary)
     }
     
     private var pasteSection: some View {
-        CardView {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("步驟 3：貼上 AI 產出的 CSV")
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Text("3")
+                    .font(.caption2.weight(.bold))
+                    .foregroundColor(.appPrimary)
+                    .frame(width: 20, height: 20)
+                    .background(Color.appPrimary.opacity(0.12))
+                    .clipShape(Circle())
+                Text("貼回並匯入")
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.primaryText)
-                
+            }
+            
+            ZStack(alignment: .topLeading) {
                 TextEditor(text: $csvText)
                     .font(.system(.caption, design: .monospaced))
-                    .frame(minHeight: 160)
+                    .frame(minHeight: 168)
                     .padding(8)
-                    .background(Color.cardBackground.opacity(0.6))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .scrollContentBackground(.hidden)
+                    .background(Color.secondaryBackground.opacity(0.6))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 8)
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
                             .stroke(Color.separator.opacity(0.35), lineWidth: 1)
                     )
                 
                 if csvText.isEmpty {
-                    Text("從 AI 複製 CSV 後，點「從剪貼簿貼上」或長按貼上。可含標題列，也可直接貼資料列。")
+                    Text("把 AI 回覆貼在這裡，再按「解析預覽」")
                         .font(.caption)
-                        .foregroundColor(.secondaryText)
+                        .foregroundColor(.tertiaryText)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 16)
+                        .allowsHitTesting(false)
                 }
-                
-                HStack(spacing: 10) {
-                    Button {
-                        if let pasted = UIPasteboard.general.string, !pasted.isEmpty {
-                            csvText = pasted
-                        }
-                    } label: {
-                        Label("從剪貼簿貼上", systemImage: "doc.on.clipboard")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(.appPrimary)
-                    
-                    Button {
-                        csvText = ""
-                        parseResult = nil
-                        validationResult = nil
-                        previewRows = []
-                    } label: {
-                        Text("清除")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(.secondaryText)
-                }
-                
+            }
+            
+            HStack(spacing: 10) {
                 Button {
-                    revalidateCSV()
+                    if let pasted = UIPasteboard.general.string, !pasted.isEmpty {
+                        csvText = pasted
+                    }
                 } label: {
-                    Text("解析預覽")
+                    Label("從剪貼簿貼上", systemImage: "doc.on.clipboard")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.bordered)
                 .tint(.appPrimary)
-                .disabled(csvText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                
+                Button {
+                    csvText = ""
+                    parseResult = nil
+                    validationResult = nil
+                    previewRows = []
+                } label: {
+                    Text("清除")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .tint(.secondaryText)
             }
+            
+            Button {
+                revalidateCSV()
+            } label: {
+                Text("解析預覽")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.appPrimary)
+            .disabled(csvText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
+        .padding(16)
+        .background(Color.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: AppColors.shadowMedium, radius: 8, x: 0, y: 2)
     }
     
     private struct ImportPreviewDayGroup: Identifiable {
@@ -253,7 +341,7 @@ struct TransactionImportView: View {
     
     private var previewSection: some View {
         let validation = currentValidation
-        return VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("預覽（\(validation.importableCount) 筆）")
                     .font(.headline)
@@ -269,13 +357,7 @@ struct TransactionImportView: View {
                 }
             }
             
-            if parseResult?.usedImplicitHeader == true {
-                Text("已自動辨識為無標題列（依固定欄位順序解析）。")
-                    .font(.caption)
-                    .foregroundColor(.secondaryText)
-            }
-            
-            Text("點擊買入／賣出明細可檢查並修改，確認後再匯入。")
+            Text("點一筆可改價格、股數，確認後再匯入。")
                 .font(.caption)
                 .foregroundColor(.secondaryText)
             
@@ -329,6 +411,10 @@ struct TransactionImportView: View {
             .tint(.appPrimary)
             .disabled(!validation.canImport || isImporting)
         }
+        .padding(16)
+        .background(Color.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: AppColors.shadowMedium, radius: 8, x: 0, y: 2)
     }
     
     private func openDraftEditor(for row: TransactionImportValidatedRow) {
@@ -430,61 +516,6 @@ struct TransactionImportView: View {
             .clipShape(RoundedRectangle(cornerRadius: 12))
     }
     
-    private var aiPromptSheet: some View {
-        NavigationStack {
-            ScrollView {
-                Text(Self.aiPromptTemplate(account: account))
-                    .font(.system(.footnote, design: .monospaced))
-                    .foregroundColor(.primaryText)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding()
-            }
-            .background(Color.mainBackground)
-            .navigationTitle("AI Prompt")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("關閉") { showingPromptSheet = false }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(copiedPrompt ? "Copied" : "Copy") {
-                        UIPasteboard.general.string = Self.aiPromptTemplate(account: account)
-                        copiedPrompt = true
-                    }
-                }
-            }
-        }
-    }
-    
-    private func handleFileImport(_ result: Result<[URL], Error>) {
-        switch result {
-        case .failure(let error):
-            parseResult = TransactionImportParseResult(rows: [], fatalError: error.localizedDescription, usedImplicitHeader: false)
-            validationResult = nil
-        case .success(let urls):
-            guard let url = urls.first else { return }
-            guard url.startAccessingSecurityScopedResource() else {
-                parseResult = TransactionImportParseResult(rows: [], fatalError: "無法讀取檔案權限", usedImplicitHeader: false)
-                return
-            }
-            defer { url.stopAccessingSecurityScopedResource() }
-            
-            do {
-                let data = try Data(contentsOf: url)
-                guard let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .utf16) else {
-                    parseResult = TransactionImportParseResult(rows: [], fatalError: "無法解析檔案編碼（請使用 UTF-8 CSV）", usedImplicitHeader: false)
-                    validationResult = nil
-                    return
-                }
-                csvText = text
-                revalidateCSV()
-            } catch {
-                parseResult = TransactionImportParseResult(rows: [], fatalError: error.localizedDescription, usedImplicitHeader: false)
-                validationResult = nil
-            }
-        }
-    }
-    
     private func revalidateCSV() {
         let parsed = TransactionImportCSVParser.parse(csvText)
         parseResult = parsed
@@ -510,12 +541,27 @@ struct TransactionImportView: View {
         isImporting = false
         
         importResultAlertTitle = result.alertTitle
-        importResultAlertMessage = result.alertMessage
+        importResultAlertMessage = importResultMessage(from: result, validation: validation)
         dismissAfterImportResultAlert = result.isFullSuccess
         if result.imported > 0 {
             onFinished()
         }
         showingImportResultAlert = true
+    }
+    
+    private func importResultMessage(
+        from result: TransactionImportBatchResult,
+        validation: TransactionImportValidationResult
+    ) -> String {
+        var lines = result.alertMessage.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let cashSkippedCount = validation.skippedRows.filter { row in
+            guard let type = row.transaction?.type else { return false }
+            return type == .deposit || type == .withdraw
+        }.count
+        if cashSkippedCount > 0 {
+            lines.append("略過 \(cashSkippedCount) 筆存入／提領（此匯入僅支援買賣）")
+        }
+        return lines.joined(separator: "\n")
     }
     
     static func aiPromptTemplate(account: Account) -> String {

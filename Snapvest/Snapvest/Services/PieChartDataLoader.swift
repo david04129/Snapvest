@@ -22,7 +22,7 @@ enum PieChartDataLoader {
         dataService: DataServiceProtocol,
         priceService: PriceServiceProtocol
     ) async throws -> PieChartInputs {
-        let rate = (try? await dataService.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate) ?? 32
+        let rate = (try? await dataService.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate) ?? 0
         let accounts = try await dataService.fetchAccounts(userId: userId)
         var accountSnapshots: [AccountSnapshot] = []
         for account in accounts {
@@ -53,6 +53,7 @@ enum PieChartDataLoader {
             aggregated = bundle.aggregatedHoldings
             prices = bundle.assetPriceSnapshots
             accountSnapshots = bundle.accountSnapshots
+            dataService.persistLocalStore(for: userId)
         }
         
         var cashByCurrency: [Currency: Decimal] = [:]

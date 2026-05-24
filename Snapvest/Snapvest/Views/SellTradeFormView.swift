@@ -29,7 +29,7 @@ struct SellTradeFormView: View {
     @State private var exchangeRateText: String = ""
     @State private var transactionDate: Date = Date()
     @State private var errorMessage: String?
-    @State private var userId: String = "test-user-id"
+    @State private var userId: String = AppUser.id
     @Environment(\.dismiss) private var dismiss
     
     init(

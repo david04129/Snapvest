@@ -35,7 +35,7 @@ enum AccountsBalancesCalculator {
         preloadedLiabilities: [Liability] = []
     ) async -> AccountsBalancesResult {
         let priceService = priceService ?? PriceService(dataService: dataService)
-        let usdToTwdRate = (try? await dataService.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate) ?? 32
+        let usdToTwdRate = (try? await dataService.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate) ?? 0
 
         var allTransactions: [Transaction] = []
         if let fetched = try? await dataService.fetchAllTransactions(userId: userId) {

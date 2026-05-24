@@ -211,7 +211,7 @@ struct AccountDetailView: View {
     @ViewBuilder
     private var accountHoldingsSection: some View {
         if account.accountType != .twdDeposit {
-            if viewModel.isLoading && viewModel.holdings.isEmpty {
+            if viewModel.isLoading && viewModel.holdings.isEmpty && viewModel.holdingsValue > 0 {
                 AccountHoldingsLoadingSection()
             } else if !viewModel.holdings.isEmpty {
                 AccountHoldingsTableSection(

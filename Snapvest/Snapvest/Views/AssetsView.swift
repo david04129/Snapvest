@@ -10,7 +10,7 @@ import SwiftUI
 struct AssetsView: View {
     @Binding var selectedTab: Int
     @StateObject private var viewModel = AssetsViewModel()
-    @State private var userId: String = "test-user-id"
+    @State private var userId: String = AppUser.id
     @State private var selectedSort: SortOption = .totalAssets
     @State private var selectedHolding: HoldingNavigationItem?
     @State private var showingNewTradeFlow = false

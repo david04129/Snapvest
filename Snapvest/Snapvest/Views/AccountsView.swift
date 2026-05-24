@@ -13,7 +13,7 @@ struct AccountsView: View {
     @StateObject private var viewModel = AccountsViewModel()
     @State private var showingAddAccount = false
     @State private var showingAddLiability = false
-    @State private var userId: String = "test-user-id"
+    @State private var userId: String = AppUser.id
     @State private var expandedCategories: Set<AccountType> = Set(AccountType.allCases)
     @State private var accountOrder: [AccountType] = AccountType.allCases
     @State private var accountOrders: [AccountType: [String]] = [:]

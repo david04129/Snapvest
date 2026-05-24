@@ -64,15 +64,24 @@ class AccountsViewModel: ObservableObject {
         do {
             try await dataService.createAccount(account)
             await loadAccounts(userId: account.userId)
+            await SnapshotRefreshCoordinator.rebuildAndNotify(
+                userId: account.userId,
+                dataService: dataService
+            )
         } catch {
             errorMessage = "建立帳戶失敗：\(error.localizedDescription)"
         }
     }
     
     func deleteAccount(_ accountId: String) async {
+        let userId = accounts.first(where: { $0.id == accountId })?.userId ?? AppUser.id
         do {
             try await dataService.deleteAccount(accountId)
             accounts.removeAll { $0.id == accountId }
+            await SnapshotRefreshCoordinator.rebuildAndNotify(
+                userId: userId,
+                dataService: dataService
+            )
         } catch {
             errorMessage = "刪除帳戶失敗：\(error.localizedDescription)"
         }
@@ -82,13 +91,10 @@ class AccountsViewModel: ObservableObject {
         do {
             try await dataService.archiveDebtAccount(account)
             await loadAccounts(userId: account.userId)
-            let priceService = PriceService(dataService: dataService)
-            _ = try? await SnapshotUpdater.rebuildSnapshots(
+            await SnapshotRefreshCoordinator.rebuildAndNotify(
                 userId: account.userId,
-                dataService: dataService,
-                priceService: priceService
+                dataService: dataService
             )
-            NotificationCenter.default.post(name: .snapshotsDidUpdate, object: nil)
             await refreshBalances(userId: account.userId)
             return nil
         } catch {
@@ -166,13 +172,10 @@ class AccountsViewModel: ObservableObject {
             try await dataService.updateAccount(updated)
             
             await loadAccounts(userId: account.userId)
-            let priceService = PriceService(dataService: dataService)
-            _ = try? await SnapshotUpdater.rebuildSnapshots(
+            await SnapshotRefreshCoordinator.rebuildAndNotify(
                 userId: account.userId,
-                dataService: dataService,
-                priceService: priceService
+                dataService: dataService
             )
-            NotificationCenter.default.post(name: .snapshotsDidUpdate, object: nil)
             await refreshBalances(userId: account.userId)
             return nil
         } catch {

@@ -77,7 +77,7 @@ enum SnapshotUpdater {
         }
 
         let liabilities = try await loadLiabilities(userId: userId, dataService: dataService, accounts: accounts)
-        let usdToTwdRate = (try? await dataService.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate) ?? 32
+        let usdToTwdRate = (try? await dataService.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate) ?? 0
         let homeSnapshot = buildHomeDashboardSnapshot(
             userId: userId,
             accounts: accounts,

@@ -12,7 +12,7 @@ struct AppRootView: View {
     @ObservedObject private var themeManager = ThemeManager.shared
     @State private var isLaunchComplete = false
     
-    private let userId = "test-user-id"
+    private let userId = AppUser.id
     
     var body: some View {
         Group {

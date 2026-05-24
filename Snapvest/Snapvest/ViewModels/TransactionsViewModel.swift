@@ -408,7 +408,7 @@ class TransactionsViewModel: ObservableObject {
                 return
             }
             
-            let userId = accounts.first?.userId ?? "test-user-id"
+            let userId = accounts.first?.userId ?? AppUser.id
             
             // 檢查是否為還款或轉帳交易（還款使用轉帳的邏輯）
             let isRepayment = (transaction.notes?.contains("還款至") ?? false) || 
@@ -586,31 +586,16 @@ class TransactionsViewModel: ObservableObject {
                 errorMessage = "刪除交易失敗：\(error.localizedDescription)"
             }
             // 如果刪除失敗，重新載入數據以恢復狀態
-            await loadTransactions(userId: accounts.first?.userId ?? "test-user-id")
+            await loadTransactions(userId: accounts.first?.userId ?? AppUser.id)
         }
     }
 
     private func updateSnapshotsIfNeeded(for accountId: String) async {
         if let userId = await resolveUserId(for: accountId) {
-            do {
-                let priceService = PriceService(dataService: dataService)
-                let bundle = try await SnapshotUpdater.rebuildSnapshots(
-                    userId: userId,
-                    dataService: dataService,
-                    priceService: priceService
-                )
-                await PortfolioStateSync.sync(
-                    userId: userId,
-                    dataService: dataService,
-                    priceService: priceService,
-                    bundle: bundle
-                )
-                await MainActor.run {
-                    NotificationCenter.default.post(name: .snapshotsDidUpdate, object: nil)
-                }
-            } catch {
-                // 快照更新失敗不影響交易流程
-            }
+            await SnapshotRefreshCoordinator.rebuildAndNotify(
+                userId: userId,
+                dataService: dataService
+            )
         }
     }
 
@@ -618,7 +603,7 @@ class TransactionsViewModel: ObservableObject {
         if let account = accounts.first(where: { $0.id == accountId }) {
             return account.userId
         }
-        if let fetchedAccounts = try? await dataService.fetchAccounts(userId: "test-user-id"),
+        if let fetchedAccounts = try? await dataService.fetchAccounts(userId: AppUser.id),
            let account = fetchedAccounts.first(where: { $0.id == accountId }) {
             return account.userId
         }

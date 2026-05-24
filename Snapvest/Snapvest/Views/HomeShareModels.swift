@@ -79,7 +79,7 @@ struct HomeShareRenderConfig {
 
     /// 分享用走勢點：優先使用目前區間；不足時改用全部資料
     var effectiveTrendPoints: [TrendChartPoint] {
-        let filtered = TrendChartMockData.filtered(
+        let filtered = TrendChartDataFilter.filtered(
             points: trendPoints,
             range: trendTimeRange,
             customStart: trendCustomStart,

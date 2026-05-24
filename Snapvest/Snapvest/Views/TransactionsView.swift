@@ -24,7 +24,7 @@ struct TransactionsView: View {
     @State private var editingTransferTransaction: Transaction?
     @State private var editingRepaymentTransaction: Transaction?
     @State private var editingAccount: Account?
-    @State private var userId: String = "test-user-id"
+    @State private var userId: String = AppUser.id
     @StateObject private var editingAccountViewModel = AccountDetailViewModel()
     @State private var showingDeleteError = false
     @State private var deleteErrorMessage: String? = nil

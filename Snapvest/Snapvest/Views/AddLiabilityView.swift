@@ -22,10 +22,10 @@ struct AddLiabilityView: View {
     @State private var monthlyPayment: Decimal = 0
     @State private var selectedRepaymentAccount: Account?
     @State private var repaymentDay: String = "1"
-    @State private var userId: String = "test-user-id"
+    @State private var userId: String = AppUser.id
     @State private var showingAccountPicker = false
     
-    init(portfolioViewModel: PortfolioViewModel? = nil, userId: String = "test-user-id", editingLiability: Liability? = nil) {
+    init(portfolioViewModel: PortfolioViewModel? = nil, userId: String = AppUser.id, editingLiability: Liability? = nil) {
         self._portfolioViewModel = ObservedObject(wrappedValue: portfolioViewModel ?? PortfolioViewModel())
         self.userId = userId
         self.editingLiability = editingLiability

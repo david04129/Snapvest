@@ -40,7 +40,7 @@ class AccountDetailViewModel: ObservableObject {
         
         do {
             var transactions = try await dataService.fetchTransactions(accountId: accountId)
-            let allAccounts = try await dataService.fetchAccounts(userId: "test-user-id")
+            let allAccounts = try await dataService.fetchAccounts(userId: AppUser.id)
             
             if let account = allAccounts.first(where: { $0.id == accountId }) {
                 do {

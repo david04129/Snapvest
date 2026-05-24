@@ -28,11 +28,10 @@ class CategoryTotalViewModel: ObservableObject {
     ) async {
         var total: Decimal = 0
         
-        // TODO: 從匯率服務獲取即時匯率
-        let usdToTwdRate: Decimal = 32 // 臨時固定值
+        let usdToTwdRate = (try? await dataService.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate) ?? 0
         
         // 獲取所有交易，以便正確計算轉帳/還款交易的影響
-        let userId = accounts.first?.userId ?? "test-user-id"
+        let userId = accounts.first?.userId ?? AppUser.id
         var allTransactions: [Transaction] = []
         do {
             allTransactions = try await dataService.fetchAllTransactions(userId: userId)

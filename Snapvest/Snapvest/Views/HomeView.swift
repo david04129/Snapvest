@@ -11,7 +11,7 @@ struct HomeView: View {
     @Binding var selectedTab: Int
     @EnvironmentObject private var viewModel: PortfolioViewModel
     @ObservedObject private var homePrivacy = HomePrivacyManager.shared
-    @State private var userId: String = "test-user-id"
+    @State private var userId: String = AppUser.id
     @State private var navigationStackResetID = UUID()
     @State private var isShareSheetPresented = false
 
@@ -80,11 +80,11 @@ struct HomeView: View {
                 customHeaderBar(icon: "house.fill", title: "首頁")
             }
             .refreshable {
-                await viewModel.refreshDashboardTotals(userId: userId)
+                await SnapshotRefreshCoordinator.rebuildAndNotify(userId: userId)
             }
             .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { _ in
                 Task {
-                    await viewModel.refreshDashboardTotals(userId: userId)
+                    await viewModel.reloadFromPersistedSnapshots(userId: userId)
                 }
             }
         }
@@ -546,7 +546,7 @@ struct CashCardView: View {
                     // 進度條（台幣 vs 美金，連續形式，帶動畫、觸摸互動）
                     let twdCashValue = viewModel.cashByCurrency[.TWD] ?? 0
                     let usdCashValue = viewModel.cashByCurrency[.USD] ?? 0
-                    let usdToTwdRate: Decimal = 32
+                    let usdToTwdRate = viewModel.pieChartInputs?.usdToTwdRate ?? 0
                     let totalCashForRatio = twdCashValue + (usdCashValue * usdToTwdRate)
                     let twdRatio = totalCashForRatio > 0 ? (twdCashValue / totalCashForRatio) : 0
                     let usdRatio = totalCashForRatio > 0 ? ((usdCashValue * usdToTwdRate) / totalCashForRatio) : 0

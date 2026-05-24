@@ -28,7 +28,7 @@ struct AddAccountView: View {
     @State private var startDate: Date = Date()  // 開始日期
     @State private var otherDebtAmount: String = ""
     @State private var otherDebtNotes: String = ""
-    @State private var userId: String = "test-user-id"
+    @State private var userId: String = AppUser.id
     @State private var duplicateNameError: String? = nil
     
     // 重置所有輸入欄位
@@ -299,13 +299,10 @@ struct AddAccountView: View {
             await transactionsViewModel.createTransaction(transaction)
             
             await viewModel.loadAccounts(userId: userId)
-            let priceService = PriceService(dataService: MockDataService.shared)
-            _ = try? await SnapshotUpdater.rebuildSnapshots(
+            await SnapshotRefreshCoordinator.rebuildAndNotify(
                 userId: userId,
-                dataService: MockDataService.shared,
-                priceService: priceService
+                dataService: MockDataService.shared
             )
-            NotificationCenter.default.post(name: .snapshotsDidUpdate, object: nil)
             
             resetForm()
             dismiss()
@@ -1211,7 +1208,7 @@ struct DebtAccountDetailsFormView: View {
             .presentationDetents([.medium])
         }
         .task {
-            await accountsViewModel.loadAccounts(userId: "test-user-id")
+            await accountsViewModel.loadAccounts(userId: AppUser.id)
             if selectedRepaymentAccount == nil {
                 // 優先選擇台幣現金帳戶，如果沒有則選擇台幣證券戶
                 selectedRepaymentAccount = availableRepaymentAccounts.first { $0.accountType == .twdDeposit } 

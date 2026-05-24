@@ -144,6 +144,22 @@ class PortfolioViewModel: ObservableObject {
         hasLoadedOnce = true
     }
     
+    /// 從已持久化的快照刷新首頁（快照更新通知時使用）
+    func reloadFromPersistedSnapshots(userId: String) async {
+        do {
+            accounts = try await dataService.fetchAccounts(userId: userId)
+            liabilities = try await loadLiabilities(userId: userId)
+            if let snapshot = try await dataService.fetchHomeDashboardSnapshot(userId: userId) {
+                homeSnapshot = snapshot
+                applyHomeSnapshot(snapshot)
+            }
+            await refreshPieChartData(userId: userId)
+        } catch {
+            errorMessage = "刷新首頁失敗：\(error.localizedDescription)"
+        }
+        hasLoadedOnce = true
+    }
+    
     /// 依最新帳戶／交易／負債重算首頁總覽（含其他債務），並寫回快照
     func refreshDashboardTotals(userId: String) async {
         do {
@@ -194,8 +210,8 @@ class PortfolioViewModel: ObservableObject {
     
     /// 計算總覽數據
     private func calculateSummary() async {
-        // TODO: 從匯率服務獲取即時匯率
-        let usdToTwdRate: Decimal = 32 // 臨時固定值，之後應該從 ExchangeRate 服務獲取
+        // 從匯率服務獲取即時匯率（Supabase）；無匯率時美金不計入台幣合計
+        let usdToTwdRate = (try? await dataService.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate) ?? 0
         
         // 計算總投資（所有持股的市值，轉換為 TWD）
         var totalInvestmentsValue: Decimal = 0
@@ -339,10 +355,10 @@ class PortfolioViewModel: ObservableObject {
             .TWD: snapshot.twdCash,
             .USD: snapshot.usdCash
         ]
-        realizedGainLoss = realizedGainLossTWD + (realizedGainLossUSD * 32)
+        realizedGainLoss = realizedGainLossTWD
 
         Task {
-            let usdToTwdRate = (try? await dataService.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate) ?? 32
+            let usdToTwdRate = (try? await dataService.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate) ?? 0
             realizedGainLoss = realizedGainLossTWD + (realizedGainLossUSD * usdToTwdRate)
         }
     }
@@ -369,6 +385,7 @@ class PortfolioViewModel: ObservableObject {
         
         do {
             try await dataService.saveHomeDashboardSnapshot(snapshot)
+            dataService.persistLocalStore(for: userId)
         } catch {
             // 快照儲存失敗不影響畫面顯示
         }

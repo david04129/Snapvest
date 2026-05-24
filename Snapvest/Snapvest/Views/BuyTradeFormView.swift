@@ -33,7 +33,7 @@ struct BuyTradeFormView: View {
     @State private var showingSymbolPicker = false
     @State private var currentPrice: Decimal?
     @State private var accountCashBalance: Decimal = 0
-    @State private var userId: String = "test-user-id"
+    @State private var userId: String = AppUser.id
     
     private let dataService: DataServiceProtocol = MockDataService.shared
     private let priceService = PriceService(dataService: MockDataService.shared)

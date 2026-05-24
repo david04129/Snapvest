@@ -27,15 +27,10 @@ class AssetsViewModel: ObservableObject {
     @Published var allocationStockUS: Decimal = 0
     @Published var allocationCrypto: Decimal = 0
     
-    // 匯率變數（明確區分即時匯率和購買時匯率）
-    /// 即時匯率（用於市值和現金餘額轉換為台幣）
-    var usdToTwdRate: Decimal { currentExchangeRate }
+    @Published private(set) var usdToTwdRate: Decimal = 0
     
-    /// TODO: 未來從 ExchangeRate 服務獲取即時匯率
-    private var currentExchangeRate: Decimal {
-        // 目前使用固定模擬值，未來替換為即時匯率服務
-        return 32 // USD to TWD
-    }
+    /// 即時匯率（用於市值和現金餘額轉換為台幣）
+    var displayUsdToTwdRate: Decimal { usdToTwdRate }
     
     /// 購買時匯率（用於成本計算）
     /// 注意：購買時匯率已存儲在 Transaction.exchangeRate 和 AggregatedHoldingSnapshot.fifoLotsByAccount 中
@@ -63,6 +58,7 @@ class AssetsViewModel: ObservableObject {
         }
         
         do {
+            usdToTwdRate = (try? await dataService.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate) ?? 0
             let fetchedAccounts = try await dataService.fetchAccounts(userId: userId)
             let accountSnapshots = try await loadAccountSnapshots(accounts: fetchedAccounts)
             var aggregated = try await dataService.fetchAggregatedHoldingSnapshots(userId: userId, assetType: nil)
@@ -90,6 +86,7 @@ class AssetsViewModel: ObservableObject {
                     accountSnapshots: bundle.accountSnapshots,
                     accounts: fetchedAccounts
                 )
+                dataService.persistLocalStore(for: userId)
             } else {
                 self.assetPriceSnapshots = assetPriceSnapshots
                 self.aggregatedHoldings = aggregated
@@ -259,7 +256,7 @@ class AssetsViewModel: ObservableObject {
             if aggregated.currency == .TWD {
                 totalInvestmentsValue += marketValue
             } else if aggregated.currency == .USD {
-                totalInvestmentsValue += marketValue * currentExchangeRate
+                totalInvestmentsValue += marketValue * usdToTwdRate
             }
         }
         
@@ -287,7 +284,7 @@ class AssetsViewModel: ObservableObject {
             if currency == .TWD {
                 totalCashTWD += amount
             } else if currency == .USD {
-                totalCashTWD += amount * currentExchangeRate
+                totalCashTWD += amount * usdToTwdRate
             } else {
                 // 其他貨幣，暫時不轉換（或使用預設匯率）
                 totalCashTWD += amount

@@ -2,7 +2,7 @@
 //  HomeTrendChartView.swift
 //  Snapvest
 //
-//  首頁走勢圖（Mock 資料）：總資產 / 淨資產，可互動顯示當日數值
+//  首頁走勢圖：總資產 / 淨資產，可互動顯示當日數值
 //
 
 import SwiftUI
@@ -52,46 +52,9 @@ struct TrendChartIntervalChange {
     }
 }
 
-// MARK: - Mock 資料
+// MARK: - 走勢資料篩選
 
-enum TrendChartMockData {
-    static let launchDate: Date = {
-        Calendar.current.date(byAdding: .day, value: -120, to: Date()) ?? Date()
-    }()
-    
-    static let allPoints: [TrendChartPoint] = generate(days: 120, endingAt: Date())
-    
-    static func generate(days: Int, endingAt endDate: Date) -> [TrendChartPoint] {
-        let calendar = Calendar.current
-        var points: [TrendChartPoint] = []
-        var totalAssets: Double = 1_850_000
-        var liabilities: Double = 420_000
-        var unrealized: Double = 185_000
-        
-        for offset in stride(from: days - 1, through: 0, by: -1) {
-            guard let date = calendar.date(byAdding: .day, value: -offset, to: calendar.startOfDay(for: endDate)) else { continue }
-            
-            let noise = sin(Double(offset) / 8.0) * 18_000
-            let drift = Double(days - offset) * 1_200
-            let dailyChange = Double.random(in: -22_000...28_000)
-            totalAssets = max(800_000, 1_850_000 + drift + noise + dailyChange * 0.3)
-            liabilities = max(100_000, 420_000 + Double(offset) * 180 + Double.random(in: -5_000...8_000))
-            unrealized = totalAssets * 0.11 + sin(Double(offset) / 5.0) * 35_000 + Double.random(in: -12_000...15_000)
-            
-            let netWorth = totalAssets - liabilities
-            points.append(
-                TrendChartPoint(
-                    id: ISO8601DateFormatter().string(from: date),
-                    date: date,
-                    totalAssets: Decimal(totalAssets.rounded()),
-                    netWorth: Decimal(netWorth.rounded()),
-                    unrealizedGainLoss: Decimal(unrealized.rounded())
-                )
-            )
-        }
-        return points
-    }
-    
+enum TrendChartDataFilter {
     static func filtered(
         points: [TrendChartPoint],
         range: DateRangePreset,
@@ -130,7 +93,7 @@ struct HomeTrendChartSection: View {
     @State private var contentPhase: CGFloat = 1
     
     private var filteredPoints: [TrendChartPoint] {
-        TrendChartMockData.filtered(
+        TrendChartDataFilter.filtered(
             points: trendPoints,
             range: timeRange,
             customStart: customStartDate,
@@ -355,11 +318,17 @@ struct HomeTrendChartSection: View {
     }
     
     private var emptyState: some View {
-        Text(loadFailed ? "無法載入走勢資料" : "尚無足夠資料顯示走勢")
+        Text(emptyStateMessage)
             .font(.subheadline)
             .foregroundColor(.secondaryText)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 32)
+    }
+
+    private var emptyStateMessage: String {
+        if loadFailed { return "無法載入走勢資料" }
+        if !SupabaseConfig.isConfigured { return "尚未連線雲端，無法顯示走勢" }
+        return "尚無足夠資料顯示走勢"
     }
     
     private func loadTrendPoints() async {
@@ -368,7 +337,7 @@ struct HomeTrendChartSection: View {
         defer { isLoading = false }
         
         guard SupabaseConfig.isConfigured else {
-            trendPoints = TrendChartMockData.generate(days: 120, endingAt: Date())
+            trendPoints = []
             return
         }
         
@@ -379,13 +348,13 @@ struct HomeTrendChartSection: View {
                 startDate: start,
                 endDate: Date()
             )
-            trendPoints = fetched.count >= 2
-                ? fetched
-                : TrendChartMockData.generate(days: 120, endingAt: Date())
+            trendPoints = fetched
+            loadFailed = false
         } catch {
-            trendPoints = TrendChartMockData.generate(days: 120, endingAt: Date())
+            trendPoints = []
+            loadFailed = true
             #if DEBUG
-            print("[HomeTrendChart] load failed, using mock: \(error.localizedDescription)")
+            print("[HomeTrendChart] load failed: \(error.localizedDescription)")
             #endif
         }
     }

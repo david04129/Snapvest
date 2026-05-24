@@ -22,7 +22,7 @@ struct RepaymentView: View {
     @State private var exchangeRate: String = ""
     @State private var notes: String = ""
     @State private var transactionDate: Date = Date()
-    @State private var userId: String = "test-user-id"
+    @State private var userId: String = AppUser.id
     @State private var showingAccountPicker = false
     @State private var errorMessage: String? = nil
     @State private var sourceAccountCashBalance: Decimal = 0

@@ -26,7 +26,7 @@ struct TransferView: View {
     @State private var exchangeRate: String = ""
     @State private var notes: String = ""
     @State private var transactionDate: Date = Date()
-    @State private var userId: String = "test-user-id"
+    @State private var userId: String = AppUser.id
     @State private var showingAccountPicker = false
     @State private var showingSourceAccountPicker = false // 轉出帳戶選擇器
     @State private var errorMessage: String? = nil

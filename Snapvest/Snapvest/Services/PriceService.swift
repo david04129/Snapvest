@@ -40,7 +40,7 @@ class PriceService: PriceServiceProtocol {
             )
         }
         
-        // 離線 / 未設定 Supabase：使用 Mock 價格
+        // 離線且未設定 Supabase 時無本地股價
         if let cachedPrice = try await dataService.fetchPrice(assetType: assetType, symbol: symbol, date: nil) {
             return cachedPrice.price
         }
