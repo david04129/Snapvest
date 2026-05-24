@@ -96,16 +96,38 @@ struct AssetsFilterChipButton: View {
     }
 }
 
+/// 持股列表依市值排序（資產分頁、帳戶詳情共用）
+enum HoldingsMarketValueSort {
+    case descending
+    case ascending
+    
+    mutating func cycle() {
+        switch self {
+        case .descending: self = .ascending
+        case .ascending: self = .descending
+        }
+    }
+    
+    var iconName: String {
+        switch self {
+        case .descending: return "arrow.down"
+        case .ascending: return "arrow.up"
+        }
+    }
+}
+
 /// Toolbar 用 chip（透明底 + 描邊，避免與導航列 glass 背景疊成雙層泡泡）
-struct TransactionHistoryToolbarChip: View {
+struct AccountToolbarChip: View {
+    let icon: String
+    let title: String
     let action: () -> Void
     
     var body: some View {
         Button(action: action) {
             HStack(spacing: 5) {
-                Image(systemName: "clock.fill")
+                Image(systemName: icon)
                     .font(.system(size: 11, weight: .semibold))
-                Text("交易紀錄")
+                Text(title)
                     .font(.subheadline)
                     .fontWeight(.semibold)
             }
@@ -120,6 +142,22 @@ struct TransactionHistoryToolbarChip: View {
         }
         .buttonStyle(.plain)
         .fixedSize()
+    }
+}
+
+struct TransactionHistoryToolbarChip: View {
+    let action: () -> Void
+    
+    var body: some View {
+        AccountToolbarChip(icon: "clock.fill", title: "交易紀錄", action: action)
+    }
+}
+
+struct TransactionImportToolbarChip: View {
+    let action: () -> Void
+    
+    var body: some View {
+        AccountToolbarChip(icon: "square.and.arrow.down", title: "匯入", action: action)
     }
 }
 

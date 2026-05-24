@@ -85,6 +85,11 @@ enum AccountType: String, Codable, CaseIterable {
         case .debt, .otherDebt: return .TWD
         }
     }
+    
+    /// 是否支援 CSV 匯入交易（台幣證券戶、美金帳戶）
+    var supportsTransactionImport: Bool {
+        self == .twdSecurities || self == .usdAccount
+    }
 }
 
 

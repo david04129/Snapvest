@@ -209,9 +209,9 @@ struct HoldingDetailView: View {
     private var displayedAverageCostText: String {
         switch metricAmountDisplay {
         case .twd:
-            return averageCostTWD.formatted(currency: .TWD, fractionDigits: 2)
+            return averageCostTWD.formattedTradePrice(currency: .TWD)
         case .original:
-            return aggregatedHolding.weightedAverageCost.formatted(currency: aggregatedHolding.currency, fractionDigits: 2)
+            return aggregatedHolding.weightedAverageCost.formattedTradePrice(currency: aggregatedHolding.currency)
         }
     }
     
@@ -341,7 +341,7 @@ struct HoldingDetailView: View {
             
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 if let price = displayedCurrentPrice {
-                    Text(price.formatted(currency: displayedPriceCurrency, fractionDigits: 2))
+                    Text(price.formattedTradePrice(currency: displayedPriceCurrency))
                         .font(.system(size: 26, weight: .bold))
                         .foregroundColor(.primaryText)
                 } else {
@@ -521,13 +521,13 @@ struct HoldingDetailView: View {
                 Group {
                     switch sheet {
                     case .buy:
-                        BuyTradeFormView(market: market, prefill: buyPrefill) {
+                        BuyTradeFormView(market: market, prefill: buyPrefill, onSubmit: {
                             NotificationCenter.default.post(name: .snapshotsDidUpdate, object: nil)
-                        }
+                        })
                     case .sell:
-                        SellTradeFormView(market: market, prefill: sellPrefill) { _ in
+                        SellTradeFormView(market: market, prefill: sellPrefill, onSubmit: { _ in
                             NotificationCenter.default.post(name: .snapshotsDidUpdate, object: nil)
-                        }
+                        })
                     }
                 }
                 .navigationTitle(sheet == .buy ? "買入\(aggregatedHolding.symbol)" : "賣出\(aggregatedHolding.symbol)")
@@ -725,11 +725,7 @@ private struct FIFOLotTableDataRow: View {
             dataCell(formatLotQuantity(row.lot.remainingQuantity), alignment: .trailing, weight: .semibold)
                 .frame(minWidth: 44, maxWidth: .infinity, alignment: .trailing)
             dataCell(
-                displayCostPerUnit.formatted(
-                    currency: displayCurrency,
-                    fractionDigits: 2,
-                    showSymbol: displayCurrency != .TWD
-                ),
+                displayCostPerUnit.formattedTradePrice(currency: displayCurrency),
                 alignment: .trailing,
                 weight: .regular
             )

@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct SymbolItem: Identifiable, Equatable {
+struct SymbolItem: Identifiable, Equatable, Sendable {
     let symbol: String
     let name: String
     /// CoinGecko API 用的 id（僅加密貨幣；與 ticker 常不同，例如 USDC → usd-coin）
@@ -21,10 +21,48 @@ struct SymbolItem: Identifiable, Equatable {
     }
 }
 
+/// 台股簡稱查詢（可從背景執行緒呼叫，獨立於 MainActor）
+private enum TWSymbolNameLookup {
+    nonisolated(unsafe) private static var cache: [String: String]?
+
+    nonisolated static func displayName(for symbol: String) -> String? {
+        let trimmed = symbol.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return nil }
+        if cache == nil {
+            cache = loadFromBundle()
+        }
+        return cache?[trimmed]
+    }
+
+    nonisolated private static func loadFromBundle() -> [String: String] {
+        let url = Bundle.main.url(forResource: "symbols_tw", withExtension: "json", subdirectory: "Symbols")
+            ?? Bundle.main.url(forResource: "symbols_tw", withExtension: "json")
+        guard let url = url,
+              let data = try? Data(contentsOf: url),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let itemsArray = json["items"] as? [[String: Any]] else {
+            return [:]
+        }
+        var lookup: [String: String] = [:]
+        lookup.reserveCapacity(itemsArray.count)
+        for item in itemsArray {
+            guard let symbol = item["symbol"] as? String,
+                  let name = item["name"] as? String else { continue }
+            lookup[symbol] = name
+        }
+        return lookup
+    }
+}
+
 /// 從 Bundle 讀取股票/加密貨幣代號清單，並提供搜尋功能
 struct SymbolListService {
 
     private static var cryptoCoingeckoIdBySymbol: [String: String]?
+
+    /// 台股代號 → 簡稱（symbols_tw.json）
+    static func twDisplayName(for symbol: String) -> String? {
+        TWSymbolNameLookup.displayName(for: symbol)
+    }
 
     /// 依 ticker 查 CoinGecko id（用於抓價；與清單內 coingeckoId 一致）
     static func coingeckoId(forCryptoSymbol symbol: String) -> String? {
@@ -48,6 +86,10 @@ struct SymbolListService {
         case .stockUS: fileName = "symbols_us"
         case .crypto: fileName = "symbols_crypto"
         }
+        return loadSymbolItems(fileName: fileName).sorted { $0.symbol < $1.symbol }
+    }
+
+    @MainActor private static func loadSymbolItems(fileName: String) -> [SymbolItem] {
         let url = Bundle.main.url(forResource: fileName, withExtension: "json", subdirectory: "Symbols")
             ?? Bundle.main.url(forResource: fileName, withExtension: "json")
         guard let url = url,
@@ -60,7 +102,7 @@ struct SymbolListService {
             guard let symbol = item["symbol"] as? String, let name = item["name"] as? String else { return nil }
             let coingeckoId = item["coingeckoId"] as? String
             return SymbolItem(symbol: symbol, name: name, coingeckoId: coingeckoId)
-        }.sorted { $0.symbol < $1.symbol }
+        }
     }
     
     /// 搜尋代號或名稱（不區分大小寫）：代號匹配優先，名稱匹配次之
@@ -106,4 +148,3 @@ struct SymbolListService {
         return limit != nil ? Array(combined.prefix(limit!)) : combined
     }
 }
-

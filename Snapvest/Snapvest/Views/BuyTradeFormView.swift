@@ -14,6 +14,8 @@ struct BuyTradeFormView: View {
     /// 嵌在 NewTradeFlowView 時隱藏表單內標題（流程頁已有買賣切換）
     var embedInTradeFlow: Bool = false
     let onSubmit: (() -> Void)?
+    var isImportDraftMode: Bool = false
+    var onImportDraftSave: ((Transaction) -> Void)? = nil
     
     @StateObject private var accountsViewModel = AccountsViewModel()
     @StateObject private var transactionsViewModel = TransactionsViewModel()
@@ -43,16 +45,25 @@ struct BuyTradeFormView: View {
         prefill: BuyTradePrefill? = nil,
         editingTransaction: Transaction? = nil,
         embedInTradeFlow: Bool = false,
+        isImportDraftMode: Bool = false,
+        onImportDraftSave: ((Transaction) -> Void)? = nil,
         onSubmit: (() -> Void)? = nil
     ) {
         self.market = market
         self.prefill = prefill
         self.editingTransaction = editingTransaction
         self.embedInTradeFlow = embedInTradeFlow
+        self.isImportDraftMode = isImportDraftMode
+        self.onImportDraftSave = onImportDraftSave
         self.onSubmit = onSubmit
     }
     
-    private var isEditMode: Bool { editingTransaction != nil }
+    private var isEditMode: Bool { editingTransaction != nil && !isImportDraftMode }
+    
+    private var submitButtonTitle: String {
+        if isImportDraftMode { return "確認" }
+        return isEditMode ? "確認修改" : "買入"
+    }
     
     private var isSymbolLocked: Bool {
         isEditMode || prefill?.lockSymbol == true
@@ -161,7 +172,7 @@ struct BuyTradeFormView: View {
                 Button(action: handleSubmit) {
                     HStack(spacing: 8) {
                         Image(systemName: "arrow.up")
-                        Text(isEditMode ? "確認修改" : "買入")
+                        Text(submitButtonTitle)
                     }
                     .font(.headline)
                     .foregroundColor(AppColors.actionForeground)
@@ -253,7 +264,7 @@ struct BuyTradeFormView: View {
     private var amountBreakdownDetail: String? {
         guard let qty = quantityValue, let price = priceValue, qty > 0, price > 0 else { return nil }
         let qtyLabel = qty.formattedQuantityInput(maxFractionDigits: market == .crypto ? 8 : 4)
-        let priceLabel = price.formatted(currency: priceCurrency, fractionDigits: 2, showSymbol: true)
+        let priceLabel = price.formattedTradePrice(currency: priceCurrency)
         return "\(qtyLabel) × \(priceLabel)"
     }
     
@@ -287,7 +298,17 @@ struct BuyTradeFormView: View {
     
     private var accountSection: some View {
         buyFormRow(title: "帳戶", icon: "building.columns.fill", color: market.themeColor) {
-            Picker(selection: $selectedAccountId) {
+            if isImportDraftMode, let account = selectedAccount {
+                HStack(spacing: 8) {
+                    Image(systemName: account.accountType.icon)
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(account.accountType.color)
+                    Text(account.name)
+                        .foregroundColor(.primaryText)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                Picker(selection: $selectedAccountId) {
                 ForEach(availableAccounts) { account in
                     HStack(spacing: 8) {
                         Image(systemName: account.accountType.icon)
@@ -317,6 +338,7 @@ struct BuyTradeFormView: View {
             .pickerStyle(.menu)
             .labelsHidden()
             .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
     
@@ -349,7 +371,7 @@ struct BuyTradeFormView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     
                     if let price = currentPrice {
-                        buyInfoRow(label: "目前股價", value: price.formatted(currency: priceCurrency))
+                        buyInfoRow(label: "目前股價", value: price.formattedTradePrice(currency: priceCurrency))
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -435,6 +457,34 @@ struct BuyTradeFormView: View {
               let price = priceValue else { return }
         
         Task {
+            if isImportDraftMode,
+               let existing = editingTransaction,
+               let onImportDraftSave {
+                let updated = Transaction(
+                    id: existing.id,
+                    accountId: account.id,
+                    type: .buy,
+                    assetType: assetType,
+                    symbol: selectedSymbol,
+                    quantity: qty,
+                    price: price,
+                    currency: priceCurrency,
+                    fee: existing.fee,
+                    notes: selectedSymbolName.isEmpty
+                        ? (existing.notes ?? "買入 \(selectedSymbol)")
+                        : "買入 \(selectedSymbol) - \(selectedSymbolName)",
+                    transactionDate: transactionDate,
+                    createdAt: existing.createdAt,
+                    updatedAt: Date(),
+                    exchangeRate: exchangeRateValue,
+                    deductFromAccount: deductFromAccount
+                )
+                onImportDraftSave(updated)
+                onSubmit?()
+                dismiss()
+                return
+            }
+            
             if let existing = editingTransaction {
                 await transactionsViewModel.updateBuyTransaction(
                     existing: existing,
@@ -475,9 +525,9 @@ struct BuyTradeFormView: View {
         quantityText = transaction.quantity.formattedQuantityInput(
             maxFractionDigits: transaction.assetType == .crypto ? 8 : 4
         )
-        priceText = transaction.price.formatted(fractionDigits: 2)
+        priceText = transaction.price.formattedQuantityInput(maxFractionDigits: 4)
         transactionDate = transaction.transactionDate
-        deductFromAccount = transaction.deductFromAccount ?? true
+        deductFromAccount = transaction.deductFromAccount ?? (isImportDraftMode ? false : true)
         if let rate = transaction.exchangeRate {
             exchangeRateText = rate.formatted(fractionDigits: 2)
         }
@@ -497,7 +547,8 @@ struct BuyTradeFormView: View {
             return
         }
         
-        if !isEditMode,
+        if !isImportDraftMode,
+           !isEditMode,
            deductFromAccount,
            let amount = transactionAmountInAccountCurrency,
            let account = selectedAccount,

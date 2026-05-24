@@ -1,0 +1,437 @@
+//
+//  TransactionImportService.swift
+//  Snapvest
+//
+//  驗證 CSV 列並轉成 Transaction
+//
+
+import Foundation
+
+struct TransactionImportValidatedRow: Identifiable, Equatable {
+    let id: Int
+    let lineNumber: Int
+    let summary: String
+    let transaction: Transaction?
+    let errorMessage: String?
+    /// 非錯誤、但不會寫入（例如存入／提取）
+    let skipReason: String?
+    
+    var isSkipped: Bool { skipReason != nil }
+    var isValid: Bool { errorMessage == nil && transaction != nil && !isSkipped }
+}
+
+struct TransactionImportValidationResult: Equatable {
+    let rows: [TransactionImportValidatedRow]
+    
+    var validTransactions: [Transaction] {
+        rows.filter(\.isValid).compactMap(\.transaction)
+    }
+    
+    var importableCount: Int {
+        rows.filter(\.isValid).count
+    }
+    
+    var skippedRows: [TransactionImportValidatedRow] {
+        rows.filter(\.isSkipped)
+    }
+    
+    var errorCount: Int {
+        rows.filter { $0.errorMessage != nil }.count
+    }
+    
+    var canImport: Bool {
+        importableCount > 0 && errorCount == 0
+    }
+}
+
+struct TransactionImportBatchFailure: Identifiable, Equatable {
+    let lineNumber: Int
+    let summary: String
+    let errorMessage: String
+    
+    var id: Int { lineNumber }
+}
+
+struct TransactionImportBatchResult: Equatable {
+    let imported: Int
+    let failures: [TransactionImportBatchFailure]
+    
+    var isFullSuccess: Bool { imported > 0 && failures.isEmpty }
+    
+    var alertTitle: String {
+        if failures.isEmpty { return "匯入成功" }
+        return imported > 0 ? "匯入完成" : "匯入失敗"
+    }
+    
+    var alertMessage: String {
+        var lines: [String] = []
+        if imported > 0 {
+            lines.append("成功 \(imported) 筆")
+        }
+        if !failures.isEmpty {
+            lines.append("失敗 \(failures.count) 筆：")
+            for failure in failures {
+                if failure.lineNumber > 0 {
+                    lines.append("· 第 \(failure.lineNumber) 列 \(failure.summary)：\(failure.errorMessage)")
+                } else {
+                    lines.append("· \(failure.summary)：\(failure.errorMessage)")
+                }
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+}
+
+enum TransactionImportError: LocalizedError {
+    case missingAccount
+    
+    var errorDescription: String? {
+        switch self {
+        case .missingAccount: return "找不到交易所屬帳戶"
+        }
+    }
+}
+
+enum TransactionImportService {
+    static let supportedTypes: Set<TransactionType> = [
+        .buy, .sell, .deposit, .withdraw, .dividend, .transfer
+    ]
+    
+    /// 帳戶詳情 CSV 匯入僅接受股票買賣
+    static func importableTypes(for account: Account) -> Set<TransactionType> {
+        if account.accountType.supportsTransactionImport {
+            return [.buy, .sell]
+        }
+        return supportedTypes
+    }
+    
+    static func skippedTypeReason(for type: TransactionType, account: Account) -> String? {
+        guard account.accountType.supportsTransactionImport else { return nil }
+        guard !importableTypes(for: account).contains(type) else { return nil }
+        return "非股票交易（\(type.displayName)），已略過"
+    }
+    
+    static func validate(
+        parsedRows: [TransactionImportParsedRow],
+        account: Account,
+        allAccounts: [Account]
+    ) -> TransactionImportValidationResult {
+        var accountIndex: [String: Account] = [:]
+        for item in allAccounts {
+            let key = normalizeName(item.name)
+            if accountIndex[key] == nil {
+                accountIndex[key] = item
+            }
+        }
+        
+        let validated = parsedRows.map { row in
+            validateRow(row, account: account, accountIndex: accountIndex)
+        }
+        
+        return TransactionImportValidationResult(rows: validated)
+    }
+    
+    /// 匯入預覽：使用者於買賣表單編輯後更新草稿列
+    static func validatedRow(
+        from draft: Transaction,
+        lineNumber: Int,
+        account: Account
+    ) -> TransactionImportValidatedRow {
+        var normalized = draft
+        normalized.accountId = account.id
+        
+        var errors: [String] = []
+        if normalized.quantity <= 0 {
+            errors.append("quantity 必須大於 0")
+        }
+        if normalized.price < 0 {
+            errors.append("price 無效")
+        }
+        if normalized.type == .buy || normalized.type == .sell {
+            if normalized.symbol.isEmpty {
+                errors.append("需填 symbol")
+            }
+        }
+        
+        if !errors.isEmpty {
+            return TransactionImportValidatedRow(
+                id: lineNumber,
+                lineNumber: lineNumber,
+                summary: "",
+                transaction: nil,
+                errorMessage: errors.joined(separator: "；"),
+                skipReason: nil
+            )
+        }
+        
+        return TransactionImportValidatedRow(
+            id: lineNumber,
+            lineNumber: lineNumber,
+            summary: "",
+            transaction: normalized,
+            errorMessage: nil,
+            skipReason: nil
+        )
+    }
+    
+    static func validationResult(from rows: [TransactionImportValidatedRow]) -> TransactionImportValidationResult {
+        TransactionImportValidationResult(rows: rows)
+    }
+    
+    static func tradeCurrency(assetType: AssetType, account: Account, explicit: Currency?) -> Currency {
+        if let explicit { return explicit }
+        switch assetType {
+        case .stockUS, .crypto:
+            return .USD
+        case .stockTW:
+            return .TWD
+        case .cash:
+            return account.currency
+        }
+    }
+    
+    private static func validateRow(
+        _ row: TransactionImportParsedRow,
+        account: Account,
+        accountIndex: [String: Account]
+    ) -> TransactionImportValidatedRow {
+        var errors: [String] = []
+        
+        let type = row.type
+        if type == nil {
+            errors.append("type 無效")
+        } else if let type, !supportedTypes.contains(type) {
+            errors.append("type「\(type.rawValue)」尚不支援匯入")
+        } else if let type, account.accountType == .twdDeposit, type == .buy || type == .sell {
+            errors.append("台幣存款帳戶不支援 buy/sell")
+        }
+        
+        let date = row.date
+        if date == nil {
+            errors.append("date 格式錯誤")
+        }
+        
+        let quantity = row.quantity
+        if quantity == nil || (quantity ?? 0) <= 0 {
+            errors.append("quantity 必須大於 0")
+        }
+        
+        let price = row.price
+        if price == nil || (price ?? -1) < 0 {
+            errors.append("price 無效")
+        }
+        
+        if let type, type == .deposit || type == .withdraw || type == .transfer {
+            if row.currency != nil, row.currency != account.currency {
+                errors.append("currency 須與此帳戶 \(account.currency.rawValue) 一致，或留空使用帳戶幣別")
+            }
+        }
+        
+        var assetType = row.assetType ?? inferredAssetType(for: account, type: row.type)
+        var symbol = normalizedSymbol(row.symbol, assetType: assetType)
+        var targetAccount: Account?
+        
+        switch row.type {
+        case .buy, .sell, .dividend:
+            if assetType == nil {
+                errors.append("buy/sell/dividend 需填 asset_type")
+            }
+            if symbol.isEmpty {
+                errors.append("buy/sell/dividend 需填 symbol")
+            }
+        case .deposit, .withdraw, .transfer:
+            assetType = .cash
+            symbol = "CASH"
+        default:
+            break
+        }
+        
+        if row.type == .transfer {
+            if let targetName = row.targetAccountName?.trimmingCharacters(in: .whitespaces), !targetName.isEmpty {
+                targetAccount = accountIndex[normalizeName(targetName)]
+                if targetAccount == nil {
+                    errors.append("找不到目標帳戶「\(targetName)」")
+                } else if targetAccount?.id == account.id {
+                    errors.append("轉帳目標不可為目前帳戶")
+                }
+            } else {
+                errors.append("transfer 需填 target_account_name")
+            }
+        }
+        
+        if !errors.isEmpty {
+            return TransactionImportValidatedRow(
+                id: row.id,
+                lineNumber: row.lineNumber,
+                summary: previewSummary(row, account: account),
+                transaction: nil,
+                errorMessage: errors.joined(separator: "；"),
+                skipReason: nil
+            )
+        }
+        
+        guard
+            let type,
+            let date,
+            let quantity,
+            let price,
+            let assetType
+        else {
+            return TransactionImportValidatedRow(
+                id: row.id,
+                lineNumber: row.lineNumber,
+                summary: previewSummary(row, account: account),
+                transaction: nil,
+                errorMessage: "資料不完整",
+                skipReason: nil
+            )
+        }
+        
+        let currency = tradeCurrency(assetType: assetType, account: account, explicit: row.currency)
+        
+        let transaction = buildTransaction(
+            row: row,
+            type: type,
+            date: date,
+            quantity: quantity,
+            price: price,
+            currency: currency,
+            account: account,
+            assetType: assetType,
+            symbol: symbol,
+            targetAccount: targetAccount
+        )
+        
+        let summary = previewSummary(row, account: account, type: type, symbol: symbol)
+        if let skipReason = skippedTypeReason(for: type, account: account) {
+            return TransactionImportValidatedRow(
+                id: row.id,
+                lineNumber: row.lineNumber,
+                summary: summary,
+                transaction: transaction,
+                errorMessage: nil,
+                skipReason: skipReason
+            )
+        }
+        
+        return TransactionImportValidatedRow(
+            id: row.id,
+            lineNumber: row.lineNumber,
+            summary: summary,
+            transaction: transaction,
+            errorMessage: nil,
+            skipReason: nil
+        )
+    }
+    
+    private static func buildTransaction(
+        row: TransactionImportParsedRow,
+        type: TransactionType,
+        date: Date,
+        quantity: Decimal,
+        price: Decimal,
+        currency: Currency,
+        account: Account,
+        assetType: AssetType,
+        symbol: String,
+        targetAccount: Account?
+    ) -> Transaction {
+        var notes = row.notes
+        
+        if type == .transfer, let targetAccount {
+            let rateText = row.exchangeRate.map { " (匯率: \($0.formatted(fractionDigits: 2)))" } ?? ""
+            let base = "自 \(account.name) 轉帳到 \(targetAccount.name)\(rateText)"
+            notes = notes.map { "\($0) - \(base)" } ?? base
+        }
+        
+        if type == .buy || type == .sell {
+            notes = tradeNotes(
+                type: type,
+                assetType: assetType,
+                symbol: symbol,
+                existingNotes: notes
+            )
+        }
+        
+        if type == .deposit || type == .withdraw {
+            notes = notes ?? (type == .deposit ? "CSV 匯入存入" : "CSV 匯入提取")
+        }
+        
+        return Transaction(
+            accountId: account.id,
+            type: type,
+            assetType: assetType,
+            symbol: symbol,
+            quantity: quantity,
+            price: price,
+            currency: currency,
+            fee: row.fee,
+            notes: notes,
+            transactionDate: date,
+            targetAccountId: targetAccount?.id,
+            exchangeRate: row.exchangeRate,
+            deductFromAccount: type == .buy ? row.deductFromAccount : nil
+        )
+    }
+    
+    private static func tradeNotes(
+        type: TransactionType,
+        assetType: AssetType,
+        symbol: String,
+        existingNotes: String?
+    ) -> String? {
+        if let existingNotes, !existingNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return existingNotes
+        }
+        let action = type == .buy ? "買入" : "賣出"
+        if assetType == .stockTW, let displayName = SymbolListService.twDisplayName(for: symbol) {
+            return "\(action) \(symbol) - \(displayName)"
+        }
+        return "\(action) \(symbol)"
+    }
+    
+    private static func inferredAssetType(for account: Account, type: TransactionType?) -> AssetType? {
+        switch account.accountType {
+        case .twdSecurities: return .stockTW
+        case .usdAccount: return .stockUS
+        case .cryptoWallet: return .crypto
+        case .twdDeposit: return type == .deposit || type == .withdraw || type == .transfer ? .cash : nil
+        default: return nil
+        }
+    }
+    
+    private static func previewSummary(
+        _ row: TransactionImportParsedRow,
+        account: Account? = nil,
+        type: TransactionType? = nil,
+        symbol: String? = nil
+    ) -> String {
+        let typeText = (type ?? row.type)?.displayName ?? row.rawFields["type"] ?? "?"
+        let accountText = account?.name ?? "—"
+        let symbolText = symbol ?? row.symbol
+        let dateText = row.date.map { formatDate($0) } ?? row.rawFields["date"] ?? "?"
+        return "第 \(row.lineNumber) 列 · \(dateText) · \(typeText) · \(accountText) · \(symbolText)"
+    }
+    
+    private static func formatDate(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_TW")
+        f.dateFormat = "yyyy/M/d"
+        return f.string(from: date)
+    }
+    
+    private static func normalizeName(_ name: String) -> String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+    
+    private static func normalizedSymbol(_ symbol: String, assetType: AssetType?) -> String {
+        let trimmed = symbol.trimmingCharacters(in: .whitespaces)
+        guard let assetType else { return trimmed }
+        switch assetType {
+        case .stockUS, .crypto:
+            return trimmed.uppercased()
+        default:
+            return trimmed
+        }
+    }
+}

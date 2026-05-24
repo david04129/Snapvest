@@ -126,14 +126,8 @@ class HoldingCalculator {
         // 計算加權平均成本（用於顯示）
         let averageCost = totalCost / totalQuantity
         
-        // 台股 symbol 到 name 的映射
-        let symbolToName: [String: String] = [
-            "2330": "台積電", "2317": "鴻海", "2454": "聯發科", "2308": "台達電", "2891": "中信金",
-            "2882": "國泰金", "2886": "兆豐金", "1301": "台塑", "1303": "南亞", "2002": "中鋼",
-            "2412": "中華電", "2382": "廣達", "2379": "瑞昱", "3008": "大立光", "2884": "玉山金"
-        ]
-        
-        let name = (assetType == .stockTW) ? symbolToName[symbol] : nil
+        // 台股名稱（symbols_tw.json）
+        let name = (assetType == .stockTW) ? SymbolListService.twDisplayName(for: symbol) : nil
         
         holdings[key] = Holding(
             accountId: accountId,

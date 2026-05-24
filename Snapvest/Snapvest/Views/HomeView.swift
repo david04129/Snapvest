@@ -774,7 +774,7 @@ struct RealizedPLCardView: View {
                                                     .font(.caption)
                                                     .foregroundColor(.secondaryText)
                                                 if let costPerUnit = transaction.realizedCostPerUnit {
-                                                    Text(costPerUnit.formatted(currency: transaction.currency))
+                                                    Text(costPerUnit.formattedTradePrice(currency: transaction.currency))
                                                         .font(.subheadline)
                                                         .fontWeight(.semibold)
                                                         .foregroundColor(.primaryText)
@@ -795,7 +795,7 @@ struct RealizedPLCardView: View {
                                                 Text("成交均價")
                                                     .font(.caption)
                                                     .foregroundColor(.secondaryText)
-                                                Text(transaction.price.formatted(currency: transaction.currency))
+                                                Text(transaction.price.formattedTradePrice(currency: transaction.currency))
                                                     .font(.subheadline)
                                                     .fontWeight(.semibold)
                                                     .foregroundColor(.primaryText)
@@ -831,29 +831,9 @@ struct RealizedPLCardView: View {
     
     private func displayName(for transaction: Transaction, currency: Currency) -> String {
         if currency == .TWD {
-            return twStockNameMap[transaction.symbol] ?? transaction.symbol
+            return SymbolListService.twDisplayName(for: transaction.symbol) ?? transaction.symbol
         }
         return transaction.symbol
-    }
-    
-    private var twStockNameMap: [String: String] {
-        [
-            "2330": "台積電",
-            "2317": "鴻海",
-            "2454": "聯發科",
-            "2308": "台達電",
-            "2891": "中信金",
-            "2882": "國泰金",
-            "2886": "兆豐金",
-            "1301": "台塑",
-            "1303": "南亞",
-            "2002": "中鋼",
-            "2412": "中華電",
-            "2382": "廣達",
-            "2379": "瑞昱",
-            "3008": "大立光",
-            "2884": "玉山金"
-        ]
     }
     
     private func formatDate(_ date: Date) -> String {

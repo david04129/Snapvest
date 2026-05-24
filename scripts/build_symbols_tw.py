@@ -2,9 +2,10 @@
 """
 建立台股 symbols_tw.json（上市 + 上櫃 + 興櫃）
 資料來源：
-1. 證交所上市公司: https://dts.twse.com.tw/opendata/t187ap03_L.csv
+1. 證交所上市公司: https://dts.twse.com.tw/opendata/t187ap03_L.csv（使用「公司簡稱」欄）
 2. 櫃買上櫃股票行情: https://www.tpex.org.tw/web/stock/aftertrading/DAILY_CLOSE_quotes/stk_quote_result.php?l=zh-tw&o=data
 3. 櫃買興櫃資本額排名: https://www.tpex.org.tw/web/regular_emerging/financereport/emerging_capitals_rank/list_result.php?l=zh-tw&type=l_list&o=data
+4. ETF 補充：腳本內 TW_ETF_SUPPLEMENT（含 5/6 碼含字母之 ETF，證交所清單通常不含）
 """
 
 import csv
@@ -49,8 +50,13 @@ def fetch_url(url: str, use_https_redirect: bool = False) -> Optional[str]:
 
 
 def parse_listed_csv(content: str) -> list[dict]:
-    """解析上市公司 CSV：出表日期、公司代號、公司名稱、..."""
-    return _parse_tw_csv_generic(content, symbol_col=1, name_col=2)
+    """解析上市公司 CSV：出表日期、公司代號、公司名稱、公司簡稱、..."""
+    return _parse_tw_csv_generic(
+        content,
+        symbol_col=1,
+        name_col=3,
+        fallback_name_col=2,
+    )
 
 
 def parse_otc_csv(content: str) -> list[dict]:
@@ -78,8 +84,9 @@ def _parse_tw_csv_generic(
     symbol_col: int,
     name_col: int,
     max_symbol_len: int = 6,
+    fallback_name_col: Optional[int] = None,
 ) -> list[dict]:
-    """通用解析：依欄位索引提取 symbol、name"""
+    """通用解析：依欄位索引提取 symbol、name（可選 fallback 欄位）"""
     content = content.lstrip("\ufeff")
     lines = content.strip().split("\n")
     if not lines:
@@ -113,6 +120,8 @@ def _parse_tw_csv_generic(
                 continue
             symbol = str(row[symbol_col]).strip()
             name = str(row[name_col]).strip()
+            if not name and fallback_name_col is not None and len(row) > fallback_name_col:
+                name = str(row[fallback_name_col]).strip()
             if not symbol or not name:
                 continue
             if not symbol.isdigit():
@@ -269,7 +278,7 @@ def build_symbols_tw(version: int = 1) -> Optional[dict]:
     all_items = []
     symbol_to_name = {}
 
-    # 0. 台股 ETF 補充（證交所上市公司清單可能不含 ETF）
+    # 0. 台股 ETF 補充（證交所清單不含含字母代號之 ETF，如 00631L；0050 等也可能不在上市 CSV）
     for sym, name in TW_ETF_SUPPLEMENT:
         if sym not in symbol_to_name:
             symbol_to_name[sym] = name

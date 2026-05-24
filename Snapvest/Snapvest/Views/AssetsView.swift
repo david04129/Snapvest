@@ -209,27 +209,6 @@ struct AssetsView: View {
     }
 }
 
-// MARK: - 所有持股排序
-
-private enum AllHoldingsMarketValueSort {
-    case descending
-    case ascending
-    
-    mutating func cycle() {
-        switch self {
-        case .descending: self = .ascending
-        case .ascending: self = .descending
-        }
-    }
-    
-    var iconName: String {
-        switch self {
-        case .descending: return "arrow.down"
-        case .ascending: return "arrow.up"
-        }
-    }
-}
-
 // MARK: - 所有持股區塊（Phase 3）
 struct AllHoldingsSection: View {
     let aggregatedHoldings: [AggregatedHoldingSnapshot]
@@ -242,7 +221,7 @@ struct AllHoldingsSection: View {
     @Binding var selectedCategories: Set<AssetType>
     let onHoldingTap: (AggregatedHoldingSnapshot) -> Void
     
-    @State private var marketValueSort: AllHoldingsMarketValueSort = .descending
+    @State private var marketValueSort: HoldingsMarketValueSort = .descending
     @State private var sortByCategoryFirst: Bool = false
     
     private var activeCategoryFilter: Set<AssetType> {

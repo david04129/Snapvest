@@ -28,7 +28,7 @@
 |------|------|------|
 | 美股 | NASDAQ nasdaqtraded.txt | 自動下載，含 NASDAQ/NYSE/AMEX |
 | 加密貨幣 | CoinGecko API /coins/markets（市值 Top 500） | 含 `coingeckoId`（抓價必用）；並產生 `backend/scripts/data/crypto_coingecko_map.json` |
-| 台股 | 證交所(上市) + 櫃買(上櫃、興櫃) | 自動下載 上市+上櫃+興櫃；上市失敗時可放 CSV 於 scripts/data/ |
+| 台股 | 證交所(上市，**公司簡稱**) + 櫃買(上櫃、興櫃) + 腳本內 ETF 補充 | 上市自動下載；上櫃/興櫃為行情或資本額 CSV；含字母代號 ETF 見 `TW_ETF_SUPPLEMENT` |
 
 ## 使用方式
 

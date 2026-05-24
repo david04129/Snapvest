@@ -16,6 +16,7 @@ class TransactionsViewModel: ObservableObject {
     @Published var errorMessage: String?
     
     private let dataService: DataServiceProtocol
+    private var isBatchImporting = false
     
     init(dataService: DataServiceProtocol? = nil) {
         self.dataService = dataService ?? MockDataService.shared
@@ -41,13 +42,136 @@ class TransactionsViewModel: ObservableObject {
     func createTransaction(_ transaction: Transaction) async {
         do {
             try await dataService.createTransaction(transaction)
-            await updateSnapshotsIfNeeded(for: transaction.accountId)
-            // 重新計算持股
-            await updateHoldings(accountId: transaction.accountId)
-            await loadTransactions(userId: accounts.first?.userId ?? "")
+            if !isBatchImporting {
+                await updateSnapshotsIfNeeded(for: transaction.accountId)
+                await updateHoldings(accountId: transaction.accountId)
+            }
+            if !isBatchImporting {
+                await loadTransactions(userId: accounts.first?.userId ?? "")
+            }
         } catch {
             errorMessage = "建立交易失敗：\(error.localizedDescription)"
         }
+    }
+    
+    /// 批次匯入 CSV 交易（依日期升序寫入，逐筆記錄失敗，結束後重建快照）
+    func importValidatedTransactions(
+        userId: String,
+        validation: TransactionImportValidationResult
+    ) async -> TransactionImportBatchResult {
+        guard validation.canImport else {
+            let failures = validation.rows
+                .filter { $0.errorMessage != nil }
+                .map {
+                    TransactionImportBatchFailure(
+                        lineNumber: $0.lineNumber,
+                        summary: $0.summary,
+                        errorMessage: $0.errorMessage ?? "資料不完整"
+                    )
+                }
+            return TransactionImportBatchResult(imported: 0, failures: failures)
+        }
+        
+        isBatchImporting = true
+        defer { isBatchImporting = false }
+        
+        errorMessage = nil
+        let sortedRows = validation.rows
+            .filter(\.isValid)
+            .sorted {
+                ($0.transaction?.transactionDate ?? .distantPast) < ($1.transaction?.transactionDate ?? .distantPast)
+            }
+        var imported = 0
+        var failures: [TransactionImportBatchFailure] = []
+        
+        do {
+            if accounts.isEmpty {
+                accounts = try await dataService.fetchAccounts(userId: userId)
+            }
+            
+            for row in sortedRows {
+                guard let draft = row.transaction else { continue }
+                do {
+                    if draft.type == .sell {
+                        try await importSellTransactionDuringBatch(draft)
+                    } else {
+                        try await dataService.createTransaction(draft)
+                    }
+                    imported += 1
+                } catch {
+                    failures.append(
+                        TransactionImportBatchFailure(
+                            lineNumber: row.lineNumber,
+                            summary: row.summary,
+                            errorMessage: error.localizedDescription
+                        )
+                    )
+                }
+            }
+            
+            if imported > 0, let accountId = sortedRows.compactMap({ $0.transaction?.accountId }).first {
+                await updateSnapshotsIfNeeded(for: accountId)
+            }
+            await loadTransactions(userId: userId)
+            
+            if !failures.isEmpty {
+                errorMessage = TransactionImportBatchResult(imported: imported, failures: failures).alertMessage
+            }
+            return TransactionImportBatchResult(imported: imported, failures: failures)
+        } catch {
+            let message = error.localizedDescription
+            errorMessage = message
+            await loadTransactions(userId: userId)
+            return TransactionImportBatchResult(
+                imported: imported,
+                failures: [
+                    TransactionImportBatchFailure(
+                        lineNumber: 0,
+                        summary: "匯入程序",
+                        errorMessage: message
+                    )
+                ]
+            )
+        }
+    }
+    
+    private func importSellTransactionDuringBatch(_ draft: Transaction) async throws {
+        guard let account = accounts.first(where: { $0.id == draft.accountId }) else {
+            throw TransactionImportError.missingAccount
+        }
+        
+        let costBasis = try await calculateCostBasis(
+            userId: account.userId,
+            accountId: account.id,
+            assetType: draft.assetType,
+            symbol: draft.symbol,
+            quantity: draft.quantity,
+            averageCostFallback: draft.price
+        )
+        let proceeds = draft.quantity * draft.price
+        let realizedGainLoss = proceeds - costBasis
+        let realizedGainLossPercent = costBasis > 0 ? (realizedGainLoss / costBasis) * 100 : nil
+        let realizedCostPerUnit = draft.quantity > 0 ? costBasis / draft.quantity : nil
+        
+        let sell = Transaction(
+            id: draft.id,
+            accountId: draft.accountId,
+            type: .sell,
+            assetType: draft.assetType,
+            symbol: draft.symbol,
+            quantity: draft.quantity,
+            price: draft.price,
+            currency: draft.currency,
+            fee: draft.fee,
+            notes: draft.notes,
+            transactionDate: draft.transactionDate,
+            exchangeRate: draft.exchangeRate,
+            realizedGainLoss: realizedGainLoss,
+            realizedGainLossPercent: realizedGainLossPercent,
+            realizedCostBasis: costBasis,
+            realizedCostPerUnit: realizedCostPerUnit
+        )
+        try await dataService.createTransaction(sell)
     }
 
     func createSellTransaction(

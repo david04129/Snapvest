@@ -13,6 +13,8 @@ struct SellTradeFormView: View {
     let editingTransaction: Transaction?
     var embedInTradeFlow: Bool = false
     let onSubmit: ((SellTradeDraft) -> Void)?
+    var isImportDraftMode: Bool = false
+    var onImportDraftSave: ((Transaction) -> Void)? = nil
     
     @StateObject private var accountsViewModel = AccountsViewModel()
     @StateObject private var accountDetailViewModel = AccountDetailViewModel()
@@ -35,16 +37,25 @@ struct SellTradeFormView: View {
         prefill: SellTradePrefill? = nil,
         editingTransaction: Transaction? = nil,
         embedInTradeFlow: Bool = false,
+        isImportDraftMode: Bool = false,
+        onImportDraftSave: ((Transaction) -> Void)? = nil,
         onSubmit: ((SellTradeDraft) -> Void)? = nil
     ) {
         self.market = market
         self.prefill = prefill
         self.editingTransaction = editingTransaction
         self.embedInTradeFlow = embedInTradeFlow
+        self.isImportDraftMode = isImportDraftMode
+        self.onImportDraftSave = onImportDraftSave
         self.onSubmit = onSubmit
     }
     
-    private var isEditMode: Bool { editingTransaction != nil }
+    private var isEditMode: Bool { editingTransaction != nil && !isImportDraftMode }
+    
+    private var submitButtonTitle: String {
+        if isImportDraftMode { return "確認" }
+        return isEditMode ? "確認修改" : "賣出"
+    }
     
     private var availableAccounts: [Account] {
         accountsViewModel.accounts.filter { account in
@@ -152,6 +163,14 @@ struct SellTradeFormView: View {
             return false
         }
         
+        if isImportDraftMode {
+            guard quantityValue > 0, priceValue > 0 else { return false }
+            if needsExchangeRate {
+                guard let exchangeRateValue = exchangeRateValue, exchangeRateValue > 0 else { return false }
+            }
+            return true
+        }
+        
         if isEditMode {
             guard quantityValue <= sellQuantityHeadroom else { return false }
         } else {
@@ -189,7 +208,7 @@ struct SellTradeFormView: View {
                 Button(action: handleSubmit) {
                     HStack(spacing: 8) {
                         Image(systemName: "arrow.down")
-                        Text(isEditMode ? "確認修改" : "賣出")
+                        Text(submitButtonTitle)
                     }
                     .font(.headline)
                     .foregroundColor(AppColors.actionForeground)
@@ -279,7 +298,7 @@ struct SellTradeFormView: View {
     private var sellAmountBreakdownDetail: String? {
         guard let qty = quantityValue, let price = priceValue, qty > 0, price > 0 else { return nil }
         let qtyLabel = qty.formattedQuantityInput(maxFractionDigits: market == .crypto ? 8 : 4)
-        let priceLabel = price.formatted(currency: priceCurrency, fractionDigits: 2, showSymbol: true)
+        let priceLabel = price.formattedTradePrice(currency: priceCurrency)
         return "\(qtyLabel) × \(priceLabel)"
     }
     
@@ -312,6 +331,16 @@ struct SellTradeFormView: View {
     private var accountSection: some View {
         FormRow(title: "帳戶", icon: "building.columns.fill", color: market.themeColor) {
             VStack(alignment: .leading) {
+                if isImportDraftMode, let account = selectedAccount {
+                    HStack(spacing: 8) {
+                        Image(systemName: account.accountType.icon)
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(account.accountType.color)
+                        Text(account.name)
+                            .foregroundColor(.primaryText)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
                 Picker(selection: $selectedAccountId) {
                     ForEach(availableAccounts) { account in
                         HStack(spacing: 8) {
@@ -343,6 +372,7 @@ struct SellTradeFormView: View {
                 }
                 .pickerStyle(.menu)
                 .labelsHidden()
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -351,7 +381,13 @@ struct SellTradeFormView: View {
     private var holdingSection: some View {
         FormRow(title: market == .crypto ? "幣種" : "股票代號", icon: "tag.fill", color: market.themeColor) {
             VStack(alignment: .leading) {
-                Picker(selection: $selectedHoldingId) {
+                if isImportDraftMode, let symbol = editingTransaction?.symbol {
+                    Text(symbol)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primaryText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    Picker(selection: $selectedHoldingId) {
                     if availableHoldings.isEmpty {
                         Text("無持股").tag("")
                     } else {
@@ -382,8 +418,9 @@ struct SellTradeFormView: View {
                    let currentPrice = selectedHolding.currentPrice {
                     infoRow(
                         label: "目前股價",
-                        value: currentPrice.formatted(currency: selectedHolding.holding.currency)
+                        value: currentPrice.formattedTradePrice(currency: selectedHolding.holding.currency)
                     )
+                }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -463,6 +500,30 @@ struct SellTradeFormView: View {
             return
         }
         
+        if isImportDraftMode,
+           let existing = editingTransaction,
+           let onImportDraftSave {
+            let updated = Transaction(
+                id: existing.id,
+                accountId: selectedAccount.id,
+                type: .sell,
+                assetType: existing.assetType,
+                symbol: existing.symbol,
+                quantity: quantityValue,
+                price: priceValue,
+                currency: priceCurrency,
+                fee: existing.fee,
+                notes: existing.notes,
+                transactionDate: transactionDate,
+                createdAt: existing.createdAt,
+                updatedAt: Date(),
+                exchangeRate: exchangeRateValue
+            )
+            onImportDraftSave(updated)
+            dismiss()
+            return
+        }
+        
         let averageCostFallback: Decimal
         if let selectedHolding {
             averageCostFallback = selectedHolding.holding.averageCost
@@ -516,7 +577,7 @@ struct SellTradeFormView: View {
         quantityText = transaction.quantity.formattedQuantityInput(
             maxFractionDigits: transaction.assetType == .crypto ? 8 : 4
         )
-        priceText = transaction.price.formatted(fractionDigits: 2)
+        priceText = transaction.price.formattedQuantityInput(maxFractionDigits: 4)
         transactionDate = transaction.transactionDate
         if let rate = transaction.exchangeRate {
             exchangeRateText = rate.formatted(fractionDigits: 2)
@@ -537,6 +598,16 @@ struct SellTradeFormView: View {
         
         if quantityValue <= 0 {
             errorMessage = "數量必須大於 0"
+            return
+        }
+        
+        if isImportDraftMode {
+            if needsExchangeRate {
+                guard let exchangeRateValue = exchangeRateValue, exchangeRateValue > 0 else {
+                    errorMessage = "請輸入美金對台匯率"
+                    return
+                }
+            }
             return
         }
         
@@ -584,7 +655,7 @@ struct SellTradeFormView: View {
         if let match = selectableHoldings.first(where: { $0.holding.symbol == prefill.symbol }) {
             selectedHoldingId = match.id
             if priceText.isEmpty, let price = match.currentPrice {
-                priceText = price.formatted(fractionDigits: 2)
+                priceText = price.formattedQuantityInput(maxFractionDigits: 4)
             }
         } else if isSymbolLocked {
             selectedHoldingId = ""

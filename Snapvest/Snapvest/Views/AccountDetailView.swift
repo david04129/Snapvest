@@ -36,6 +36,8 @@ struct AccountDetailView: View {
     @State private var otherDebtRemaining: Decimal = 0
     @State private var otherDebtRepaid: Decimal = 0
     @State private var showingOtherDebtRepayment = false
+    @State private var showingTransactionImport = false
+    @StateObject private var importTransactionsViewModel = TransactionsViewModel()
     
     init(account: Account, prefilledBalance: AccountBalanceDisplay? = nil) {
         self.account = account
@@ -147,8 +149,15 @@ struct AccountDetailView: View {
         .tint(.appPrimary)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                TransactionHistoryToolbarChip {
-                    showTransactionHistory = true
+                HStack(spacing: 8) {
+                    if account.accountType.supportsTransactionImport {
+                        TransactionImportToolbarChip {
+                            showingTransactionImport = true
+                        }
+                    }
+                    TransactionHistoryToolbarChip {
+                        showTransactionHistory = true
+                    }
                 }
             }
             .sharedBackgroundVisibility(.hidden)
@@ -163,9 +172,20 @@ struct AccountDetailView: View {
                 currentBalance: viewModel.cashBalance
             )
         }
+        .sheet(isPresented: $showingTransactionImport) {
+            TransactionImportView(account: account, viewModel: importTransactionsViewModel) {
+                Task {
+                    await viewModel.refresh(accountId: account.id)
+                    await accountsViewModel.loadAccounts(userId: account.userId)
+                }
+            }
+        }
         .task {
             await viewModel.loadAccountData(accountId: account.id)
             await accountsViewModel.loadAccounts(userId: account.userId)
+            if account.accountType.supportsTransactionImport {
+                await importTransactionsViewModel.loadTransactions(userId: account.userId)
+            }
         }
     }
     
@@ -308,8 +328,7 @@ struct AccountDetailView: View {
     }
     
     private var adjustCashBalanceBottomBar: some View {
-        HStack {
-            Spacer(minLength: 0)
+        HStack(spacing: 12) {
             Button(action: {
                 showingAdjustCashBalance = true
             }) {
@@ -325,8 +344,6 @@ struct AccountDetailView: View {
                 .cornerRadius(12)
             }
             .buttonStyle(.plain)
-            .containerRelativeFrame(.horizontal, count: 2, span: 1, spacing: 12)
-            Spacer(minLength: 0)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
@@ -897,12 +914,12 @@ struct AccountSectionCard<Content: View>: View {
     }
 }
 
-// MARK: - 帳戶詳情：持有標的載入占位
+// MARK: - 帳戶詳情：持股明細載入占位
 struct AccountHoldingsLoadingSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("持有標的")
+                Text("持股明細")
                     .font(.headline)
                     .foregroundColor(.primaryText)
                 Text("載入中…")
@@ -925,26 +942,83 @@ struct AccountHoldingsLoadingSection: View {
     }
 }
 
-// MARK: - 帳戶詳情：持有標的列表
+// MARK: - 帳戶詳情：持股明細列表
 struct AccountHoldingsTableSection: View {
     let holdings: [HoldingSnapshot]
     let displayCurrency: Currency
     let exchangeRate: Decimal
     let onHoldingTap: (HoldingSnapshot) -> Void
     
+    @State private var marketValueSort: HoldingsMarketValueSort = .descending
+    
+    private func displayMarketValue(for holding: HoldingSnapshot) -> Decimal? {
+        guard let marketValue = holding.marketValue else { return nil }
+        if holding.holding.currency == .USD && displayCurrency == .TWD {
+            return marketValue * exchangeRate
+        }
+        return marketValue
+    }
+    
+    private func symbolSortKey(_ holding: HoldingSnapshot) -> String {
+        switch holding.holding.assetType {
+        case .stockUS, .crypto:
+            return holding.holding.symbol.uppercased()
+        default:
+            return holding.holding.symbol
+        }
+    }
+    
+    private var sortedHoldings: [HoldingSnapshot] {
+        holdings.sorted { lhs, rhs in
+            let leftValue = displayMarketValue(for: lhs)
+            let rightValue = displayMarketValue(for: rhs)
+            
+            switch (leftValue, rightValue) {
+            case (nil, nil):
+                return symbolSortKey(lhs) < symbolSortKey(rhs)
+            case (nil, _):
+                return false
+            case (_, nil):
+                return true
+            case let (left?, right?):
+                if left != right {
+                    switch marketValueSort {
+                    case .descending: return left > right
+                    case .ascending: return left < right
+                    }
+                }
+                return symbolSortKey(lhs) < symbolSortKey(rhs)
+            }
+        }
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("持有標的")
-                    .font(.headline)
-                    .foregroundColor(.primaryText)
-                Text("\(holdings.count) 檔")
-                    .font(.caption)
-                    .foregroundColor(.secondaryText)
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("持股明細")
+                        .font(.headline)
+                        .foregroundColor(.primaryText)
+                    Text("\(holdings.count) 檔")
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                }
+                
+                Spacer()
+                
+                AssetsFilterChipButton(
+                    title: "市值",
+                    icon: marketValueSort.iconName,
+                    isActive: true
+                ) {
+                    withAnimation(ChartMotion.switchSpring) {
+                        marketValueSort.cycle()
+                    }
+                }
             }
             
             VStack(spacing: 8) {
-                ForEach(holdings) { holding in
+                ForEach(sortedHoldings) { holding in
                     AccountHoldingCardRow(
                         holding: holding,
                         displayCurrency: displayCurrency,
@@ -953,6 +1027,7 @@ struct AccountHoldingsTableSection: View {
                     )
                 }
             }
+            .animation(ChartMotion.switchSpring, value: marketValueSort)
         }
     }
 }

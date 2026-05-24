@@ -531,13 +531,13 @@ struct TransactionsView: View {
     
     private func editBuyTradeSheet(item: BuyTradeEditItem) -> some View {
         NavigationStack {
-            BuyTradeFormView(market: item.market, editingTransaction: item.transaction) {
+            BuyTradeFormView(market: item.market, editingTransaction: item.transaction, onSubmit: {
                 buyTradeEditItem = nil
                 Task {
                     await viewModel.loadTransactions(userId: userId)
                     await portfolioViewModel.loadData(userId: userId)
                 }
-            }
+            })
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {
@@ -556,13 +556,13 @@ struct TransactionsView: View {
     
     private func editSellTradeSheet(item: SellTradeEditItem) -> some View {
         NavigationStack {
-            SellTradeFormView(market: item.market, editingTransaction: item.transaction) { _ in
+            SellTradeFormView(market: item.market, editingTransaction: item.transaction, onSubmit: { _ in
                 sellTradeEditItem = nil
                 Task {
                     await viewModel.loadTransactions(userId: userId)
                     await portfolioViewModel.loadData(userId: userId)
                 }
-            }
+            })
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {
