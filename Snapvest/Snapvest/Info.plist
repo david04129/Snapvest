@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Snapvest 需要將分享圖儲存到您的相簿。</string>
 	<key>SUPABASE_ANON_KEY</key>
 	<string>sb_publishable__E7HewKbHnA47_P1Z6mkOg_qMxiC3os</string>
 	<key>SUPABASE_URL</key>

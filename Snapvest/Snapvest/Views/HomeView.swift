@@ -13,13 +13,30 @@ struct HomeView: View {
     @ObservedObject private var homePrivacy = HomePrivacyManager.shared
     @State private var userId: String = "test-user-id"
     @State private var navigationStackResetID = UUID()
+    @State private var isShareSheetPresented = false
+
+    @State private var trendMetricMode: TrendMetricMode = .netWorth
+    @State private var trendTimeRange: DateRangePreset = .sevenDays
+    @State private var trendPoints: [TrendChartPoint] = []
+    @State private var trendCustomStartDate: Date = Calendar.current.date(byAdding: .month, value: -1, to: Date()) ?? Date()
+    @State private var trendCustomEndDate: Date = Date()
+    @State private var pieChartMode: PieChartDisplayMode = .totalAssets
+    @State private var performanceMode: PerformanceDisplayMode = .gainLoss
     
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
                     // 走勢圖（Supabase 每日快照）
-                    HomeTrendChartSection(userId: userId, currency: viewModel.viewCurrency)
+                    HomeTrendChartSection(
+                        userId: userId,
+                        currency: viewModel.viewCurrency,
+                        metricMode: $trendMetricMode,
+                        timeRange: $trendTimeRange,
+                        trendPoints: $trendPoints,
+                        customStartDate: $trendCustomStartDate,
+                        customEndDate: $trendCustomEndDate
+                    )
                     
                     // 淨資產卡片
                     NetWorthCardView(viewModel: viewModel)
@@ -44,10 +61,14 @@ struct HomeView: View {
                         HomePieChartSection(
                             inputs: viewModel.pieChartInputs,
                             totalAssets: viewModel.totalAssets,
-                            totalInvestments: viewModel.totalInvestments
+                            totalInvestments: viewModel.totalInvestments,
+                            mode: $pieChartMode
                         )
                         
-                        HomePerformanceChartSection(inputs: viewModel.pieChartInputs)
+                        HomePerformanceChartSection(
+                            inputs: viewModel.pieChartInputs,
+                            mode: $performanceMode
+                        )
                     }
                 }
                 .padding()
@@ -68,6 +89,21 @@ struct HomeView: View {
             }
         }
         .environment(\.homeAmountsHidden, homePrivacy.isAmountHidden)
+        .sheet(isPresented: $isShareSheetPresented) {
+            HomeShareSheet(
+                trendPoints: $trendPoints,
+                trendMetricMode: trendMetricMode,
+                trendTimeRange: trendTimeRange,
+                trendCustomStart: trendCustomStartDate,
+                trendCustomEnd: trendCustomEndDate,
+                pieInputs: viewModel.pieChartInputs,
+                pieMode: pieChartMode,
+                totalAssets: viewModel.totalAssets,
+                totalInvestments: viewModel.totalInvestments,
+                performanceMode: performanceMode,
+                currency: viewModel.viewCurrency
+            )
+        }
         .id(navigationStackResetID)
         .resetNavigationWhenTabReappears(selectedTab: $selectedTab, resignedTab: .home) {
             navigationStackResetID = UUID()
@@ -91,6 +127,7 @@ struct HomeView: View {
             Spacer()
             
             HStack(spacing: 8) {
+                HomeShareButton { isShareSheetPresented = true }
                 HomeAmountPrivacyToggleButton()
                 MarketColorConventionToggleButton()
                 ThemeToggleButton()
@@ -602,31 +639,134 @@ struct CashCardView: View {
 struct TodayPLCardView: View {
     @ObservedObject var viewModel: PortfolioViewModel
     @Environment(\.homeAmountsHidden) private var hideHomeAmounts
-    
-    // TODO: 實作今日損益計算
-    var todayPL: Decimal = 0
-    var todayPLPercent: Decimal = 0
-    
+    @State private var isExpanded = false
+
+    private var summary: TodayPLSummary {
+        viewModel.todayPLSummary
+    }
+
+    private var displayChange: Decimal {
+        displayAmount(summary.totalChangeTWD)
+    }
+
     var body: some View {
         AccentBarCard(title: "今日損益", accentColor: .appPrimary) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 6) {
-                    Image(systemName: "chart.line.uptrend.xyaxis")
-                        .foregroundColor(.secondaryText)
-                        .font(.caption)
+            VStack(spacing: 16) {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        if summary.hasData {
+                            Text(HomeAmountPrivacyFormat.currency(displayChange, currency: viewModel.viewCurrency, hidden: hideHomeAmounts))
+                                .font(.snapAmountHero)
+                                .foregroundColor(Color.marketColor(for: summary.totalChangeTWD))
+
+                            todayPLPercentLabel(
+                                percent: summary.totalChangePercent,
+                                font: .subheadline,
+                                weight: .semibold
+                            )
+                        } else {
+                            Text("—")
+                                .font(.snapAmountHero)
+                                .foregroundColor(.secondaryText)
+                            Text("尚無足夠股價資料")
+                                .font(.caption)
+                                .foregroundColor(.secondaryText)
+                        }
+                    }
+
                     Spacer()
+
+                    if summary.hasData, !summary.categories.isEmpty {
+                        Button {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                isExpanded.toggle()
+                            }
+                        } label: {
+                            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.secondaryText)
+                                .frame(width: 24, height: 24)
+                        }
+                    }
                 }
-                
-                if !hideHomeAmounts {
-                    Text(todayPL.formatted(currency: viewModel.viewCurrency))
-                        .font(.snapAmountHero)
-                        .foregroundColor(Color.marketColor(for: todayPL))
+
+                if isExpanded, summary.hasData {
+                    VStack(spacing: 10) {
+                        ForEach(summary.categories) { category in
+                            todayPLCategoryRow(category)
+                        }
+                    }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
-                
-                Text("↑ \(todayPLPercent.formatted(fractionDigits: 2))%")
-                    .font(.caption)
-                    .foregroundColor(.secondaryText)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func todayPLCategoryRow(_ category: TodayPLCategorySummary) -> some View {
+        HStack(spacing: 10) {
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(accentColor(for: category.assetType))
+                .frame(width: 4, height: 32)
+
+            Text(category.displayName)
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundColor(.primaryText)
+
+            Spacer()
+
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(HomeAmountPrivacyFormat.currency(displayAmount(category.changeTWD), currency: viewModel.viewCurrency, hidden: hideHomeAmounts))
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(Color.marketColor(for: category.changeTWD))
+
+                todayPLPercentLabel(
+                    percent: category.changePercent,
+                    font: .caption,
+                    weight: .medium
+                )
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color.secondaryBackground.opacity(0.55))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private func todayPLPercentLabel(percent: Decimal, font: Font, weight: Font.Weight) -> some View {
+        let up = percent >= 0
+        return HStack(spacing: 3) {
+            Image(systemName: up ? "arrow.up" : "arrow.down")
+                .font(.caption2.weight(.bold))
+            Text("\(signedPercent(percent))%")
+                .font(font)
+                .fontWeight(weight)
+        }
+        .foregroundColor(Color.marketColor(for: percent))
+    }
+
+    private func signedPercent(_ value: Decimal) -> String {
+        let sign = value >= 0 ? "+" : ""
+        return sign + value.formatted(fractionDigits: 2)
+    }
+
+    private func displayAmount(_ twdAmount: Decimal) -> Decimal {
+        guard viewModel.viewCurrency == .USD,
+              let rate = viewModel.pieChartInputs?.usdToTwdRate,
+              rate > 0 else {
+            return twdAmount
+        }
+        return twdAmount / rate
+    }
+
+    private func accentColor(for assetType: AssetType) -> Color {
+        switch assetType {
+        case .stockTW: return .stockTWDeepAmber
+        case .stockUS: return .stockUSDeep
+        case .crypto: return .cryptoDeep
+        default: return .appPrimary
         }
     }
 }

@@ -9,7 +9,7 @@ import SwiftUI
 
 struct HomePerformanceChartSection: View {
     let inputs: PieChartInputs?
-    @State private var mode: PerformanceDisplayMode = .gainLoss
+    @Binding var mode: PerformanceDisplayMode
     @State private var contentPhase: CGFloat = 1
     
     private var rows: [HoldingPerformanceRow] {

@@ -147,7 +147,7 @@ struct HomePieChartSection: View {
     let totalAssets: Decimal
     let totalInvestments: Decimal
     
-    @State private var mode: PieChartDisplayMode = .totalAssets
+    @Binding var mode: PieChartDisplayMode
     @State private var selectedId: String?
     @State private var contentPhase: CGFloat = 1
     

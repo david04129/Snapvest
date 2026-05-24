@@ -17,13 +17,12 @@ struct LaunchSplashView: View {
                 .ignoresSafeArea()
             
             VStack(spacing: 14) {
-                Image(systemName: "chart.pie.fill")
-                    .font(.system(size: 56, weight: .medium))
-                    .foregroundStyle(AppColors.appPrimary)
-                
-                Text("Snapvest")
-                    .font(.system(size: 34, weight: .bold))
-                    .foregroundColor(.primaryText)
+                SnapvestBrandMark(
+                    iconSize: 56,
+                    wordmarkSize: 34,
+                    spacing: 14,
+                    layout: .vertical
+                )
             }
             .scaleEffect(logoScale)
             .opacity(logoOpacity)

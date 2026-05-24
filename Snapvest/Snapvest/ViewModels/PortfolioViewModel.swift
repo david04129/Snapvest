@@ -25,6 +25,7 @@ class PortfolioViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var homeSnapshot: HomeDashboardSnapshot?
     @Published var pieChartInputs: PieChartInputs?
+    @Published var todayPLSummary: TodayPLSummary = .empty
     
     @Published var baseCurrency: Currency = .TWD
     @Published var viewCurrency: Currency = .TWD // 顯示貨幣（可切換）
@@ -164,6 +165,7 @@ class PortfolioViewModel: ObservableObject {
             dataService: dataService,
             priceService: priceService
         )
+        todayPLSummary = TodayPLCalculator.calculate(from: pieChartInputs)
     }
     
     /// 重新載入負債（帳戶改名等操作後需刷新，避免與 debt 帳戶名稱配對失敗）

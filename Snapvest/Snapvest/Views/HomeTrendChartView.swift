@@ -36,6 +36,22 @@ enum TrendMetricMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+/// 走勢區間起點 → 終點的漲跌（起點固定為區間第一筆）
+struct TrendChartIntervalChange {
+    let startPoint: TrendChartPoint
+    let endPoint: TrendChartPoint
+    let metricMode: TrendMetricMode
+
+    var startValue: Decimal { startPoint.displayValue(for: metricMode) }
+    var endValue: Decimal { endPoint.displayValue(for: metricMode) }
+    var changeAmount: Decimal { endValue - startValue }
+
+    var changePercent: Decimal {
+        guard startValue != 0 else { return 0 }
+        return (changeAmount / abs(startValue)) * 100
+    }
+}
+
 // MARK: - Mock 資料
 
 enum TrendChartMockData {
@@ -99,16 +115,17 @@ struct HomeTrendChartSection: View {
     var userId: String
     var currency: Currency = .TWD
     
+    @Binding var metricMode: TrendMetricMode
+    @Binding var timeRange: DateRangePreset
+    @Binding var trendPoints: [TrendChartPoint]
+    @Binding var customStartDate: Date
+    @Binding var customEndDate: Date
+    
     @Environment(\.homeAmountsHidden) private var hideHomeAmounts
-    @State private var trendPoints: [TrendChartPoint] = []
     @State private var isLoading = true
     @State private var loadFailed = false
     
-    @State private var metricMode: TrendMetricMode = .netWorth
-    @State private var timeRange: DateRangePreset = .sevenDays
     @State private var selectedPoint: TrendChartPoint?
-    @State private var customStartDate: Date = Calendar.current.date(byAdding: .month, value: -1, to: Date()) ?? Date()
-    @State private var customEndDate: Date = Date()
     @State private var activeCustomDateField: CustomDatePickerField?
     @State private var contentPhase: CGFloat = 1
     
@@ -127,6 +144,10 @@ struct HomeTrendChartSection: View {
             ?? Date()
     }
     
+    private var rangeStartPoint: TrendChartPoint? {
+        filteredPoints.first
+    }
+
     private var displayPoint: TrendChartPoint? {
         selectedPoint ?? filteredPoints.last
     }
@@ -146,13 +167,13 @@ struct HomeTrendChartSection: View {
                 animateContentSwitch()
             }
             
-            if let point = displayPoint {
+            if let endPoint = displayPoint, let startPoint = rangeStartPoint {
                 TrendChartValueInfo(
-                    point: point,
+                    endPoint: endPoint,
+                    rangeStartPoint: startPoint,
                     metricMode: metricMode,
                     currency: currency,
                     isSelected: selectedPoint != nil,
-                    showsCustomRangeLabel: timeRange == .custom,
                     hideAmounts: hideHomeAmounts
                 )
                 .padding(.horizontal, 16)
@@ -347,7 +368,7 @@ struct HomeTrendChartSection: View {
         defer { isLoading = false }
         
         guard SupabaseConfig.isConfigured else {
-            trendPoints = TrendChartMockData.allPoints
+            trendPoints = TrendChartMockData.generate(days: 120, endingAt: Date())
             return
         }
         
@@ -358,9 +379,11 @@ struct HomeTrendChartSection: View {
                 startDate: start,
                 endDate: Date()
             )
-            trendPoints = fetched.count >= 2 ? fetched : TrendChartMockData.allPoints
+            trendPoints = fetched.count >= 2
+                ? fetched
+                : TrendChartMockData.generate(days: 120, endingAt: Date())
         } catch {
-            trendPoints = TrendChartMockData.allPoints
+            trendPoints = TrendChartMockData.generate(days: 120, endingAt: Date())
             #if DEBUG
             print("[HomeTrendChart] load failed, using mock: \(error.localizedDescription)")
             #endif
@@ -423,25 +446,33 @@ struct HomeTrendChartSection: View {
 
 // MARK: - 數值資訊區（與圖表分離）
 
-private struct TrendChartValueInfo: View {
-    let point: TrendChartPoint
+struct TrendChartValueInfo: View {
+    let endPoint: TrendChartPoint
+    let rangeStartPoint: TrendChartPoint
     let metricMode: TrendMetricMode
     let currency: Currency
     let isSelected: Bool
-    let showsCustomRangeLabel: Bool
     var hideAmounts: Bool = false
-    
-    private var displayValue: Decimal {
-        point.displayValue(for: metricMode)
+
+    private var intervalChange: TrendChartIntervalChange {
+        TrendChartIntervalChange(
+            startPoint: rangeStartPoint,
+            endPoint: endPoint,
+            metricMode: metricMode
+        )
     }
-    
+
+    private var displayValue: Decimal {
+        endPoint.displayValue(for: metricMode)
+    }
+
     private var valueColor: Color {
         if metricMode == .netWorth && displayValue < 0 {
             return .lossRed
         }
         return .primaryText
     }
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(
@@ -453,45 +484,35 @@ private struct TrendChartValueInfo: View {
                 .foregroundColor(valueColor)
                 .contentTransition(.numericText())
                 .animation(ChartMotion.switchSpring, value: displayValue)
-            
-            HStack(spacing: 4) {
-                Text("未實現")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.secondaryText)
-                if !hideAmounts {
-                    Text(unrealizedText)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(Color.marketColor(for: point.unrealizedGainLoss))
-                }
-                Text("(\(formatPercent(point.unrealizedReturnPercent)))")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(Color.marketColor(for: point.unrealizedGainLoss))
-                if showsCustomRangeLabel {
-                    Text("自訂範圍")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.secondaryText)
-                        .padding(.leading, 2)
-                }
-            }
-            .contentTransition(.numericText())
-            
-            Text(formatDate(point.date))
+
+            Text(intervalChangeText)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(Color.marketColor(for: intervalChange.changeAmount))
+                .contentTransition(.numericText())
+                .animation(ChartMotion.switchSpring, value: intervalChange.changeAmount)
+
+            Text(formatDate(endPoint.date))
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(isSelected ? AppColors.appPrimary : .secondaryText)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
-    
-    private var unrealizedText: String {
-        let prefix = point.unrealizedGainLoss >= 0 ? "+" : ""
-        return prefix + point.unrealizedGainLoss.formatted(currency: currency)
+
+    private var intervalChangeText: String {
+        let percent = formatPercent(intervalChange.changePercent)
+        if hideAmounts {
+            return percent
+        }
+        let prefix = intervalChange.changeAmount >= 0 ? "+" : ""
+        let amount = prefix + intervalChange.changeAmount.formatted(currency: currency)
+        return "\(amount) (\(percent))"
     }
-    
+
     private func formatPercent(_ value: Decimal) -> String {
         let sign = value >= 0 ? "+" : ""
         return sign + value.formatted(fractionDigits: 2) + "%"
     }
-    
+
     private func formatDate(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_TW")
