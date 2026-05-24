@@ -28,12 +28,23 @@ def _parse_decimal(value: Any) -> Decimal:
     return Decimal(text)
 
 
+def _field(item: dict[str, Any], *keys: str) -> Any:
+    """App JSONB 使用 camelCase（assetType）；腳本亦相容 snake_case。"""
+    for key in keys:
+        if key in item and item[key] is not None:
+            return item[key]
+    return None
+
+
 def _quantize_money(value: Decimal) -> Decimal:
     return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def _normalize_symbol(asset_type: str, symbol: str) -> str:
-    return symbol.upper() if asset_type == "crypto" else symbol
+    sym = str(symbol).strip()
+    if asset_type in ("crypto", "stock_us"):
+        return sym.upper()
+    return sym
 
 
 def _price_key(asset_type: str, symbol: str) -> tuple[str, str]:
@@ -93,35 +104,37 @@ def compute_snapshot(
 ) -> dict[str, Decimal]:
     total_cash = Decimal("0")
     for item in state.get("cash") or []:
-        amount = _parse_decimal(item.get("amount"))
-        currency = str(item.get("currency") or "TWD")
+        amount = _parse_decimal(_field(item, "amount"))
+        currency = str(_field(item, "currency") or "TWD")
         total_cash += to_twd(amount, currency, rates)
 
     total_investments = Decimal("0")
     unrealized_gain_loss = Decimal("0")
     for item in state.get("holdings") or []:
-        asset_type = str(item.get("asset_type") or "")
-        symbol = str(item.get("symbol") or "")
-        quantity = _parse_decimal(item.get("quantity"))
+        asset_type = str(_field(item, "asset_type", "assetType") or "")
+        symbol = str(_field(item, "symbol") or "")
+        quantity = _parse_decimal(_field(item, "quantity"))
         if quantity <= 0:
             continue
 
-        currency = str(item.get("currency") or "TWD")
+        currency = str(_field(item, "currency") or "TWD")
         price_row = prices.get(_price_key(asset_type, symbol))
         price = _display_price(price_row) if price_row else None
         market_value = (price or Decimal("0")) * quantity
         total_investments += to_twd(market_value, currency, rates)
 
-        avg_cost_raw = item.get("average_cost") or item.get("averageCost")
+        avg_cost_raw = _field(item, "average_cost", "averageCost")
         if price is not None and avg_cost_raw is not None:
             avg_cost = _parse_decimal(avg_cost_raw)
             gain = (price - avg_cost) * quantity
             unrealized_gain_loss += to_twd(gain, currency, rates)
+        elif price_row is None and asset_type and symbol:
+            print(f"    警告：找不到股價 {asset_type}/{symbol}，市值計為 0")
 
     total_liabilities = Decimal("0")
     for item in state.get("liabilities") or []:
-        amount = _parse_decimal(item.get("amount"))
-        currency = str(item.get("currency") or "TWD")
+        amount = _parse_decimal(_field(item, "amount"))
+        currency = str(_field(item, "currency") or "TWD")
         total_liabilities += to_twd(amount, currency, rates)
 
     total_assets = total_cash + total_investments
@@ -164,7 +177,14 @@ def main() -> None:
         if not user_id:
             continue
 
+        holdings = state.get("holdings") or []
         metrics = compute_snapshot(state, prices, rates)
+        print(
+            f"  {user_id}: holdings={len(holdings)} "
+            f"cash={metrics['total_cash']} inv={metrics['total_investments']} "
+            f"assets={metrics['total_assets']} net={metrics['net_worth']} "
+            f"unrealized={metrics['unrealized_gain_loss']}"
+        )
         rows.append(
             {
                 "user_id": user_id,
@@ -177,10 +197,6 @@ def main() -> None:
                 "unrealized_gain_loss": str(metrics["unrealized_gain_loss"]),
                 "base_currency": "TWD",
             }
-        )
-        print(
-            f"  {user_id}: assets={metrics['total_assets']} "
-            f"net={metrics['net_worth']} unrealized={metrics['unrealized_gain_loss']}"
         )
 
     if not rows:

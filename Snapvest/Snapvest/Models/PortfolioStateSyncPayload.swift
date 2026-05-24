@@ -19,6 +19,12 @@ struct PortfolioCashItem: Codable, Equatable {
     let accountId: String
     let currency: String
     let amount: String
+
+    enum CodingKeys: String, CodingKey {
+        case accountId = "account_id"
+        case currency
+        case amount
+    }
 }
 
 struct PortfolioHoldingItem: Codable, Equatable {
@@ -28,6 +34,14 @@ struct PortfolioHoldingItem: Codable, Equatable {
     let currency: String
     /// 加權平均成本（原幣），供後端算未實現損益
     let averageCost: String?
+
+    enum CodingKeys: String, CodingKey {
+        case assetType = "asset_type"
+        case symbol
+        case quantity
+        case currency
+        case averageCost = "average_cost"
+    }
 }
 
 struct PortfolioLiabilityItem: Codable, Equatable {
@@ -37,6 +51,14 @@ struct PortfolioLiabilityItem: Codable, Equatable {
     let liabilityId: String?
     let currency: String
     let amount: String
+
+    enum CodingKeys: String, CodingKey {
+        case kind
+        case accountId = "account_id"
+        case liabilityId = "liability_id"
+        case currency
+        case amount
+    }
 }
 
 enum PortfolioStateSyncBuilder {

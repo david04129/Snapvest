@@ -29,7 +29,7 @@ struct HomeView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
-                    // 走勢圖（Supabase 每日快照）
+                    // 走勢圖（過去：Supabase 每日快照；今天：本機即時）
                     HomeTrendChartSection(
                         userId: userId,
                         currency: viewModel.viewCurrency,

@@ -293,24 +293,18 @@ enum SnapshotUpdater {
             cashByCurrency[account.currency, default: 0] += snapshot.cashBalance
             
             guard let holdings = snapshot.holdings else { continue }
-            var accountInvestments: Decimal = 0
-            var accountGainLoss: Decimal = 0
             
             for holding in holdings {
                 let key = "\(holding.assetType.rawValue)_\(holding.symbol)"
                 let price = priceMap[key]?.displayPrice
                 let marketValue = (price ?? 0) * holding.quantity
                 let cost = holding.averageCost * holding.quantity
-                accountInvestments += marketValue
-                accountGainLoss += (marketValue - cost)
-            }
-            
-            if account.currency == .USD {
-                totalInvestmentsTWD += accountInvestments * usdToTwdRate
-                totalUnrealizedGainLossTWD += accountGainLoss * usdToTwdRate
-            } else {
-                totalInvestmentsTWD += accountInvestments
-                totalUnrealizedGainLossTWD += accountGainLoss
+                totalInvestmentsTWD += amountInTWD(marketValue, currency: holding.currency, usdToTwdRate: usdToTwdRate)
+                totalUnrealizedGainLossTWD += amountInTWD(
+                    marketValue - cost,
+                    currency: holding.currency,
+                    usdToTwdRate: usdToTwdRate
+                )
             }
         }
         
@@ -352,5 +346,17 @@ enum SnapshotUpdater {
             realizedGainLossUSD: realizedUSD,
             lastUpdated: Date()
         )
+    }
+
+    /// 持股市值／損益依 `holding.currency` 換算為 TWD（與帳戶 Tab、後端 daily_portfolio_snapshot 一致）
+    private static func amountInTWD(_ amount: Decimal, currency: Currency, usdToTwdRate: Decimal) -> Decimal {
+        switch currency {
+        case .TWD:
+            return amount
+        case .USD:
+            return amount * usdToTwdRate
+        default:
+            return amount
+        }
     }
 }

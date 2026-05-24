@@ -2,14 +2,15 @@
 //  HomeTrendChartSessionCache.swift
 //  Snapvest
 //
-//  走勢圖 Supabase 查詢結果：避免切 Tab 重建時重複 loading。
+//  走勢圖 Supabase 歷史查詢結果：避免切 Tab 重建時重複 loading。
+//  當日即時點不在此快取，由 TrendChartPointMerger 與本機快照合併。
 //
 
 import Foundation
 
 @MainActor
 enum HomeTrendChartSessionCache {
-    private(set) static var trendPoints: [TrendChartPoint] = []
+    private(set) static var historicalPoints: [TrendChartPoint] = []
     private(set) static var loadFailed = false
     private static var cachedUserId: String?
 
@@ -17,15 +18,15 @@ enum HomeTrendChartSessionCache {
         cachedUserId == userId
     }
 
-    static func apply(userId: String, points: [TrendChartPoint], failed: Bool) {
+    static func applyHistorical(userId: String, points: [TrendChartPoint], failed: Bool) {
         cachedUserId = userId
-        trendPoints = points
+        historicalPoints = points
         loadFailed = failed
     }
 
     static func invalidate() {
         cachedUserId = nil
-        trendPoints = []
+        historicalPoints = []
         loadFailed = false
     }
 }
