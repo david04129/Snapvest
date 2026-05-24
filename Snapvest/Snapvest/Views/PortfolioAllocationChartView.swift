@@ -422,6 +422,7 @@ struct PortfolioAllocationLegend: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(isSelected ? Color.primaryText.opacity(0.06) : Color.clear)
             )
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .buttonStyle(.plain)
     }

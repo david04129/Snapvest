@@ -85,8 +85,12 @@ struct HomeTrendChartSection: View {
     @Binding var customEndDate: Date
     
     @Environment(\.homeAmountsHidden) private var hideHomeAmounts
-    @State private var isLoading = true
+    @State private var isLoading = false
     @State private var loadFailed = false
+    
+    private var shouldShowLoading: Bool {
+        isLoading && !HomeTrendChartSessionCache.isLoaded(for: userId)
+    }
     
     @State private var selectedPoint: TrendChartPoint?
     @State private var activeCustomDateField: CustomDatePickerField?
@@ -144,7 +148,7 @@ struct HomeTrendChartSection: View {
                 .opacity(contentPhase)
             }
             
-            if isLoading {
+            if shouldShowLoading {
                 ProgressView()
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 32)
@@ -199,8 +203,15 @@ struct HomeTrendChartSection: View {
                 }
             )
         }
-        .onAppear { resetSelectionToLatest() }
+        .onAppear {
+            applyCachedTrendPointsIfAvailable()
+            resetSelectionToLatest()
+        }
         .task(id: userId) {
+            if HomeTrendChartSessionCache.isLoaded(for: userId) {
+                applyCachedTrendPointsIfAvailable()
+                return
+            }
             await loadTrendPoints()
         }
         .onChange(of: filteredPoints.count) { _, _ in resetSelectionToLatest() }
@@ -331,13 +342,26 @@ struct HomeTrendChartSection: View {
         return "尚無足夠資料顯示走勢"
     }
     
+    private func applyCachedTrendPointsIfAvailable() {
+        guard HomeTrendChartSessionCache.isLoaded(for: userId) else { return }
+        trendPoints = HomeTrendChartSessionCache.trendPoints
+        loadFailed = HomeTrendChartSessionCache.loadFailed
+        isLoading = false
+    }
+    
     private func loadTrendPoints() async {
+        guard !HomeTrendChartSessionCache.isLoaded(for: userId) else {
+            applyCachedTrendPointsIfAvailable()
+            return
+        }
+        
         isLoading = true
         loadFailed = false
         defer { isLoading = false }
         
         guard SupabaseConfig.isConfigured else {
             trendPoints = []
+            HomeTrendChartSessionCache.apply(userId: userId, points: [], failed: false)
             return
         }
         
@@ -350,9 +374,11 @@ struct HomeTrendChartSection: View {
             )
             trendPoints = fetched
             loadFailed = false
+            HomeTrendChartSessionCache.apply(userId: userId, points: fetched, failed: false)
         } catch {
             trendPoints = []
             loadFailed = true
+            HomeTrendChartSessionCache.apply(userId: userId, points: [], failed: true)
             #if DEBUG
             print("[HomeTrendChart] load failed: \(error.localizedDescription)")
             #endif

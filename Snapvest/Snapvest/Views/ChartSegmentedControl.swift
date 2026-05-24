@@ -56,6 +56,7 @@ struct ChartSegmentedControl<Option: Hashable & Identifiable>: View {
                             .matchedGeometryEffect(id: "chartSegmentHighlight", in: highlightNS)
                     }
                 }
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])

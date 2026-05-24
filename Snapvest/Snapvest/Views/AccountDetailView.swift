@@ -19,6 +19,8 @@ struct AccountDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel: AccountDetailViewModel
     @EnvironmentObject private var accountsViewModel: AccountsViewModel
+    @EnvironmentObject private var assetsViewModel: AssetsViewModel
+    @EnvironmentObject private var portfolioViewModel: PortfolioViewModel
     @State private var showingAdjustCashBalance = false
     @State private var showingRepayment = false
     @State private var repaymentSheetItem: DebtRepaymentSheetItem?
@@ -86,6 +88,7 @@ struct AccountDetailView: View {
                 if let updated = accountsViewModel.accounts.first(where: { $0.id == account.id }) {
                     displayAccountName = updated.name
                 }
+                refreshSelectedHoldingIfNeeded()
             }
         }
         .sheet(isPresented: $showingRenameSheet) {
@@ -192,21 +195,53 @@ struct AccountDetailView: View {
     }
     
     private func navigateToHoldingDetail(_ holding: HoldingSnapshot) {
+        let assetType = holding.holding.assetType
+        let symbol = holding.holding.symbol
+
+        if let aggregated = assetsViewModel.aggregatedHoldings.first(where: {
+            $0.assetType == assetType && $0.symbol == symbol
+        }) {
+            selectedHolding = holdingNavigationItem(for: aggregated)
+            return
+        }
+
         guard !isLoadingHoldingDetail else { return }
         isLoadingHoldingDetail = true
         Task {
             defer { isLoadingHoldingDetail = false }
             do {
-                if let item = try await HoldingNavigationBuilder.load(
+                if let item = try await HoldingNavigationBuilder.loadFromPersisted(
                     userId: account.userId,
-                    assetType: holding.holding.assetType,
-                    symbol: holding.holding.symbol
+                    assetType: assetType,
+                    symbol: symbol
                 ) {
                     selectedHolding = item
                 }
             } catch {
                 // 無法載入合併持股時靜默略過
             }
+        }
+    }
+
+    private func holdingNavigationItem(for aggregated: AggregatedHoldingSnapshot) -> HoldingNavigationItem {
+        HoldingNavigationBuilder.make(
+            aggregatedHolding: aggregated,
+            assetPriceSnapshots: assetsViewModel.assetPriceSnapshots,
+            totalAssets: assetsViewModel.totalAssets,
+            totalInvestments: assetsViewModel.totalInvestments
+        )
+    }
+
+    private func refreshSelectedHoldingIfNeeded() {
+        guard let current = selectedHolding else { return }
+
+        if let updated = assetsViewModel.aggregatedHoldings.first(where: { $0.id == current.id }) {
+            let newItem = holdingNavigationItem(for: updated)
+            if newItem != current {
+                selectedHolding = newItem
+            }
+        } else {
+            selectedHolding = nil
         }
     }
     
@@ -624,22 +659,20 @@ struct AccountDetailView: View {
     }
     
     private func loadOtherDebtAccountData() async {
-        await accountsViewModel.loadAccounts(userId: account.userId)
         if let updated = accountsViewModel.accounts.first(where: { $0.id == account.id }) {
             displayAccountName = updated.name
         }
         do {
             let transactions = try await MockDataService.shared.fetchAllTransactions(userId: account.userId)
-            let accounts = try await MockDataService.shared.fetchAccounts(userId: account.userId)
             let remaining = OtherDebtCalculator.remainingBalance(
                 accountId: account.id,
                 transactions: transactions,
-                accounts: accounts
+                accounts: accountsViewModel.accounts
             )
             let repaid = OtherDebtCalculator.totalRepaid(
                 accountId: account.id,
                 transactions: transactions,
-                accounts: accounts
+                accounts: accountsViewModel.accounts
             )
             await MainActor.run {
                 otherDebtRemaining = remaining
@@ -836,30 +869,21 @@ struct AccountDetailView: View {
     }
     
     private func loadDebtAccountData() async {
-        await accountsViewModel.loadAccounts(userId: account.userId)
-        
         if let updated = accountsViewModel.accounts.first(where: { $0.id == account.id }) {
             displayAccountName = updated.name
         }
-        
-        // 找到債務帳戶
-        if account.accountType == .debt {
-            let debtName = displayAccountName
-            // 在所有還款帳戶中查找對應的債務記錄
-            for repaymentAccount in accountsViewModel.accounts where repaymentAccount.accountType != .debt {
-                do {
-                    let liabilities = try await MockDataService.shared.fetchLiabilities(accountId: repaymentAccount.id)
-                    if let liability = liabilities.first(where: { $0.name == debtName }) {
-                        await MainActor.run {
-                            currentLiability = liability
-                            repaymentAccountName = repaymentAccount.name
-                        }
-                        break
-                    }
-                } catch {
-                    // 繼續查找下一個帳戶
-                    continue
-                }
+
+        guard account.accountType == .debt else { return }
+        let debtName = displayAccountName
+
+        if portfolioViewModel.liabilities.isEmpty {
+            await portfolioViewModel.reloadLiabilities(userId: account.userId)
+        }
+
+        if let liability = portfolioViewModel.liabilities.first(where: { $0.name == debtName }) {
+            currentLiability = liability
+            if let repaymentAccount = accountsViewModel.accounts.first(where: { $0.id == liability.accountId }) {
+                repaymentAccountName = repaymentAccount.name
             }
         }
     }
@@ -1486,6 +1510,9 @@ struct RepaymentInfoCard: View {
 #Preview {
     NavigationStack {
         AccountDetailView(account: Account(userId: "test", name: "國泰證券", accountType: .twdSecurities))
+            .environmentObject(AccountsViewModel())
+            .environmentObject(AssetsViewModel())
+            .environmentObject(PortfolioViewModel())
     }
 }
 

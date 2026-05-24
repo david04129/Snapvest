@@ -126,6 +126,7 @@ struct DateRangePresetPicker: View {
                                         .fill(AppColors.secondaryBackground)
                                 }
                             }
+                            .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
                 }
@@ -179,6 +180,7 @@ struct CustomDateRangeBar: View {
                             .stroke(AppColors.separator.opacity(0.6), lineWidth: 1)
                     )
             )
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .buttonStyle(.plain)
     }

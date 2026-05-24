@@ -16,68 +16,6 @@ struct PieChartInputs {
 }
 
 enum PieChartDataLoader {
-    @MainActor
-    static func load(
-        userId: String,
-        dataService: DataServiceProtocol,
-        priceService: PriceServiceProtocol
-    ) async throws -> PieChartInputs {
-        let rate = (try? await dataService.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate) ?? 0
-        let accounts = try await dataService.fetchAccounts(userId: userId)
-        var accountSnapshots: [AccountSnapshot] = []
-        for account in accounts {
-            if let s = try await dataService.fetchAccountSnapshot(accountId: account.id) {
-                accountSnapshots.append(s)
-            }
-        }
-        
-        var aggregated = try await dataService.fetchAggregatedHoldingSnapshots(userId: userId, assetType: nil)
-        let symbolInfos = await symbolInfosForPie(
-            userId: userId,
-            dataService: dataService,
-            accountSnapshots: accountSnapshots,
-            aggregated: aggregated
-        )
-        var prices: [AssetPriceSnapshot] = []
-        if SupabaseConfig.isConfigured, !symbolInfos.isEmpty {
-            let fetched = (try? await SupabasePriceService.fetchPrices(symbols: symbolInfos)) ?? []
-            prices = await PriceSnapshotMerger.mergeIncoming(fetched, dataService: dataService)
-        } else if !symbolInfos.isEmpty {
-            prices = try await dataService.fetchAssetPriceSnapshots(symbols: symbolInfos)
-        }
-        if aggregated.isEmpty || accountSnapshots.isEmpty || prices.isEmpty {
-            let bundle = try await SnapshotUpdater.rebuildSnapshots(
-                userId: userId,
-                dataService: dataService,
-                priceService: priceService
-            )
-            aggregated = bundle.aggregatedHoldings
-            prices = bundle.assetPriceSnapshots
-            accountSnapshots = bundle.accountSnapshots
-            dataService.persistLocalValuation(for: userId)
-        }
-        
-        var cashByCurrency: [Currency: Decimal] = [:]
-        var accountMap: [String: Account] = [:]
-        for a in accounts { accountMap[a.id] = a }
-        for snap in accountSnapshots {
-            guard let account = accountMap[snap.accountId], !account.accountType.isLiabilityAccount else { continue }
-            if let existing = cashByCurrency[account.currency] {
-                cashByCurrency[account.currency] = existing + snap.cashBalance
-            } else {
-                cashByCurrency[account.currency] = snap.cashBalance
-            }
-        }
-        
-        return PieChartInputs(
-            twdCash: cashByCurrency[.TWD] ?? 0,
-            usdCash: cashByCurrency[.USD] ?? 0,
-            usdToTwdRate: rate,
-            aggregatedHoldings: aggregated,
-            assetPriceSnapshots: prices
-        )
-    }
-
     /// 僅讀本機估值 B（Splash／Tab 套用，不拉 Supabase、不 rebuild）
     @MainActor
     static func loadFromPersisted(

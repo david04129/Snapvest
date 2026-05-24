@@ -9,9 +9,10 @@ import SwiftUI
 
 struct TransactionsView: View {
     @Binding var selectedTab: Int
+    @EnvironmentObject private var portfolioViewModel: PortfolioViewModel
+    @EnvironmentObject private var accountsViewModel: AccountsViewModel
+    @EnvironmentObject private var assetsViewModel: AssetsViewModel
     @StateObject private var viewModel = TransactionsViewModel()
-    @StateObject private var portfolioViewModel = PortfolioViewModel()
-    @StateObject private var accountsViewModel = AccountsViewModel()
     @State private var showingEditTransaction: Transaction?
     @State private var showingEditLiability = false
     @State private var editingLiability: Liability?
@@ -420,10 +421,18 @@ struct TransactionsView: View {
                 await viewModel.loadTransactions(userId: userId)
             }
             .task {
-                // 先載入篩選偏好（快速操作，不阻塞）
                 loadFilterPreferences()
-                // 然後載入交易數據
                 await viewModel.loadTransactions(userId: userId)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { _ in
+                Task {
+                    await LaunchCoordinator.applyPersistedState(
+                        userId: userId,
+                        portfolioViewModel: portfolioViewModel,
+                        accountsViewModel: accountsViewModel,
+                        assetsViewModel: assetsViewModel
+                    )
+                }
             }
             .sheet(item: $showingEditTransaction) { transaction in
                 editTransactionSheet(transaction: transaction)
@@ -535,7 +544,6 @@ struct TransactionsView: View {
                 buyTradeEditItem = nil
                 Task {
                     await viewModel.loadTransactions(userId: userId)
-                    await portfolioViewModel.loadData(userId: userId)
                 }
             })
             .toolbar {
@@ -560,7 +568,6 @@ struct TransactionsView: View {
                 sellTradeEditItem = nil
                 Task {
                     await viewModel.loadTransactions(userId: userId)
-                    await portfolioViewModel.loadData(userId: userId)
                 }
             })
             .toolbar {
@@ -603,11 +610,7 @@ struct TransactionsView: View {
                 return
             }
         }
-        if transaction.type == .liability {
-            await accountsViewModel.loadAccounts(userId: userId)
-        }
         await viewModel.loadTransactions(userId: userId)
-        await portfolioViewModel.loadData(userId: userId)
     }
     
     // MARK: - 帳戶篩選 Sheet
@@ -777,7 +780,7 @@ struct TransactionsView: View {
     @ViewBuilder
     private var editLiabilitySheet: some View {
         if let liability = editingLiability {
-            AddLiabilityView(portfolioViewModel: portfolioViewModel, userId: userId, editingLiability: liability)
+            AddLiabilityView(userId: userId, editingLiability: liability)
         }
     }
     
@@ -988,14 +991,6 @@ struct TransactionsView: View {
         }
         
         return ""
-    }
-    
-    private func refreshAllData() async {
-        // 使用 Task 確保異步操作不會阻塞
-        await portfolioViewModel.loadData(userId: userId)
-        await accountsViewModel.loadAccounts(userId: userId)
-        // 重新載入交易以確保數據一致性
-        await viewModel.loadTransactions(userId: userId)
     }
     
     private func getAccountDisplay(for transaction: Transaction) -> (name: String, icon: String, color: Color) {
@@ -1446,10 +1441,14 @@ private struct FilterSheetChipLabel: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(isActive ? Color.appPrimary.opacity(0.35) : Color.separator.opacity(0.35), lineWidth: 1)
         )
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
 #Preview {
     TransactionsView(selectedTab: .constant(AppTab.transactions.rawValue))
+        .environmentObject(PortfolioViewModel())
+        .environmentObject(AccountsViewModel())
+        .environmentObject(AssetsViewModel())
 }
 

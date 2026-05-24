@@ -1591,12 +1591,7 @@ struct RepaymentView: View {
             updatedLiability.updatedAt = Date()
             
                 try await MockDataService.shared.updateLiability(updatedLiability)
-                
-            // 刷新數據
-            await PortfolioViewModel().loadData(userId: userId)
-            await accountsViewModel.loadAccounts(userId: userId)
-                
-            // 通知父視圖刷新（通過重新載入債務數據）
+
             await MainActor.run {
                 dismiss()
             }

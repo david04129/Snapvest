@@ -70,7 +70,7 @@ class AccountsViewModel: ObservableObject {
         balancesLoadedOnce = true
     }
 
-    /// 一次算出所有帳戶卡片與類別總額（僅下拉刷新 rebuild 後由通知觸發；保留供舊路徑）
+    /// 一次算出所有帳戶卡片與類別總額（`applyFromPersisted` 的別名；仍使用中）
     func refreshBalances(userId: String, preloadedLiabilities: [Liability] = []) async {
         await applyFromPersisted(userId: userId, liabilities: preloadedLiabilities)
     }

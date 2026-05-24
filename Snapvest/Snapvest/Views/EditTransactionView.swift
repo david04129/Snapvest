@@ -11,7 +11,6 @@ struct EditTransactionView: View {
     let transaction: Transaction
     @ObservedObject var viewModel: TransactionsViewModel
     @Environment(\.dismiss) var dismiss
-    @StateObject private var portfolioViewModel = PortfolioViewModel()
     var onEditLiability: ((Liability) -> Void)?
     
     @State private var amount: String = ""
@@ -196,15 +195,23 @@ struct EditTransactionView: View {
     }
     
     private func loadLiabilityFromTransaction() async {
-        // 從交易記錄中找到對應的債務
-        // 債務交易的notes通常包含債務名稱
         let liabilityName = transaction.notes?.replacingOccurrences(of: "新增債務：", with: "") ?? ""
-        
-        // 從portfolioViewModel載入債務
-        await portfolioViewModel.loadData(userId: AppUser.id)
-        
-        // 找到對應的債務
-        liability = portfolioViewModel.liabilities.first { $0.name == liabilityName || $0.accountId == transaction.accountId }
+        let dataService = MockDataService.shared
+
+        do {
+            let accounts = try await dataService.fetchAccounts(userId: AppUser.id)
+            for repaymentAccount in accounts where repaymentAccount.accountType != .debt {
+                let liabilities = try await dataService.fetchLiabilities(accountId: repaymentAccount.id)
+                if let found = liabilities.first(where: {
+                    $0.name == liabilityName || $0.accountId == transaction.accountId
+                }) {
+                    liability = found
+                    return
+                }
+            }
+        } catch {
+            liability = nil
+        }
     }
     
     private var isValid: Bool {

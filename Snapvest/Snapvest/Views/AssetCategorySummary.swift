@@ -79,6 +79,7 @@ struct AssetsFilterChipLabel: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(isActive ? Color.appPrimary.opacity(0.35) : Color.separator.opacity(0.35), lineWidth: 1)
         )
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
@@ -139,6 +140,7 @@ struct AccountToolbarChip: View {
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(Color.appPrimary.opacity(0.35), lineWidth: 1)
             )
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
         .fixedSize()

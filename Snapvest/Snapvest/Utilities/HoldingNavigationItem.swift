@@ -47,6 +47,35 @@ struct HoldingNavigationItem: Identifiable, Hashable {
 }
 
 enum HoldingNavigationBuilder {
+    /// 從本機估值 B 組導航 payload（不拉 Supabase、不 rebuild）
+    @MainActor
+    static func loadFromPersisted(
+        userId: String,
+        assetType: AssetType,
+        symbol: String,
+        dataService: DataServiceProtocol? = nil
+    ) async throws -> HoldingNavigationItem? {
+        let service = dataService ?? MockDataService.shared
+        var rate = ExchangeRateSessionCache.usdToTwd ?? 0
+        if rate <= 0 {
+            rate = (try? await service.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate) ?? 0
+            if rate > 0 {
+                ExchangeRateSessionCache.update(usdToTwd: rate)
+            }
+        }
+        let inputs = try await PieChartDataLoader.loadFromPersisted(
+            userId: userId,
+            dataService: service,
+            usdToTwdRate: rate
+        )
+        return navigationItem(
+            assetType: assetType,
+            symbol: symbol,
+            inputs: inputs
+        )
+    }
+
+    /// 相容舊呼叫端；行為同 `loadFromPersisted`。
     @MainActor
     static func load(
         userId: String,
@@ -55,26 +84,29 @@ enum HoldingNavigationBuilder {
         dataService: DataServiceProtocol? = nil,
         priceService: PriceServiceProtocol? = nil
     ) async throws -> HoldingNavigationItem? {
-        let service = dataService ?? MockDataService.shared
-        let prices = priceService ?? PriceService(dataService: service)
-        
-        let inputs = try await PieChartDataLoader.load(
+        _ = priceService
+        return try await loadFromPersisted(
             userId: userId,
-            dataService: service,
-            priceService: prices
+            assetType: assetType,
+            symbol: symbol,
+            dataService: dataService
         )
-        
+    }
+
+    private static func navigationItem(
+        assetType: AssetType,
+        symbol: String,
+        inputs: PieChartInputs
+    ) -> HoldingNavigationItem? {
         guard let aggregated = inputs.aggregatedHoldings.first(where: {
             $0.assetType == assetType && $0.symbol == symbol
         }) else {
             return nil
         }
-        
         let totals = portfolioTotals(from: inputs)
         let priceSnapshot = inputs.assetPriceSnapshots.first {
             $0.assetType == assetType && $0.symbol == symbol
         }
-        
         return HoldingNavigationItem(
             aggregatedHolding: aggregated,
             assetPriceSnapshot: priceSnapshot,
@@ -82,7 +114,7 @@ enum HoldingNavigationBuilder {
             totalInvestments: totals.totalInvestments
         )
     }
-    
+
     static func make(
         aggregatedHolding: AggregatedHoldingSnapshot,
         assetPriceSnapshots: [AssetPriceSnapshot],

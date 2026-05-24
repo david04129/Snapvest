@@ -9,7 +9,6 @@ import SwiftUI
 
 struct AddLiabilityView: View {
     @Environment(\.dismiss) var dismiss
-    @ObservedObject var portfolioViewModel: PortfolioViewModel
     @StateObject private var accountsViewModel = AccountsViewModel()
     
     // 編輯模式
@@ -25,8 +24,7 @@ struct AddLiabilityView: View {
     @State private var userId: String = AppUser.id
     @State private var showingAccountPicker = false
     
-    init(portfolioViewModel: PortfolioViewModel? = nil, userId: String = AppUser.id, editingLiability: Liability? = nil) {
-        self._portfolioViewModel = ObservedObject(wrappedValue: portfolioViewModel ?? PortfolioViewModel())
+    init(userId: String = AppUser.id, editingLiability: Liability? = nil) {
         self.userId = userId
         self.editingLiability = editingLiability
     }
@@ -490,7 +488,10 @@ struct AddLiabilityView: View {
                     }
                 }
                 
-                await portfolioViewModel.loadData(userId: userId)
+                await SnapshotRefreshCoordinator.rebuildAndNotify(
+                    userId: userId,
+                    dataService: MockDataService.shared
+                )
                 dismiss()
             } catch {
                 // TODO: 顯示錯誤訊息

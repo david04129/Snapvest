@@ -37,14 +37,10 @@ class AssetsViewModel: ObservableObject {
     /// 此處不需要額外變數，因為成本計算時直接使用快照中存儲的匯率
     
     private let dataService: DataServiceProtocol
-    private let priceService: PriceServiceProtocol
     private var cancellables = Set<AnyCancellable>()
     
-    init(dataService: DataServiceProtocol? = nil,
-         priceService: PriceServiceProtocol? = nil) {
-        let service = dataService ?? MockDataService.shared
-        self.dataService = service
-        self.priceService = priceService ?? PriceService(dataService: service)
+    init(dataService: DataServiceProtocol? = nil) {
+        self.dataService = dataService ?? MockDataService.shared
     }
     
     /// 從本機估值 B 灌入資產分頁（Splash／快照更新；不拉 Supabase）
@@ -76,62 +72,6 @@ class AssetsViewModel: ObservableObject {
 
         isLoading = false
         hasLoadedOnce = true
-    }
-
-    /// 載入所有資料（含 Supabase 拉價；僅手動刷新等路徑使用）
-    func loadData(userId: String) async {
-        if !hasLoadedOnce { isLoading = true }
-        errorMessage = nil
-        
-        defer {
-            isLoading = false
-            hasLoadedOnce = true
-        }
-        
-        do {
-            usdToTwdRate = (try? await dataService.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate) ?? 0
-            let fetchedAccounts = try await dataService.fetchAccounts(userId: userId)
-            let accountSnapshots = try await loadAccountSnapshots(accounts: fetchedAccounts)
-            var aggregated = try await dataService.fetchAggregatedHoldingSnapshots(userId: userId, assetType: nil)
-            let symbolInfos = await loadSymbolInfos(userId: userId, accountSnapshots: accountSnapshots, aggregatedHoldings: aggregated)
-            var assetPriceSnapshots: [AssetPriceSnapshot]
-            if SupabaseConfig.isConfigured, !symbolInfos.isEmpty {
-                let fetched = (try? await SupabasePriceService.fetchPrices(symbols: symbolInfos)) ?? []
-                assetPriceSnapshots = await PriceSnapshotMerger.mergeIncoming(fetched, dataService: dataService)
-            } else if !symbolInfos.isEmpty {
-                assetPriceSnapshots = try await dataService.fetchAssetPriceSnapshots(symbols: symbolInfos)
-            } else {
-                assetPriceSnapshots = []
-            }
-            
-            if aggregated.isEmpty || accountSnapshots.isEmpty || assetPriceSnapshots.isEmpty {
-                let bundle = try await SnapshotUpdater.rebuildSnapshots(
-                    userId: userId,
-                    dataService: dataService,
-                    priceService: priceService
-                )
-                aggregated = bundle.aggregatedHoldings
-                self.assetPriceSnapshots = bundle.assetPriceSnapshots
-                self.aggregatedHoldings = bundle.aggregatedHoldings
-                await calculateSummary(
-                    assetPriceSnapshots: bundle.assetPriceSnapshots,
-                    accountSnapshots: bundle.accountSnapshots,
-                    accounts: fetchedAccounts
-                )
-                dataService.persistLocalValuation(for: userId)
-            } else {
-                self.assetPriceSnapshots = assetPriceSnapshots
-                self.aggregatedHoldings = aggregated
-                await calculateSummary(
-                    assetPriceSnapshots: assetPriceSnapshots,
-                    accountSnapshots: accountSnapshots,
-                    accounts: fetchedAccounts
-                )
-            }
-            
-        } catch {
-            errorMessage = "載入資料失敗：\(error.localizedDescription)"
-        }
     }
 
     private func loadAccountSnapshots(accounts: [Account]) async throws -> [AccountSnapshot] {
@@ -171,81 +111,6 @@ class AssetsViewModel: ObservableObject {
             }
         }
         return symbolInfos
-    }
-    
-    // 計算邏輯已移至 SnapshotUpdater
-    
-    /// 載入所有持股的價格快照（從 AssetPriceSnapshot 或 PriceService）
-    private func loadAssetPriceSnapshots(
-        userId: String,
-        accounts: [Account],
-        transactions: [Transaction]
-    ) async throws -> [AssetPriceSnapshot] {
-        // 先從所有交易中找出所有唯一的股票
-        var symbolSet: Set<String> = [] // key: "assetType_symbol"
-        for transaction in transactions {
-            if transaction.type == .buy || transaction.type == .sell {
-                let key = "\(transaction.assetType.rawValue)_\(transaction.symbol)"
-                symbolSet.insert(key)
-            }
-        }
-        
-        // 轉換為 SymbolInfo
-        var symbolInfos: [SymbolInfo] = []
-        for key in symbolSet {
-            // 嘗試所有可能的 AssetType，找到匹配的
-            for assetType in AssetType.allCases {
-                let prefix = assetType.rawValue + "_"
-                if key.hasPrefix(prefix) {
-                    let symbol = String(key.dropFirst(prefix.count))
-                    symbolInfos.append(SymbolInfo(assetType: assetType, symbol: symbol))
-                    break
-                }
-            }
-        }
-        
-        // 嘗試從快照系統讀取價格（未來）
-        // 目前暫時從 PriceService 獲取價格
-        
-        var priceSnapshots: [AssetPriceSnapshot] = []
-        
-        for symbolInfo in symbolInfos {
-            // 嘗試從 DataService 讀取快照
-            if let snapshot = try? await dataService.fetchAssetPriceSnapshot(
-                assetType: symbolInfo.assetType,
-                symbol: symbolInfo.symbol
-            ) {
-                priceSnapshots.append(snapshot)
-            } else {
-                // 如果沒有快照，從 PriceService 獲取價格（臨時方案）
-                let currentPrice = try? await priceService.fetchCurrentPrice(
-                    assetType: symbolInfo.assetType,
-                    symbol: symbolInfo.symbol
-                )
-                
-                // 判斷貨幣（從帳戶推斷，或使用預設值）
-                let currency: Currency = symbolInfo.assetType == .stockTW ? .TWD : .USD
-                
-                let rawSnapshot = AssetPriceSnapshot(
-                    assetType: symbolInfo.assetType,
-                    symbol: symbolInfo.symbol,
-                    name: nil, // 暫時為 nil，未來可以從後端獲取
-                    currency: currency,
-                    currentPrice: currentPrice,
-                    previousPrice: nil,
-                    currentPriceDate: Date(),
-                    previousPriceDate: nil,
-                    lastUpdated: Date(),
-                    lastSuccessfulUpdate: currentPrice != nil ? Date() : nil
-                )
-                
-                priceSnapshots.append(
-                    PriceSnapshotMerger.merge(incoming: rawSnapshot, existing: nil)
-                )
-            }
-        }
-        
-        return priceSnapshots
     }
     
     /// 計算總覽數據

@@ -11,7 +11,6 @@ struct AddAccountView: View {
     @ObservedObject var viewModel: AccountsViewModel
     @Environment(\.dismiss) var dismiss
     @StateObject private var transactionsViewModel = TransactionsViewModel()
-    @StateObject private var portfolioViewModel = PortfolioViewModel()
     
     @State private var selectedAccountType: AccountType?
     @State private var showingAccountDetails = false
@@ -245,10 +244,6 @@ struct AddAccountView: View {
                 await transactionsViewModel.createTransaction(transaction)
             }
             
-            // 更新數據
-            await viewModel.loadAccounts(userId: userId)
-            await portfolioViewModel.loadData(userId: userId)
-            
             resetForm() // 重置表單
             dismiss()
         }
@@ -412,10 +407,6 @@ struct AddAccountView: View {
                 transactionDate: startDate  // 直接使用用戶選擇的開始日期（新增債務的日期）
             )
             await transactionsViewModel.createTransaction(liabilityTransaction)
-            
-            // 4. 更新數據
-            await portfolioViewModel.loadData(userId: userId)
-            await viewModel.loadAccounts(userId: userId)
             
             resetForm() // 重置表單
             dismiss()

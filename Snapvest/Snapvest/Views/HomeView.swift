@@ -160,6 +160,40 @@ struct HomeView: View {
     }
 }
 
+// MARK: - 首頁可展開卡片標頭
+
+private struct HomeCardExpandChevron: View {
+    let isExpanded: Bool
+
+    var body: some View {
+        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundColor(.secondaryText)
+            .frame(width: 24, height: 24)
+    }
+}
+
+private struct HomeExpandableCardHeader<Content: View>: View {
+    @Binding var isExpanded: Bool
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        Button {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                isExpanded.toggle()
+            }
+        } label: {
+            HStack(alignment: .center, spacing: 16) {
+                content()
+                Spacer(minLength: 0)
+                HomeCardExpandChevron(isExpanded: isExpanded)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 // MARK: - 淨資產卡片
 struct NetWorthCardView: View {
     @ObservedObject var viewModel: PortfolioViewModel
@@ -182,25 +216,20 @@ struct NetWorthCardView: View {
     var body: some View {
         AccentBarCard(title: "淨資產", accentColor: .appPrimary) {
             VStack(spacing: 16) {
-                // 標題和圓圈比例ICON
-                HStack(alignment: .center, spacing: 16) {
-                    // 圓圈比例ICON（藍色主題，剩餘部分用實色紅色）
+                HomeExpandableCardHeader(isExpanded: $isExpanded) {
                     ZStack {
-                        // 背景圓圈（實色紅色，代表負債，與長條圖顏色一致）
                         let debtRatio = 1.0 - CGFloat(NSDecimalNumber(decimal: netWorthRatio / 100).doubleValue)
                         Circle()
                             .trim(from: 0, to: 1.0)
                             .stroke(Color.lossRed, lineWidth: 7)
                             .frame(width: 50, height: 50)
                         
-                        // 淨資產弧段
                         Circle()
                             .trim(from: 0, to: CGFloat(NSDecimalNumber(decimal: netWorthRatio / 100).doubleValue))
                             .stroke(Color.appPrimary, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                             .frame(width: 50, height: 50)
                             .rotationEffect(.degrees(-90))
                         
-                        // 負債部分（實色紅色，與長條圖顏色一致）
                         if debtRatio > 0 {
                             Circle()
                                 .trim(from: CGFloat(NSDecimalNumber(decimal: netWorthRatio / 100).doubleValue), to: 1.0)
@@ -215,27 +244,11 @@ struct NetWorthCardView: View {
                             .foregroundColor(.appPrimary)
                     }
                     
-                    // 主要數字
                     Text(HomeAmountPrivacyFormat.currency(netWorth, currency: viewModel.viewCurrency, hidden: hideHomeAmounts))
                         .font(.snapAmountHero)
                         .foregroundColor(.primaryText)
-                    
-                    Spacer()
-                    
-                    // 展開/縮合按鈕
-                    Button(action: {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            isExpanded.toggle()
-                        }
-                    }) {
-                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.secondaryText)
-                            .frame(width: 24, height: 24)
-                    }
                 }
                 
-                // 展開時顯示的內容
                 if isExpanded {
                     // 進度條（連續形式，帶動畫、觸摸互動）
                     InteractiveProgressBar(
@@ -338,19 +351,15 @@ struct InvestmentAssetsCardView: View {
     var body: some View {
         AccentBarCard(title: "投資資產", accentColor: .stockUSColor) {
             VStack(spacing: 16) {
-                // 標題和圓圈比例ICON
-                HStack(alignment: .center, spacing: 16) {
-                    // 圓圈比例ICON（綠色主題，剩餘部分用淺綠色）
+                HomeExpandableCardHeader(isExpanded: $isExpanded) {
                     ZStack {
                         let investmentRatioDouble = CGFloat(NSDecimalNumber(decimal: investmentRatio / 100).doubleValue)
                         
-                        // 背景圓圈（未填滿部分）
                         Circle()
                             .trim(from: 0, to: 1.0)
                             .stroke(Color.stockUSColor.opacity(0.15), lineWidth: 7)
                             .frame(width: 50, height: 50)
                         
-                        // 投資資產弧段
                         Circle()
                             .trim(from: 0, to: investmentRatioDouble)
                             .stroke(Color.stockUSColor, style: StrokeStyle(lineWidth: 7, lineCap: .round))
@@ -363,27 +372,11 @@ struct InvestmentAssetsCardView: View {
                             .foregroundColor(.stockUSColor)
                     }
                     
-                    // 主要數字
                     Text(HomeAmountPrivacyFormat.currency(viewModel.totalInvestments, currency: viewModel.viewCurrency, hidden: hideHomeAmounts))
                         .font(.snapAmountHero)
                         .foregroundColor(.primaryText)
-                    
-                    Spacer()
-                    
-                    // 展開/縮合按鈕
-                    Button(action: {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            isExpanded.toggle()
-                        }
-                    }) {
-                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.secondaryText)
-                            .frame(width: 24, height: 24)
-                    }
                 }
                 
-                // 展開時顯示的內容
                 if isExpanded {
                     // 進度條（成本 vs 未實現損益，連續形式，帶動畫、觸摸互動）
                     let cost = viewModel.totalInvestments - viewModel.unrealizedGainLoss
@@ -503,24 +496,21 @@ struct CashCardView: View {
     var body: some View {
         AccentBarCard(title: "現金", accentColor: .allocationTwdCash) {
             VStack(spacing: 16) {
-                // 標題和圓圈比例ICON
-                HStack(alignment: .center, spacing: 16) {
+                HomeExpandableCardHeader(isExpanded: $isExpanded) {
                     ZStack {
                         let cashColor = Color.allocationTwdCash
                         let cashRatioDouble = CGFloat(NSDecimalNumber(decimal: cashRatio / 100).doubleValue)
                         
-                        // 背景圓圈（淺藍綠色，代表未畫到的部分）
                         Circle()
                             .trim(from: 0, to: 1.0)
                             .stroke(cashColor.opacity(0.15), lineWidth: 7)
                             .frame(width: 50, height: 50)
                         
-                        // 現金部分（藍綠色，從12點開始逆時針繪製）
                         Circle()
-                            .trim(from: 1.0 - cashRatioDouble, to: 1.0)  // 從1-value到1，實現逆時針
+                            .trim(from: 1.0 - cashRatioDouble, to: 1.0)
                             .stroke(cashColor, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                             .frame(width: 50, height: 50)
-                            .rotationEffect(.degrees(-90))  // -90度 = 從12點開始
+                            .rotationEffect(.degrees(-90))
                         
                         Text("\(cashRatio.formatted(fractionDigits: 1))%")
                             .font(.caption2)
@@ -528,27 +518,11 @@ struct CashCardView: View {
                             .foregroundColor(cashColor)
                     }
                     
-                    // 主要數字
                     Text(HomeAmountPrivacyFormat.currency(viewModel.totalCash, currency: viewModel.viewCurrency, hidden: hideHomeAmounts))
                         .font(.snapAmountHero)
                         .foregroundColor(.primaryText)
-                    
-                    Spacer()
-                    
-                    // 展開/縮合按鈕
-                    Button(action: {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            isExpanded.toggle()
-                        }
-                    }) {
-                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.secondaryText)
-                            .frame(width: 24, height: 24)
-                    }
                 }
                 
-                // 展開時顯示的內容
                 if isExpanded {
                     // 進度條（台幣 vs 美金，連續形式，帶動畫、觸摸互動）
                     let twdCashValue = viewModel.cashByCurrency[.TWD] ?? 0
@@ -659,9 +633,9 @@ struct TodayPLCardView: View {
     var body: some View {
         AccentBarCard(title: "今日損益", accentColor: .appPrimary) {
             VStack(spacing: 16) {
-                HStack(alignment: .firstTextBaseline) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        if summary.hasData {
+                if summary.hasData, !summary.categories.isEmpty {
+                    HomeExpandableCardHeader(isExpanded: $isExpanded) {
+                        VStack(alignment: .leading, spacing: 6) {
                             Text(HomeAmountPrivacyFormat.currency(displayChange, currency: viewModel.viewCurrency, hidden: hideHomeAmounts))
                                 .font(.snapAmountHero)
                                 .foregroundColor(Color.marketColor(for: summary.totalChangeTWD))
@@ -671,29 +645,31 @@ struct TodayPLCardView: View {
                                 font: .subheadline,
                                 weight: .semibold
                             )
-                        } else {
-                            Text("—")
-                                .font(.snapAmountHero)
-                                .foregroundColor(.secondaryText)
-                            Text("尚無足夠股價資料")
-                                .font(.caption)
-                                .foregroundColor(.secondaryText)
                         }
                     }
+                } else {
+                    HStack(alignment: .firstTextBaseline) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            if summary.hasData {
+                                Text(HomeAmountPrivacyFormat.currency(displayChange, currency: viewModel.viewCurrency, hidden: hideHomeAmounts))
+                                    .font(.snapAmountHero)
+                                    .foregroundColor(Color.marketColor(for: summary.totalChangeTWD))
 
-                    Spacer()
-
-                    if summary.hasData, !summary.categories.isEmpty {
-                        Button {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                isExpanded.toggle()
+                                todayPLPercentLabel(
+                                    percent: summary.totalChangePercent,
+                                    font: .subheadline,
+                                    weight: .semibold
+                                )
+                            } else {
+                                Text("—")
+                                    .font(.snapAmountHero)
+                                    .foregroundColor(.secondaryText)
+                                Text("尚無足夠股價資料")
+                                    .font(.caption)
+                                    .foregroundColor(.secondaryText)
                             }
-                        } label: {
-                            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(.secondaryText)
-                                .frame(width: 24, height: 24)
                         }
+                        Spacer()
                     }
                 }
 
@@ -782,39 +758,35 @@ struct TodayPLCardView: View {
 struct RealizedPLCardView: View {
     @ObservedObject var viewModel: PortfolioViewModel
     let userId: String
-    @StateObject private var transactionsViewModel = TransactionsViewModel()
     @State private var isExpanded = false
     @State private var expandedTransactionIds: Set<String> = []
+    @State private var isLoadingDetails = false
+    @State private var detailLoadFailed = false
     
     private var realizedTransactionsByCurrency: [Currency: [Transaction]] {
-        let sells = transactionsViewModel.transactions.filter { $0.type == .sell }
+        let sells = RealizedPLDetailCache.sellTransactions
         return Dictionary(grouping: sells, by: { $0.currency })
     }
     
     var body: some View {
         AccentBarCard(title: "已實現損益", accentColor: .appPrimary) {
             VStack(spacing: 16) {
-                HStack {
+                HomeExpandableCardHeader(isExpanded: $isExpanded) {
                     Text(viewModel.realizedGainLoss.formatted(currency: viewModel.viewCurrency))
                         .font(.snapAmountHero)
                         .foregroundColor(Color.marketColor(for: viewModel.realizedGainLoss))
-                    
-                    Spacer()
-                    
-                    Button(action: {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            isExpanded.toggle()
-                        }
-                    }) {
-                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.secondaryText)
-                            .frame(width: 24, height: 24)
-                    }
                 }
                 
                 if isExpanded {
-                    if realizedTransactionsByCurrency.isEmpty {
+                    if isLoadingDetails {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                    } else if detailLoadFailed {
+                        Text("無法載入明細，請稍後再試")
+                            .font(.subheadline)
+                            .foregroundColor(.secondaryText)
+                    } else if realizedTransactionsByCurrency.isEmpty {
                         Text("尚無已實現損益交易")
                             .font(.subheadline)
                             .foregroundColor(.secondaryText)
@@ -827,8 +799,30 @@ struct RealizedPLCardView: View {
                 }
             }
         }
-        .task {
-            await transactionsViewModel.loadTransactions(userId: userId)
+        .onChange(of: isExpanded) { _, expanded in
+            guard expanded else { return }
+            Task { await loadDetailsIfNeeded(force: false) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { _ in
+            RealizedPLDetailCache.invalidate()
+            guard isExpanded else { return }
+            Task { await loadDetailsIfNeeded(force: true) }
+        }
+    }
+    
+    private func loadDetailsIfNeeded(force: Bool) async {
+        if !force, RealizedPLDetailCache.isLoaded(for: userId) {
+            return
+        }
+        isLoadingDetails = true
+        detailLoadFailed = false
+        defer { isLoadingDetails = false }
+        
+        do {
+            let allTransactions = try await MockDataService.shared.fetchAllTransactions(userId: userId)
+            RealizedPLDetailCache.apply(userId: userId, transactions: allTransactions)
+        } catch {
+            detailLoadFailed = true
         }
     }
 
