@@ -15,10 +15,9 @@ from datetime import date
 from pathlib import Path
 from typing import Optional
 
-OUTPUT_DIR = Path(__file__).parent / "output"
-DATA_DIR = Path(__file__).parent / "data"
+from symbols_paths import OUTPUT_DIR, SCRIPTS_DIR, next_version
 
-# 上市公司（證交所）
+DATA_DIR = SCRIPTS_DIR / "data"
 TWSE_LISTED_URL = "https://dts.twse.com.tw/opendata/t187ap03_L.csv"
 # 上櫃股票行情（櫃買）
 TPEX_OTC_QUOTE_URL = "https://www.tpex.org.tw/web/stock/aftertrading/DAILY_CLOSE_quotes/stk_quote_result.php?l=zh-tw&o=data"
@@ -326,15 +325,7 @@ def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     output_path = OUTPUT_DIR / "symbols_tw.json"
-
-    version = 1
-    if output_path.exists():
-        try:
-            with open(output_path, encoding="utf-8") as f:
-                existing = json.load(f)
-                version = existing.get("version", 1) + 1
-        except (json.JSONDecodeError, KeyError):
-            pass
+    version = next_version("symbols_tw.json")
 
     print("台股：正在取得上市、上櫃、興櫃...")
     data = build_symbols_tw(version=version)

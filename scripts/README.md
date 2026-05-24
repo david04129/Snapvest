@@ -78,8 +78,18 @@ scripts/
 
 ## 維護頻率建議
 
-- 美股、加密：每月執行一次
-- 台股：每月或每季執行一次（上市/上櫃變動較少）
+- **自動**：GitHub Actions `Monthly Symbols Update` 每月 1 日建置並 commit（亦可手動觸發）
+- **手動**：本機執行 `./build_all.sh`（發 App 新版前可再跑一次確保最新）
+- 美股、加密：約每月
+- 台股（含簡稱 + ETF 補充表）：约每月
+
+## 輸出位置
+
+建置完成後會寫入兩處（`sync_symbols_outputs.py` 同步）：
+
+- `scripts/output/` — 建置產物與 manifest
+- `Snapvest/Snapvest/Resources/Symbols/` — App 內建 Bundle（發版用）
+- `backend/scripts/data/crypto_coingecko_map.json` — 後端每日加密貨幣抓價對照
 
 ## version 更新規則
 

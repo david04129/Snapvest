@@ -9,7 +9,7 @@ import urllib.request
 from datetime import date
 from pathlib import Path
 
-OUTPUT_DIR = Path(__file__).parent / "output"
+from symbols_paths import OUTPUT_DIR, next_version
 NASDAQ_URL = "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqtraded.txt"
 
 
@@ -62,16 +62,7 @@ def build_symbols_us(version: int = 1) -> dict:
 def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     output_path = OUTPUT_DIR / "symbols_us.json"
-
-    # 若已有檔案，讀取 version 並 +1
-    version = 1
-    if output_path.exists():
-        try:
-            with open(output_path, encoding="utf-8") as f:
-                existing = json.load(f)
-                version = existing.get("version", 1) + 1
-        except (json.JSONDecodeError, KeyError):
-            pass
+    version = next_version("symbols_us.json")
 
     data = build_symbols_us(version=version)
     with open(output_path, "w", encoding="utf-8") as f:

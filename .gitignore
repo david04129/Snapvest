@@ -30,8 +30,12 @@ Pods/
 *.backup
 *.bak
 
-# Scripts output (generated symbols files)
-scripts/output/
+# Scripts output（僅保留 symbols 建置產物供版控；其餘仍忽略）
+scripts/output/*
+!scripts/output/symbols_tw.json
+!scripts/output/symbols_us.json
+!scripts/output/symbols_crypto.json
+!scripts/output/symbols_manifest.json
 
 # Supabase secrets (never commit)
 **/SupabaseConfig.secrets.swift

@@ -11,11 +11,7 @@ import urllib.request
 from datetime import date
 from pathlib import Path
 
-OUTPUT_DIR = Path(__file__).parent / "output"
-APP_SYMBOLS_DIR = Path(__file__).parent.parent / "Snapvest" / "Snapvest" / "Resources" / "Symbols"
-BACKEND_MAP_PATH = (
-    Path(__file__).parent.parent / "backend" / "scripts" / "data" / "crypto_coingecko_map.json"
-)
+from symbols_paths import BACKEND_CRYPTO_MAP, OUTPUT_DIR, next_version
 COINGECKO_MARKETS_BASE = "https://api.coingecko.com/api/v3/coins/markets"
 TOP_N = 500
 PER_PAGE = 100  # 免費 API 單次上限通常為 100
@@ -79,23 +75,6 @@ def build_coingecko_map(items: list[dict]) -> dict[str, str]:
     return {item["symbol"].upper(): item["coingeckoId"] for item in items}
 
 
-def next_version(output_path: Path) -> int:
-    """從 output 或 App Bundle 讀取 version 並 +1"""
-    candidates = [output_path]
-    app_path = APP_SYMBOLS_DIR / "symbols_crypto.json"
-    if app_path.exists():
-        candidates.append(app_path)
-    version = 0
-    for path in candidates:
-        try:
-            with open(path, encoding="utf-8") as f:
-                existing = json.load(f)
-                version = max(version, existing.get("version", 0))
-        except (json.JSONDecodeError, KeyError, OSError):
-            continue
-    return version + 1
-
-
 def build_symbols_crypto(version: int = 1) -> dict:
     """建立 symbols_crypto.json 內容"""
     markets = fetch_coingecko_top_markets()
@@ -111,7 +90,7 @@ def build_symbols_crypto(version: int = 1) -> dict:
 def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     output_path = OUTPUT_DIR / "symbols_crypto.json"
-    version = next_version(output_path)
+    version = next_version("symbols_crypto.json")
 
     print(f"加密貨幣：正在取得 CoinGecko 市值 Top {TOP_N}...")
     data = build_symbols_crypto(version=version)
@@ -119,13 +98,13 @@ def main():
         json.dump(data, f, ensure_ascii=False, indent=2)
 
     cg_map = build_coingecko_map(data["items"])
-    BACKEND_MAP_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(BACKEND_MAP_PATH, "w", encoding="utf-8") as f:
+    BACKEND_CRYPTO_MAP.parent.mkdir(parents=True, exist_ok=True)
+    with open(BACKEND_CRYPTO_MAP, "w", encoding="utf-8") as f:
         json.dump(cg_map, f, ensure_ascii=False, indent=2, sort_keys=True)
 
     unique_symbols = len(data["items"])
     print(f"✅ symbols_crypto.json: {unique_symbols} 筆（去重後）, version={data['version']}")
-    print(f"✅ crypto_coingecko_map.json: {len(cg_map)} 筆 → {BACKEND_MAP_PATH.relative_to(Path(__file__).parent.parent)}")
+    print(f"✅ crypto_coingecko_map.json: {len(cg_map)} 筆 → {BACKEND_CRYPTO_MAP.relative_to(Path(__file__).parent.parent)}")
     if unique_symbols < TOP_N - 50:
         print(f"   ⚠️ 筆數少於預期，可能 API 限流或回應不完整")
 
