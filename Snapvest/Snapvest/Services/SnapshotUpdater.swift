@@ -232,7 +232,7 @@ enum SnapshotUpdater {
             guard let currentPrice else { continue }
             
             let holdingInfo = holdingsBySymbol[key]
-            let snapshot = AssetPriceSnapshot(
+            let rawSnapshot = AssetPriceSnapshot(
                 assetType: symbolInfo.assetType,
                 symbol: symbolInfo.symbol,
                 name: holdingInfo?.name,
@@ -244,12 +244,17 @@ enum SnapshotUpdater {
                 lastUpdated: Date(),
                 lastSuccessfulUpdate: Date()
             )
-            snapshotByKey[key] = snapshot
+            let existing = try? await dataService.fetchAssetPriceSnapshot(
+                assetType: symbolInfo.assetType,
+                symbol: symbolInfo.symbol
+            )
+            snapshotByKey[key] = PriceSnapshotMerger.merge(incoming: rawSnapshot, existing: existing)
         }
         
-        return symbols.compactMap { info in
+        let ordered = symbols.compactMap { info in
             snapshotByKey["\(info.assetType.rawValue)_\(info.symbol)"]
         }
+        return await PriceSnapshotMerger.mergeIncoming(ordered, dataService: dataService)
     }
 
     private static func loadLiabilities(

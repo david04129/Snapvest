@@ -178,6 +178,80 @@ enum TransactionImportService {
         TransactionImportValidationResult(rows: rows)
     }
     
+    /// 對已通過格式驗證的 buy/sell 列，向 Supabase 確認可取得有效報價（方案 A）。
+    static func applyPriceValidation(
+        to result: TransactionImportValidationResult
+    ) async -> TransactionImportValidationResult {
+        var uniqueSymbols: [String: (AssetType, String)] = [:]
+        for row in result.rows {
+            guard row.errorMessage == nil, !row.isSkipped,
+                  let transaction = row.transaction,
+                  SymbolPriceValidator.needsValidation(
+                    assetType: transaction.assetType,
+                    transactionType: transaction.type
+                  ) else { continue }
+            let key = priceValidationKey(assetType: transaction.assetType, symbol: transaction.symbol)
+            if uniqueSymbols[key] == nil {
+                uniqueSymbols[key] = (transaction.assetType, transaction.symbol)
+            }
+        }
+        
+        var priceFailures: [String: String] = [:]
+        await withTaskGroup(of: (String, String?).self) { group in
+            for (key, pair) in uniqueSymbols {
+                group.addTask {
+                    let error = await SymbolPriceValidator.validatePriceAvailable(
+                        assetType: pair.0,
+                        symbol: pair.1,
+                        transactionType: .buy
+                    )
+                    return (key, error)
+                }
+            }
+            for await (key, error) in group {
+                if let error {
+                    priceFailures[key] = error
+                }
+            }
+        }
+        
+        let updatedRows = result.rows.map { row in
+            rowWithPriceValidation(row, priceFailures: priceFailures)
+        }
+        return TransactionImportValidationResult(rows: updatedRows)
+    }
+    
+    private static func priceValidationKey(assetType: AssetType, symbol: String) -> String {
+        let normalized = SupabasePriceService.normalizeSymbol(assetType: assetType, symbol: symbol)
+        return "\(assetType.rawValue)|\(normalized)"
+    }
+    
+    private static func rowWithPriceValidation(
+        _ row: TransactionImportValidatedRow,
+        priceFailures: [String: String]
+    ) -> TransactionImportValidatedRow {
+        guard row.errorMessage == nil, !row.isSkipped,
+              let transaction = row.transaction,
+              SymbolPriceValidator.needsValidation(
+                assetType: transaction.assetType,
+                transactionType: transaction.type
+              ) else {
+            return row
+        }
+        
+        let key = priceValidationKey(assetType: transaction.assetType, symbol: transaction.symbol)
+        guard let priceError = priceFailures[key] else { return row }
+        
+        return TransactionImportValidatedRow(
+            id: row.id,
+            lineNumber: row.lineNumber,
+            summary: row.summary,
+            transaction: transaction,
+            errorMessage: priceError,
+            skipReason: nil
+        )
+    }
+    
     static func tradeCurrency(assetType: AssetType, account: Account, explicit: Currency?) -> Currency {
         if let explicit { return explicit }
         switch assetType {

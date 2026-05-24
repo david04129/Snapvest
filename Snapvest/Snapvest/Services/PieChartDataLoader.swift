@@ -40,7 +40,8 @@ enum PieChartDataLoader {
         )
         var prices: [AssetPriceSnapshot] = []
         if SupabaseConfig.isConfigured, !symbolInfos.isEmpty {
-            prices = (try? await SupabasePriceService.fetchPrices(symbols: symbolInfos)) ?? []
+            let fetched = (try? await SupabasePriceService.fetchPrices(symbols: symbolInfos)) ?? []
+            prices = await PriceSnapshotMerger.mergeIncoming(fetched, dataService: dataService)
         } else if !symbolInfos.isEmpty {
             prices = try await dataService.fetchAssetPriceSnapshots(symbols: symbolInfos)
         }
@@ -53,7 +54,7 @@ enum PieChartDataLoader {
             aggregated = bundle.aggregatedHoldings
             prices = bundle.assetPriceSnapshots
             accountSnapshots = bundle.accountSnapshots
-            dataService.persistLocalStore(for: userId)
+            dataService.persistLocalValuation(for: userId)
         }
         
         var cashByCurrency: [Currency: Decimal] = [:]
@@ -72,6 +73,51 @@ enum PieChartDataLoader {
             twdCash: cashByCurrency[.TWD] ?? 0,
             usdCash: cashByCurrency[.USD] ?? 0,
             usdToTwdRate: rate,
+            aggregatedHoldings: aggregated,
+            assetPriceSnapshots: prices
+        )
+    }
+
+    /// 僅讀本機估值 B（Splash／Tab 套用，不拉 Supabase、不 rebuild）
+    @MainActor
+    static func loadFromPersisted(
+        userId: String,
+        dataService: DataServiceProtocol,
+        usdToTwdRate: Decimal
+    ) async throws -> PieChartInputs {
+        let accounts = try await dataService.fetchAccounts(userId: userId)
+        var accountSnapshots: [AccountSnapshot] = []
+        for account in accounts {
+            if let snapshot = try await dataService.fetchAccountSnapshot(accountId: account.id) {
+                accountSnapshots.append(snapshot)
+            }
+        }
+
+        let aggregated = try await dataService.fetchAggregatedHoldingSnapshots(userId: userId, assetType: nil)
+        let symbolInfos = await symbolInfosForPie(
+            userId: userId,
+            dataService: dataService,
+            accountSnapshots: accountSnapshots,
+            aggregated: aggregated
+        )
+        let prices = try await dataService.fetchAssetPriceSnapshots(symbols: symbolInfos)
+
+        var cashByCurrency: [Currency: Decimal] = [:]
+        var accountMap: [String: Account] = [:]
+        for account in accounts { accountMap[account.id] = account }
+        for snapshot in accountSnapshots {
+            guard let account = accountMap[snapshot.accountId], !account.accountType.isLiabilityAccount else { continue }
+            if let existing = cashByCurrency[account.currency] {
+                cashByCurrency[account.currency] = existing + snapshot.cashBalance
+            } else {
+                cashByCurrency[account.currency] = snapshot.cashBalance
+            }
+        }
+
+        return PieChartInputs(
+            twdCash: cashByCurrency[.TWD] ?? 0,
+            usdCash: cashByCurrency[.USD] ?? 0,
+            usdToTwdRate: usdToTwdRate,
             aggregatedHoldings: aggregated,
             assetPriceSnapshots: prices
         )

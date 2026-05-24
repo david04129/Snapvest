@@ -9,31 +9,39 @@ import Foundation
 
 enum SnapshotRefreshCoordinator {
     @MainActor
+    @discardableResult
     static func rebuildAndNotify(
         userId: String,
-        dataService: DataServiceProtocol = MockDataService.shared,
+        dataService: DataServiceProtocol? = nil,
         priceService: PriceServiceProtocol? = nil,
         syncPortfolio: Bool = true
-    ) async {
-        let resolvedPriceService = priceService ?? PriceService(dataService: dataService)
+    ) async -> Bool {
+        let resolvedDataService = dataService ?? MockDataService.shared
+        let resolvedPriceService = priceService ?? PriceService(dataService: resolvedDataService)
         do {
             let bundle = try await SnapshotUpdater.rebuildSnapshots(
                 userId: userId,
-                dataService: dataService,
+                dataService: resolvedDataService,
                 priceService: resolvedPriceService
             )
             if syncPortfolio {
                 await PortfolioStateSync.sync(
                     userId: userId,
-                    dataService: dataService,
+                    dataService: resolvedDataService,
                     priceService: resolvedPriceService,
                     bundle: bundle
                 )
             }
-            dataService.persistLocalStore(for: userId)
+            await SupabasePriceService.recordSuccessfulPriceSync(
+                userId: userId,
+                dataService: resolvedDataService
+            )
+            resolvedDataService.persistLocalStore(for: userId)
             NotificationCenter.default.post(name: .snapshotsDidUpdate, object: nil)
+            return true
         } catch {
             print("[SnapshotRefreshCoordinator] rebuild failed: \(error.localizedDescription)")
+            return false
         }
     }
 }

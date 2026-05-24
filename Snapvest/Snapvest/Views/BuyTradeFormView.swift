@@ -34,6 +34,8 @@ struct BuyTradeFormView: View {
     @State private var currentPrice: Decimal?
     @State private var accountCashBalance: Decimal = 0
     @State private var userId: String = AppUser.id
+    @State private var showingDuplicateAlert = false
+    @State private var duplicateAlertMessage = ""
     
     private let dataService: DataServiceProtocol = MockDataService.shared
     private let priceService = PriceService(dataService: MockDataService.shared)
@@ -227,6 +229,14 @@ struct BuyTradeFormView: View {
                 currentPrice = nil
                 Task { await loadCurrentPrice() }
             }
+        }
+        .alert("可能重複的交易", isPresented: $showingDuplicateAlert) {
+            Button("取消", role: .cancel) { }
+            Button("仍要建立", role: .destructive) {
+                Task { await finishSubmit(allowDuplicate: true) }
+            }
+        } message: {
+            Text(duplicateAlertMessage)
         }
     }
     
@@ -452,70 +462,119 @@ struct BuyTradeFormView: View {
     private func handleSubmit() {
         validateInput()
         guard errorMessage == nil else { return }
+        guard selectedAccount != nil,
+              quantityValue != nil,
+              priceValue != nil else { return }
+        
+        Task {
+            await finishSubmit(allowDuplicate: false)
+        }
+    }
+    
+    private func finishSubmit(allowDuplicate: Bool) async {
+        validateInput()
+        guard errorMessage == nil else { return }
         guard let account = selectedAccount,
               let qty = quantityValue,
               let price = priceValue else { return }
         
-        Task {
-            if isImportDraftMode,
-               let existing = editingTransaction,
-               let onImportDraftSave {
-                let updated = Transaction(
-                    id: existing.id,
-                    accountId: account.id,
-                    type: .buy,
-                    assetType: assetType,
-                    symbol: selectedSymbol,
-                    quantity: qty,
-                    price: price,
-                    currency: priceCurrency,
-                    fee: existing.fee,
-                    notes: selectedSymbolName.isEmpty
-                        ? (existing.notes ?? "買入 \(selectedSymbol)")
-                        : "買入 \(selectedSymbol) - \(selectedSymbolName)",
-                    transactionDate: transactionDate,
-                    createdAt: existing.createdAt,
-                    updatedAt: Date(),
-                    exchangeRate: exchangeRateValue,
-                    deductFromAccount: deductFromAccount
-                )
-                onImportDraftSave(updated)
-                onSubmit?()
-                dismiss()
-                return
-            }
-            
-            if let existing = editingTransaction {
-                await transactionsViewModel.updateBuyTransaction(
-                    existing: existing,
-                    account: account,
-                    quantity: qty,
-                    price: price,
-                    currency: priceCurrency,
-                    fee: 0,
-                    exchangeRate: exchangeRateValue,
-                    deductFromAccount: deductFromAccount,
-                    transactionDate: transactionDate,
-                    symbolName: selectedSymbolName.isEmpty ? nil : selectedSymbolName
-                )
-            } else {
-                await transactionsViewModel.createBuyTransaction(
-                    account: account,
-                    assetType: assetType,
-                    symbol: selectedSymbol,
-                    symbolName: selectedSymbolName.isEmpty ? nil : selectedSymbolName,
-                    quantity: qty,
-                    price: price,
-                    currency: priceCurrency,
-                    fee: 0,
-                    exchangeRate: exchangeRateValue,
-                    deductFromAccount: deductFromAccount,
-                    transactionDate: transactionDate
-                )
-            }
+        if let priceError = await SymbolPriceValidator.validatePriceAvailable(
+            assetType: assetType,
+            symbol: selectedSymbol,
+            transactionType: .buy
+        ) {
+            errorMessage = priceError
+            return
+        }
+        
+        if isImportDraftMode,
+           let existing = editingTransaction,
+           let onImportDraftSave {
+            let updated = Transaction(
+                id: existing.id,
+                accountId: account.id,
+                type: .buy,
+                assetType: assetType,
+                symbol: selectedSymbol,
+                quantity: qty,
+                price: price,
+                currency: priceCurrency,
+                fee: existing.fee,
+                notes: selectedSymbolName.isEmpty
+                    ? (existing.notes ?? "買入 \(selectedSymbol)")
+                    : "買入 \(selectedSymbol) - \(selectedSymbolName)",
+                transactionDate: transactionDate,
+                createdAt: existing.createdAt,
+                updatedAt: Date(),
+                exchangeRate: exchangeRateValue,
+                deductFromAccount: deductFromAccount
+            )
+            onImportDraftSave(updated)
             onSubmit?()
             dismiss()
+            return
         }
+        
+        if !allowDuplicate {
+            let draft = Transaction(
+                accountId: account.id,
+                type: .buy,
+                assetType: assetType,
+                symbol: selectedSymbol,
+                quantity: qty,
+                price: price,
+                currency: priceCurrency,
+                fee: 0,
+                notes: selectedSymbolName.isEmpty ? nil : "買入 \(selectedSymbol) - \(selectedSymbolName)",
+                transactionDate: transactionDate,
+                exchangeRate: exchangeRateValue,
+                deductFromAccount: deductFromAccount
+            )
+            if let duplicate = await transactionsViewModel.findDuplicateMatch(
+                for: draft,
+                excludingTransactionId: editingTransaction?.id
+            ) {
+                duplicateAlertMessage = TransactionDuplicateChecker.alertMessage(
+                    for: draft,
+                    existing: duplicate
+                )
+                showingDuplicateAlert = true
+                return
+            }
+        }
+        
+        if let existing = editingTransaction {
+            await transactionsViewModel.updateBuyTransaction(
+                existing: existing,
+                account: account,
+                quantity: qty,
+                price: price,
+                currency: priceCurrency,
+                fee: 0,
+                exchangeRate: exchangeRateValue,
+                deductFromAccount: deductFromAccount,
+                transactionDate: transactionDate,
+                symbolName: selectedSymbolName.isEmpty ? nil : selectedSymbolName,
+                allowDuplicate: allowDuplicate
+            )
+        } else {
+            await transactionsViewModel.createBuyTransaction(
+                account: account,
+                assetType: assetType,
+                symbol: selectedSymbol,
+                symbolName: selectedSymbolName.isEmpty ? nil : selectedSymbolName,
+                quantity: qty,
+                price: price,
+                currency: priceCurrency,
+                fee: 0,
+                exchangeRate: exchangeRateValue,
+                deductFromAccount: deductFromAccount,
+                transactionDate: transactionDate,
+                allowDuplicate: allowDuplicate
+            )
+        }
+        onSubmit?()
+        dismiss()
     }
     
     private func applyEditingPrefill(from transaction: Transaction) {

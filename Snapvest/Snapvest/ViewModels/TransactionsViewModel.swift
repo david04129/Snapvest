@@ -39,7 +39,41 @@ class TransactionsViewModel: ObservableObject {
         isLoading = false
     }
     
-    func createTransaction(_ transaction: Transaction) async {
+    func findDuplicateMatch(
+        for transaction: Transaction,
+        excludingTransactionId: String? = nil
+    ) async -> Transaction? {
+        do {
+            let existing = try await dataService.fetchTransactions(accountId: transaction.accountId)
+            return TransactionDuplicateChecker.findDuplicate(
+                for: transaction,
+                in: existing,
+                excludingTransactionId: excludingTransactionId
+            )
+        } catch {
+            return nil
+        }
+    }
+    
+    func createTransaction(_ transaction: Transaction, allowDuplicate: Bool = false) async {
+        if let priceError = await SymbolPriceValidator.validatePriceAvailable(
+            assetType: transaction.assetType,
+            symbol: transaction.symbol,
+            transactionType: transaction.type
+        ) {
+            errorMessage = priceError
+            return
+        }
+        
+        if !allowDuplicate,
+           let duplicate = await findDuplicateMatch(for: transaction) {
+            errorMessage = TransactionDuplicateChecker.alertMessage(
+                for: transaction,
+                existing: duplicate
+            )
+            return
+        }
+        
         do {
             try await dataService.createTransaction(transaction)
             if !isBatchImporting {
@@ -92,6 +126,11 @@ class TransactionsViewModel: ObservableObject {
             for row in sortedRows {
                 guard let draft = row.transaction else { continue }
                 do {
+                    try await SymbolPriceValidator.validatePriceAvailableOrThrow(
+                        assetType: draft.assetType,
+                        symbol: draft.symbol,
+                        transactionType: draft.type
+                    )
                     if draft.type == .sell {
                         try await importSellTransactionDuringBatch(draft)
                     } else {
@@ -183,7 +222,8 @@ class TransactionsViewModel: ObservableObject {
         currency: Currency,
         exchangeRate: Decimal?,
         transactionDate: Date,
-        averageCostFallback: Decimal
+        averageCostFallback: Decimal,
+        allowDuplicate: Bool = false
     ) async {
         do {
             let costBasis = try await calculateCostBasis(
@@ -217,7 +257,7 @@ class TransactionsViewModel: ObservableObject {
                 realizedCostPerUnit: realizedCostPerUnit
             )
             
-            await createTransaction(transaction)
+            await createTransaction(transaction, allowDuplicate: allowDuplicate)
         } catch {
             errorMessage = "建立賣出交易失敗：\(error.localizedDescription)"
         }
@@ -234,7 +274,8 @@ class TransactionsViewModel: ObservableObject {
         fee: Decimal,
         exchangeRate: Decimal?,
         deductFromAccount: Bool,
-        transactionDate: Date
+        transactionDate: Date,
+        allowDuplicate: Bool = false
     ) async {
         let notes: String? = (symbolName.map { $0.isEmpty ? nil : "買入 \(symbol) - \($0)" } ?? nil)
         let transaction = Transaction(
@@ -252,10 +293,22 @@ class TransactionsViewModel: ObservableObject {
             deductFromAccount: deductFromAccount
         )
         
-        await createTransaction(transaction)
+        await createTransaction(transaction, allowDuplicate: allowDuplicate)
     }
     
-    func updateTransaction(_ transaction: Transaction, previousAccountId: String? = nil) async {
+    func updateTransaction(_ transaction: Transaction, previousAccountId: String? = nil, allowDuplicate: Bool = false) async {
+        if !allowDuplicate,
+           let duplicate = await findDuplicateMatch(
+            for: transaction,
+            excludingTransactionId: transaction.id
+           ) {
+            errorMessage = TransactionDuplicateChecker.alertMessage(
+                for: transaction,
+                existing: duplicate
+            )
+            return
+        }
+        
         do {
             try await dataService.updateTransaction(transaction)
             await updateSnapshotsIfNeeded(for: transaction.accountId)
@@ -280,7 +333,8 @@ class TransactionsViewModel: ObservableObject {
         exchangeRate: Decimal?,
         deductFromAccount: Bool,
         transactionDate: Date,
-        symbolName: String?
+        symbolName: String?,
+        allowDuplicate: Bool = false
     ) async {
         let notes: String? = {
             if let symbolName, !symbolName.isEmpty {
@@ -305,7 +359,7 @@ class TransactionsViewModel: ObservableObject {
             exchangeRate: exchangeRate,
             deductFromAccount: deductFromAccount
         )
-        await updateTransaction(updated, previousAccountId: existing.accountId)
+        await updateTransaction(updated, previousAccountId: existing.accountId, allowDuplicate: allowDuplicate)
     }
     
     func updateSellTransaction(
@@ -316,7 +370,8 @@ class TransactionsViewModel: ObservableObject {
         currency: Currency,
         exchangeRate: Decimal?,
         transactionDate: Date,
-        averageCostFallback: Decimal
+        averageCostFallback: Decimal,
+        allowDuplicate: Bool = false
     ) async {
         do {
             let costBasis = try await calculateCostBasis(
@@ -352,7 +407,7 @@ class TransactionsViewModel: ObservableObject {
                 realizedCostBasis: costBasis,
                 realizedCostPerUnit: realizedCostPerUnit
             )
-            await updateTransaction(updated, previousAccountId: existing.accountId)
+            await updateTransaction(updated, previousAccountId: existing.accountId, allowDuplicate: allowDuplicate)
         } catch {
             errorMessage = "更新賣出交易失敗：\(error.localizedDescription)"
         }

@@ -9,7 +9,9 @@ import SwiftUI
 
 struct AssetsView: View {
     @Binding var selectedTab: Int
-    @StateObject private var viewModel = AssetsViewModel()
+    @EnvironmentObject private var viewModel: AssetsViewModel
+    @EnvironmentObject private var portfolioViewModel: PortfolioViewModel
+    @EnvironmentObject private var accountsViewModel: AccountsViewModel
     @State private var userId: String = AppUser.id
     @State private var selectedSort: SortOption = .totalAssets
     @State private var selectedHolding: HoldingNavigationItem?
@@ -37,7 +39,7 @@ struct AssetsView: View {
             ScrollViewReader { scrollProxy in
                 ScrollView {
                     VStack(spacing: 20) {
-                        if viewModel.isLoading {
+                        if viewModel.isLoading && !viewModel.hasLoadedOnce {
                             VStack(spacing: 16) {
                                 ProgressView()
                                 Text("載入中...")
@@ -103,14 +105,17 @@ struct AssetsView: View {
                 })
             }
             .refreshable {
-                await reloadAssetsData()
-            }
-            .task {
-                await reloadAssetsData()
+                await SnapshotRefreshCoordinator.rebuildAndNotify(userId: userId)
             }
             .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { _ in
                 Task {
-                    await reloadAssetsData()
+                    await LaunchCoordinator.applyPersistedState(
+                        userId: userId,
+                        portfolioViewModel: portfolioViewModel,
+                        accountsViewModel: accountsViewModel,
+                        assetsViewModel: viewModel
+                    )
+                    refreshSelectedHoldingIfNeeded()
                 }
             }
             .navigationDestination(item: $selectedHolding) { item in
@@ -121,11 +126,7 @@ struct AssetsView: View {
                     totalInvestments: item.totalInvestments
                 )
             }
-            .sheet(isPresented: $showingNewTradeFlow, onDismiss: {
-                Task {
-                    await reloadAssetsData()
-                }
-            }) {
+            .sheet(isPresented: $showingNewTradeFlow) {
                 NewTradeFlowView()
             }
         }
@@ -134,12 +135,7 @@ struct AssetsView: View {
         }
     }
     
-    // MARK: - 資料載入與詳情頁同步（買入／賣出後刷新個股頁）
-    
-    private func reloadAssetsData() async {
-        await viewModel.loadData(userId: userId)
-        refreshSelectedHoldingIfNeeded()
-    }
+    // MARK: - 詳情頁同步（買入／賣出後刷新個股頁）
     
     /// 若正在看個股詳情，用最新快照更新；全賣光則 pop 回列表
     private func refreshSelectedHoldingIfNeeded() {
@@ -578,5 +574,8 @@ struct AllHoldingCard: View {
 
 #Preview {
     AssetsView(selectedTab: .constant(AppTab.assets.rawValue))
+        .environmentObject(PortfolioViewModel())
+        .environmentObject(AccountsViewModel())
+        .environmentObject(AssetsViewModel())
 }
 

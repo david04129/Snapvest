@@ -22,10 +22,38 @@ enum SupabaseDailySnapshotError: LocalizedError {
 private struct SupabaseDailySnapshotRow: Decodable {
     let user_id: String
     let snapshot_date: String
-    let total_assets: String?
-    let total_liabilities: String?
-    let net_worth: String?
-    let unrealized_gain_loss: String?
+    let total_assets: Decimal?
+    let total_liabilities: Decimal?
+    let net_worth: Decimal?
+    let unrealized_gain_loss: Decimal?
+
+    enum CodingKeys: String, CodingKey {
+        case user_id, snapshot_date, total_assets, total_liabilities, net_worth, unrealized_gain_loss
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        user_id = try container.decode(String.self, forKey: .user_id)
+        snapshot_date = try container.decode(String.self, forKey: .snapshot_date)
+        total_assets = Self.decodeDecimal(from: container, forKey: .total_assets)
+        total_liabilities = Self.decodeDecimal(from: container, forKey: .total_liabilities)
+        net_worth = Self.decodeDecimal(from: container, forKey: .net_worth)
+        unrealized_gain_loss = Self.decodeDecimal(from: container, forKey: .unrealized_gain_loss)
+    }
+
+    private static func decodeDecimal(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys
+    ) -> Decimal? {
+        if let text = try? container.decode(String.self, forKey: key),
+           let parsed = Decimal(string: text) {
+            return parsed
+        }
+        if let number = try? container.decode(Double.self, forKey: key) {
+            return Decimal(number)
+        }
+        return nil
+    }
 }
 
 enum SupabaseDailySnapshotService {
@@ -84,15 +112,10 @@ enum SupabaseDailySnapshotService {
             return TrendChartPoint(
                 id: row.snapshot_date,
                 date: normalizedDate,
-                totalAssets: parseDecimal(row.total_assets),
-                netWorth: parseDecimal(row.net_worth),
-                unrealizedGainLoss: parseDecimal(row.unrealized_gain_loss)
+                totalAssets: row.total_assets ?? 0,
+                netWorth: row.net_worth ?? 0,
+                unrealizedGainLoss: row.unrealized_gain_loss ?? 0
             )
         }
-    }
-    
-    private static func parseDecimal(_ raw: String?) -> Decimal {
-        guard let raw, !raw.isEmpty else { return 0 }
-        return Decimal(string: raw) ?? 0
     }
 }

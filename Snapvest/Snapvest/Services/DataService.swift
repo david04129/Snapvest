@@ -94,6 +94,15 @@ protocol DataServiceProtocol {
     
     /// 將本機帳戶／交易／快照寫入 JSON（MockDataService 實作；其他實作可為空操作）
     func persistLocalStore(for userId: String)
+    /// 僅寫入結構快照 A（帳戶／交易／負債）
+    func persistLocalStructure(for userId: String)
+    /// 僅寫入估值快照 B（股價／市值／首頁）
+    func persistLocalValuation(for userId: String)
+    
+    /// 本機對齊過的 `price_update_metadata.last_updated_at`
+    func fetchPriceSourceUpdatedAt(userId: String) -> Date?
+    /// 成功同步股價後更新本機 metadata
+    func updatePriceSyncMetadata(userId: String, sourceUpdatedAt: Date?)
 }
 
 /// 本機記憶體資料服務（帳戶／交易；股價／匯率走 Supabase）
@@ -114,7 +123,9 @@ class MockDataService: DataServiceProtocol {
     private var aggregatedHoldingSnapshots: [String: AggregatedHoldingSnapshot] = [:] // "userId_assetType_symbol": AggregatedHoldingSnapshot
     private var homeDashboardSnapshots: [String: HomeDashboardSnapshot] = [:] // userId: HomeDashboardSnapshot
     private var portfolioStates: [String: PortfolioStateSyncPayload] = [:] // userId: latest state
-    private var pendingPersistWorkItem: DispatchWorkItem?
+    private var priceSyncedAtByUserId: [String: Date] = [:]
+    private var priceSourceUpdatedAtByUserId: [String: Date] = [:]
+    private var pendingStructurePersistWorkItem: DispatchWorkItem?
     
     private init() {
         restorePersistedData(for: AppUser.id)
@@ -122,40 +133,61 @@ class MockDataService: DataServiceProtocol {
     
     private func restorePersistedData(for userId: String) {
         guard let saved = LocalUserDataStore.load(userId: userId) else { return }
-        accounts[userId] = saved.accounts
-        let accountIds = Set(saved.accounts.map(\.id))
+        accounts[userId] = saved.structure.accounts
+        let accountIds = Set(saved.structure.accounts.map(\.id))
         for accountId in accountIds {
-            if let accountTransactions = saved.transactionsByAccountId[accountId] {
+            if let accountTransactions = saved.structure.transactionsByAccountId[accountId] {
                 transactions[accountId] = accountTransactions
             }
-            if let accountLiabilities = saved.liabilitiesByAccountId[accountId] {
+            if let accountLiabilities = saved.structure.liabilitiesByAccountId[accountId] {
                 liabilities[accountId] = accountLiabilities
             }
         }
-        if let home = saved.homeDashboardSnapshot {
+        applyValuationStore(saved.valuation, userId: userId)
+        priceSyncedAtByUserId[userId] = saved.valuation.priceSyncedAt
+        priceSourceUpdatedAtByUserId[userId] = saved.valuation.priceSourceUpdatedAt
+    }
+    
+    private func applyValuationStore(_ store: LocalUserValuationStore, userId: String) {
+        if let home = store.homeDashboardSnapshot {
             homeDashboardSnapshots[userId] = home
         }
-        if let userHoldings = saved.userHoldingsSnapshot {
+        if let userHoldings = store.userHoldingsSnapshot {
             userHoldingsSnapshots[userId] = userHoldings
         }
-        for (accountId, snapshot) in saved.accountSnapshotsByAccountId {
+        for (accountId, snapshot) in store.accountSnapshotsByAccountId {
             accountSnapshots[accountId] = snapshot
         }
-        for (key, snapshot) in saved.assetPriceSnapshotsByKey {
+        for (key, snapshot) in store.assetPriceSnapshotsByKey {
             assetPriceSnapshots[key] = snapshot
         }
-        for snapshot in saved.aggregatedHoldingSnapshots {
+        for snapshot in store.aggregatedHoldingSnapshots {
             aggregatedHoldingSnapshots[snapshot.id] = snapshot
         }
     }
     
-    private func snapshotPayload(for userId: String) -> (
-        home: HomeDashboardSnapshot?,
-        userHoldings: UserHoldingsSnapshot?,
-        accountSnapshots: [String: AccountSnapshot],
-        assetPrices: [String: AssetPriceSnapshot],
-        aggregated: [AggregatedHoldingSnapshot]
-    ) {
+    private func buildStructureStore(for userId: String) -> LocalUserStructureStore {
+        let userAccounts = accounts[userId] ?? []
+        let accountIds = Set(userAccounts.map(\.id))
+        var transactionsByAccountId: [String: [Transaction]] = [:]
+        var liabilitiesByAccountId: [String: [Liability]] = [:]
+        for accountId in accountIds {
+            if let accountTransactions = transactions[accountId], !accountTransactions.isEmpty {
+                transactionsByAccountId[accountId] = accountTransactions
+            }
+            if let accountLiabilities = liabilities[accountId], !accountLiabilities.isEmpty {
+                liabilitiesByAccountId[accountId] = accountLiabilities
+            }
+        }
+        return LocalUserStructureStore(
+            accounts: userAccounts,
+            transactionsByAccountId: transactionsByAccountId,
+            liabilitiesByAccountId: liabilitiesByAccountId,
+            updatedAt: Date()
+        )
+    }
+    
+    private func buildValuationStore(for userId: String) -> LocalUserValuationStore {
         let userAccounts = accounts[userId] ?? []
         let accountIds = Set(userAccounts.map(\.id))
         var accountSnapshotsByAccountId: [String: AccountSnapshot] = [:]
@@ -183,77 +215,92 @@ class MockDataService: DataServiceProtocol {
             }
         }
         
-        return (
-            homeDashboardSnapshots[userId],
-            userHoldingsSnapshots[userId],
-            accountSnapshotsByAccountId,
-            assetPrices,
-            aggregated
+        return LocalUserValuationStore(
+            homeDashboardSnapshot: homeDashboardSnapshots[userId],
+            userHoldingsSnapshot: userHoldingsSnapshots[userId],
+            accountSnapshotsByAccountId: accountSnapshotsByAccountId,
+            assetPriceSnapshotsByKey: assetPrices,
+            aggregatedHoldingSnapshots: aggregated,
+            priceSyncedAt: priceSyncedAtByUserId[userId],
+            priceSourceUpdatedAt: priceSourceUpdatedAtByUserId[userId],
+            updatedAt: Date()
         )
     }
     
-    private func persistUserData(userId: String) {
-        let userAccounts = accounts[userId] ?? []
-        let accountIds = Set(userAccounts.map(\.id))
-        var transactionsByAccountId: [String: [Transaction]] = [:]
-        var liabilitiesByAccountId: [String: [Liability]] = [:]
-        for accountId in accountIds {
-            if let accountTransactions = transactions[accountId], !accountTransactions.isEmpty {
-                transactionsByAccountId[accountId] = accountTransactions
-            }
-            if let accountLiabilities = liabilities[accountId], !accountLiabilities.isEmpty {
-                liabilitiesByAccountId[accountId] = accountLiabilities
-            }
-        }
-        let snapshots = snapshotPayload(for: userId)
+    private func persistStructureStore(for userId: String) {
+        LocalUserDataStore.saveStructure(buildStructureStore(for: userId), userId: userId)
+    }
+    
+    private func persistValuationStore(for userId: String) {
+        LocalUserDataStore.saveValuation(buildValuationStore(for: userId), userId: userId)
+    }
+    
+    private func persistFullStore(for userId: String) {
         let payload = LocalUserData(
-            schemaVersion: LocalUserData.currentSchemaVersion,
             userId: userId,
-            accounts: userAccounts,
-            transactionsByAccountId: transactionsByAccountId,
-            liabilitiesByAccountId: liabilitiesByAccountId,
-            homeDashboardSnapshot: snapshots.home,
-            userHoldingsSnapshot: snapshots.userHoldings,
-            accountSnapshotsByAccountId: snapshots.accountSnapshots,
-            assetPriceSnapshotsByKey: snapshots.assetPrices,
-            aggregatedHoldingSnapshots: snapshots.aggregated
+            structure: buildStructureStore(for: userId),
+            valuation: buildValuationStore(for: userId)
         )
         LocalUserDataStore.save(payload)
     }
     
     func persistLocalStore(for userId: String) {
         guard userId == AppUser.id else { return }
-        pendingPersistWorkItem?.cancel()
-        pendingPersistWorkItem = nil
-        persistUserData(userId: userId)
+        pendingStructurePersistWorkItem?.cancel()
+        pendingStructurePersistWorkItem = nil
+        persistFullStore(for: userId)
     }
     
-    private func persistIfActiveUser(_ userId: String, debounce: Bool = false) {
+    func persistLocalStructure(for userId: String) {
+        guard userId == AppUser.id else { return }
+        pendingStructurePersistWorkItem?.cancel()
+        pendingStructurePersistWorkItem = nil
+        persistStructureStore(for: userId)
+    }
+    
+    func persistLocalValuation(for userId: String) {
+        guard userId == AppUser.id else { return }
+        persistValuationStore(for: userId)
+    }
+    
+    func fetchPriceSourceUpdatedAt(userId: String) -> Date? {
+        priceSourceUpdatedAtByUserId[userId]
+    }
+    
+    func updatePriceSyncMetadata(userId: String, sourceUpdatedAt: Date?) {
+        priceSyncedAtByUserId[userId] = Date()
+        if let sourceUpdatedAt {
+            priceSourceUpdatedAtByUserId[userId] = sourceUpdatedAt
+        }
+        persistValuationStore(for: userId)
+    }
+    
+    private func persistStructureIfActiveUser(_ userId: String, debounce: Bool = false) {
         guard userId == AppUser.id else { return }
         if debounce {
-            schedulePersist(userId: userId)
+            scheduleStructurePersist(userId: userId)
         } else {
-            pendingPersistWorkItem?.cancel()
-            pendingPersistWorkItem = nil
-            persistUserData(userId: userId)
+            pendingStructurePersistWorkItem?.cancel()
+            pendingStructurePersistWorkItem = nil
+            persistStructureStore(for: userId)
         }
     }
     
-    private func schedulePersist(userId: String) {
-        pendingPersistWorkItem?.cancel()
+    private func scheduleStructurePersist(userId: String) {
+        pendingStructurePersistWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
-            self?.persistUserData(userId: userId)
+            self?.persistStructureStore(for: userId)
         }
-        pendingPersistWorkItem = workItem
+        pendingStructurePersistWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: workItem)
     }
     
-    private func persistAfterAccountMutation(userId: String?, debounce: Bool = false) {
+    private func persistAfterStructureMutation(userId: String?, debounce: Bool = false) {
         if let userId {
-            persistIfActiveUser(userId, debounce: debounce)
+            persistStructureIfActiveUser(userId, debounce: debounce)
             return
         }
-        persistIfActiveUser(AppUser.id, debounce: debounce)
+        persistStructureIfActiveUser(AppUser.id, debounce: debounce)
     }
     
     private func userIdForAccountId(_ accountId: String) -> String? {
@@ -284,7 +331,7 @@ class MockDataService: DataServiceProtocol {
             accounts[account.userId] = []
         }
         accounts[account.userId]?.append(account)
-        persistIfActiveUser(account.userId)
+        persistStructureIfActiveUser(account.userId)
     }
     
     func updateAccount(_ account: Account) async throws {
@@ -293,7 +340,7 @@ class MockDataService: DataServiceProtocol {
             if let index = userAccounts.firstIndex(where: { $0.id == account.id }) {
                 userAccounts[index] = account
                 accounts[account.userId] = userAccounts
-                persistIfActiveUser(account.userId)
+                persistStructureIfActiveUser(account.userId)
             }
         }
     }
@@ -313,7 +360,7 @@ class MockDataService: DataServiceProtocol {
                 break
             }
         }
-        persistAfterAccountMutation(userId: affectedUserId)
+        persistAfterStructureMutation(userId: affectedUserId)
     }
     
     func archiveDebtAccount(_ account: Account) async throws {
@@ -360,7 +407,7 @@ class MockDataService: DataServiceProtocol {
             transactions[transaction.accountId] = []
         }
         transactions[transaction.accountId]?.append(transaction)
-        persistAfterAccountMutation(userId: userIdForAccountId(transaction.accountId), debounce: true)
+        persistAfterStructureMutation(userId: userIdForAccountId(transaction.accountId), debounce: true)
     }
     
     func updateTransaction(_ transaction: Transaction) async throws {
@@ -368,7 +415,7 @@ class MockDataService: DataServiceProtocol {
             if let index = accountTransactions.firstIndex(where: { $0.id == transaction.id }) {
                 accountTransactions[index] = transaction
                 transactions[transaction.accountId] = accountTransactions
-                persistAfterAccountMutation(userId: userIdForAccountId(transaction.accountId), debounce: true)
+                persistAfterStructureMutation(userId: userIdForAccountId(transaction.accountId), debounce: true)
             }
         }
     }
@@ -377,7 +424,7 @@ class MockDataService: DataServiceProtocol {
         for (accountId, accountTransactions) in transactions {
             if let index = accountTransactions.firstIndex(where: { $0.id == transactionId }) {
                 transactions[accountId]?.remove(at: index)
-                persistAfterAccountMutation(userId: userIdForAccountId(accountId))
+                persistAfterStructureMutation(userId: userIdForAccountId(accountId))
                 break
             }
         }
@@ -421,7 +468,7 @@ class MockDataService: DataServiceProtocol {
             liabilities[liability.accountId] = []
         }
         liabilities[liability.accountId]?.append(liability)
-        persistAfterAccountMutation(userId: userIdForAccountId(liability.accountId), debounce: true)
+        persistAfterStructureMutation(userId: userIdForAccountId(liability.accountId), debounce: true)
     }
     
     func updateLiability(_ liability: Liability) async throws {
@@ -429,7 +476,7 @@ class MockDataService: DataServiceProtocol {
             if let index = accountLiabilities.firstIndex(where: { $0.id == liability.id }) {
                 accountLiabilities[index] = liability
                 liabilities[liability.accountId] = accountLiabilities
-                persistAfterAccountMutation(userId: userIdForAccountId(liability.accountId), debounce: true)
+                persistAfterStructureMutation(userId: userIdForAccountId(liability.accountId), debounce: true)
             }
         }
     }
@@ -438,7 +485,7 @@ class MockDataService: DataServiceProtocol {
         for (accountId, accountLiabilities) in liabilities {
             if let index = accountLiabilities.firstIndex(where: { $0.id == liabilityId }) {
                 liabilities[accountId]?.remove(at: index)
-                persistAfterAccountMutation(userId: userIdForAccountId(accountId))
+                persistAfterStructureMutation(userId: userIdForAccountId(accountId))
                 break
             }
         }
@@ -454,7 +501,18 @@ class MockDataService: DataServiceProtocol {
     }
     
     func fetchExchangeRate(from: Currency, to: Currency, date: Date?) async throws -> ExchangeRate? {
+        if from == .USD, to == .TWD, let cached = ExchangeRateSessionCache.usdToTwd {
+            return ExchangeRate(
+                fromCurrency: from,
+                toCurrency: to,
+                rate: cached,
+                rateDate: date ?? Date()
+            )
+        }
         if let rate = await SupabaseExchangeRateService.fetchRate(from: from, to: to) {
+            if from == .USD, to == .TWD {
+                ExchangeRateSessionCache.update(usdToTwd: rate)
+            }
             return ExchangeRate(
                 fromCurrency: from,
                 toCurrency: to,

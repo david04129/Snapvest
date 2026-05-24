@@ -67,11 +67,32 @@ struct SupabasePriceService {
         }
     }
     
-    /// 比對是否需要拉取（後端較新才拉）
-    static func shouldFetchPrices() async -> Bool {
-        let local = UserDefaults.standard.object(forKey: lastFetchedAtKey) as? Date ?? .distantPast
+    /// 比對是否需要拉取（後端 `price_update_metadata` 較新才拉）
+    static func shouldFetchPrices(userId: String, dataService: DataServiceProtocol) async -> Bool {
+        guard SupabaseConfig.isConfigured else { return false }
         guard let remote = await fetchLastUpdatedAt() else { return false }
+        
+        let local = dataService.fetchPriceSourceUpdatedAt(userId: userId)
+            ?? legacyLastFetchedAt
+            ?? .distantPast
+        
         return remote > local
+    }
+    
+    /// 成功同步股價後呼叫，對齊本機 metadata（取代僅寫 UserDefaults）
+    static func recordSuccessfulPriceSync(userId: String, dataService: DataServiceProtocol) async {
+        let sourceUpdatedAt = await fetchLastUpdatedAt()
+        dataService.updatePriceSyncMetadata(userId: userId, sourceUpdatedAt: sourceUpdatedAt)
+        legacyLastFetchedAt = sourceUpdatedAt ?? Date()
+    }
+    
+    private static var legacyLastFetchedAt: Date? {
+        get { UserDefaults.standard.object(forKey: lastFetchedAtKey) as? Date }
+        set {
+            if let newValue {
+                UserDefaults.standard.set(newValue, forKey: lastFetchedAtKey)
+            }
+        }
     }
     
     /// 單檔顯示價格（Supabase → fetch-or-create；不使用 Mock 100）
@@ -136,7 +157,6 @@ struct SupabasePriceService {
         }
         #endif
         
-        UserDefaults.standard.set(Date(), forKey: lastFetchedAtKey)
         return results
     }
     

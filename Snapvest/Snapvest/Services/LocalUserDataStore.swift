@@ -2,61 +2,139 @@
 //  LocalUserDataStore.swift
 //  Snapvest
 //
-//  本機 JSON 持久化（帳戶／交易／負債／快照），依 AppUser.id 分檔。
+//  本機 JSON：結構快照（A）與估值快照（B）分區持久化，依 AppUser.id 分檔。
 //
 
 import Foundation
 
-struct LocalUserData: Codable, Equatable {
-    static let currentSchemaVersion = 2
-    
-    let schemaVersion: Int
-    let userId: String
+// MARK: - A：結構（帳戶／交易／負債）
+
+struct LocalUserStructureStore: Codable {
     var accounts: [Account]
     var transactionsByAccountId: [String: [Transaction]]
     var liabilitiesByAccountId: [String: [Liability]]
+    var updatedAt: Date?
+    
+    init(
+        accounts: [Account] = [],
+        transactionsByAccountId: [String: [Transaction]] = [:],
+        liabilitiesByAccountId: [String: [Liability]] = [:],
+        updatedAt: Date? = nil
+    ) {
+        self.accounts = accounts
+        self.transactionsByAccountId = transactionsByAccountId
+        self.liabilitiesByAccountId = liabilitiesByAccountId
+        self.updatedAt = updatedAt
+    }
+}
+
+// MARK: - B：估值（股價／市值／首頁總覽）
+
+struct LocalUserValuationStore: Codable {
     var homeDashboardSnapshot: HomeDashboardSnapshot?
     var userHoldingsSnapshot: UserHoldingsSnapshot?
     var accountSnapshotsByAccountId: [String: AccountSnapshot]
     var assetPriceSnapshotsByKey: [String: AssetPriceSnapshot]
     var aggregatedHoldingSnapshots: [AggregatedHoldingSnapshot]
+    /// 本機完成對齊 Supabase 股價的時間
+    var priceSyncedAt: Date?
+    /// 對齊當下讀到的 price_update_metadata.last_updated_at
+    var priceSourceUpdatedAt: Date?
+    var updatedAt: Date?
     
     init(
-        schemaVersion: Int = LocalUserData.currentSchemaVersion,
-        userId: String,
-        accounts: [Account],
-        transactionsByAccountId: [String: [Transaction]],
-        liabilitiesByAccountId: [String: [Liability]],
         homeDashboardSnapshot: HomeDashboardSnapshot? = nil,
         userHoldingsSnapshot: UserHoldingsSnapshot? = nil,
         accountSnapshotsByAccountId: [String: AccountSnapshot] = [:],
         assetPriceSnapshotsByKey: [String: AssetPriceSnapshot] = [:],
-        aggregatedHoldingSnapshots: [AggregatedHoldingSnapshot] = []
+        aggregatedHoldingSnapshots: [AggregatedHoldingSnapshot] = [],
+        priceSyncedAt: Date? = nil,
+        priceSourceUpdatedAt: Date? = nil,
+        updatedAt: Date? = nil
     ) {
-        self.schemaVersion = schemaVersion
-        self.userId = userId
-        self.accounts = accounts
-        self.transactionsByAccountId = transactionsByAccountId
-        self.liabilitiesByAccountId = liabilitiesByAccountId
         self.homeDashboardSnapshot = homeDashboardSnapshot
         self.userHoldingsSnapshot = userHoldingsSnapshot
         self.accountSnapshotsByAccountId = accountSnapshotsByAccountId
         self.assetPriceSnapshotsByKey = assetPriceSnapshotsByKey
         self.aggregatedHoldingSnapshots = aggregatedHoldingSnapshots
+        self.priceSyncedAt = priceSyncedAt
+        self.priceSourceUpdatedAt = priceSourceUpdatedAt
+        self.updatedAt = updatedAt
+    }
+}
+
+// MARK: - 根文件（schema v3）
+
+struct LocalUserData: Codable {
+    static let currentSchemaVersion = 3
+    
+    let schemaVersion: Int
+    let userId: String
+    var structure: LocalUserStructureStore
+    var valuation: LocalUserValuationStore
+    
+    init(
+        schemaVersion: Int = LocalUserData.currentSchemaVersion,
+        userId: String,
+        structure: LocalUserStructureStore,
+        valuation: LocalUserValuationStore
+    ) {
+        self.schemaVersion = schemaVersion
+        self.userId = userId
+        self.structure = structure
+        self.valuation = valuation
     }
     
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
         userId = try container.decode(String.self, forKey: .userId)
-        accounts = try container.decode([Account].self, forKey: .accounts)
-        transactionsByAccountId = try container.decodeIfPresent([String: [Transaction]].self, forKey: .transactionsByAccountId) ?? [:]
-        liabilitiesByAccountId = try container.decodeIfPresent([String: [Liability]].self, forKey: .liabilitiesByAccountId) ?? [:]
-        homeDashboardSnapshot = try container.decodeIfPresent(HomeDashboardSnapshot.self, forKey: .homeDashboardSnapshot)
-        userHoldingsSnapshot = try container.decodeIfPresent(UserHoldingsSnapshot.self, forKey: .userHoldingsSnapshot)
-        accountSnapshotsByAccountId = try container.decodeIfPresent([String: AccountSnapshot].self, forKey: .accountSnapshotsByAccountId) ?? [:]
-        assetPriceSnapshotsByKey = try container.decodeIfPresent([String: AssetPriceSnapshot].self, forKey: .assetPriceSnapshotsByKey) ?? [:]
-        aggregatedHoldingSnapshots = try container.decodeIfPresent([AggregatedHoldingSnapshot].self, forKey: .aggregatedHoldingSnapshots) ?? []
+        
+        if container.contains(.structure), container.contains(.valuation) {
+            structure = try container.decode(LocalUserStructureStore.self, forKey: .structure)
+            valuation = try container.decode(LocalUserValuationStore.self, forKey: .valuation)
+            return
+        }
+        
+        // v1/v2 扁平格式 → 拆成 A/B
+        let accounts = try container.decode([Account].self, forKey: .accounts)
+        let transactionsByAccountId = try container.decodeIfPresent([String: [Transaction]].self, forKey: .transactionsByAccountId) ?? [:]
+        let liabilitiesByAccountId = try container.decodeIfPresent([String: [Liability]].self, forKey: .liabilitiesByAccountId) ?? [:]
+        structure = LocalUserStructureStore(
+            accounts: accounts,
+            transactionsByAccountId: transactionsByAccountId,
+            liabilitiesByAccountId: liabilitiesByAccountId
+        )
+        valuation = LocalUserValuationStore(
+            homeDashboardSnapshot: try container.decodeIfPresent(HomeDashboardSnapshot.self, forKey: .homeDashboardSnapshot),
+            userHoldingsSnapshot: try container.decodeIfPresent(UserHoldingsSnapshot.self, forKey: .userHoldingsSnapshot),
+            accountSnapshotsByAccountId: try container.decodeIfPresent([String: AccountSnapshot].self, forKey: .accountSnapshotsByAccountId) ?? [:],
+            assetPriceSnapshotsByKey: try container.decodeIfPresent([String: AssetPriceSnapshot].self, forKey: .assetPriceSnapshotsByKey) ?? [:],
+            aggregatedHoldingSnapshots: try container.decodeIfPresent([AggregatedHoldingSnapshot].self, forKey: .aggregatedHoldingSnapshots) ?? []
+        )
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(schemaVersion, forKey: .schemaVersion)
+        try container.encode(userId, forKey: .userId)
+        try container.encode(structure, forKey: .structure)
+        try container.encode(valuation, forKey: .valuation)
+    }
+    
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case userId
+        case structure
+        case valuation
+        case accounts
+        case transactionsByAccountId
+        case liabilitiesByAccountId
+        case homeDashboardSnapshot
+        case userHoldingsSnapshot
+        case accountSnapshotsByAccountId
+        case assetPriceSnapshotsByKey
+        case aggregatedHoldingSnapshots
     }
 }
 
@@ -89,13 +167,44 @@ enum LocalUserDataStore {
     }
     
     static func save(_ payload: LocalUserData) {
+        write(payload, userId: payload.userId)
+    }
+    
+    static func saveStructure(_ structure: LocalUserStructureStore, userId: String) {
+        var payload = load(userId: userId) ?? empty(userId: userId)
+        payload.structure = structure
+        write(payload, userId: userId)
+    }
+    
+    static func saveValuation(_ valuation: LocalUserValuationStore, userId: String) {
+        var payload = load(userId: userId) ?? empty(userId: userId)
+        payload.valuation = valuation
+        write(payload, userId: userId)
+    }
+    
+    static func empty(userId: String) -> LocalUserData {
+        LocalUserData(
+            userId: userId,
+            structure: LocalUserStructureStore(),
+            valuation: LocalUserValuationStore()
+        )
+    }
+    
+    private static func write(_ payload: LocalUserData, userId: String) {
         do {
             let directory = try storageDirectoryURL()
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             
-            let url = fileURL(for: payload.userId)
-            let tempURL = directory.appendingPathComponent("\(sanitizedFileStem(for: payload.userId)).tmp")
-            let encoded = try encoder.encode(payload)
+            let url = fileURL(for: userId)
+            let tempURL = directory.appendingPathComponent("\(sanitizedFileStem(for: userId)).tmp")
+            var normalized = payload
+            normalized = LocalUserData(
+                schemaVersion: LocalUserData.currentSchemaVersion,
+                userId: userId,
+                structure: payload.structure,
+                valuation: payload.valuation
+            )
+            let encoded = try encoder.encode(normalized)
             try encoded.write(to: tempURL, options: .atomic)
             
             if FileManager.default.fileExists(atPath: url.path) {
@@ -104,7 +213,7 @@ enum LocalUserDataStore {
                 try FileManager.default.moveItem(at: tempURL, to: url)
             }
         } catch {
-            print("[LocalUserDataStore] save failed for \(payload.userId): \(error.localizedDescription)")
+            print("[LocalUserDataStore] save failed for \(userId): \(error.localizedDescription)")
         }
     }
     

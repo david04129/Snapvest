@@ -10,6 +10,8 @@ import SwiftUI
 struct HomeView: View {
     @Binding var selectedTab: Int
     @EnvironmentObject private var viewModel: PortfolioViewModel
+    @EnvironmentObject private var accountsViewModel: AccountsViewModel
+    @EnvironmentObject private var assetsViewModel: AssetsViewModel
     @ObservedObject private var homePrivacy = HomePrivacyManager.shared
     @State private var userId: String = AppUser.id
     @State private var navigationStackResetID = UUID()
@@ -84,7 +86,12 @@ struct HomeView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { _ in
                 Task {
-                    await viewModel.reloadFromPersistedSnapshots(userId: userId)
+                    await LaunchCoordinator.applyPersistedState(
+                        userId: userId,
+                        portfolioViewModel: viewModel,
+                        accountsViewModel: accountsViewModel,
+                        assetsViewModel: assetsViewModel
+                    )
                 }
             }
         }
@@ -1089,5 +1096,7 @@ struct InteractiveProgressBar: View {
 #Preview {
     HomeView(selectedTab: .constant(AppTab.home.rawValue))
         .environmentObject(PortfolioViewModel())
+        .environmentObject(AccountsViewModel())
+        .environmentObject(AssetsViewModel())
 }
 

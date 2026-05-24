@@ -30,6 +30,8 @@ struct SellTradeFormView: View {
     @State private var transactionDate: Date = Date()
     @State private var errorMessage: String?
     @State private var userId: String = AppUser.id
+    @State private var showingDuplicateAlert = false
+    @State private var duplicateAlertMessage = ""
     @Environment(\.dismiss) private var dismiss
     
     init(
@@ -276,6 +278,14 @@ struct SellTradeFormView: View {
             exchangeRateText = filterDecimalInput(newValue)
             validateInput()
         }
+        .alert("可能重複的交易", isPresented: $showingDuplicateAlert) {
+            Button("取消", role: .cancel) { }
+            Button("仍要建立", role: .destructive) {
+                Task { await finishSubmit(allowDuplicate: true) }
+            }
+        } message: {
+            Text(duplicateAlertMessage)
+        }
     }
     
     @ViewBuilder
@@ -494,6 +504,18 @@ struct SellTradeFormView: View {
     }
     
     private func handleSubmit() {
+        guard selectedAccount != nil,
+              quantityValue != nil,
+              priceValue != nil else {
+            return
+        }
+        
+        Task {
+            await finishSubmit(allowDuplicate: false)
+        }
+    }
+    
+    private func finishSubmit(allowDuplicate: Bool) async {
         guard let selectedAccount = selectedAccount,
               let quantityValue = quantityValue,
               let priceValue = priceValue else {
@@ -503,6 +525,14 @@ struct SellTradeFormView: View {
         if isImportDraftMode,
            let existing = editingTransaction,
            let onImportDraftSave {
+            if let priceError = await SymbolPriceValidator.validatePriceAvailable(
+                assetType: existing.assetType,
+                symbol: existing.symbol,
+                transactionType: .sell
+            ) {
+                errorMessage = priceError
+                return
+            }
             let updated = Transaction(
                 id: existing.id,
                 accountId: selectedAccount.id,
@@ -525,51 +555,88 @@ struct SellTradeFormView: View {
         }
         
         let averageCostFallback: Decimal
+        let sellSymbol: String
         if let selectedHolding {
             averageCostFallback = selectedHolding.holding.averageCost
+            sellSymbol = selectedHolding.holding.symbol
         } else if let existing = editingTransaction {
             averageCostFallback = existing.realizedCostPerUnit ?? existing.price
+            sellSymbol = existing.symbol
         } else {
             return
         }
         
-        Task {
-            if let existing = editingTransaction {
-                await transactionsViewModel.updateSellTransaction(
-                    existing: existing,
-                    account: selectedAccount,
-                    quantity: quantityValue,
-                    price: priceValue,
-                    currency: priceCurrency,
-                    exchangeRate: exchangeRateValue,
-                    transactionDate: transactionDate,
-                    averageCostFallback: averageCostFallback
-                )
-            } else if let selectedHolding {
-                await transactionsViewModel.createSellTransaction(
-                    account: selectedAccount,
-                    assetType: market.assetType,
-                    symbol: selectedHolding.holding.symbol,
-                    quantity: quantityValue,
-                    price: priceValue,
-                    currency: priceCurrency,
-                    exchangeRate: exchangeRateValue,
-                    transactionDate: transactionDate,
-                    averageCostFallback: selectedHolding.holding.averageCost
-                )
-                let draft = SellTradeDraft(
-                    market: market,
-                    account: selectedAccount,
-                    holding: selectedHolding,
-                    quantity: quantityValue,
-                    price: priceValue,
-                    exchangeRate: exchangeRateValue,
-                    transactionDate: transactionDate
-                )
-                onSubmit?(draft)
-            }
-            dismiss()
+        if let priceError = await SymbolPriceValidator.validatePriceAvailable(
+            assetType: market.assetType,
+            symbol: sellSymbol,
+            transactionType: .sell
+        ) {
+            errorMessage = priceError
+            return
         }
+        
+        if !allowDuplicate {
+            let draft = Transaction(
+                accountId: selectedAccount.id,
+                type: .sell,
+                assetType: market.assetType,
+                symbol: sellSymbol,
+                quantity: quantityValue,
+                price: priceValue,
+                currency: priceCurrency,
+                transactionDate: transactionDate,
+                exchangeRate: exchangeRateValue
+            )
+            if let duplicate = await transactionsViewModel.findDuplicateMatch(
+                for: draft,
+                excludingTransactionId: editingTransaction?.id
+            ) {
+                duplicateAlertMessage = TransactionDuplicateChecker.alertMessage(
+                    for: draft,
+                    existing: duplicate
+                )
+                showingDuplicateAlert = true
+                return
+            }
+        }
+        
+        if let existing = editingTransaction {
+            await transactionsViewModel.updateSellTransaction(
+                existing: existing,
+                account: selectedAccount,
+                quantity: quantityValue,
+                price: priceValue,
+                currency: priceCurrency,
+                exchangeRate: exchangeRateValue,
+                transactionDate: transactionDate,
+                averageCostFallback: averageCostFallback,
+                allowDuplicate: allowDuplicate
+            )
+        } else if let selectedHolding {
+            await transactionsViewModel.createSellTransaction(
+                account: selectedAccount,
+                assetType: market.assetType,
+                symbol: selectedHolding.holding.symbol,
+                quantity: quantityValue,
+                price: priceValue,
+                currency: priceCurrency,
+                exchangeRate: exchangeRateValue,
+                transactionDate: transactionDate,
+                averageCostFallback: selectedHolding.holding.averageCost,
+                allowDuplicate: allowDuplicate
+            )
+            let draft = SellTradeDraft(
+                market: market,
+                account: selectedAccount,
+                holding: selectedHolding,
+                quantity: quantityValue,
+                price: priceValue,
+                exchangeRate: exchangeRateValue,
+                transactionDate: transactionDate
+            )
+            onSubmit?(draft)
+        }
+        dismiss()
     }
     
     private func applyEditingPrefill(from transaction: Transaction) {

@@ -122,42 +122,37 @@ class PortfolioViewModel: ObservableObject {
         isLoading = false
     }
 
-    /// 確保首頁快照存在（若沒有則先計算再讀取）
-    func ensureHomeSnapshot(userId: String) async {
+    /// Splash／快照更新後：從本機 B 灌入首頁狀態（不重算、不寫磁碟）
+    func prepareFromPersisted(userId: String, usdToTwdRate: Decimal) async {
         isLoading = true
         errorMessage = nil
-        
+
         do {
-            let snapshot = try await dataService.fetchHomeDashboardSnapshot(userId: userId)
-            if snapshot == nil {
-                await loadData(userId: userId)
-            } else {
-                homeSnapshot = snapshot
-                applyHomeSnapshot(snapshot)
-            }
-            await refreshPieChartData(userId: userId)
+            accounts = try await dataService.fetchAccounts(userId: userId)
+            liabilities = try await loadLiabilities(userId: userId)
+            homeSnapshot = try await dataService.fetchHomeDashboardSnapshot(userId: userId)
+            applyHomeSnapshot(homeSnapshot, usdToTwdRate: usdToTwdRate)
+            await refreshPieChartDataFromPersisted(userId: userId, usdToTwdRate: usdToTwdRate)
         } catch {
-            errorMessage = "載入首頁快照失敗：\(error.localizedDescription)"
+            errorMessage = "載入資料失敗：\(error.localizedDescription)"
         }
-        
+
         isLoading = false
         hasLoadedOnce = true
+    }
+
+    /// 確保首頁快照存在（若沒有則先計算再讀取）
+    func ensureHomeSnapshot(userId: String) async {
+        await prepareFromPersisted(
+            userId: userId,
+            usdToTwdRate: (try? await dataService.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate) ?? 0
+        )
     }
     
     /// 從已持久化的快照刷新首頁（快照更新通知時使用）
     func reloadFromPersistedSnapshots(userId: String) async {
-        do {
-            accounts = try await dataService.fetchAccounts(userId: userId)
-            liabilities = try await loadLiabilities(userId: userId)
-            if let snapshot = try await dataService.fetchHomeDashboardSnapshot(userId: userId) {
-                homeSnapshot = snapshot
-                applyHomeSnapshot(snapshot)
-            }
-            await refreshPieChartData(userId: userId)
-        } catch {
-            errorMessage = "刷新首頁失敗：\(error.localizedDescription)"
-        }
-        hasLoadedOnce = true
+        let usdToTwdRate = (try? await dataService.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate) ?? 0
+        await prepareFromPersisted(userId: userId, usdToTwdRate: usdToTwdRate)
     }
     
     /// 依最新帳戶／交易／負債重算首頁總覽（含其他債務），並寫回快照
@@ -174,7 +169,7 @@ class PortfolioViewModel: ObservableObject {
         hasLoadedOnce = true
     }
     
-    /// 載入圓餅圖用持股與現金明細
+    /// 載入圓餅圖用持股與現金明細（含 Supabase 拉價；僅手動 rebuild 路徑使用）
     func refreshPieChartData(userId: String) async {
         pieChartInputs = try? await PieChartDataLoader.load(
             userId: userId,
@@ -183,13 +178,21 @@ class PortfolioViewModel: ObservableObject {
         )
         todayPLSummary = TodayPLCalculator.calculate(from: pieChartInputs)
     }
+
+    /// 從本機估值 B 組圓餅圖（Splash／Tab 套用）
+    func refreshPieChartDataFromPersisted(userId: String, usdToTwdRate: Decimal) async {
+        pieChartInputs = try? await PieChartDataLoader.loadFromPersisted(
+            userId: userId,
+            dataService: dataService,
+            usdToTwdRate: usdToTwdRate
+        )
+        todayPLSummary = TodayPLCalculator.calculate(from: pieChartInputs)
+    }
     
-    /// 重新載入負債（帳戶改名等操作後需刷新，避免與 debt 帳戶名稱配對失敗）
+    /// 重新載入負債列表（不動首頁大數字）
     func reloadLiabilities(userId: String) async {
         do {
             liabilities = try await loadLiabilities(userId: userId)
-            await calculateSummary()
-            await saveHomeDashboardSnapshot(userId: userId)
         } catch {
             // 保留現有資料
         }
@@ -330,7 +333,7 @@ class PortfolioViewModel: ObservableObject {
         updateHoldingRatios()
     }
 
-    private func applyHomeSnapshot(_ snapshot: HomeDashboardSnapshot?) {
+    private func applyHomeSnapshot(_ snapshot: HomeDashboardSnapshot?, usdToTwdRate: Decimal? = nil) {
         guard let snapshot = snapshot else {
             totalAssets = 0
             totalLiabilities = 0
@@ -355,11 +358,15 @@ class PortfolioViewModel: ObservableObject {
             .TWD: snapshot.twdCash,
             .USD: snapshot.usdCash
         ]
-        realizedGainLoss = realizedGainLossTWD
 
-        Task {
-            let usdToTwdRate = (try? await dataService.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate) ?? 0
+        if let usdToTwdRate {
             realizedGainLoss = realizedGainLossTWD + (realizedGainLossUSD * usdToTwdRate)
+        } else {
+            realizedGainLoss = realizedGainLossTWD
+            Task {
+                let rate = (try? await dataService.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate) ?? 0
+                realizedGainLoss = realizedGainLossTWD + (realizedGainLossUSD * rate)
+            }
         }
     }
 
@@ -385,7 +392,7 @@ class PortfolioViewModel: ObservableObject {
         
         do {
             try await dataService.saveHomeDashboardSnapshot(snapshot)
-            dataService.persistLocalStore(for: userId)
+            dataService.persistLocalValuation(for: userId)
         } catch {
             // 快照儲存失敗不影響畫面顯示
         }

@@ -9,6 +9,7 @@ import SwiftUI
 
 struct ContentView: View {
     @ObservedObject private var themeManager = ThemeManager.shared
+    @EnvironmentObject private var launchSessionState: LaunchSessionState
     @State private var selectedTab = 0
     
     var body: some View {
@@ -41,6 +42,13 @@ struct ContentView: View {
         .tint(.appPrimary)
         .toolbarBackground(Color.cardBackground, for: .tabBar)
         .toolbarBackground(.visible, for: .tabBar)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if let notice = launchSessionState.startupNotice {
+                StartupNoticeBanner(message: notice) {
+                    launchSessionState.clearStartupNotice()
+                }
+            }
+        }
         .id(themeManager.appearanceRefreshToken)
         .onChange(of: selectedTab) { previousTab, _ in
             NotificationCenter.default.post(
@@ -55,4 +63,7 @@ struct ContentView: View {
 #Preview {
     ContentView()
         .environmentObject(PortfolioViewModel())
+        .environmentObject(AccountsViewModel())
+        .environmentObject(AssetsViewModel())
+        .environmentObject(LaunchSessionState.shared)
 }

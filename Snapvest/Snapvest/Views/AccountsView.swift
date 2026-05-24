@@ -9,8 +9,9 @@ import SwiftUI
 
 struct AccountsView: View {
     @Binding var selectedTab: Int
+    @EnvironmentObject private var viewModel: AccountsViewModel
     @EnvironmentObject private var portfolioViewModel: PortfolioViewModel
-    @StateObject private var viewModel = AccountsViewModel()
+    @EnvironmentObject private var assetsViewModel: AssetsViewModel
     @State private var showingAddAccount = false
     @State private var showingAddLiability = false
     @State private var userId: String = AppUser.id
@@ -42,21 +43,25 @@ struct AccountsView: View {
                 })
             }
             .refreshable {
-                await reloadAccountsTabData()
+                await SnapshotRefreshCoordinator.rebuildAndNotify(userId: userId)
             }
             .sheet(isPresented: $showingAddAccount, onDismiss: {
-                Task {
-                    await reloadAccountsTabData()
-                }
+                loadAccountOrder()
             }) {
                 AddAccountView(viewModel: viewModel)
             }
-            .task {
-                await reloadAccountsTabData()
+            .onAppear {
                 loadAccountOrder()
             }
             .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { _ in
-                Task { await reloadAccountsTabData() }
+                Task {
+                    await LaunchCoordinator.applyPersistedState(
+                        userId: userId,
+                        portfolioViewModel: portfolioViewModel,
+                        accountsViewModel: viewModel,
+                        assetsViewModel: assetsViewModel
+                    )
+                }
             }
         }
         .id(navigationStackResetID)
@@ -101,19 +106,6 @@ struct AccountsView: View {
         )
     }
 
-    private func reloadAccountsTabData() async {
-        await viewModel.loadAccounts(userId: userId)
-        if portfolioViewModel.hasLoadedOnce {
-            await portfolioViewModel.reloadLiabilities(userId: userId)
-        } else {
-            await portfolioViewModel.loadData(userId: userId)
-        }
-        await viewModel.refreshBalances(
-            userId: userId,
-            preloadedLiabilities: portfolioViewModel.liabilities
-        )
-    }
-    
     @ViewBuilder
     private var archivedDebtAccountsSection: some View {
         let archived = viewModel.accounts.archivedDebtAccounts
@@ -710,5 +702,7 @@ struct DebtCardView: View {
 #Preview {
     AccountsView(selectedTab: .constant(AppTab.accounts.rawValue))
         .environmentObject(PortfolioViewModel())
+        .environmentObject(AccountsViewModel())
+        .environmentObject(AssetsViewModel())
 }
 

@@ -47,7 +47,38 @@ class AssetsViewModel: ObservableObject {
         self.priceService = priceService ?? PriceService(dataService: service)
     }
     
-    /// 載入所有資料（僅首次顯示整頁載入；之後切 Tab／通知刷新在背景更新）
+    /// 從本機估值 B 灌入資產分頁（Splash／快照更新；不拉 Supabase）
+    func applyFromPersisted(userId: String, usdToTwdRate: Decimal) async {
+        errorMessage = nil
+        self.usdToTwdRate = usdToTwdRate
+
+        do {
+            let fetchedAccounts = try await dataService.fetchAccounts(userId: userId)
+            let accountSnapshots = try await loadAccountSnapshots(accounts: fetchedAccounts)
+            let aggregated = try await dataService.fetchAggregatedHoldingSnapshots(userId: userId, assetType: nil)
+            let symbolInfos = await loadSymbolInfos(
+                userId: userId,
+                accountSnapshots: accountSnapshots,
+                aggregatedHoldings: aggregated
+            )
+            let assetPriceSnapshots = try await dataService.fetchAssetPriceSnapshots(symbols: symbolInfos)
+
+            self.aggregatedHoldings = aggregated
+            self.assetPriceSnapshots = assetPriceSnapshots
+            await calculateSummary(
+                assetPriceSnapshots: assetPriceSnapshots,
+                accountSnapshots: accountSnapshots,
+                accounts: fetchedAccounts
+            )
+        } catch {
+            errorMessage = "載入資料失敗：\(error.localizedDescription)"
+        }
+
+        isLoading = false
+        hasLoadedOnce = true
+    }
+
+    /// 載入所有資料（含 Supabase 拉價；僅手動刷新等路徑使用）
     func loadData(userId: String) async {
         if !hasLoadedOnce { isLoading = true }
         errorMessage = nil
@@ -65,7 +96,8 @@ class AssetsViewModel: ObservableObject {
             let symbolInfos = await loadSymbolInfos(userId: userId, accountSnapshots: accountSnapshots, aggregatedHoldings: aggregated)
             var assetPriceSnapshots: [AssetPriceSnapshot]
             if SupabaseConfig.isConfigured, !symbolInfos.isEmpty {
-                assetPriceSnapshots = (try? await SupabasePriceService.fetchPrices(symbols: symbolInfos)) ?? []
+                let fetched = (try? await SupabasePriceService.fetchPrices(symbols: symbolInfos)) ?? []
+                assetPriceSnapshots = await PriceSnapshotMerger.mergeIncoming(fetched, dataService: dataService)
             } else if !symbolInfos.isEmpty {
                 assetPriceSnapshots = try await dataService.fetchAssetPriceSnapshots(symbols: symbolInfos)
             } else {
@@ -86,7 +118,7 @@ class AssetsViewModel: ObservableObject {
                     accountSnapshots: bundle.accountSnapshots,
                     accounts: fetchedAccounts
                 )
-                dataService.persistLocalStore(for: userId)
+                dataService.persistLocalValuation(for: userId)
             } else {
                 self.assetPriceSnapshots = assetPriceSnapshots
                 self.aggregatedHoldings = aggregated
@@ -194,7 +226,7 @@ class AssetsViewModel: ObservableObject {
                 // 判斷貨幣（從帳戶推斷，或使用預設值）
                 let currency: Currency = symbolInfo.assetType == .stockTW ? .TWD : .USD
                 
-                let snapshot = AssetPriceSnapshot(
+                let rawSnapshot = AssetPriceSnapshot(
                     assetType: symbolInfo.assetType,
                     symbol: symbolInfo.symbol,
                     name: nil, // 暫時為 nil，未來可以從後端獲取
@@ -207,7 +239,9 @@ class AssetsViewModel: ObservableObject {
                     lastSuccessfulUpdate: currentPrice != nil ? Date() : nil
                 )
                 
-                priceSnapshots.append(snapshot)
+                priceSnapshots.append(
+                    PriceSnapshotMerger.merge(incoming: rawSnapshot, existing: nil)
+                )
             }
         }
         

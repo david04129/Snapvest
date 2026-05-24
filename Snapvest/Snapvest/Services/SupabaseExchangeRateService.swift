@@ -10,7 +10,25 @@ import Foundation
 private struct SupabaseExchangeRateRow: Decodable {
     let from_currency: String
     let to_currency: String
-    let rate: String?
+    let rate: Decimal?
+
+    enum CodingKeys: String, CodingKey {
+        case from_currency, to_currency, rate
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        from_currency = try container.decode(String.self, forKey: .from_currency)
+        to_currency = try container.decode(String.self, forKey: .to_currency)
+        if let text = try? container.decode(String.self, forKey: .rate),
+           let parsed = Decimal(string: text), parsed > 0 {
+            rate = parsed
+        } else if let number = try? container.decode(Double.self, forKey: .rate), number > 0 {
+            rate = Decimal(number)
+        } else {
+            rate = nil
+        }
+    }
 }
 
 enum SupabaseExchangeRateService {
@@ -63,7 +81,7 @@ enum SupabaseExchangeRateService {
                 return nil
             }
             let rows = try JSONDecoder().decode([SupabaseExchangeRateRow].self, from: data)
-            guard let text = rows.first?.rate, let rate = Decimal(string: text), rate > 0 else {
+            guard let rate = rows.first?.rate, rate > 0 else {
                 return nil
             }
             return rate

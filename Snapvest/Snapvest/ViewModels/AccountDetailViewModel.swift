@@ -18,14 +18,17 @@ class AccountDetailViewModel: ObservableObject {
     @Published var displayCurrency: Currency = .TWD
     @Published var exchangeRate: Decimal = 32 // USD to TWD 匯率
     
+    private(set) var hasLoadedOnce = false
+    
     private let dataService: DataServiceProtocol
-    private let priceService: PriceServiceProtocol
     
     init(dataService: DataServiceProtocol? = nil,
          priceService: PriceServiceProtocol? = nil) {
-        let service = dataService ?? MockDataService.shared
-        self.dataService = service
-        self.priceService = priceService ?? PriceService(dataService: service)
+        self.dataService = dataService ?? MockDataService.shared
+        _ = priceService
+        if let cachedRate = ExchangeRateSessionCache.usdToTwd {
+            exchangeRate = cachedRate
+        }
     }
     
     /// 帶入帳戶列表已算好的餘額，避免詳情首幀從 0 閃爍
@@ -34,116 +37,155 @@ class AccountDetailViewModel: ObservableObject {
         holdingsValue = balance.holdingsValue
     }
     
+    /// 帶入 Splash／帳戶 Tab 預建的持股明細（同步、零網路）
+    func applyCachedHoldings(_ cached: [HoldingSnapshot], account: Account) {
+        if let cachedRate = ExchangeRateSessionCache.usdToTwd {
+            exchangeRate = cachedRate
+        }
+        holdings = cached
+        holdingsValue = sumHoldingsValue(cached, account: account)
+        if account.currency == .TWD {
+            displayCurrency = .TWD
+        }
+    }
+    
+    /// 從本機估值 B 套用帳戶明細（不重算交易、不逐檔拉 Supabase）
+    func loadFromPersisted(accountId: String, account: Account) async {
+        errorMessage = nil
+        
+        if let cachedRate = ExchangeRateSessionCache.usdToTwd {
+            exchangeRate = cachedRate
+        }
+        
+        if let cached = AccountDetailPresentationStore.holdings(for: accountId), !cached.isEmpty {
+            if let snapshot = try? await dataService.fetchAccountSnapshot(accountId: accountId) {
+                cashBalance = snapshot.cashBalance
+            }
+            applyCachedHoldings(cached, account: account)
+            hasLoadedOnce = true
+            return
+        }
+        
+        guard let accountSnapshot = try? await dataService.fetchAccountSnapshot(accountId: accountId) else {
+            await loadAccountDataFallback(accountId: accountId)
+            return
+        }
+        
+        await applySnapshot(accountSnapshot, accountId: accountId, account: account)
+        hasLoadedOnce = true
+    }
+    
+    func refresh(accountId: String, account: Account) async {
+        await loadFromPersisted(accountId: accountId, account: account)
+    }
+    
+    /// 相容舊呼叫端（sheet／表單完成後刷新）
+    func refresh(accountId: String) async {
+        guard let account = try? await fetchAccount(accountId: accountId) else { return }
+        await loadFromPersisted(accountId: accountId, account: account)
+    }
+    
     func loadAccountData(accountId: String) async {
+        guard let account = try? await fetchAccount(accountId: accountId) else { return }
+        await loadFromPersisted(accountId: accountId, account: account)
+    }
+    
+    private func fetchAccount(accountId: String) async throws -> Account? {
+        let accounts = try await dataService.fetchAccounts(userId: AppUser.id)
+        return accounts.first(where: { $0.id == accountId })
+    }
+    
+    // MARK: - Private
+    
+    private func applySnapshot(_ accountSnapshot: AccountSnapshot, accountId: String, account: Account) async {
+        cashBalance = accountSnapshot.cashBalance
+        let builtHoldings = await AccountDetailHoldingsBuilder.build(
+            from: accountSnapshot,
+            accountId: accountId,
+            dataService: dataService
+        )
+        holdings = builtHoldings
+        holdingsValue = sumHoldingsValue(builtHoldings, account: account)
+        if account.currency == .TWD {
+            displayCurrency = .TWD
+        }
+    }
+    
+    private func sumHoldingsValue(_ snapshots: [HoldingSnapshot], account: Account) -> Decimal {
+        snapshots.reduce(into: Decimal.zero) { partial, snapshot in
+            guard let marketValue = snapshot.marketValue else { return }
+            partial += Self.valueInAccountCurrency(
+                amount: marketValue,
+                fromCurrency: snapshot.holding.currency,
+                accountCurrency: account.currency,
+                exchangeRate: exchangeRate
+            )
+        }
+    }
+    
+    /// 本機無 accountSnapshot 時才從交易重算（fallback）
+    private func loadAccountDataFallback(accountId: String) async {
         isLoading = true
         errorMessage = nil
+        
+        defer { isLoading = false }
         
         do {
             var transactions = try await dataService.fetchTransactions(accountId: accountId)
             let allAccounts = try await dataService.fetchAccounts(userId: AppUser.id)
             
             if let account = allAccounts.first(where: { $0.id == accountId }) {
-                do {
-                    let allTransactions = try await dataService.fetchAllTransactions(userId: account.userId)
-                    let incomingTransferTransactions = allTransactions.filter { transaction in
-                        (transaction.type == .transfer || transaction.type == .repayment) &&
-                        transaction.targetAccountId == accountId &&
-                        transaction.accountId != accountId
+                if let allTransactions = try? await dataService.fetchAllTransactions(userId: account.userId) {
+                    let incoming = allTransactions.filter { transaction in
+                        (transaction.type == .transfer || transaction.type == .repayment)
+                            && transaction.targetAccountId == accountId
+                            && transaction.accountId != accountId
                     }
-                    transactions.append(contentsOf: incomingTransferTransactions)
-                } catch {
-                    // 如果獲取所有交易失敗，繼續使用該帳戶自己的交易
+                    transactions.append(contentsOf: incoming)
                 }
             }
             
-            guard let account = allAccounts.first(where: { $0.id == accountId }) else {
-                isLoading = false
-                return
-            }
+            guard let account = allAccounts.first(where: { $0.id == accountId }) else { return }
             
-            let localCashBalance = CashCalculator.calculateCash(
+            cashBalance = CashCalculator.calculateCash(
                 accountId: accountId,
                 transactions: transactions,
                 accounts: allAccounts
             )
-            let calculatedHoldings = HoldingCalculator.calculateHoldings(from: transactions)
             
-            var localRate: Decimal = 32
-            if let exchangeRateData = try? await dataService.fetchExchangeRate(from: .USD, to: .TWD, date: nil) {
-                localRate = exchangeRateData.rate
+            if let cachedRate = ExchangeRateSessionCache.usdToTwd {
+                exchangeRate = cachedRate
+            } else if let rate = try? await dataService.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate {
+                exchangeRate = rate
             }
             
-            let localHoldings = await buildHoldingsSnapshots(
-                from: calculatedHoldings,
-                priceService: priceService
-            )
-            
-            let localHoldingsValue = localHoldings.compactMap { snapshot -> Decimal? in
-                guard let marketValue = snapshot.marketValue else { return nil }
-                return Self.valueInAccountCurrency(
-                    amount: marketValue,
-                    fromCurrency: snapshot.holding.currency,
-                    accountCurrency: account.currency,
-                    exchangeRate: localRate
+            let calculatedHoldings = HoldingCalculator.calculateHoldings(from: transactions)
+            var built: [HoldingSnapshot] = []
+            for holding in calculatedHoldings {
+                let priceSnapshot = try? await dataService.fetchAssetPriceSnapshot(
+                    assetType: holding.assetType,
+                    symbol: holding.symbol
                 )
-            }.reduce(0, +)
+                built.append(
+                    HoldingSnapshot(
+                        id: holding.id,
+                        holding: holding,
+                        currentPrice: priceSnapshot?.displayPrice,
+                        currentPriceDate: priceSnapshot?.displayPriceDate
+                    )
+                )
+            }
+            holdings = built
+            holdingsValue = sumHoldingsValue(built, account: account)
             
-            // 一次更新，避免現金／持股分兩幀刷新
-            exchangeRate = localRate
-            cashBalance = localCashBalance
-            holdings = localHoldings
-            holdingsValue = localHoldingsValue
             if account.currency == .TWD {
                 displayCurrency = .TWD
             }
-            
         } catch {
             errorMessage = "載入帳戶資料失敗：\(error.localizedDescription)"
         }
         
-        isLoading = false
-    }
-    
-    func refresh(accountId: String) async {
-        await loadAccountData(accountId: accountId)
-    }
-    
-    private func buildHoldingsSnapshots(
-        from holdings: [Holding],
-        priceService: PriceServiceProtocol
-    ) async -> [HoldingSnapshot] {
-        guard !holdings.isEmpty else { return [] }
-        
-        return await withTaskGroup(
-            of: (Int, HoldingSnapshot?).self,
-            returning: [HoldingSnapshot].self
-        ) { group in
-            for (index, holding) in holdings.enumerated() {
-                group.addTask {
-                    guard let currentPrice = try? await priceService.fetchCurrentPrice(
-                        assetType: holding.assetType,
-                        symbol: holding.symbol
-                    ) else {
-                        return (index, nil)
-                    }
-                    let snapshot = HoldingSnapshot(
-                        id: holding.id,
-                        holding: holding,
-                        currentPrice: currentPrice,
-                        currentPriceDate: Date()
-                    )
-                    return (index, snapshot)
-                }
-            }
-            
-            var indexed: [(Int, HoldingSnapshot)] = []
-            for await result in group {
-                if let snapshot = result.1 {
-                    indexed.append((result.0, snapshot))
-                }
-            }
-            return indexed.sorted { $0.0 < $1.0 }.map(\.1)
-        }
+        hasLoadedOnce = true
     }
     
     /// 將金額換算為帳戶貨幣（1 USD = exchangeRate TWD）

@@ -21,32 +21,48 @@ struct TransactionImportView: View {
     @State private var importBuyDraftItem: ImportBuyDraftSheetItem?
     @State private var importSellDraftItem: ImportSellDraftSheetItem?
     @State private var isImporting = false
+    @State private var isValidatingPrices = false
     @State private var showingImportResultAlert = false
     @State private var importResultAlertTitle = ""
     @State private var importResultAlertMessage = ""
     @State private var dismissAfterImportResultAlert = false
     @State private var didCopyPrompt = false
+    @FocusState private var isCSVFocused: Bool
+    @State private var scrollToPreviewTrigger = 0
+    @State private var duplicateMatches: [Int: TransactionDuplicateMatch] = [:]
+    @State private var duplicateImportOverrides: Set<Int> = []
     
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    accountHeaderCard
-                    flowStepsCard
-                    copyPromptButton
-                    pasteSection
-                    
-                    if let fatal = parseResult?.fatalError {
-                        errorBanner(fatal)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        accountHeaderCard
+                        flowStepsCard
+                        copyPromptButton
+                        pasteSection
+                        
+                        if let fatal = parseResult?.fatalError {
+                            errorBanner(fatal)
+                        }
+                        
+                        if !previewRows.isEmpty {
+                            previewSection
+                                .id("import-preview")
+                        }
                     }
-                    
-                    if !previewRows.isEmpty {
-                        previewSection
+                    .padding()
+                }
+                .background(Color.mainBackground)
+                .onChange(of: scrollToPreviewTrigger) { _, _ in
+                    guard !previewRows.isEmpty else { return }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        withAnimation(.easeInOut(duration: 0.35)) {
+                            proxy.scrollTo("import-preview", anchor: .top)
+                        }
                     }
                 }
-                .padding()
             }
-            .background(Color.mainBackground)
             .alert(importResultAlertTitle, isPresented: $showingImportResultAlert) {
                 Button("好") {
                     if dismissAfterImportResultAlert {
@@ -63,6 +79,13 @@ struct TransactionImportView: View {
                     Button("關閉") { dismiss() }
                         .foregroundColor(.appPrimary)
                 }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("完成") {
+                        isCSVFocused = false
+                    }
+                    .foregroundColor(.appPrimary)
+                }
             }
             .sheet(item: $importBuyDraftItem) { item in
                 importBuyDraftSheet(item: item)
@@ -71,9 +94,7 @@ struct TransactionImportView: View {
                 importSellDraftSheet(item: item)
             }
             .task {
-                if viewModel.accounts.isEmpty {
-                    await viewModel.loadTransactions(userId: account.userId)
-                }
+                await viewModel.loadTransactions(userId: account.userId)
             }
         }
     }
@@ -241,6 +262,7 @@ struct TransactionImportView: View {
                         RoundedRectangle(cornerRadius: 12, style: .continuous)
                             .stroke(Color.separator.opacity(0.35), lineWidth: 1)
                     )
+                    .focused($isCSVFocused)
                 
                 if csvText.isEmpty {
                     Text("把 AI 回覆貼在這裡，再按「解析預覽」")
@@ -269,6 +291,8 @@ struct TransactionImportView: View {
                     parseResult = nil
                     validationResult = nil
                     previewRows = []
+                    duplicateMatches = [:]
+                    duplicateImportOverrides = []
                 } label: {
                     Text("清除")
                         .frame(maxWidth: .infinity)
@@ -321,10 +345,38 @@ struct TransactionImportView: View {
         previewRows.filter { $0.errorMessage != nil }
     }
     
+    private var previewDuplicateRows: [TransactionImportValidatedRow] {
+        previewRows
+            .filter { row in
+                row.isValid && duplicateMatches[row.lineNumber] != nil
+            }
+            .sorted { $0.lineNumber < $1.lineNumber }
+    }
+    
+    private var effectiveImportCount: Int {
+        previewRows.filter(isRowScheduledForImport).count
+    }
+    
+    private var skippedDuplicateCount: Int {
+        duplicateMatches.keys.filter { !duplicateImportOverrides.contains($0) }.count
+    }
+    
+    private var canConfirmImport: Bool {
+        previewErrorRows.isEmpty && effectiveImportCount > 0 && !isValidatingPrices && !isImporting
+    }
+    
+    private func isRowScheduledForImport(_ row: TransactionImportValidatedRow) -> Bool {
+        guard row.isValid else { return false }
+        if duplicateMatches[row.lineNumber] != nil {
+            return duplicateImportOverrides.contains(row.lineNumber)
+        }
+        return true
+    }
+    
     private var previewDayGroups: [ImportPreviewDayGroup] {
         let calendar = Calendar.current
         let validRows = previewRows.filter { row in
-            guard row.isValid, let type = row.transaction?.type else { return false }
+            guard isRowScheduledForImport(row), let type = row.transaction?.type else { return false }
             return type == .buy || type == .sell
         }
         let grouped = Dictionary(grouping: validRows) { row in
@@ -341,15 +393,116 @@ struct TransactionImportView: View {
     
     private var previewSection: some View {
         let validation = currentValidation
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("預覽（\(validation.importableCount) 筆）")
-                    .font(.headline)
-                if validation.errorCount > 0 {
-                    Text("· \(validation.errorCount) 列錯誤")
+        return VStack(alignment: .leading, spacing: 16) {
+            if !previewErrorRows.isEmpty {
+                previewErrorSection
+            }
+            
+            if !previewDuplicateRows.isEmpty {
+                previewDuplicateSection
+            }
+            
+            if effectiveImportCount > 0 || isValidatingPrices {
+                importablePreviewSection(validation: validation)
+            } else if !isValidatingPrices,
+                      previewErrorRows.isEmpty,
+                      previewDuplicateRows.count == previewRows.filter(\.isValid).count,
+                      !previewRows.isEmpty {
+                Text("所有可匯入列皆被標記為重複且預設略過。若確定要匯入，請在上方改為「仍要匯入」。")
+                    .font(.caption)
+                    .foregroundColor(.secondaryText)
+            } else if !isValidatingPrices, previewErrorRows.count == previewRows.count {
+                Text("所有列皆需修正或已移除，請編輯錯誤列或重新貼上 CSV。")
+                    .font(.caption)
+                    .foregroundColor(.secondaryText)
+            }
+            
+            importActionSection(validation: validation)
+        }
+        .padding(16)
+        .background(Color.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: AppColors.shadowMedium, radius: 8, x: 0, y: 2)
+    }
+    
+    private var previewErrorSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(.lossRed)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(previewErrorRows.count) 筆需修正")
                         .font(.subheadline)
+                        .fontWeight(.semibold)
                         .foregroundColor(.lossRed)
+                    Text("請編輯代號或資料，或移除此筆後再匯入其餘交易。")
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.lossRed.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            
+            ForEach(previewErrorRows) { row in
+                ImportPreviewRowView(
+                    row: row,
+                    onTap: row.transaction != nil ? { openDraftEditor(for: row) } : nil,
+                    onRemove: { removeRowFromPreview(lineNumber: row.lineNumber) }
+                )
+            }
+        }
+        .id("import-errors")
+    }
+    
+    private var previewDuplicateSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "doc.on.doc.fill")
+                    .foregroundColor(.orange)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(previewDuplicateRows.count) 筆可能重複")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.orange)
+                    Text("預設略過重複交易。若確定要再匯入一筆相同紀錄，請改為「仍要匯入」。")
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.orange.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            
+            ForEach(previewDuplicateRows) { row in
+                if let match = duplicateMatches[row.lineNumber] {
+                    ImportDuplicateRowView(
+                        row: row,
+                        match: match,
+                        importDespiteDuplicate: duplicateImportOverrides.contains(row.lineNumber),
+                        onTap: { openDraftEditor(for: row) },
+                        onToggleImport: { importDespiteDuplicate in
+                            setDuplicateImportOverride(
+                                lineNumber: row.lineNumber,
+                                importDespiteDuplicate: importDespiteDuplicate
+                            )
+                        }
+                    )
+                }
+            }
+        }
+        .id("import-duplicates")
+    }
+    
+    private func importablePreviewSection(validation: TransactionImportValidationResult) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("可匯入（\(effectiveImportCount) 筆）")
+                    .font(.headline)
                 if !validation.skippedRows.isEmpty {
                     Text("· 略過 \(validation.skippedRows.count) 筆")
                         .font(.subheadline)
@@ -361,15 +514,12 @@ struct TransactionImportView: View {
                 .font(.caption)
                 .foregroundColor(.secondaryText)
             
-            if !previewErrorRows.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("需修正")
+            if isValidatingPrices {
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("驗證股價中…")
                         .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.lossRed)
-                    ForEach(previewErrorRows) { row in
-                        ImportPreviewRowView(row: row, onTap: nil)
-                    }
+                        .foregroundColor(.secondaryText)
                 }
             }
             
@@ -377,9 +527,9 @@ struct TransactionImportView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     TransactionDateSectionHeader(date: group.day, count: group.rows.count)
                     ForEach(group.rows) { row in
-                        ImportPreviewRowView(row: row) {
+                        ImportPreviewRowView(row: row, onTap: {
                             openDraftEditor(for: row)
-                        }
+                        })
                     }
                 }
             }
@@ -395,26 +545,64 @@ struct TransactionImportView: View {
                     }
                 }
             }
+        }
+    }
+    
+    private func importActionSection(validation: TransactionImportValidationResult) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if validation.errorCount > 0 {
+                Text("尚有 \(validation.errorCount) 筆需修正，修正或移除後才能匯入。")
+                    .font(.caption)
+                    .foregroundColor(.lossRed)
+            } else if skippedDuplicateCount > 0 {
+                Text("將略過 \(skippedDuplicateCount) 筆可能重複的交易。")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+            }
             
             Button {
-                Task { await runImport(validation) }
+                Task { await runImport() }
             } label: {
                 if isImporting {
                     ProgressView()
                         .frame(maxWidth: .infinity)
+                } else if skippedDuplicateCount > 0 {
+                    Text("確認匯入 \(effectiveImportCount) 筆（略過 \(skippedDuplicateCount) 筆重複）")
+                        .frame(maxWidth: .infinity)
                 } else {
-                    Text("確認匯入 \(validation.importableCount) 筆")
+                    Text("確認匯入 \(effectiveImportCount) 筆")
                         .frame(maxWidth: .infinity)
                 }
             }
             .buttonStyle(.borderedProminent)
             .tint(.appPrimary)
-            .disabled(!validation.canImport || isImporting)
+            .disabled(!canConfirmImport)
         }
-        .padding(16)
-        .background(Color.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: AppColors.shadowMedium, radius: 8, x: 0, y: 2)
+    }
+    
+    private func setDuplicateImportOverride(lineNumber: Int, importDespiteDuplicate: Bool) {
+        if importDespiteDuplicate {
+            duplicateImportOverrides.insert(lineNumber)
+        } else {
+            duplicateImportOverrides.remove(lineNumber)
+        }
+    }
+    
+    private func applyDuplicateCheck() {
+        let existing = viewModel.transactions.filter { $0.accountId == account.id }
+        duplicateMatches = TransactionDuplicateChecker.duplicateMatches(
+            for: previewRows,
+            existingTransactions: existing
+        )
+        duplicateImportOverrides = duplicateImportOverrides.filter { duplicateMatches[$0] != nil }
+    }
+    
+    private func removeRowFromPreview(lineNumber: Int) {
+        previewRows.removeAll { $0.lineNumber == lineNumber }
+        duplicateMatches.removeValue(forKey: lineNumber)
+        duplicateImportOverrides.remove(lineNumber)
+        validationResult = currentValidation
+        applyDuplicateCheck()
     }
     
     private func openDraftEditor(for row: TransactionImportValidatedRow) {
@@ -446,6 +634,7 @@ struct TransactionImportView: View {
             account: account
         )
         validationResult = currentValidation
+        Task { await applyPriceValidationToPreview() }
     }
     
     private func importBuyDraftSheet(item: ImportBuyDraftSheetItem) -> some View {
@@ -517,6 +706,10 @@ struct TransactionImportView: View {
     }
     
     private func revalidateCSV() {
+        isCSVFocused = false
+        duplicateMatches = [:]
+        duplicateImportOverrides = []
+        
         let parsed = TransactionImportCSVParser.parse(csvText)
         parseResult = parsed
         guard parsed.fatalError == nil else {
@@ -524,15 +717,33 @@ struct TransactionImportView: View {
             previewRows = []
             return
         }
-        validationResult = TransactionImportService.validate(
+        let syncResult = TransactionImportService.validate(
             parsedRows: parsed.rows,
             account: account,
             allAccounts: viewModel.accounts
         )
-        previewRows = validationResult?.rows ?? []
+        validationResult = syncResult
+        previewRows = syncResult.rows
+        scrollToPreviewTrigger += 1
+        Task { await applyPriceValidationToPreview() }
     }
     
-    private func runImport(_ validation: TransactionImportValidationResult) async {
+    @MainActor
+    private func applyPriceValidationToPreview() async {
+        guard let syncResult = validationResult else { return }
+        isValidatingPrices = true
+        defer { isValidatingPrices = false }
+        
+        let pricedResult = await TransactionImportService.applyPriceValidation(to: syncResult)
+        validationResult = pricedResult
+        previewRows = pricedResult.rows
+        applyDuplicateCheck()
+        scrollToPreviewTrigger += 1
+    }
+    
+    private func runImport() async {
+        let rowsToImport = previewRows.filter(isRowScheduledForImport)
+        let validation = TransactionImportValidationResult(rows: rowsToImport)
         isImporting = true
         let result = await viewModel.importValidatedTransactions(
             userId: account.userId,
@@ -545,6 +756,7 @@ struct TransactionImportView: View {
         dismissAfterImportResultAlert = result.isFullSuccess
         if result.imported > 0 {
             onFinished()
+            applyDuplicateCheck()
         }
         showingImportResultAlert = true
     }

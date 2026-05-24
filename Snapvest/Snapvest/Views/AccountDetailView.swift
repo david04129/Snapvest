@@ -18,7 +18,7 @@ struct AccountDetailView: View {
     let account: Account
     @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel: AccountDetailViewModel
-    @StateObject private var accountsViewModel = AccountsViewModel()
+    @EnvironmentObject private var accountsViewModel: AccountsViewModel
     @State private var showingAdjustCashBalance = false
     @State private var showingRepayment = false
     @State private var repaymentSheetItem: DebtRepaymentSheetItem?
@@ -45,6 +45,9 @@ struct AccountDetailView: View {
         let vm = AccountDetailViewModel()
         if let prefilledBalance {
             vm.applyPrefill(prefilledBalance)
+        }
+        if let cachedHoldings = AccountDetailPresentationStore.holdings(for: account.id), !cachedHoldings.isEmpty {
+            vm.applyCachedHoldings(cachedHoldings, account: account)
         }
         vm.displayCurrency = account.currency == .TWD ? .TWD : account.currency
         _viewModel = StateObject(wrappedValue: vm)
@@ -78,7 +81,7 @@ struct AccountDetailView: View {
                 } else if account.accountType == .otherDebt {
                     await loadOtherDebtAccountData()
                 } else {
-                    await viewModel.refresh(accountId: account.id)
+                    await viewModel.refresh(accountId: account.id, account: account)
                 }
                 if let updated = accountsViewModel.accounts.first(where: { $0.id == account.id }) {
                     displayAccountName = updated.name
@@ -175,14 +178,13 @@ struct AccountDetailView: View {
         .sheet(isPresented: $showingTransactionImport) {
             TransactionImportView(account: account, viewModel: importTransactionsViewModel) {
                 Task {
-                    await viewModel.refresh(accountId: account.id)
+                    await viewModel.refresh(accountId: account.id, account: account)
                     await accountsViewModel.loadAccounts(userId: account.userId)
                 }
             }
         }
         .task {
-            await viewModel.loadAccountData(accountId: account.id)
-            await accountsViewModel.loadAccounts(userId: account.userId)
+            await viewModel.loadFromPersisted(accountId: account.id, account: account)
             if account.accountType.supportsTransactionImport {
                 await importTransactionsViewModel.loadTransactions(userId: account.userId)
             }

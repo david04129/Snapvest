@@ -40,24 +40,39 @@ class AccountsViewModel: ObservableObject {
         isLoading = false
     }
 
-    /// 一次算出所有帳戶卡片與類別總額（單次交易／報價／負債查詢）
-    func refreshBalances(userId: String, preloadedLiabilities: [Liability] = []) async {
-        if !balancesLoadedOnce { balancesLoading = true }
-        defer {
-            balancesLoading = false
-            balancesLoadedOnce = true
+    /// Splash／快照更新後：從本機 B 套用帳戶餘額（不重算交易、不拉 Supabase）
+    func applyFromPersisted(
+        userId: String,
+        usdToTwdRate: Decimal? = nil,
+        liabilities: [Liability] = []
+    ) async {
+        let rate: Decimal
+        if let usdToTwdRate {
+            rate = usdToTwdRate
+        } else {
+            rate = (try? await dataService.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate) ?? 0
         }
 
-        let result = await AccountsBalancesCalculator.compute(
+        await loadAccounts(userId: userId)
+
+        let result = await AccountsSnapshotDisplayBuilder.build(
             accounts: accounts,
             userId: userId,
             dataService: dataService,
-            preloadedLiabilities: preloadedLiabilities
+            usdToTwdRate: rate,
+            liabilities: liabilities
         )
         balancesByAccountId = result.byAccountId
         categoryTotalsTWD = result.categoryTotalsTWD
         debtCategoryTotalBalance = result.debtCategoryTotalBalance
         otherDebtCategoryTotalBalance = result.otherDebtCategoryTotalBalance
+        balancesLoading = false
+        balancesLoadedOnce = true
+    }
+
+    /// 一次算出所有帳戶卡片與類別總額（僅下拉刷新 rebuild 後由通知觸發；保留供舊路徑）
+    func refreshBalances(userId: String, preloadedLiabilities: [Liability] = []) async {
+        await applyFromPersisted(userId: userId, liabilities: preloadedLiabilities)
     }
     
     func createAccount(_ account: Account) async {
