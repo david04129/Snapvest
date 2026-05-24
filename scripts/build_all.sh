@@ -3,6 +3,10 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+echo "=== 備份現有 symbols（保留最近 2 版）==="
+python3 archive_symbols.py
+
+echo ""
 echo "=== 建立 symbols 檔案 ==="
 
 python3 build_symbols_us.py

@@ -41,6 +41,7 @@ jobs:
 
           git add \
             scripts/output/ \
+            scripts/output/archive/ \
             Snapvest/Snapvest/Resources/Symbols/ \
             backend/scripts/data/crypto_coingecko_map.json
 

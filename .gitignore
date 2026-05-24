@@ -36,6 +36,8 @@ scripts/output/*
 !scripts/output/symbols_us.json
 !scripts/output/symbols_crypto.json
 !scripts/output/symbols_manifest.json
+!scripts/output/archive/
+!scripts/output/archive/**/*
 
 # Supabase secrets (never commit)
 **/SupabaseConfig.secrets.swift

@@ -10,6 +10,7 @@ import SwiftUI
 struct HomeView: View {
     @Binding var selectedTab: Int
     @EnvironmentObject private var viewModel: PortfolioViewModel
+    @ObservedObject private var homePrivacy = HomePrivacyManager.shared
     @State private var userId: String = "test-user-id"
     @State private var navigationStackResetID = UUID()
     
@@ -32,8 +33,11 @@ struct HomeView: View {
                     // 今日損益卡片
                     TodayPLCardView(viewModel: viewModel)
                     
-                    // 已實現損益卡片
-                    RealizedPLCardView(viewModel: viewModel, userId: userId)
+                    // 已實現損益卡片（隱私模式整塊隱藏）
+                    if !homePrivacy.isAmountHidden {
+                        RealizedPLCardView(viewModel: viewModel, userId: userId)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
                     
                     // 圓餅圖（總資產 / 投資組合 / 所有細項）
                     if viewModel.pieChartInputs != nil {
@@ -47,6 +51,7 @@ struct HomeView: View {
                     }
                 }
                 .padding()
+                .animation(.easeInOut(duration: 0.22), value: homePrivacy.isAmountHidden)
             }
             .background(Color.mainBackground)
             .navigationBarBackButtonHidden(true)
@@ -62,6 +67,7 @@ struct HomeView: View {
                 }
             }
         }
+        .environment(\.homeAmountsHidden, homePrivacy.isAmountHidden)
         .id(navigationStackResetID)
         .resetNavigationWhenTabReappears(selectedTab: $selectedTab, resignedTab: .home) {
             navigationStackResetID = UUID()
@@ -85,6 +91,7 @@ struct HomeView: View {
             Spacer()
             
             HStack(spacing: 8) {
+                HomeAmountPrivacyToggleButton()
                 MarketColorConventionToggleButton()
                 ThemeToggleButton()
             }
@@ -112,6 +119,7 @@ struct HomeView: View {
 // MARK: - 淨資產卡片
 struct NetWorthCardView: View {
     @ObservedObject var viewModel: PortfolioViewModel
+    @Environment(\.homeAmountsHidden) private var hideHomeAmounts
     @State private var isExpanded: Bool = false
     @State private var animatedNetWorthProgress: Double = 0.0
     @State private var animatedDebtProgress: Double = 0.0
@@ -164,7 +172,7 @@ struct NetWorthCardView: View {
                     }
                     
                     // 主要數字
-                    Text(netWorth.formatted(currency: viewModel.viewCurrency))
+                    Text(HomeAmountPrivacyFormat.currency(netWorth, currency: viewModel.viewCurrency, hidden: hideHomeAmounts))
                         .font(.snapAmountHero)
                         .foregroundColor(.primaryText)
                     
@@ -226,7 +234,7 @@ struct NetWorthCardView: View {
                             Text("淨資產")
                                 .font(.caption)
                                 .foregroundColor(.secondaryText)
-                            Text(netWorth.formatted(currency: viewModel.viewCurrency))
+                            Text(HomeAmountPrivacyFormat.currency(netWorth, currency: viewModel.viewCurrency, hidden: hideHomeAmounts))
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
                                 .foregroundColor(.appPrimary)
@@ -241,7 +249,7 @@ struct NetWorthCardView: View {
                             Text("負債")
                                 .font(.caption)
                                 .foregroundColor(.secondaryText)
-                            Text(viewModel.totalLiabilities.formatted(currency: viewModel.viewCurrency))
+                            Text(HomeAmountPrivacyFormat.currency(viewModel.totalLiabilities, currency: viewModel.viewCurrency, hidden: hideHomeAmounts))
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
                                 .foregroundColor(.lossRed)
@@ -258,7 +266,7 @@ struct NetWorthCardView: View {
                             .font(.subheadline)
                             .foregroundColor(.secondaryText)
                         Spacer()
-                        Text(viewModel.totalAssets.formatted(currency: viewModel.viewCurrency))
+                        Text(HomeAmountPrivacyFormat.currency(viewModel.totalAssets, currency: viewModel.viewCurrency, hidden: hideHomeAmounts))
                             .font(.subheadline)
                             .fontWeight(.semibold)
                     }
@@ -271,6 +279,7 @@ struct NetWorthCardView: View {
 // MARK: - 投資資產卡片
 struct InvestmentAssetsCardView: View {
     @ObservedObject var viewModel: PortfolioViewModel
+    @Environment(\.homeAmountsHidden) private var hideHomeAmounts
     @State private var isExpanded: Bool = false
     @State private var animatedCostProgress: Double = 0.0
     @State private var animatedGainLossProgress: Double = 0.0
@@ -311,7 +320,7 @@ struct InvestmentAssetsCardView: View {
                     }
                     
                     // 主要數字
-                    Text(viewModel.totalInvestments.formatted(currency: viewModel.viewCurrency))
+                    Text(HomeAmountPrivacyFormat.currency(viewModel.totalInvestments, currency: viewModel.viewCurrency, hidden: hideHomeAmounts))
                         .font(.snapAmountHero)
                         .foregroundColor(.primaryText)
                     
@@ -379,7 +388,7 @@ struct InvestmentAssetsCardView: View {
                             Text("成本")
                                 .font(.caption)
                                 .foregroundColor(.secondaryText)
-                            Text(cost.formatted(currency: viewModel.viewCurrency))
+                            Text(HomeAmountPrivacyFormat.currency(cost, currency: viewModel.viewCurrency, hidden: hideHomeAmounts))
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
                                 .foregroundColor(.primaryText)
@@ -395,10 +404,17 @@ struct InvestmentAssetsCardView: View {
                             HStack(spacing: 4) {
                                 Image(systemName: viewModel.unrealizedGainLoss >= 0 ? "arrow.up" : "arrow.down")
                                     .font(.caption2)
-                                Text(viewModel.unrealizedGainLoss.formatted(currency: viewModel.viewCurrency))
-                                if cost > 0 {
-                                    Text("(\((viewModel.unrealizedGainLoss / cost * 100).formatted(fractionDigits: 2))%)")
-                                        .font(.caption2)
+                                if hideHomeAmounts {
+                                    if cost > 0 {
+                                        Text("(\((viewModel.unrealizedGainLoss / cost * 100).formatted(fractionDigits: 2))%)")
+                                            .font(.caption2)
+                                    }
+                                } else {
+                                    Text(viewModel.unrealizedGainLoss.formatted(currency: viewModel.viewCurrency))
+                                    if cost > 0 {
+                                        Text("(\((viewModel.unrealizedGainLoss / cost * 100).formatted(fractionDigits: 2))%)")
+                                            .font(.caption2)
+                                    }
                                 }
                             }
                             .font(.subheadline)
@@ -415,7 +431,7 @@ struct InvestmentAssetsCardView: View {
                             .font(.subheadline)
                             .foregroundColor(.secondaryText)
                         Spacer()
-                        Text(viewModel.totalInvestments.formatted(currency: viewModel.viewCurrency))
+                        Text(HomeAmountPrivacyFormat.currency(viewModel.totalInvestments, currency: viewModel.viewCurrency, hidden: hideHomeAmounts))
                             .font(.subheadline)
                             .fontWeight(.semibold)
                     }
@@ -428,6 +444,7 @@ struct InvestmentAssetsCardView: View {
 // MARK: - 現金卡片
 struct CashCardView: View {
     @ObservedObject var viewModel: PortfolioViewModel
+    @Environment(\.homeAmountsHidden) private var hideHomeAmounts
     @State private var isExpanded: Bool = false
     @State private var animatedTWDCashProgress: Double = 0.0
     @State private var animatedUSDCashProgress: Double = 0.0
@@ -468,7 +485,7 @@ struct CashCardView: View {
                     }
                     
                     // 主要數字
-                    Text(viewModel.totalCash.formatted(currency: viewModel.viewCurrency))
+                    Text(HomeAmountPrivacyFormat.currency(viewModel.totalCash, currency: viewModel.viewCurrency, hidden: hideHomeAmounts))
                         .font(.snapAmountHero)
                         .foregroundColor(.primaryText)
                     
@@ -544,7 +561,7 @@ struct CashCardView: View {
                                     .foregroundColor(.secondaryText)
                             }
                             let twdCash = viewModel.cashByCurrency[.TWD] ?? 0
-                            Text(twdCash.formatted(currency: .TWD))
+                            Text(HomeAmountPrivacyFormat.currency(twdCash, currency: .TWD, hidden: hideHomeAmounts))
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
                                 .foregroundColor(.primaryText)
@@ -566,7 +583,7 @@ struct CashCardView: View {
                                     .frame(width: 8, height: 8)
                             }
                             let usdCash = viewModel.cashByCurrency[.USD] ?? 0
-                            Text(usdCash.formatted(currency: .USD))
+                            Text(HomeAmountPrivacyFormat.currency(usdCash, currency: .USD, hidden: hideHomeAmounts))
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
                                 .foregroundColor(.primaryText)
@@ -584,6 +601,7 @@ struct CashCardView: View {
 // MARK: - 今日損益卡片
 struct TodayPLCardView: View {
     @ObservedObject var viewModel: PortfolioViewModel
+    @Environment(\.homeAmountsHidden) private var hideHomeAmounts
     
     // TODO: 實作今日損益計算
     var todayPL: Decimal = 0
@@ -599,9 +617,11 @@ struct TodayPLCardView: View {
                     Spacer()
                 }
                 
-                Text(todayPL.formatted(currency: viewModel.viewCurrency))
-                    .font(.snapAmountHero)
-                    .foregroundColor(Color.marketColor(for: todayPL))
+                if !hideHomeAmounts {
+                    Text(todayPL.formatted(currency: viewModel.viewCurrency))
+                        .font(.snapAmountHero)
+                        .foregroundColor(Color.marketColor(for: todayPL))
+                }
                 
                 Text("↑ \(todayPLPercent.formatted(fractionDigits: 2))%")
                     .font(.caption)

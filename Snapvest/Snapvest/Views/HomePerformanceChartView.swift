@@ -103,6 +103,8 @@ private struct PerformanceTornadoRow: View {
     let mode: PerformanceDisplayMode
     let maxAbsValue: Double
     
+    @Environment(\.homeAmountsHidden) private var hideHomeAmounts
+    
     private var value: Double {
         switch mode {
         case .gainLoss: return row.gainLossDouble
@@ -120,6 +122,9 @@ private struct PerformanceTornadoRow: View {
     private var valueText: String {
         switch mode {
         case .gainLoss:
+            if hideHomeAmounts {
+                return HomeAmountPrivacyFormat.masked
+            }
             let prefix = row.unrealizedGainLossTWD >= 0 ? "+" : ""
             return prefix + row.unrealizedGainLossTWD.formatted(currency: .TWD, fractionDigits: 0)
         case .returnRate:

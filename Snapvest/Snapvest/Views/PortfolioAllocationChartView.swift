@@ -360,6 +360,8 @@ struct PortfolioAllocationLegend: View {
     @Binding var selectedId: String?
     let mode: PieChartDisplayMode
     
+    @Environment(\.homeAmountsHidden) private var hideHomeAmounts
+    
     private var totalDouble: Double {
         max(NSDecimalNumber(decimal: denominator).doubleValue, 0.001)
     }
@@ -407,9 +409,11 @@ struct PortfolioAllocationLegend: View {
                     Text(String(format: "%.2f%%", pct))
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundColor(.primaryText)
-                    Text(item.marketValue.formatted(currency: .TWD, fractionDigits: 0))
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondaryText)
+                    if !hideHomeAmounts {
+                        Text(item.marketValue.formatted(currency: .TWD, fractionDigits: 0))
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondaryText)
+                    }
                 }
             }
             .padding(.horizontal, 12)

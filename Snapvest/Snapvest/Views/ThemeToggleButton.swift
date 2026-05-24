@@ -26,6 +26,29 @@ struct ThemeToggleButton: View {
     }
 }
 
+struct HomeAmountPrivacyToggleButton: View {
+    @ObservedObject private var privacy = HomePrivacyManager.shared
+
+    var body: some View {
+        Button(action: { privacy.toggleAmountHidden() }) {
+            Image(systemName: privacy.isAmountHidden ? "eye.slash" : "eye")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.appPrimary)
+                .frame(width: 32, height: 32)
+                .background(
+                    Circle()
+                        .fill(Color.appPrimary.opacity(0.14))
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(
+            privacy.isAmountHidden
+                ? "目前隱藏金額，點擊顯示金額"
+                : "目前顯示金額，點擊隱藏金額"
+        )
+    }
+}
+
 struct MarketColorConventionToggleButton: View {
     @ObservedObject private var theme = ThemeManager.shared
     

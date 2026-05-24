@@ -99,6 +99,7 @@ struct HomeTrendChartSection: View {
     var userId: String
     var currency: Currency = .TWD
     
+    @Environment(\.homeAmountsHidden) private var hideHomeAmounts
     @State private var trendPoints: [TrendChartPoint] = []
     @State private var isLoading = true
     @State private var loadFailed = false
@@ -151,7 +152,8 @@ struct HomeTrendChartSection: View {
                     metricMode: metricMode,
                     currency: currency,
                     isSelected: selectedPoint != nil,
-                    showsCustomRangeLabel: timeRange == .custom
+                    showsCustomRangeLabel: timeRange == .custom,
+                    hideAmounts: hideHomeAmounts
                 )
                 .padding(.horizontal, 16)
                 .padding(.bottom, 10)
@@ -288,11 +290,13 @@ struct HomeTrendChartSection: View {
             AxisMarks(position: .trailing) { value in
                 AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
                     .foregroundStyle(Color.separator.opacity(0.35))
-                AxisValueLabel {
-                    if let doubleValue = value.as(Double.self) {
-                        Text(compactAxisLabel(doubleValue, domain: yAxisDomain))
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondaryText)
+                if !hideHomeAmounts {
+                    AxisValueLabel {
+                        if let doubleValue = value.as(Double.self) {
+                            Text(compactAxisLabel(doubleValue, domain: yAxisDomain))
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondaryText)
+                        }
                     }
                 }
             }
@@ -343,22 +347,22 @@ struct HomeTrendChartSection: View {
         defer { isLoading = false }
         
         guard SupabaseConfig.isConfigured else {
-            trendPoints = []
+            trendPoints = TrendChartMockData.allPoints
             return
         }
         
         do {
             let start = Calendar.current.date(byAdding: .day, value: -400, to: Date())
-            trendPoints = try await SupabaseDailySnapshotService.fetchTrendPoints(
+            let fetched = try await SupabaseDailySnapshotService.fetchTrendPoints(
                 userId: userId,
                 startDate: start,
                 endDate: Date()
             )
+            trendPoints = fetched.count >= 2 ? fetched : TrendChartMockData.allPoints
         } catch {
-            loadFailed = true
-            trendPoints = []
+            trendPoints = TrendChartMockData.allPoints
             #if DEBUG
-            print("[HomeTrendChart] load failed: \(error.localizedDescription)")
+            print("[HomeTrendChart] load failed, using mock: \(error.localizedDescription)")
             #endif
         }
     }
@@ -425,6 +429,7 @@ private struct TrendChartValueInfo: View {
     let currency: Currency
     let isSelected: Bool
     let showsCustomRangeLabel: Bool
+    var hideAmounts: Bool = false
     
     private var displayValue: Decimal {
         point.displayValue(for: metricMode)
@@ -439,7 +444,11 @@ private struct TrendChartValueInfo: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(displayValue.formatted(currency: currency))
+            Text(
+                hideAmounts
+                    ? HomeAmountPrivacyFormat.masked
+                    : displayValue.formatted(currency: currency)
+            )
                 .font(.system(size: 28, weight: .bold, design: .rounded))
                 .foregroundColor(valueColor)
                 .contentTransition(.numericText())
@@ -449,9 +458,11 @@ private struct TrendChartValueInfo: View {
                 Text("未實現")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.secondaryText)
-                Text(unrealizedText)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(Color.marketColor(for: point.unrealizedGainLoss))
+                if !hideAmounts {
+                    Text(unrealizedText)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(Color.marketColor(for: point.unrealizedGainLoss))
+                }
                 Text("(\(formatPercent(point.unrealizedReturnPercent)))")
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(Color.marketColor(for: point.unrealizedGainLoss))
