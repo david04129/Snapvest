@@ -213,14 +213,31 @@ struct AssetsDisplayControlsBar: View {
 
 struct AccountsCurrencyControlsBar: View {
     @Binding var currencyDisplay: AssetsCurrencyDisplay
+    var showsEditControl: Bool = false
+    var isEditingOrder: Bool = false
+    var isEditDisabled: Bool = false
+    var onEditTapped: (() -> Void)? = nil
     
     private var currencyIcon: String {
         currencyDisplay == .twd ? "dollarsign.circle.fill" : "arrow.triangle.2.circlepath"
     }
     
     var body: some View {
-        HStack {
+        HStack(spacing: 8) {
+            if showsEditControl, let onEditTapped {
+                AssetsFilterChipButton(
+                    title: isEditingOrder ? "完成" : "編輯",
+                    icon: isEditingOrder ? "checkmark" : "line.3.horizontal",
+                    isActive: isEditingOrder
+                ) {
+                    onEditTapped()
+                }
+                .disabled(isEditDisabled)
+                .opacity(isEditDisabled ? 0.45 : 1)
+            }
+            
             Spacer(minLength: 0)
+            
             AssetsFilterChipButton(
                 title: currencyDisplay.label,
                 icon: currencyIcon,

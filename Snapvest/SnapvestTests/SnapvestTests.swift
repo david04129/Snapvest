@@ -40,7 +40,7 @@ struct OtherDebtCalculatorTests {
         let accounts = [cashAccount, otherDebtAccount]
         let transactions = [
             makeLiability(accountId: otherDebtAccountId, amount: 30_000),
-            makeRepayment(from: cashAccountId, to: otherDebtAccountId, amount: 10_000)
+            makeRepayment(on: otherDebtAccountId, amount: 10_000)
         ]
         
         let remaining = OtherDebtCalculator.remainingBalance(
@@ -57,7 +57,7 @@ struct OtherDebtCalculatorTests {
         let accounts = [cashAccount, debtAccount, otherDebtAccount]
         
         let liability = Liability(
-            accountId: cashAccountId,
+            accountId: debtAccount.id,
             name: "房貸",
             principal: 50_000,
             interestRate: 2,
@@ -114,17 +114,16 @@ struct OtherDebtCalculatorTests {
         )
     }
     
-    private func makeRepayment(from sourceId: String, to targetId: String, amount: Decimal) -> Transaction {
+    private func makeRepayment(on debtAccountId: String, amount: Decimal) -> Transaction {
         Transaction(
-            accountId: sourceId,
+            accountId: debtAccountId,
             type: .repayment,
             assetType: .cash,
             symbol: "REPAY",
-            quantity: 1,
-            price: amount,
+            quantity: amount,
+            price: 1,
             currency: .TWD,
-            notes: "還款至 欠朋友",
-            targetAccountId: targetId,
+            notes: "其他債務還款",
             principalAmount: amount
         )
     }

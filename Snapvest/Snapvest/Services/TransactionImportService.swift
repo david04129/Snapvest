@@ -94,7 +94,7 @@ enum TransactionImportError: LocalizedError {
 
 enum TransactionImportService {
     static let supportedTypes: Set<TransactionType> = [
-        .buy, .sell, .deposit, .withdraw, .dividend, .transfer
+        .buy, .sell, .deposit, .withdraw, .dividend
     ]
     
     /// 帳戶詳情 CSV 匯入僅接受股票買賣
@@ -113,19 +113,10 @@ enum TransactionImportService {
     
     static func validate(
         parsedRows: [TransactionImportParsedRow],
-        account: Account,
-        allAccounts: [Account]
+        account: Account
     ) -> TransactionImportValidationResult {
-        var accountIndex: [String: Account] = [:]
-        for item in allAccounts {
-            let key = normalizeName(item.name)
-            if accountIndex[key] == nil {
-                accountIndex[key] = item
-            }
-        }
-        
         let validated = parsedRows.map { row in
-            validateRow(row, account: account, accountIndex: accountIndex)
+            validateRow(row, account: account)
         }
         
         return TransactionImportValidationResult(rows: validated)
@@ -266,8 +257,7 @@ enum TransactionImportService {
     
     private static func validateRow(
         _ row: TransactionImportParsedRow,
-        account: Account,
-        accountIndex: [String: Account]
+        account: Account
     ) -> TransactionImportValidatedRow {
         var errors: [String] = []
         
@@ -295,7 +285,7 @@ enum TransactionImportService {
             errors.append("price 無效")
         }
         
-        if let type, type == .deposit || type == .withdraw || type == .transfer {
+        if let type, type == .deposit || type == .withdraw {
             if row.currency != nil, row.currency != account.currency {
                 errors.append("currency 須與此帳戶 \(account.currency.rawValue) 一致，或留空使用帳戶幣別")
             }
@@ -303,7 +293,6 @@ enum TransactionImportService {
         
         var assetType = row.assetType ?? inferredAssetType(for: account, type: row.type)
         var symbol = normalizedSymbol(row.symbol, assetType: assetType)
-        var targetAccount: Account?
         
         switch row.type {
         case .buy, .sell, .dividend:
@@ -313,24 +302,11 @@ enum TransactionImportService {
             if symbol.isEmpty {
                 errors.append("buy/sell/dividend 需填 symbol")
             }
-        case .deposit, .withdraw, .transfer:
+        case .deposit, .withdraw:
             assetType = .cash
             symbol = "CASH"
         default:
             break
-        }
-        
-        if row.type == .transfer {
-            if let targetName = row.targetAccountName?.trimmingCharacters(in: .whitespaces), !targetName.isEmpty {
-                targetAccount = accountIndex[normalizeName(targetName)]
-                if targetAccount == nil {
-                    errors.append("找不到目標帳戶「\(targetName)」")
-                } else if targetAccount?.id == account.id {
-                    errors.append("轉帳目標不可為目前帳戶")
-                }
-            } else {
-                errors.append("transfer 需填 target_account_name")
-            }
         }
         
         if !errors.isEmpty {
@@ -372,8 +348,7 @@ enum TransactionImportService {
             currency: currency,
             account: account,
             assetType: assetType,
-            symbol: symbol,
-            targetAccount: targetAccount
+            symbol: symbol
         )
         
         let summary = previewSummary(row, account: account, type: type, symbol: symbol)
@@ -407,16 +382,9 @@ enum TransactionImportService {
         currency: Currency,
         account: Account,
         assetType: AssetType,
-        symbol: String,
-        targetAccount: Account?
+        symbol: String
     ) -> Transaction {
         var notes = row.notes
-        
-        if type == .transfer, let targetAccount {
-            let rateText = row.exchangeRate.map { " (匯率: \($0.formatted(fractionDigits: 2)))" } ?? ""
-            let base = "自 \(account.name) 轉帳到 \(targetAccount.name)\(rateText)"
-            notes = notes.map { "\($0) - \(base)" } ?? base
-        }
         
         if type == .buy || type == .sell {
             notes = tradeNotes(
@@ -442,7 +410,6 @@ enum TransactionImportService {
             fee: row.fee,
             notes: notes,
             transactionDate: date,
-            targetAccountId: targetAccount?.id,
             exchangeRate: row.exchangeRate,
             deductFromAccount: type == .buy ? row.deductFromAccount : nil
         )
@@ -469,7 +436,7 @@ enum TransactionImportService {
         case .twdSecurities: return .stockTW
         case .usdAccount: return .stockUS
         case .cryptoWallet: return .crypto
-        case .twdDeposit: return type == .deposit || type == .withdraw || type == .transfer ? .cash : nil
+        case .twdDeposit: return type == .deposit || type == .withdraw ? .cash : nil
         default: return nil
         }
     }

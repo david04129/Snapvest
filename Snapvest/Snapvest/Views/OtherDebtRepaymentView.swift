@@ -14,6 +14,7 @@ struct OtherDebtRepaymentView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var accountsViewModel = AccountsViewModel()
     
+    @State private var deductFromTWDAccount = false
     @State private var selectedSourceAccount: Account?
     @State private var amount: String = ""
     @State private var notes: String = ""
@@ -38,20 +39,19 @@ struct OtherDebtRepaymentView: View {
     
     private var availableSourceAccounts: [Account] {
         accountsViewModel.accounts.filter { account in
-            account.id != debtAccount.id
-                && !account.accountType.isLiabilityAccount
-                && account.currency == debtAccount.currency
-                && (account.accountType == .twdDeposit
-                    || account.accountType == .twdSecurities
-                    || account.accountType == .usdAccount)
+            account.accountType == .twdDeposit || account.accountType == .twdSecurities
         }
     }
     
     private var isValid: Bool {
         guard let value = Decimal(string: amount.trimmingCharacters(in: .whitespaces)),
               value > 0,
-              selectedSourceAccount != nil else { return false }
-        return value <= remainingBalance
+              value <= remainingBalance else { return false }
+        if deductFromTWDAccount {
+            guard selectedSourceAccount != nil else { return false }
+            if value > sourceAccountCashBalance { return false }
+        }
+        return true
     }
     
     var body: some View {
@@ -59,9 +59,9 @@ struct OtherDebtRepaymentView: View {
             ScrollView {
                 VStack(spacing: 0) {
                     headerSection
-                    sourceAccountSection
                     targetAccountSection
                     amountSection
+                    deductFromAccountSection
                     dateSection
                     notesSection
                     errorMessageSection
@@ -138,7 +138,7 @@ struct OtherDebtRepaymentView: View {
                     Text("其他債務還款")
                         .font(.title2)
                         .fontWeight(.bold)
-                    Text("從存款帳戶扣款，直接減少目前欠款。")
+                    Text("記錄還款以減少欠款，可選擇是否從台幣帳戶扣款。")
                         .font(.subheadline)
                         .foregroundColor(.secondaryText)
                 }
@@ -150,46 +150,49 @@ struct OtherDebtRepaymentView: View {
         .padding(.bottom, 8)
     }
     
-    private var sourceAccountSection: some View {
+    private var deductFromAccountSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "arrow.up.right.circle.fill")
-                    .font(.system(size: 16))
-                    .foregroundColor(themeColor)
-                Text("轉出帳戶")
+            Toggle(isOn: $deductFromTWDAccount) {
+                Text("從台幣帳戶扣款")
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.primaryText)
             }
+            .tint(themeColor)
+            .onChange(of: deductFromTWDAccount) { _, enabled in
+                if !enabled { selectedSourceAccount = nil }
+            }
             
-            Button { showingAccountPicker = true } label: {
-                CardView {
-                    HStack {
-                        if let sourceAccount = selectedSourceAccount {
-                            Image(systemName: sourceAccount.accountType.icon)
-                                .font(.system(size: 20))
-                                .foregroundColor(sourceAccount.accountType.color)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(sourceAccount.name)
+            if deductFromTWDAccount {
+                Button { showingAccountPicker = true } label: {
+                    CardView {
+                        HStack {
+                            if let sourceAccount = selectedSourceAccount {
+                                Image(systemName: sourceAccount.accountType.icon)
+                                    .font(.system(size: 20))
+                                    .foregroundColor(sourceAccount.accountType.color)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(sourceAccount.name)
+                                        .font(.headline)
+                                        .foregroundColor(.primaryText)
+                                    Text("現金餘額：\(sourceAccountCashBalance.formatted(currency: sourceAccount.currency))")
+                                        .font(.caption)
+                                        .foregroundColor(.secondaryText)
+                                }
+                            } else {
+                                Text("選擇台幣存款或證券戶")
                                     .font(.headline)
-                                    .foregroundColor(.primaryText)
-                                Text("現金餘額：\(sourceAccountCashBalance.formatted(currency: sourceAccount.currency))")
-                                    .font(.caption)
                                     .foregroundColor(.secondaryText)
                             }
-                        } else {
-                            Text("選擇一個帳戶")
-                                .font(.headline)
+                            Spacer()
+                            Image(systemName: "chevron.down")
+                                .font(.caption)
                                 .foregroundColor(.secondaryText)
                         }
-                        Spacer()
-                        Image(systemName: "chevron.down")
-                            .font(.caption)
-                            .foregroundColor(.secondaryText)
                     }
                 }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
         .padding(.horizontal)
         .padding(.bottom, 16)
@@ -234,7 +237,7 @@ struct OtherDebtRepaymentView: View {
                 Image(systemName: "dollarsign.circle.fill")
                     .font(.system(size: 16))
                     .foregroundColor(themeColor)
-                Text("還款金額 (\(debtAccount.currency.rawValue))")
+                Text("還款金額 (TWD)")
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.primaryText)
@@ -350,13 +353,6 @@ struct OtherDebtRepaymentView: View {
             cachedTransactions = []
         }
         
-        if selectedSourceAccount == nil {
-            selectedSourceAccount = availableSourceAccounts.first
-        }
-        if let source = selectedSourceAccount {
-            loadSourceAccountCashBalance(accountId: source.id)
-        }
-        
         let calendar = Calendar.current
         let now = Date()
         let year = calendar.component(.year, from: now)
@@ -367,16 +363,7 @@ struct OtherDebtRepaymentView: View {
     private func loadSourceAccountCashBalance(accountId: String) {
         Task {
             do {
-                async let localTransactions = dataService.fetchTransactions(accountId: accountId)
-                async let allTransactions = dataService.fetchAllTransactions(userId: debtAccount.userId)
-                var transactions = try await localTransactions
-                let allTx = try await allTransactions
-                let incoming = allTx.filter {
-                    ($0.type == .transfer || $0.type == .repayment)
-                        && $0.targetAccountId == accountId
-                        && $0.accountId != accountId
-                }
-                transactions.append(contentsOf: incoming)
+                let transactions = try await dataService.fetchTransactions(accountId: accountId)
                 let accountList = accountsViewModel.accounts
                 await MainActor.run {
                     sourceAccountCashBalance = CashCalculator.calculateCash(
@@ -399,9 +386,15 @@ struct OtherDebtRepaymentView: View {
             errorMessage = "請輸入有效的還款金額"
             return
         }
-        guard let source = selectedSourceAccount else {
-            errorMessage = "請選擇扣款帳戶"
-            return
+        if deductFromTWDAccount {
+            guard selectedSourceAccount != nil else {
+                errorMessage = "請選擇扣款帳戶"
+                return
+            }
+            if amountValue > sourceAccountCashBalance {
+                errorMessage = "扣款金額不能超過帳戶現金餘額"
+                return
+            }
         }
         
         isSaving = true
@@ -421,28 +414,46 @@ struct OtherDebtRepaymentView: View {
             }
             
             let noteText = notes.trimmingCharacters(in: .whitespacesAndNewlines)
-            var transactionNotes = "還款至 \(debtAccount.name)"
+            var transactionNotes = "其他債務還款"
             if !noteText.isEmpty {
                 transactionNotes += " - \(noteText)"
             }
             
-            let transaction = Transaction(
-                accountId: source.id,
+            let repaymentTransaction = Transaction(
+                accountId: debtAccount.id,
                 type: .repayment,
                 assetType: .cash,
                 symbol: "REPAY",
-                quantity: 1,
-                price: amountValue,
-                currency: debtAccount.currency,
+                quantity: amountValue,
+                price: 1,
+                currency: .TWD,
                 notes: transactionNotes,
                 transactionDate: transactionDate,
-                targetAccountId: debtAccount.id,
                 beforeRepaymentBalance: beforeBalance,
                 principalAmount: amountValue,
                 interestAmount: 0
             )
             
-            try await dataService.createTransaction(transaction)
+            try await dataService.createTransaction(repaymentTransaction)
+            
+            if deductFromTWDAccount, let source = selectedSourceAccount {
+                var withdrawNotes = "還款扣款：\(debtAccount.name)"
+                if !noteText.isEmpty {
+                    withdrawNotes += " - \(noteText)"
+                }
+                let withdrawTransaction = Transaction(
+                    accountId: source.id,
+                    type: .withdraw,
+                    assetType: .cash,
+                    symbol: "CASH",
+                    quantity: amountValue,
+                    price: 1,
+                    currency: .TWD,
+                    notes: withdrawNotes,
+                    transactionDate: transactionDate
+                )
+                try await dataService.createTransaction(withdrawTransaction)
+            }
             
             await SnapshotRefreshCoordinator.rebuildAndNotify(
                 userId: debtAccount.userId,

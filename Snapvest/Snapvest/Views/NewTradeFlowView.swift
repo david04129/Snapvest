@@ -19,12 +19,40 @@ extension TradeMarket {
     }
 }
 
+/// 從帳戶詳情進入時：限定市場並鎖定帳戶
+struct TradeFlowContext: Equatable {
+    let sourceAccountId: String
+    let allowedMarkets: [TradeMarket]
+    
+    static func from(account: Account) -> TradeFlowContext? {
+        guard account.accountType.supportsStockTrading else { return nil }
+        return TradeFlowContext(
+            sourceAccountId: account.id,
+            allowedMarkets: account.accountType.tradeMarketChoices
+        )
+    }
+}
+
+extension AccountType {
+    /// 此帳戶類型可選的交易市場（單一市場時略過市場選擇步驟）
+    var tradeMarketChoices: [TradeMarket] {
+        switch self {
+        case .twdSecurities: return [.stockTW, .stockUS]
+        case .usdAccount: return [.stockUS]
+        case .cryptoWallet: return [.crypto]
+        default: return []
+        }
+    }
+}
+
 struct BuyTradePrefill: Equatable {
     let symbol: String
     let symbolName: String?
     let preferredAccountId: String?
     /// 從個股詳情進入時為 true：不可改選其他代號
     var lockSymbol: Bool = false
+    /// 從帳戶詳情進入時為 true：不可改選其他帳戶
+    var lockAccount: Bool = false
 }
 
 struct SellTradePrefill: Equatable {
@@ -32,6 +60,8 @@ struct SellTradePrefill: Equatable {
     let preferredAccountId: String?
     /// 從個股詳情進入時為 true：僅能賣出此代號
     var lockSymbol: Bool = false
+    /// 從帳戶詳情進入時為 true：不可改選其他帳戶
+    var lockAccount: Bool = false
 }
 
 enum TradeMarket: String, CaseIterable, Identifiable {
@@ -108,10 +138,55 @@ struct NewTradeFlowView: View {
     @State private var selectedMarket: TradeMarket?
     @State private var selectedAction: TradeAction = .buy
     
+    let context: TradeFlowContext?
     let onComplete: ((TradeMarket, TradeAction) -> Void)?
     
-    init(onComplete: ((TradeMarket, TradeAction) -> Void)? = nil) {
+    init(context: TradeFlowContext? = nil, onComplete: ((TradeMarket, TradeAction) -> Void)? = nil) {
+        self.context = context
         self.onComplete = onComplete
+        if let context, context.allowedMarkets.count == 1 {
+            _selectedMarket = State(initialValue: context.allowedMarkets.first)
+        } else {
+            _selectedMarket = State(initialValue: nil)
+        }
+    }
+    
+    init(sourceAccount: Account, onComplete: ((TradeMarket, TradeAction) -> Void)? = nil) {
+        self.init(context: TradeFlowContext.from(account: sourceAccount), onComplete: onComplete)
+    }
+    
+    private var marketsForSelection: [TradeMarket] {
+        context?.allowedMarkets ?? Array(TradeMarket.allCases)
+    }
+    
+    private var showsMarketSelectionStep: Bool {
+        selectedMarket == nil && marketsForSelection.count > 1
+    }
+    
+    private var canNavigateBackToMarkets: Bool {
+        selectedMarket != nil && marketsForSelection.count > 1
+    }
+    
+    private var marketSelectionHint: String {
+        if context != nil, marketsForSelection == [.stockTW, .stockUS] {
+            return "請選擇要交易的市場（台股或美股）。"
+        }
+        return "請先選擇交易市場。"
+    }
+    
+    private var lockedBuyPrefill: BuyTradePrefill? {
+        guard let accountId = context?.sourceAccountId else { return nil }
+        return BuyTradePrefill(
+            symbol: "",
+            symbolName: nil,
+            preferredAccountId: accountId,
+            lockAccount: true
+        )
+    }
+    
+    private var lockedSellPrefill: SellTradePrefill? {
+        guard let accountId = context?.sourceAccountId else { return nil }
+        return SellTradePrefill(symbol: "", preferredAccountId: accountId, lockAccount: true)
     }
     
     var body: some View {
@@ -119,36 +194,25 @@ struct NewTradeFlowView: View {
             Group {
                 if let selectedMarket = selectedMarket {
                     tradeActionStep(for: selectedMarket)
-                } else {
+                } else if showsMarketSelectionStep {
                     marketSelectionStep
+                } else {
+                    ProgressView()
                 }
             }
             .navigationTitle("新增交易")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    if selectedMarket != nil {
-                        Button {
+                    if canNavigateBackToMarkets {
+                        SnapToolbarIconButton(icon: .back) {
                             withAnimation(ChartMotion.switchSpring) {
                                 selectedMarket = nil
                                 selectedAction = .buy
                             }
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "chevron.left")
-                                    .font(.system(size: 16, weight: .semibold))
-                                Text("市場")
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
-                            }
-                            .foregroundColor(.appPrimary)
                         }
                     } else {
-                        Button(action: { dismiss() }) {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(.appPrimary)
-                        }
+                        SnapToolbarIconButton(icon: .close, action: { dismiss() })
                     }
                 }
             }
@@ -164,7 +228,7 @@ struct NewTradeFlowView: View {
                     .fontWeight(.bold)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 
-                Text("請先選擇交易市場。")
+                Text(marketSelectionHint)
                     .font(.subheadline)
                     .foregroundColor(.secondaryText)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -175,7 +239,7 @@ struct NewTradeFlowView: View {
             
             ScrollView {
                 VStack(spacing: 12) {
-                    ForEach(TradeMarket.allCases) { market in
+                    ForEach(marketsForSelection) { market in
                         TradeMarketSelectionCard(market: market) {
                             withAnimation {
                                 selectedMarket = market
@@ -223,9 +287,23 @@ struct NewTradeFlowView: View {
             .padding(.bottom, 8)
             
             if selectedAction == .sell {
-                SellTradeFormView(market: market, embedInTradeFlow: true)
+                SellTradeFormView(
+                    market: market,
+                    prefill: lockedSellPrefill,
+                    embedInTradeFlow: true,
+                    onSubmit: { _ in
+                        onComplete?(market, .sell)
+                    }
+                )
             } else {
-                BuyTradeFormView(market: market, embedInTradeFlow: true)
+                BuyTradeFormView(
+                    market: market,
+                    prefill: lockedBuyPrefill,
+                    embedInTradeFlow: true,
+                    onSubmit: {
+                        onComplete?(market, .buy)
+                    }
+                )
             }
         }
         .background(Color.mainBackground)

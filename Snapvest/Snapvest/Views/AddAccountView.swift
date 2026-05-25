@@ -22,7 +22,6 @@ struct AddAccountView: View {
     @State private var paidPeriods: String = "0"  // 已還期數
     @State private var interestRate: String = ""
     @State private var monthlyPayment: Decimal = 0
-    @State private var selectedRepaymentAccount: Account?
     @State private var repaymentDay: String = "1"
     @State private var startDate: Date = Date()  // 開始日期
     @State private var otherDebtAmount: String = ""
@@ -43,7 +42,6 @@ struct AddAccountView: View {
         startDate = Date()
         otherDebtAmount = ""
         otherDebtNotes = ""
-        selectedRepaymentAccount = nil
         duplicateNameError = nil
     }
     
@@ -56,16 +54,8 @@ struct AddAccountView: View {
     
     // 動態導航標題
     private var navigationTitle: String {
-        if showingAccountDetails {
-            if let accountType = selectedAccountType {
-                if accountType == .debt {
-                    return "新增債務帳戶"
-                } else if accountType == .otherDebt {
-                    return "新增其他債務"
-                } else {
-                    return "新增\(accountType.displayName)"
-                }
-            }
+        if showingAccountDetails, let accountType = selectedAccountType {
+            return "新增\(accountType.displayName)"
         }
         return "新增帳戶"
     }
@@ -92,25 +82,33 @@ struct AddAccountView: View {
                         .padding(.top)
                         .padding(.bottom, 8)
                         
-                        // 帳戶類型選擇
+                        // 帳戶類型選擇（存款／投資／債務）
                         ScrollView {
-                        VStack(spacing: 12) {
-                            ForEach(AccountType.allCases, id: \.self) { accountType in
-                                AccountTypeSelectionCard(
-                                    accountType: accountType,
-                                    isSelected: selectedAccountType == accountType
-                                ) {
-                                    // 選擇後直接跳轉到詳情輸入頁面
-                                    resetForm() // 重置表單
-                                    selectedAccountType = accountType
-                                    withAnimation {
-                                        showingAccountDetails = true
+                            VStack(alignment: .leading, spacing: 20) {
+                                ForEach(AccountCategory.allCases) { category in
+                                    VStack(alignment: .leading, spacing: 10) {
+                                        Text(category.rawValue)
+                                            .font(.subheadline)
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(.secondaryText)
+                                        
+                                        ForEach(category.accountTypes, id: \.self) { accountType in
+                                            AccountTypeSelectionCard(
+                                                accountType: accountType,
+                                                isSelected: selectedAccountType == accountType
+                                            ) {
+                                                resetForm()
+                                                selectedAccountType = accountType
+                                                withAnimation {
+                                                    showingAccountDetails = true
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
+                            .padding()
                         }
-                        .padding()
-                    }
                     }
                 } else {
                     // 第二步：輸入帳戶詳情
@@ -122,7 +120,6 @@ struct AddAccountView: View {
                             paidPeriods: $paidPeriods,
                             interestRate: $interestRate,
                             monthlyPayment: $monthlyPayment,
-                            selectedRepaymentAccount: $selectedRepaymentAccount,
                             repaymentDay: $repaymentDay,
                             startDate: $startDate,
                             accountsViewModel: viewModel,
@@ -178,7 +175,7 @@ struct AddAccountView: View {
             .navigationBarBackButtonHidden(true)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: {
+                    SnapToolbarIconButton(icon: .back) {
                         if showingAccountDetails {
                             resetForm()
                             withAnimation {
@@ -187,10 +184,6 @@ struct AddAccountView: View {
                         } else {
                             dismiss()
                         }
-                    }) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.appPrimary)
                     }
                 }
             }
@@ -309,11 +302,7 @@ struct AddAccountView: View {
         guard let accountType = selectedAccountType,
               accountType == .debt,
               let principalValue = Decimal(string: principal),
-              let rate = Decimal(string: interestRate),
-              let repaymentAccountId = selectedRepaymentAccount?.id ?? viewModel.accounts.first(where: { account in
-                  account.currency == .TWD && 
-                  (account.accountType == .twdDeposit || account.accountType == .twdSecurities)
-              })?.id else { return }
+              let rate = Decimal(string: interestRate) else { return }
         
         // 檢查名稱是否為空
         guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
@@ -371,7 +360,7 @@ struct AddAccountView: View {
             }
             
             let liability = Liability(
-                accountId: repaymentAccountId,
+                accountId: account.id,
                 name: name,
                 principal: principalValue,
                 interestRate: rate,
@@ -492,7 +481,6 @@ struct DebtAccountDetailsFormView: View {
     @Binding var paidPeriods: String  // 已還期數
     @Binding var interestRate: String
     @Binding var monthlyPayment: Decimal
-    @Binding var selectedRepaymentAccount: Account?
     @Binding var repaymentDay: String
     @Binding var startDate: Date  // 開始日期
     @ObservedObject var accountsViewModel: AccountsViewModel
@@ -622,17 +610,7 @@ struct DebtAccountDetailsFormView: View {
         return result.decimalValue
     }
     
-    @State private var showingAccountPicker = false
-    
     private let accountType = AccountType.debt
-    
-    // 可選擇的還款帳戶（台幣現金帳戶和台幣證券戶）
-    private var availableRepaymentAccounts: [Account] {
-        accountsViewModel.accounts.filter { account in
-            account.currency == .TWD && 
-            (account.accountType == .twdDeposit || account.accountType == .twdSecurities)
-        }
-    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -1006,57 +984,6 @@ struct DebtAccountDetailsFormView: View {
                             .padding(.horizontal, 20)
                         }
                         
-                        // 還款帳戶
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack(spacing: 8) {
-                                Image(systemName: "building.columns.fill")
-                                    .font(.system(size: 16))
-                                    .foregroundColor(accountType.color)
-                                Text("還款帳戶")
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.primaryText)
-                            }
-                            
-                            Button(action: {
-                                showingAccountPicker = true
-                            }) {
-                                CardView {
-                                    HStack(spacing: 12) {
-                                        if let account = selectedRepaymentAccount {
-                                            Image(systemName: account.accountType.icon)
-                                                .font(.system(size: 20))
-                                                .foregroundColor(account.accountType.color)
-                                                .frame(width: 24, height: 24)
-                                            
-                                            VStack(alignment: .leading, spacing: 4) {
-                                                Text(account.name)
-                                                    .font(.headline)
-                                                    .foregroundColor(.primaryText)
-                                                Text(account.accountType.displayName)
-                                                    .font(.caption)
-                                                    .foregroundColor(.secondaryText)
-                                            }
-                                        } else {
-                                            Text("選擇一個台幣帳戶")
-                                                .foregroundColor(.secondaryText)
-                                        }
-                                        
-                                        Spacer()
-                                        
-                                        Image(systemName: "chevron.down")
-                                            .font(.system(size: 14))
-                                            .foregroundColor(.secondaryText)
-                                    }
-                                }
-                            }
-                            .buttonStyle(PlainButtonStyle())
-                        }
-                        .padding(20)
-                        
-                        Divider()
-                            .padding(.horizontal, 20)
-                        
                         // 每月還款日
                         VStack(alignment: .leading, spacing: 12) {
                             HStack(spacing: 8) {
@@ -1169,12 +1096,6 @@ struct DebtAccountDetailsFormView: View {
             .padding(.horizontal)
             .padding(.bottom)
         }
-        .sheet(isPresented: $showingAccountPicker) {
-            AccountPickerSheet(
-                accounts: availableRepaymentAccounts,
-                selectedAccount: $selectedRepaymentAccount
-            )
-        }
         .sheet(isPresented: $showingDatePicker) {
             NavigationStack {
                 VStack {
@@ -1199,14 +1120,6 @@ struct DebtAccountDetailsFormView: View {
                 }
             }
             .presentationDetents([.medium])
-        }
-        .task {
-            await accountsViewModel.loadAccounts(userId: AppUser.id)
-            if selectedRepaymentAccount == nil {
-                // 優先選擇台幣現金帳戶，如果沒有則選擇台幣證券戶
-                selectedRepaymentAccount = availableRepaymentAccounts.first { $0.accountType == .twdDeposit } 
-                    ?? availableRepaymentAccounts.first
-            }
         }
     }
     
@@ -1273,11 +1186,6 @@ struct DebtAccountDetailsFormView: View {
         guard !trimmedDay.isEmpty,
               let day = Int(trimmedDay),
               day >= 1 && day <= 31 else {
-            return false
-        }
-        
-        // 檢查還款帳戶
-        guard selectedRepaymentAccount != nil else {
             return false
         }
         

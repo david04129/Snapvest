@@ -19,12 +19,16 @@ enum KeyboardDismiss {
     }
 }
 
-// MARK: - 全域點擊（不阻擋按鈕／輸入框）
+// MARK: - 全域點擊（單一手勢、略過輸入框與按鈕）
+
+private enum SnapKeyboardDismissInstallerState {
+    static weak var activeCoordinator: SnapKeyboardDismissInstaller.Coordinator?
+}
 
 private struct SnapKeyboardDismissInstaller: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator() }
 
-    final class Coordinator: NSObject {
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
         private weak var tapGesture: UITapGestureRecognizer?
         private weak var installedWindow: UIWindow?
 
@@ -33,10 +37,19 @@ private struct SnapKeyboardDismissInstaller: UIViewRepresentable {
         }
 
         func install(on window: UIWindow) {
-            guard installedWindow !== window else { return }
+            if SnapKeyboardDismissInstallerState.activeCoordinator === self,
+               installedWindow === window,
+               tapGesture != nil {
+                return
+            }
+            SnapKeyboardDismissInstallerState.activeCoordinator?.uninstall()
+            SnapKeyboardDismissInstallerState.activeCoordinator = self
+
             uninstall()
+
             let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap))
             tap.cancelsTouchesInView = false
+            tap.delegate = self
             window.addGestureRecognizer(tap)
             tapGesture = tap
             installedWindow = window
@@ -46,12 +59,38 @@ private struct SnapKeyboardDismissInstaller: UIViewRepresentable {
             if let tap = tapGesture, let window = installedWindow {
                 window.removeGestureRecognizer(tap)
             }
+            if SnapKeyboardDismissInstallerState.activeCoordinator === self {
+                SnapKeyboardDismissInstallerState.activeCoordinator = nil
+            }
             tapGesture = nil
             installedWindow = nil
         }
 
         deinit {
             uninstall()
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            guard let window = installedWindow else { return true }
+            let location = touch.location(in: window)
+            guard let hitView = window.hitTest(location, with: nil) else { return true }
+            return !Self.isInteractiveControl(hitView)
+        }
+
+        private static func isInteractiveControl(_ view: UIView) -> Bool {
+            var current: UIView? = view
+            while let candidate = current {
+                if candidate is UITextField || candidate is UITextView {
+                    return true
+                }
+                if let control = candidate as? UIControl,
+                   control.isUserInteractionEnabled,
+                   !(control is UISlider) {
+                    return true
+                }
+                current = candidate.superview
+            }
+            return false
         }
     }
 
@@ -75,15 +114,14 @@ private struct SnapKeyboardDismissInstaller: UIViewRepresentable {
 }
 
 extension View {
-    /// 點擊畫面任意處收起鍵盤（含 Sheet 內容）
+    /// 點擊畫面空白處收起鍵盤（略過 TextField、Button、Picker 等）
     func snapDismissKeyboardOnTap() -> some View {
         background(SnapKeyboardDismissInstaller())
     }
 
-    /// Sheet 表單：點空白收起鍵盤 + 數字鍵盤「完成」
+    /// Sheet 表單：數字鍵盤「完成」；空白處靠 ScrollView 的 scrollDismissesKeyboard
     func snapFormSheetChrome() -> some View {
-        snapDismissKeyboardOnTap()
-            .snapKeyboardDoneToolbar()
+        snapKeyboardDoneToolbar()
     }
 
     /// 數字小鍵盤上方「完成」

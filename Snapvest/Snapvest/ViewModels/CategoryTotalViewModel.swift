@@ -30,29 +30,10 @@ class CategoryTotalViewModel: ObservableObject {
         
         let usdToTwdRate = (try? await dataService.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate) ?? 0
         
-        // 獲取所有交易，以便正確計算轉帳/還款交易的影響
-        let userId = accounts.first?.userId ?? AppUser.id
-        var allTransactions: [Transaction] = []
-        do {
-            allTransactions = try await dataService.fetchAllTransactions(userId: userId)
-        } catch {
-            // 如果獲取所有交易失敗，繼續使用單個帳戶的交易
-        }
-        
         for account in accounts {
             do {
                 // 獲取該帳戶的交易記錄
-                var transactions = try await dataService.fetchTransactions(accountId: account.id)
-                
-                // 如果是轉帳/還款，需要同時獲取以該帳戶為目標帳戶的交易
-                if !allTransactions.isEmpty {
-                    let incomingTransferTransactions = allTransactions.filter { transaction in
-                        (transaction.type == .transfer || transaction.type == .repayment) &&
-                        transaction.targetAccountId == account.id &&
-                        transaction.accountId != account.id
-                    }
-                    transactions.append(contentsOf: incomingTransferTransactions)
-                }
+                let transactions = try await dataService.fetchTransactions(accountId: account.id)
                 
                 // 計算現金餘額（傳入所有相關交易和帳戶信息）
                 let cashBalance = CashCalculator.calculateCash(accountId: account.id, transactions: transactions, accounts: accounts)

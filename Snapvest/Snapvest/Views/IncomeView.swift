@@ -115,6 +115,7 @@ struct IncomeView: View {
                     TextField("0", text: $amount)
                         .keyboardType(.decimalPad)
                         .font(.headline)
+                        .snapFormFieldTapTarget()
                         .onChange(of: amount) { oldValue, newValue in
                             handleAmountChange(oldValue: oldValue, newValue: newValue)
                         }
@@ -179,6 +180,7 @@ struct IncomeView: View {
                     
                     TextField("例如:薪資收入", text: $notes, axis: .vertical)
                         .lineLimit(3...6)
+                        .snapFormFieldTapTarget(alignment: .topLeading)
                 }
             }
         }

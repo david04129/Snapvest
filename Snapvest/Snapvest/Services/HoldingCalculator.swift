@@ -27,7 +27,8 @@ class HoldingCalculator {
         let sortedTransactions = transactions.sorted { $0.transactionDate < $1.transactionDate }
         
         for transaction in sortedTransactions {
-            let key = "\(transaction.assetType.rawValue)_\(transaction.symbol)"
+            let symbol = normalizedSymbol(assetType: transaction.assetType, symbol: transaction.symbol)
+            let key = "\(transaction.assetType.rawValue)_\(symbol)"
             
             switch transaction.type {
             case .buy:
@@ -50,7 +51,7 @@ class HoldingCalculator {
                     lots: holdingLots[key] ?? [],
                     accountId: transaction.accountId,
                     assetType: transaction.assetType,
-                    symbol: transaction.symbol,
+                    symbol: symbol,
                     currency: transaction.currency,
                     holdings: &holdings
                 )
@@ -86,14 +87,14 @@ class HoldingCalculator {
                             lots: lots,
                             accountId: transaction.accountId,
                             assetType: transaction.assetType,
-                            symbol: transaction.symbol,
+                            symbol: symbol,
                             currency: transaction.currency,
                             holdings: &holdings
                         )
                     }
                 }
                 
-            case .deposit, .withdraw, .dividend, .fee, .liability, .transfer, .repayment:
+            case .deposit, .withdraw, .dividend, .fee, .liability, .repayment:
                 // 這些不影響持股，只影響現金
                 break
             }
@@ -126,18 +127,35 @@ class HoldingCalculator {
         // 計算加權平均成本（用於顯示）
         let averageCost = totalCost / totalQuantity
         
-        // 台股名稱（symbols_tw.json）
-        let name = (assetType == .stockTW) ? SymbolListService.twDisplayName(for: symbol) : nil
+        let resolvedSymbol = Self.normalizedSymbol(assetType: assetType, symbol: symbol)
+        let name: String?
+        switch assetType {
+        case .stockTW:
+            name = SymbolListService.twDisplayName(for: resolvedSymbol)
+        case .crypto:
+            name = nil
+        default:
+            name = nil
+        }
         
         holdings[key] = Holding(
             accountId: accountId,
             assetType: assetType,
-            symbol: symbol,
+            symbol: resolvedSymbol,
             name: name,
             quantity: totalQuantity,
             averageCost: averageCost,
             currency: currency
         )
+    }
+
+    private static func normalizedSymbol(assetType: AssetType, symbol: String) -> String {
+        switch assetType {
+        case .crypto:
+            return SymbolListService.normalizedCryptoSymbol(symbol)
+        default:
+            return symbol
+        }
     }
     
     /// 計算已實現損益（使用 FIFO）
@@ -148,7 +166,8 @@ class HoldingCalculator {
         let sortedTransactions = transactions.sorted { $0.transactionDate < $1.transactionDate }
         
         for transaction in sortedTransactions {
-            let key = "\(transaction.assetType.rawValue)_\(transaction.symbol)"
+            let symbol = normalizedSymbol(assetType: transaction.assetType, symbol: transaction.symbol)
+            let key = "\(transaction.assetType.rawValue)_\(symbol)"
             
             switch transaction.type {
             case .buy:
@@ -214,7 +233,8 @@ class HoldingCalculator {
         let sortedTransactions = transactions.sorted { $0.transactionDate < $1.transactionDate }
         
         for transaction in sortedTransactions {
-            let key = "\(transaction.assetType.rawValue)_\(transaction.symbol)"
+            let symbol = normalizedSymbol(assetType: transaction.assetType, symbol: transaction.symbol)
+            let key = "\(transaction.assetType.rawValue)_\(symbol)"
             
             switch transaction.type {
             case .buy:

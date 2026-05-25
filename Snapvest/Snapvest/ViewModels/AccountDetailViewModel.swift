@@ -131,19 +131,8 @@ class AccountDetailViewModel: ObservableObject {
         defer { isLoading = false }
         
         do {
-            var transactions = try await dataService.fetchTransactions(accountId: accountId)
+            let transactions = try await dataService.fetchTransactions(accountId: accountId)
             let allAccounts = try await dataService.fetchAccounts(userId: AppUser.id)
-            
-            if let account = allAccounts.first(where: { $0.id == accountId }) {
-                if let allTransactions = try? await dataService.fetchAllTransactions(userId: account.userId) {
-                    let incoming = allTransactions.filter { transaction in
-                        (transaction.type == .transfer || transaction.type == .repayment)
-                            && transaction.targetAccountId == accountId
-                            && transaction.accountId != accountId
-                    }
-                    transactions.append(contentsOf: incoming)
-                }
-            }
             
             guard let account = allAccounts.first(where: { $0.id == accountId }) else { return }
             

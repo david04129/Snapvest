@@ -127,12 +127,27 @@ struct HoldingDetailView: View {
     
     // 顯示名稱
     var displayName: String {
-        if aggregatedHolding.assetType == .stockTW,
-           let name = aggregatedHolding.name,
-           !name.isEmpty {
-            return name
+        switch aggregatedHolding.assetType {
+        case .stockTW:
+            if let name = aggregatedHolding.name, !name.isEmpty {
+                return name
+            }
+            return aggregatedHolding.symbol
+        case .stockUS:
+            return aggregatedHolding.symbol.uppercased()
+        case .crypto:
+            return SymbolListService.normalizedCryptoSymbol(aggregatedHolding.symbol)
+        case .cash:
+            return aggregatedHolding.symbol
         }
-        return aggregatedHolding.symbol
+    }
+
+    private var showsSymbolSubtitle: Bool {
+        SymbolListService.shouldShowSymbolUnderTitle(
+            assetType: aggregatedHolding.assetType,
+            title: displayName,
+            symbol: aggregatedHolding.symbol
+        )
     }
     
     // 當前價格（原幣）
@@ -293,6 +308,7 @@ struct HoldingDetailView: View {
         }
         .background(Color.mainBackground)
         .navigationBarBackButtonHidden(true)
+        .enableNavigationSwipeBack()
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
                 SnapToolbarIconButton(icon: .back, action: { dismiss() })
@@ -322,9 +338,11 @@ struct HoldingDetailView: View {
                         .font(.title2)
                         .fontWeight(.bold)
                         .foregroundColor(.primaryText)
-                    Text(aggregatedHolding.symbol)
-                        .font(.subheadline)
-                        .foregroundColor(.secondaryText)
+                    if showsSymbolSubtitle {
+                        Text(aggregatedHolding.symbol)
+                            .font(.subheadline)
+                            .foregroundColor(.secondaryText)
+                    }
                 }
                 Spacer()
                 Text(aggregatedHolding.assetType.displayName)
@@ -363,7 +381,7 @@ struct HoldingDetailView: View {
                 Text("持有數量")
                     .font(.caption)
                     .foregroundColor(.secondaryText)
-                Text(aggregatedHolding.totalQuantity.formatted(fractionDigits: 4))
+                Text(heroQuantityDisplayText)
                     .font(.system(size: 22, weight: .bold))
                     .foregroundColor(.primaryText)
                     .lineLimit(1)
@@ -438,11 +456,33 @@ struct HoldingDetailView: View {
     private var fifoLotsSection: some View {
         HoldingFIFOLotsTableSection(
             fifoLotsByAccount: aggregatedHolding.fifoLotsByAccount,
+            assetType: aggregatedHolding.assetType,
             currency: aggregatedHolding.currency,
             currentPrice: currentPrice,
             amountDisplay: metricAmountDisplay,
             usdToTwdRate: usdToTwdRate
         )
+    }
+    
+    private var heroQuantityDisplayText: String {
+        formatShareQuantity(
+            aggregatedHolding.totalQuantity,
+            assetType: aggregatedHolding.assetType,
+            includeShareSuffix: true
+        )
+    }
+    
+    private func formatShareQuantity(
+        _ quantity: Decimal,
+        assetType: AssetType,
+        includeShareSuffix: Bool
+    ) -> String {
+        let maxFractionDigits = assetType == .crypto ? 8 : 4
+        let formatted = quantity.formattedQuantityInput(maxFractionDigits: maxFractionDigits)
+        if includeShareSuffix, assetType != .crypto {
+            return "\(formatted)股"
+        }
+        return formatted
     }
     
     // MARK: - 底部操作按鈕
@@ -551,6 +591,7 @@ private struct FIFOLotTableRow: Identifiable {
 
 struct HoldingFIFOLotsTableSection: View {
     let fifoLotsByAccount: [FIFOLotsByAccountSnapshot]
+    let assetType: AssetType
     let currency: Currency
     let currentPrice: Decimal?
     var amountDisplay: HoldingDetailView.MetricAmountDisplay = .original
@@ -601,6 +642,7 @@ struct HoldingFIFOLotsTableSection: View {
                     ForEach(Array(tableRows.enumerated()), id: \.element.id) { index, row in
                         FIFOLotTableDataRow(
                             row: row,
+                            assetType: assetType,
                             currency: currency,
                             currentPrice: currentPrice,
                             amountDisplay: amountDisplay,
@@ -656,6 +698,7 @@ struct HoldingFIFOLotsTableSection: View {
 
 private struct FIFOLotTableDataRow: View {
     let row: FIFOLotTableRow
+    let assetType: AssetType
     let currency: Currency
     let currentPrice: Decimal?
     let amountDisplay: HoldingDetailView.MetricAmountDisplay
@@ -767,12 +810,8 @@ private struct FIFOLotTableDataRow: View {
     }
     
     private func formatLotQuantity(_ quantity: Decimal) -> String {
-        let number = NSDecimalNumber(decimal: quantity)
-        let double = number.doubleValue
-        if abs(double - double.rounded()) < 0.000_000_1 {
-            return quantity.formatted(fractionDigits: 0)
-        }
-        return quantity.formatted(fractionDigits: 4)
+        let maxFractionDigits = assetType == .crypto ? 8 : 4
+        return quantity.formattedQuantityInput(maxFractionDigits: maxFractionDigits)
     }
 }
 

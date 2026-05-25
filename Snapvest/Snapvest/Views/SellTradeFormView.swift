@@ -32,6 +32,7 @@ struct SellTradeFormView: View {
     @State private var userId: String = AppUser.id
     @State private var showingDuplicateAlert = false
     @State private var duplicateAlertMessage = ""
+    @State private var sellAccountOptions: [SellAccountOption] = []
     @Environment(\.dismiss) private var dismiss
     
     init(
@@ -59,7 +60,7 @@ struct SellTradeFormView: View {
         return isEditMode ? "確認修改" : "賣出"
     }
     
-    private var availableAccounts: [Account] {
+    private var marketEligibleAccounts: [Account] {
         accountsViewModel.accounts.filter { account in
             switch market {
             case .stockTW:
@@ -71,9 +72,36 @@ struct SellTradeFormView: View {
             }
         }
     }
+
+    /// 帶入即鎖定的代號（編輯、個股明細）；不依賴 selectedHolding，避免循環存取
+    private var pinnedSymbol: String? {
+        if let symbol = editingTransaction?.symbol, !symbol.isEmpty { return symbol }
+        if let symbol = prefill?.symbol, !symbol.isEmpty { return symbol }
+        return nil
+    }
+
+    /// 已確定要賣的標的（鎖定代號，或帳戶詳情選完持股）
+    private var effectiveSymbol: String? {
+        if let pinned = pinnedSymbol { return pinned }
+        guard !selectedHoldingId.isEmpty,
+              let snapshot = availableHoldings.first(where: { $0.id == selectedHoldingId }) else {
+            return nil
+        }
+        let symbol = snapshot.holding.symbol
+        return symbol.isEmpty ? nil : symbol
+    }
+
+    private var showsSellAccountPicker: Bool {
+        effectiveSymbol != nil && !isImportDraftMode
+    }
+
+    private var canSwitchSellAccount: Bool {
+        showsSellAccountPicker && !isAccountLocked && sellAccountOptions.count > 1
+    }
     
     private var selectedAccount: Account? {
-        availableAccounts.first { $0.id == selectedAccountId }
+        sellAccountOptions.map(\.account).first { $0.id == selectedAccountId }
+            ?? marketEligibleAccounts.first { $0.id == selectedAccountId }
     }
     
     private var availableHoldings: [HoldingSnapshot] {
@@ -85,33 +113,46 @@ struct SellTradeFormView: View {
         }
     }
     
-    private var isSymbolLocked: Bool {
-        isEditMode || prefill?.lockSymbol == true
+    private var isAccountLocked: Bool {
+        isImportDraftMode || prefill?.lockAccount == true
     }
     
-    private var lockedSymbol: String? {
-        editingTransaction?.symbol ?? prefill?.symbol
-    }
-    
-    /// 編輯時加回此筆原賣出數量，作為可賣上限
-    private var sellQuantityHeadroom: Decimal {
+    /// 目前帳戶對該標的最多可賣數量（編輯時含加回此筆原賣出量）
+    private var maxSellQuantity: Decimal {
+        if let option = sellAccountOptions.first(where: { $0.account.id == selectedAccountId }) {
+            return option.maxSellQuantity
+        }
         let base = selectedHolding?.holding.quantity ?? 0
-        if let editingTransaction {
+        if let editingTransaction,
+           editingTransaction.accountId == selectedAccountId,
+           let effectiveSymbol,
+           editingTransaction.symbol == effectiveSymbol {
             return base + editingTransaction.quantity
         }
-        return availableQuantity
+        return base
+    }
+
+    private var showsHoldingPicker: Bool {
+        effectiveSymbol == nil && !isEditMode && !isImportDraftMode
     }
     
-    /// 鎖定代號時僅顯示該檔持股
+    /// 持股選單候選（僅依 pinnedSymbol 篩選，避免與 effectiveSymbol 循環）
     private var selectableHoldings: [HoldingSnapshot] {
-        guard isSymbolLocked, let symbol = prefill?.symbol else {
+        guard let symbol = pinnedSymbol else {
             return availableHoldings
         }
         return availableHoldings.filter { $0.holding.symbol == symbol }
     }
     
     private var selectedHolding: HoldingSnapshot? {
-        selectableHoldings.first { $0.id == selectedHoldingId }
+        availableHoldings.first { $0.id == selectedHoldingId }
+    }
+
+    /// 提交用持股（已選 id，或依目前帳戶＋標的代號解析）
+    private var holdingForSubmit: HoldingSnapshot? {
+        if let selectedHolding { return selectedHolding }
+        guard let symbol = effectiveSymbol else { return nil }
+        return availableHoldings.first { $0.holding.symbol == symbol }
     }
     
     private var needsExchangeRate: Bool {
@@ -132,6 +173,11 @@ struct SellTradeFormView: View {
     
     private var exchangeRateValue: Decimal? {
         Decimal(string: exchangeRateText)
+    }
+
+    private var exchangeRateForSave: Decimal? {
+        guard needsExchangeRate else { return nil }
+        return exchangeRateValue
     }
     
     private var priceCurrency: Currency {
@@ -173,10 +219,14 @@ struct SellTradeFormView: View {
             return true
         }
         
-        if isEditMode {
-            guard quantityValue <= sellQuantityHeadroom else { return false }
+        if showsSellAccountPicker {
+            guard !sellAccountOptions.isEmpty,
+                  sellAccountOptions.contains(where: { $0.account.id == selectedAccountId }),
+                  quantityValue <= maxSellQuantity else {
+                return false
+            }
         } else {
-            guard selectedHolding != nil, quantityValue <= availableQuantity else { return false }
+            guard selectedHolding != nil, quantityValue <= maxSellQuantity else { return false }
         }
         
         if needsExchangeRate {
@@ -228,44 +278,45 @@ struct SellTradeFormView: View {
         }
         .task {
             await accountsViewModel.loadAccounts(userId: userId)
+            transactionsViewModel.accounts = accountsViewModel.accounts
+
             if let preferred = prefill?.preferredAccountId,
-               availableAccounts.contains(where: { $0.id == preferred }) {
+               marketEligibleAccounts.contains(where: { $0.id == preferred }) {
                 selectedAccountId = preferred
-            } else if selectedAccountId.isEmpty, let firstAccount = availableAccounts.first {
+            } else if selectedAccountId.isEmpty, let firstAccount = marketEligibleAccounts.first {
                 selectedAccountId = firstAccount.id
             }
+
             if !selectedAccountId.isEmpty {
                 await accountDetailViewModel.loadAccountData(accountId: selectedAccountId)
-                if let transaction = editingTransaction {
-                    applyEditingPrefill(from: transaction)
-                } else {
-                    applyHoldingPrefill()
-                }
             }
-            transactionsViewModel.accounts = accountsViewModel.accounts
+
+            if let transaction = editingTransaction {
+                applyEditingPrefill(from: transaction)
+            } else if showsHoldingPicker {
+                applyHoldingPrefill()
+            }
+
+            await reloadSellAccountOptionsIfSymbolKnown()
+            if showsSellAccountPicker, !selectedAccountId.isEmpty {
+                await accountDetailViewModel.loadAccountData(accountId: selectedAccountId)
+                syncHoldingSelectionForScopedSymbol()
+            }
+
             if needsExchangeRate && exchangeRateText.isEmpty {
                 loadExchangeRate()
             }
+            validateInput()
         }
-        .onChange(of: selectedAccountId) { _, newValue in
+        .onChange(of: selectedHoldingId) { _, _ in
             Task {
-                await accountDetailViewModel.loadAccountData(accountId: newValue)
-                if let transaction = editingTransaction {
-                    applyEditingPrefill(from: transaction)
-                } else {
-                    applyHoldingPrefill()
-                    if selectedHoldingId.isEmpty, !isSymbolLocked {
-                        selectedHoldingId = selectableHoldings.first?.id ?? ""
-                    }
+                await reloadSellAccountOptionsIfSymbolKnown()
+                if showsSellAccountPicker, !selectedAccountId.isEmpty {
+                    await accountDetailViewModel.loadAccountData(accountId: selectedAccountId)
+                    syncHoldingSelectionForScopedSymbol()
                 }
                 validateInput()
             }
-            if needsExchangeRate && exchangeRateText.isEmpty {
-                loadExchangeRate()
-            }
-        }
-        .onChange(of: selectedHoldingId) { _, _ in
-            validateInput()
         }
         .onChange(of: quantityText) { _, newValue in
             quantityText = filterDecimalInput(newValue)
@@ -316,6 +367,15 @@ struct SellTradeFormView: View {
     private var formCard: some View {
         VStack(spacing: 0) {
             holdingSection
+            if showsSellAccountPicker {
+                Divider()
+                    .padding(.horizontal, 20)
+                sellAccountPickerSection
+            } else if isImportDraftMode {
+                Divider()
+                    .padding(.horizontal, 20)
+                importAccountSection
+            }
             Divider()
                 .padding(.horizontal, 20)
             quantitySection
@@ -324,7 +384,6 @@ struct SellTradeFormView: View {
             priceSection
             Divider()
                 .padding(.horizontal, 20)
-            accountSection
             if needsExchangeRate {
                 Divider()
                     .padding(.horizontal, 20)
@@ -339,53 +398,120 @@ struct SellTradeFormView: View {
         .padding(.horizontal)
     }
     
-    private var accountSection: some View {
+    /// 匯入草稿仍保留簡易帳戶列
+    private var importAccountSection: some View {
         FormRow(title: "帳戶", icon: "building.columns.fill", color: market.themeColor) {
-            VStack(alignment: .leading) {
-                if isImportDraftMode, let account = selectedAccount {
-                    HStack(spacing: 8) {
-                        Image(systemName: account.accountType.icon)
-                            .symbolRenderingMode(.hierarchical)
-                            .foregroundStyle(account.accountType.color)
-                        Text(account.name)
-                            .foregroundColor(.primaryText)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                } else {
-                Picker(selection: $selectedAccountId) {
-                    ForEach(availableAccounts) { account in
-                        HStack(spacing: 8) {
-                            Image(systemName: account.accountType.icon)
-                                .symbolRenderingMode(.hierarchical)
-                                .foregroundStyle(account.accountType.color)
-                            Text(account.name)
-                        }
-                        .tag(account.id)
-                    }
-                } label: {
-                    HStack(spacing: 8) {
-                        if let selectedAccount = selectedAccount {
-                            Image(systemName: selectedAccount.accountType.icon)
-                                .symbolRenderingMode(.hierarchical)
-                                .foregroundStyle(selectedAccount.accountType.color)
-                            Text(selectedAccount.name)
-                                .foregroundColor(.primaryText)
-                        } else {
-                            Text("選擇帳戶")
-                                .foregroundColor(.secondaryText)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.down")
-                            .foregroundColor(.secondaryText)
-                            .font(.caption)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            if let account = selectedAccount {
+                HStack(spacing: 8) {
+                    Image(systemName: account.accountType.icon)
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(account.accountType.color)
+                    Text(account.name)
+                        .foregroundColor(.primaryText)
                 }
-                .pickerStyle(.menu)
-                .labelsHidden()
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                ProgressView()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private var sellAccountPickerSection: some View {
+        FormRow(title: "帳戶", icon: "building.columns.fill", color: market.themeColor) {
+            VStack(alignment: .leading, spacing: 10) {
+                if isAccountLocked {
+                    Text("已從此帳戶進入，無法改選其他帳戶")
+                        .font(.subheadline)
+                        .foregroundColor(.secondaryText)
+                } else if sellAccountOptions.count > 1 {
+                    Text("點選下方帳戶，從該戶賣出")
+                        .font(.subheadline)
+                        .foregroundColor(.secondaryText)
+                }
+
+                if sellAccountOptions.isEmpty {
+                    Text("沒有任何帳戶持有此標的")
+                        .font(.subheadline)
+                        .foregroundColor(.lossRed)
+                } else {
+                    VStack(spacing: 8) {
+                        ForEach(sellAccountOptions) { option in
+                            sellAccountPickerRow(option: option)
+                        }
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func sellAccountPickerRow(option: SellAccountOption) -> some View {
+        let isSelected = option.account.id == selectedAccountId
+        let quantityLabel = sellQuantityLabel(for: option.maxSellQuantity)
+
+        return Button {
+            selectSellAccount(option)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 22))
+                    .foregroundColor(isSelected ? market.themeColor : .secondaryText)
+
+                Image(systemName: option.account.accountType.icon)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(option.account.accountType.color)
+                    .font(.system(size: 18))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(option.account.name)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primaryText)
+                    Text(quantityLabel)
+                        .font(.subheadline)
+                        .foregroundColor(.secondaryText)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isSelected ? market.themeColor.opacity(0.12) : Color.secondaryBackground)
+            .cornerRadius(12)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(isSelected ? market.themeColor.opacity(0.45) : Color.secondaryText.opacity(0.2), lineWidth: 1)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!canSwitchSellAccount && !isSelected)
+    }
+
+    private func sellQuantityLabel(for quantity: Decimal) -> String {
+        let qty = formatQuantity(quantity)
+        if market == .crypto {
+            return "持有 \(qty)"
+        }
+        return "持有 \(qty) 股"
+    }
+
+    private func selectSellAccount(_ option: SellAccountOption) {
+        guard canSwitchSellAccount || sellAccountOptions.count == 1 else { return }
+        guard selectedAccountId != option.account.id else { return }
+
+        selectedAccountId = option.account.id
+        Task {
+            await accountDetailViewModel.loadAccountData(accountId: option.account.id)
+            syncHoldingSelectionForScopedSymbol()
+            if needsExchangeRate && exchangeRateText.isEmpty {
+                loadExchangeRate()
+            } else if !needsExchangeRate {
+                exchangeRateText = ""
+            }
+            validateInput()
         }
     }
     
@@ -393,6 +519,11 @@ struct SellTradeFormView: View {
         FormRow(title: market == .crypto ? "幣種" : "股票代號", icon: "tag.fill", color: market.themeColor) {
             VStack(alignment: .leading) {
                 if isImportDraftMode, let symbol = editingTransaction?.symbol {
+                    Text(symbol)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primaryText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else if !showsHoldingPicker, let symbol = effectiveSymbol {
                     Text(symbol)
                         .fontWeight(.semibold)
                         .foregroundColor(.primaryText)
@@ -415,12 +546,12 @@ struct SellTradeFormView: View {
                             Text("選擇持股")
                                 .foregroundColor(.secondaryText)
                         }
-                        Spacer()
+                        Spacer(minLength: 0)
                         Image(systemName: "chevron.down")
                             .foregroundColor(.secondaryText)
                             .font(.caption)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .snapFormFieldTapTarget()
                 }
                 .pickerStyle(.menu)
                 .labelsHidden()
@@ -440,21 +571,20 @@ struct SellTradeFormView: View {
     
     private var quantitySection: some View {
         FormRow(title: "數量", icon: "number.circle.fill", color: market.themeColor) {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 8) {
                 TextField("0", text: $quantityText)
                     .keyboardType(.decimalPad)
+                    .snapFormFieldTapTarget()
                 if market == .crypto {
                     Text("加密貨幣可輸入小數，例如 0.01")
                         .font(.caption)
                         .foregroundColor(.secondaryText)
                 }
-            }
-            
-            if selectedHolding != nil {
-                infoRow(
-                    label: "目前該帳戶持有",
-                    value: formatQuantity(availableQuantity)
-                )
+                if showsSellAccountPicker, selectedAccount != nil {
+                    Text("此帳戶最多可賣 \(formatQuantity(maxSellQuantity))\(market == .crypto ? "" : " 股")")
+                        .font(.subheadline)
+                        .foregroundColor(.secondaryText)
+                }
             }
         }
     }
@@ -468,6 +598,7 @@ struct SellTradeFormView: View {
                 }
                 TextField("0", text: $priceText)
                     .keyboardType(.decimalPad)
+                    .snapFormFieldTapTarget()
             }
         }
     }
@@ -477,6 +608,7 @@ struct SellTradeFormView: View {
         FormRow(title: "美金對台匯率", icon: "arrow.triangle.2.circlepath", color: market.themeColor) {
             TextField("0", text: $exchangeRateText)
                 .keyboardType(.decimalPad)
+                .snapFormFieldTapTarget()
         }
     }
     
@@ -548,7 +680,7 @@ struct SellTradeFormView: View {
                 transactionDate: transactionDate,
                 createdAt: existing.createdAt,
                 updatedAt: Date(),
-                exchangeRate: exchangeRateValue
+                exchangeRate: exchangeRateForSave
             )
             onImportDraftSave(updated)
             dismiss()
@@ -557,13 +689,17 @@ struct SellTradeFormView: View {
         
         let averageCostFallback: Decimal
         let sellSymbol: String
-        if let selectedHolding {
-            averageCostFallback = selectedHolding.holding.averageCost
-            sellSymbol = selectedHolding.holding.symbol
-        } else if let existing = editingTransaction {
+        if let existing = editingTransaction {
             averageCostFallback = existing.realizedCostPerUnit ?? existing.price
             sellSymbol = existing.symbol
+        } else if let holding = holdingForSubmit {
+            averageCostFallback = holding.holding.averageCost
+            sellSymbol = holding.holding.symbol
+        } else if let symbol = effectiveSymbol, !symbol.isEmpty {
+            averageCostFallback = 0
+            sellSymbol = symbol
         } else {
+            errorMessage = "請選擇要賣出的持股"
             return
         }
         
@@ -586,7 +722,7 @@ struct SellTradeFormView: View {
                 price: priceValue,
                 currency: priceCurrency,
                 transactionDate: transactionDate,
-                exchangeRate: exchangeRateValue
+                exchangeRate: exchangeRateForSave
             )
             if let duplicate = await transactionsViewModel.findDuplicateMatch(
                 for: draft,
@@ -601,6 +737,11 @@ struct SellTradeFormView: View {
             }
         }
         
+        validateInput()
+        guard errorMessage == nil else { return }
+
+        transactionsViewModel.errorMessage = nil
+
         if let existing = editingTransaction {
             await transactionsViewModel.updateSellTransaction(
                 existing: existing,
@@ -608,36 +749,82 @@ struct SellTradeFormView: View {
                 quantity: quantityValue,
                 price: priceValue,
                 currency: priceCurrency,
-                exchangeRate: exchangeRateValue,
+                exchangeRate: exchangeRateForSave,
                 transactionDate: transactionDate,
                 averageCostFallback: averageCostFallback,
                 allowDuplicate: allowDuplicate
             )
-        } else if let selectedHolding {
+        } else if !sellSymbol.isEmpty {
+            let avgCost = holdingForSubmit?.holding.averageCost ?? averageCostFallback
             await transactionsViewModel.createSellTransaction(
                 account: selectedAccount,
                 assetType: market.assetType,
-                symbol: selectedHolding.holding.symbol,
+                symbol: sellSymbol,
                 quantity: quantityValue,
                 price: priceValue,
                 currency: priceCurrency,
-                exchangeRate: exchangeRateValue,
+                exchangeRate: exchangeRateForSave,
                 transactionDate: transactionDate,
-                averageCostFallback: selectedHolding.holding.averageCost,
+                averageCostFallback: avgCost,
                 allowDuplicate: allowDuplicate
             )
-            let draft = SellTradeDraft(
-                market: market,
-                account: selectedAccount,
-                holding: selectedHolding,
-                quantity: quantityValue,
-                price: priceValue,
-                exchangeRate: exchangeRateValue,
-                transactionDate: transactionDate
-            )
-            onSubmit?(draft)
+        } else {
+            errorMessage = "請選擇要賣出的持股"
+            return
         }
+
+        if let vmError = transactionsViewModel.errorMessage {
+            errorMessage = vmError
+            return
+        }
+
+        notifySubmitCompletion()
         dismiss()
+    }
+
+    /// 新建／編輯成功後通知外層刷新（紀錄列表、帳戶持股等）
+    private func notifySubmitCompletion() {
+        guard let draft = makeCompletionDraft() else { return }
+        onSubmit?(draft)
+    }
+
+    private func makeCompletionDraft() -> SellTradeDraft? {
+        guard let account = selectedAccount,
+              let qty = quantityValue,
+              let price = priceValue else {
+            return nil
+        }
+
+        let snapshot: HoldingSnapshot
+        if let holding = holdingForSubmit {
+            snapshot = holding
+        } else if let existing = editingTransaction {
+            let holding = Holding(
+                accountId: account.id,
+                assetType: existing.assetType,
+                symbol: existing.symbol,
+                quantity: maxSellQuantity,
+                averageCost: existing.realizedCostPerUnit ?? existing.price,
+                currency: existing.currency
+            )
+            snapshot = HoldingSnapshot(
+                id: existing.id,
+                holding: holding,
+                currentPrice: nil
+            )
+        } else {
+            return nil
+        }
+
+        return SellTradeDraft(
+            market: market,
+            account: account,
+            holding: snapshot,
+            quantity: qty,
+            price: price,
+            exchangeRate: exchangeRateForSave,
+            transactionDate: transactionDate
+        )
     }
     
     private func applyEditingPrefill(from transaction: Transaction) {
@@ -647,10 +834,58 @@ struct SellTradeFormView: View {
         )
         priceText = transaction.price.formattedQuantityInput(maxFractionDigits: 4)
         transactionDate = transaction.transactionDate
-        if let rate = transaction.exchangeRate {
+        if needsExchangeRate, let rate = transaction.exchangeRate {
             exchangeRateText = rate.formatted(fractionDigits: 2)
+        } else {
+            exchangeRateText = ""
         }
-        if let match = selectableHoldings.first(where: { $0.holding.symbol == transaction.symbol }) {
+        syncHoldingSelectionForScopedSymbol()
+    }
+
+    private func reloadSellAccountOptionsIfSymbolKnown() async {
+        guard let symbol = effectiveSymbol else { return }
+        await reloadSellAccountOptions(for: symbol)
+    }
+
+    private func reloadSellAccountOptions(for symbol: String) async {
+        var options = await SellHoldingAvailability.accountsWithSellCapacity(
+            symbol: symbol,
+            assetType: market.assetType,
+            candidateAccounts: marketEligibleAccounts,
+            dataService: dataService,
+            editingTransaction: editingTransaction
+        )
+
+        if isAccountLocked {
+            let lockedId = editingTransaction?.accountId
+                ?? prefill?.preferredAccountId
+                ?? selectedAccountId
+            if !lockedId.isEmpty {
+                options = options.filter { $0.account.id == lockedId }
+            }
+        }
+
+        await MainActor.run {
+            sellAccountOptions = options
+            if options.isEmpty {
+                errorMessage = "沒有任何帳戶持有此標的，無法賣出"
+            } else if !options.contains(where: { $0.account.id == selectedAccountId }) {
+                if let editing = editingTransaction,
+                   let match = options.first(where: { $0.account.id == editing.accountId }) {
+                    selectedAccountId = match.account.id
+                } else if let preferred = prefill?.preferredAccountId,
+                          options.contains(where: { $0.account.id == preferred }) {
+                    selectedAccountId = preferred
+                } else {
+                    selectedAccountId = options.first?.account.id ?? ""
+                }
+            }
+        }
+    }
+
+    private func syncHoldingSelectionForScopedSymbol() {
+        guard let symbol = effectiveSymbol else { return }
+        if let match = availableHoldings.first(where: { $0.holding.symbol == symbol }) {
             selectedHoldingId = match.id
         } else {
             selectedHoldingId = ""
@@ -679,9 +914,21 @@ struct SellTradeFormView: View {
             return
         }
         
-        let maxQty = isEditMode ? sellQuantityHeadroom : availableQuantity
-        if quantityValue > maxQty {
-            errorMessage = "數量不可超過可賣數量"
+        if quantityValue > maxSellQuantity {
+            let digits = market == .crypto ? 8 : 4
+            let maxLabel = maxSellQuantity.formattedQuantityInput(maxFractionDigits: digits)
+            errorMessage = "數量不可超過可賣數量（\(maxLabel)）"
+            return
+        }
+
+        if showsSellAccountPicker, sellAccountOptions.isEmpty {
+            errorMessage = "沒有任何帳戶持有此標的"
+            return
+        }
+
+        if showsSellAccountPicker,
+           !sellAccountOptions.contains(where: { $0.account.id == selectedAccountId }) {
+            errorMessage = "請選擇要賣出的帳戶"
             return
         }
         
@@ -725,7 +972,7 @@ struct SellTradeFormView: View {
             if priceText.isEmpty, let price = match.currentPrice {
                 priceText = price.formattedQuantityInput(maxFractionDigits: 4)
             }
-        } else if isSymbolLocked {
+        } else if prefill.lockSymbol {
             selectedHoldingId = ""
         }
     }
@@ -821,6 +1068,8 @@ private struct InputContainer<Content: View>: View {
         content
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
             .background(Color.secondaryBackground)
             .cornerRadius(12)
             .overlay(

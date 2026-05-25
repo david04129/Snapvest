@@ -441,13 +441,36 @@ class MockDataService: DataServiceProtocol {
     }
     
     func updateTransaction(_ transaction: Transaction) async throws {
-        if var accountTransactions = transactions[transaction.accountId] {
-            if let index = accountTransactions.firstIndex(where: { $0.id == transaction.id }) {
-                accountTransactions[index] = transaction
-                transactions[transaction.accountId] = accountTransactions
-                persistAfterStructureMutation(userId: userIdForAccountId(transaction.accountId), debounce: true)
+        var sourceAccountId: String?
+        for (accountId, accountTransactions) in transactions {
+            if accountTransactions.contains(where: { $0.id == transaction.id }) {
+                sourceAccountId = accountId
+                break
             }
         }
+        
+        guard let sourceAccountId else {
+            throw DataServiceError.invalidOperation("找不到要更新的交易")
+        }
+        
+        if sourceAccountId == transaction.accountId {
+            guard var accountTransactions = transactions[transaction.accountId] else {
+                throw DataServiceError.invalidOperation("找不到交易所屬帳戶")
+            }
+            guard let index = accountTransactions.firstIndex(where: { $0.id == transaction.id }) else {
+                throw DataServiceError.invalidOperation("找不到要更新的交易")
+            }
+            accountTransactions[index] = transaction
+            transactions[transaction.accountId] = accountTransactions
+        } else {
+            transactions[sourceAccountId]?.removeAll { $0.id == transaction.id }
+            if transactions[transaction.accountId] == nil {
+                transactions[transaction.accountId] = []
+            }
+            transactions[transaction.accountId]?.append(transaction)
+        }
+        
+        persistAfterStructureMutation(userId: userIdForAccountId(transaction.accountId), debounce: true)
     }
     
     func deleteTransaction(_ transactionId: String) async throws {

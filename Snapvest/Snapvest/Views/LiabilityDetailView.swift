@@ -11,7 +11,6 @@ struct LiabilityDetailView: View {
     let liability: Liability
     @StateObject private var accountsViewModel = AccountsViewModel()
     @State private var showingRepayment = false
-    @State private var repaymentAccountName: String = ""
     @State private var currentLiability: Liability
     @State private var isDetailsExpanded: Bool = false
     
@@ -71,24 +70,18 @@ struct LiabilityDetailView: View {
             )
         }
         .sheet(isPresented: $showingRepayment) {
-            if let repaymentAccount = accountsViewModel.accounts.first(where: { $0.id == currentLiability.accountId }) {
-                RepaymentTransferWrapperView(
-                    liability: currentLiability,
-                    repaymentAccount: repaymentAccount
-                )
-                .onDisappear {
-                    Task {
-                        await loadLiabilityData()
-                    }
-                }
+            RepaymentView(
+                liability: currentLiability,
+                repaymentType: .regular,
+                preloadedAccounts: accountsViewModel.accounts
+            )
+            .onDisappear {
+                Task { await loadLiabilityData() }
             }
         }
         .task {
             currentLiability = liability
             await accountsViewModel.loadAccounts(userId: AppUser.id)
-            if let account = accountsViewModel.accounts.first(where: { $0.id == liability.accountId }) {
-                repaymentAccountName = account.name
-            }
             await loadLiabilityData()
         }
     }
@@ -156,15 +149,19 @@ struct LiabilityDetailView: View {
                         isDetailsExpanded.toggle()
                     }
                 }) {
-                    HStack {
+                    HStack(alignment: .center, spacing: 12) {
                         Text("貸款資訊")
                             .font(.headline)
                             .foregroundColor(.primaryText)
-                        Spacer()
+                        Spacer(minLength: 0)
                         Image(systemName: isDetailsExpanded ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 14, weight: .semibold))
                             .foregroundColor(.secondaryText)
-                            .font(.caption)
+                            .frame(width: 24, height: 24)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 
@@ -190,13 +187,6 @@ struct LiabilityDetailView: View {
                         InfoRowWithoutIcon(
                             label: "總期數",
                             value: "\(calculateTotalMonths()) 個月"
-                        )
-                        
-                        Divider()
-                        
-                        InfoRowWithoutIcon(
-                            label: "還款帳戶",
-                            value: repaymentAccountName.isEmpty ? "載入中..." : repaymentAccountName
                         )
                         
                         Divider()

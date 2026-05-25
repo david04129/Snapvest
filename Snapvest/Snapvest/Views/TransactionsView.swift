@@ -335,9 +335,7 @@ struct TransactionsView: View {
         if !selectedAccountIds.isEmpty {
             result = result.filter { transaction in
                 // 單一帳戶交易：使用 accountId 匹配
-                // 轉帳/還款交易：使用 accountId 或 targetAccountId 任一匹配即顯示
-                selectedAccountIds.contains(transaction.accountId) ||
-                (transaction.targetAccountId != nil && selectedAccountIds.contains(transaction.targetAccountId!))
+                selectedAccountIds.contains(transaction.accountId)
             }
         }
         
@@ -440,6 +438,11 @@ struct TransactionsView: View {
                     )
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .transactionsDidChange)) { _ in
+                Task {
+                    await viewModel.loadTransactions(userId: userId)
+                }
+            }
             .sheet(item: $showingEditTransaction) { transaction in
                 editTransactionSheet(transaction: transaction)
             }
@@ -452,9 +455,6 @@ struct TransactionsView: View {
             .sheet(isPresented: $showingEditExpense) {
                 editExpenseSheet
             }
-            .sheet(isPresented: $showingEditTransfer) {
-                editTransferSheet
-            }
             .sheet(isPresented: $showingEditRepayment) {
                 editRepaymentSheet
             }
@@ -462,9 +462,6 @@ struct TransactionsView: View {
                 handleEditSheetChange(oldValue: oldValue, newValue: newValue)
             }
             .onChange(of: showingEditExpense) { oldValue, newValue in
-                handleEditSheetChange(oldValue: oldValue, newValue: newValue)
-            }
-            .onChange(of: showingEditTransfer) { oldValue, newValue in
                 handleEditSheetChange(oldValue: oldValue, newValue: newValue)
             }
             .onChange(of: showingEditRepayment) { oldValue, newValue in
@@ -533,7 +530,6 @@ struct TransactionsView: View {
         showingEditLiability = false
         showingEditIncome = false
         showingEditExpense = false
-        showingEditTransfer = false
         showingEditRepayment = false
         showingAccountFilterSheet = false
         activeTimeFilterDateField = nil
@@ -575,6 +571,12 @@ struct TransactionsView: View {
                 sellTradeEditItem = nil
                 Task {
                     await viewModel.loadTransactions(userId: userId)
+                    await LaunchCoordinator.applyPersistedState(
+                        userId: userId,
+                        portfolioViewModel: portfolioViewModel,
+                        accountsViewModel: accountsViewModel,
+                        assetsViewModel: assetsViewModel
+                    )
                 }
             })
             .toolbar {
@@ -827,23 +829,6 @@ struct TransactionsView: View {
     }
     
     @ViewBuilder
-    private var editTransferSheet: some View {
-        if let account = editingAccount, let transaction = editingTransferTransaction {
-            TransferView(account: account, viewModel: editingAccountViewModel, editingTransaction: transaction)
-                .onAppear {
-                    Task {
-                        await editingAccountViewModel.loadAccountData(accountId: account.id)
-                    }
-                }
-                .onDisappear {
-                    Task {
-                        await viewModel.loadTransactions(userId: userId)
-                    }
-                }
-        }
-    }
-    
-    @ViewBuilder
     private var editRepaymentSheet: some View {
         if let transaction = editingRepaymentTransaction {
             RepaymentEditWrapperView(
@@ -871,67 +856,31 @@ struct TransactionsView: View {
     }
     
     private func handleEditTransaction(_ transaction: Transaction) {
-        // 還款和債務交易不能編輯，只能刪除
-        if transaction.type == .repayment || transaction.type == .liability {
+        if transaction.type == .liability {
             return
         }
         
-        // 獲取帳戶資訊
         guard let account = viewModel.accounts.first(where: { $0.id == transaction.accountId }) else {
             return
         }
         
         editingAccount = account
         
-        // 檢查是否為轉帳交易（使用新的類型）
-        if transaction.type == .transfer {
-            // 轉帳交易：直接編輯
-            editingTransferTransaction = transaction
-            showingEditTransfer = true
+        if transaction.type == .repayment,
+           account.accountType == .debt {
+            editingRepaymentTransaction = transaction
+            showingEditRepayment = true
             return
         }
         
-        // 舊的轉帳/還款交易格式（兼容舊數據）
-        let isRepayment = (transaction.notes?.contains("還款至") ?? false) || 
-                         (transaction.notes?.contains("還款自") ?? false)
-        let isTransfer = (transaction.notes?.contains("轉帳至") ?? false) || 
-                        (transaction.notes?.contains("轉帳自") ?? false)
+        if transaction.type == .withdraw,
+           transaction.notes?.contains("還款扣款：") == true {
+            editingExpenseTransaction = transaction
+            showingEditExpense = true
+            return
+        }
         
-        // 還款和轉帳使用相同的編輯邏輯
-        if isTransfer || isRepayment {
-            // 轉帳或還款交易：如果是轉入交易（deposit），需要找到對應的轉出交易
-            if transaction.type == .deposit && (transaction.notes?.contains("轉帳自") == true || transaction.notes?.contains("還款自") == true) {
-                // 這是轉入交易，需要找到對應的轉出交易來編輯
-                // 解析轉出帳戶名稱
-                if let notes = transaction.notes {
-                    let accountName = extractAccountNameFromTransferNotes(notes, isFrom: false)
-                    if let sourceAccount = viewModel.accounts.first(where: { $0.name == accountName }) {
-                        // 找到對應的轉出交易
-                        let isRepaymentNote = transaction.notes?.contains("還款自") ?? false
-                        if let fromTransaction = viewModel.transactions.first(where: { trans in
-                            trans.accountId == sourceAccount.id &&
-                            trans.type == .withdraw &&
-                            abs(trans.transactionDate.timeIntervalSince(transaction.transactionDate)) < 1.0 &&
-                            (isRepaymentNote ? (trans.notes?.contains("還款至") ?? false) : (trans.notes?.contains("轉帳至") ?? false))
-                        }) {
-                            editingAccount = sourceAccount
-                            if isRepaymentNote {
-                                editingTransferTransaction = fromTransaction // 還款也用轉帳的編輯
-                                showingEditTransfer = true
-                            } else {
-                                editingTransferTransaction = fromTransaction
-                                showingEditTransfer = true
-                            }
-                            return
-                        }
-                    }
-                }
-            } else {
-                // 轉出交易（withdraw），直接使用（轉帳和還款都用這個）
-                editingTransferTransaction = transaction
-                showingEditTransfer = true
-            }
-        } else if transaction.type == .deposit {
+        if transaction.type == .deposit {
             // 收入交易
             editingIncomeTransaction = transaction
             showingEditIncome = true
@@ -1007,27 +956,11 @@ struct TransactionsView: View {
             return (name: "未知帳戶", icon: "questionmark.circle", color: .secondaryText)
         }
         
-        // 如果是轉帳或還款交易，顯示「A到B」格式
-        if transaction.type == .transfer || transaction.type == .repayment {
-            // 優先使用 targetAccountId 直接從帳戶列表中查找（不使用字符串解析）
-            if let sourceAccount = viewModel.accounts.first(where: { $0.id == transaction.accountId }),
-               let targetAccountId = transaction.targetAccountId,
-               let targetAccount = viewModel.accounts.first(where: { $0.id == targetAccountId }) {
-                return (
-                    name: "\(sourceAccount.name)到\(targetAccount.name)",
-                    icon: sourceAccount.accountType.icon,
-                    color: sourceAccount.accountType.color
-                )
-            }
-            
-            // 如果無法獲取，返回預設值
-            if let account = viewModel.accounts.first(where: { $0.id == transaction.accountId }) {
-                return (name: account.name, icon: account.accountType.icon, color: account.accountType.color)
-            }
-            return (name: "未知帳戶", icon: "questionmark.circle", color: .secondaryText)
+        if transaction.type == .repayment,
+           let account = viewModel.accounts.first(where: { $0.id == transaction.accountId }) {
+            return (name: account.name, icon: account.accountType.icon, color: account.accountType.color)
         }
         
-        // 非轉帳/還款交易，返回帳戶名稱
         if let account = viewModel.accounts.first(where: { $0.id == transaction.accountId }) {
             return (name: account.name, icon: account.accountType.icon, color: account.accountType.color)
         }
@@ -1273,9 +1206,6 @@ struct TransactionRowView: View {
             sign = "+"
         case .sell:
             sign = amount > 0 ? "+" : "-"
-        case .transfer:
-            // 轉帳：不顯示負號，因為對用戶來說沒有損失
-            sign = ""
         case .repayment:
             // 還款：顯示負號
             sign = "-"
@@ -1321,89 +1251,27 @@ struct RepaymentEditWrapperView: View {
     }
     
     private func loadLiability() async {
-        // 從交易 notes 中提取債務帳戶名稱（參考轉帳的邏輯）
-        guard let notes = transaction.notes else {
-            await MainActor.run {
-                isLoading = false
-            }
+        guard let debtAccount = viewModel.accounts.first(where: {
+            $0.id == transaction.accountId && ($0.accountType == .debt || $0.accountType == .otherDebt)
+        }) else {
+            await MainActor.run { isLoading = false }
             return
         }
         
-        var debtAccountName: String?
-        
-        if notes.contains("還款至 ") {
-            // 轉出交易：直接從 notes 中提取債務帳戶名稱
-            debtAccountName = extractAccountNameFromRepaymentNotes(notes, isFrom: true)
-        } else if notes.contains("還款自 ") {
-            // 轉入交易：當前交易的帳戶就是債務帳戶
-            if let account = viewModel.accounts.first(where: { $0.id == transaction.accountId && $0.accountType == .debt }) {
-                debtAccountName = account.name
-            } else {
-                // 如果當前帳戶不是債務帳戶，從轉出交易中提取
-                let sourceAccountName = extractAccountNameFromRepaymentNotes(notes, isFrom: false)
-                if let sourceAccount = viewModel.accounts.first(where: { $0.name == sourceAccountName }) {
-                    do {
-                        let allTransactions = try await MockDataService.shared.fetchAllTransactions(userId: userId)
-                        if let fromTransaction = allTransactions.first(where: { trans in
-                            trans.accountId == sourceAccount.id &&
-                            trans.type == .withdraw &&
-                            abs(trans.transactionDate.timeIntervalSince(transaction.transactionDate)) < 1.0 &&
-                            (trans.notes?.contains("還款至") ?? false)
-                        }) {
-                            debtAccountName = extractAccountNameFromRepaymentNotes(fromTransaction.notes ?? "", isFrom: true)
-                        }
-                    } catch {
-                        await MainActor.run {
-                            isLoading = false
-                        }
-                        return
-                    }
-                }
-            }
-        }
-        
-        guard let debtAccountName = debtAccountName,
-              let debtAccount = viewModel.accounts.first(where: { $0.name == debtAccountName && $0.accountType == .debt }) else {
-            await MainActor.run {
-                isLoading = false
-            }
+        if debtAccount.accountType == .otherDebt {
+            await MainActor.run { isLoading = false }
             return
         }
         
-        // 找到對應的債務記錄
         do {
             let liabilities = try await MockDataService.shared.fetchLiabilities(accountId: debtAccount.id)
             await MainActor.run {
-                liability = liabilities.first(where: { $0.name == debtAccountName })
+                liability = liabilities.first(where: { $0.name == debtAccount.name }) ?? liabilities.first
                 isLoading = false
             }
         } catch {
-            await MainActor.run {
-                isLoading = false
-            }
+            await MainActor.run { isLoading = false }
         }
-    }
-    
-    private func extractAccountNameFromRepaymentNotes(_ notes: String, isFrom: Bool) -> String {
-        let prefix = isFrom ? "還款至 " : "還款自 "
-        
-        if let range = notes.range(of: prefix) {
-            var accountName = String(notes[range.upperBound...])
-            
-            // 移除 " (匯率: ...)" 部分
-            if let rateRange = accountName.range(of: " (匯率:") {
-                accountName = String(accountName[..<rateRange.lowerBound])
-            }
-            
-            // 如果有 " - " 分隔符，取前面的部分（帳戶名稱在備註之前）
-            if let dashRange = accountName.range(of: " - ") {
-                accountName = String(accountName[..<dashRange.lowerBound])
-            }
-            
-            return accountName.trimmingCharacters(in: .whitespaces)
-        }
-        
-        return ""
     }
 }
 

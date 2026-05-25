@@ -88,18 +88,45 @@ class AccountsViewModel: ObservableObject {
         }
     }
     
-    func deleteAccount(_ accountId: String) async {
-        let userId = accounts.first(where: { $0.id == accountId })?.userId ?? AppUser.id
+    /// 永久刪除帳戶與其交易、持股快照、負債資料；成功回傳 nil。
+    func deleteAccount(_ account: Account) async -> String? {
+        let userId = account.userId
+        let accountId = account.id
         do {
+            if account.accountType == .debt {
+                let batch = try await dataService.fetchLiabilities(accountId: accountId)
+                for liability in batch {
+                    try await dataService.deleteLiability(liability.id)
+                }
+            }
+
             try await dataService.deleteAccount(accountId)
             accounts.removeAll { $0.id == accountId }
+            balancesByAccountId.removeValue(forKey: accountId)
+
             await SnapshotRefreshCoordinator.rebuildAndNotify(
                 userId: userId,
                 dataService: dataService
             )
+
+            let remainingLiabilities = try await loadAllLiabilities(userId: userId)
+            await refreshBalances(userId: userId, preloadedLiabilities: remainingLiabilities)
+            return nil
         } catch {
-            errorMessage = "刪除帳戶失敗：\(error.localizedDescription)"
+            let message = "刪除帳戶失敗：\(error.localizedDescription)"
+            errorMessage = message
+            return message
         }
+    }
+
+    private func loadAllLiabilities(userId: String) async throws -> [Liability] {
+        let userAccounts = try await dataService.fetchAccounts(userId: userId)
+        var all: [Liability] = []
+        for item in userAccounts where item.accountType == .debt {
+            let batch = try await dataService.fetchLiabilities(accountId: item.id)
+            all.append(contentsOf: batch)
+        }
+        return all
     }
     
     func archiveDebtAccount(_ account: Account) async -> String? {
@@ -199,13 +226,8 @@ class AccountsViewModel: ObservableObject {
     }
     
     private func findLiability(matchingDebtAccount account: Account) async throws -> Liability? {
-        for repaymentAccount in accounts where repaymentAccount.accountType != .debt {
-            let batch = try await dataService.fetchLiabilities(accountId: repaymentAccount.id)
-            if let liability = batch.first(where: { $0.name == account.name }) {
-                return liability
-            }
-        }
-        return nil
+        let batch = try await dataService.fetchLiabilities(accountId: account.id)
+        return batch.first(where: { $0.name == account.name }) ?? batch.first
     }
 }
 

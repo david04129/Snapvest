@@ -54,6 +54,39 @@ private enum TWSymbolNameLookup {
     }
 }
 
+/// 加密貨幣代號 → 顯示名稱（symbols_crypto.json；ticker 在檔內為小寫）
+private enum CryptoSymbolNameLookup {
+    nonisolated(unsafe) private static var cache: [String: String]?
+
+    nonisolated static func displayName(for symbol: String) -> String? {
+        let key = symbol.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !key.isEmpty else { return nil }
+        if cache == nil {
+            cache = loadFromBundle()
+        }
+        return cache?[key]
+    }
+
+    nonisolated private static func loadFromBundle() -> [String: String] {
+        let url = Bundle.main.url(forResource: "symbols_crypto", withExtension: "json", subdirectory: "Symbols")
+            ?? Bundle.main.url(forResource: "symbols_crypto", withExtension: "json")
+        guard let url = url,
+              let data = try? Data(contentsOf: url),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let itemsArray = json["items"] as? [[String: Any]] else {
+            return [:]
+        }
+        var lookup: [String: String] = [:]
+        lookup.reserveCapacity(itemsArray.count)
+        for item in itemsArray {
+            guard let symbol = item["symbol"] as? String,
+                  let name = item["name"] as? String else { continue }
+            lookup[symbol.lowercased()] = name
+        }
+        return lookup
+    }
+}
+
 /// 從 Bundle 讀取股票/加密貨幣代號清單，並提供搜尋功能
 struct SymbolListService {
 
@@ -62,6 +95,30 @@ struct SymbolListService {
     /// 台股代號 → 簡稱（symbols_tw.json）
     static func twDisplayName(for symbol: String) -> String? {
         TWSymbolNameLookup.displayName(for: symbol)
+    }
+
+    /// 加密貨幣代號統一為大寫（BTC、ETH），與後端抓價一致
+    static func normalizedCryptoSymbol(_ symbol: String) -> String {
+        symbol.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+    }
+
+    /// 清單內的加密貨幣名稱（如 Bitcoin），無則 nil
+    static func cryptoListedName(for symbol: String) -> String? {
+        CryptoSymbolNameLookup.displayName(for: symbol)
+    }
+
+    /// 加密貨幣 UI 顯示：僅大寫代號（BTC、ETH）
+    static func cryptoDisplayName(for symbol: String, storedName: String? = nil) -> String {
+        _ = storedName
+        return normalizedCryptoSymbol(symbol)
+    }
+
+    /// 標題下方是否另顯示代號（台股：名稱與代號不同時才顯示；美股／加密只顯示代號，不重複）
+    static func shouldShowSymbolUnderTitle(assetType: AssetType, title: String, symbol: String) -> Bool {
+        guard assetType == .stockTW else { return false }
+        let titleText = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let symbolText = symbol.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !symbolText.isEmpty && titleText != symbolText
     }
 
     /// 依 ticker 查 CoinGecko id（用於抓價；與清單內 coingeckoId 一致）
@@ -98,10 +155,12 @@ struct SymbolListService {
               let itemsArray = json["items"] as? [[String: Any]] else {
             return []
         }
+        let isCryptoList = fileName == "symbols_crypto"
         return itemsArray.compactMap { item -> SymbolItem? in
             guard let symbol = item["symbol"] as? String, let name = item["name"] as? String else { return nil }
             let coingeckoId = item["coingeckoId"] as? String
-            return SymbolItem(symbol: symbol, name: name, coingeckoId: coingeckoId)
+            let displaySymbol = isCryptoList ? normalizedCryptoSymbol(symbol) : symbol
+            return SymbolItem(symbol: displaySymbol, name: name, coingeckoId: coingeckoId)
         }
     }
     

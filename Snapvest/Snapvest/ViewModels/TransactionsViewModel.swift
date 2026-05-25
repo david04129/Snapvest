@@ -82,6 +82,7 @@ class TransactionsViewModel: ObservableObject {
             }
             if !isBatchImporting {
                 await loadTransactions(userId: accounts.first?.userId ?? "")
+                notifyTransactionsDidChange()
             }
         } catch {
             errorMessage = "建立交易失敗：\(error.localizedDescription)"
@@ -263,6 +264,50 @@ class TransactionsViewModel: ObservableObject {
         }
     }
     
+    private func validateBuyMutation(
+        account: Account,
+        assetType: AssetType,
+        quantity: Decimal,
+        price: Decimal,
+        currency: Currency,
+        fee: Decimal,
+        exchangeRate: Decimal?,
+        deductFromAccount: Bool,
+        existingTransaction: Transaction?
+    ) async -> Bool {
+        do {
+            let accountTransactions = try await dataService.fetchTransactions(accountId: account.id)
+            let allAccounts = accounts.isEmpty
+                ? try await dataService.fetchAccounts(userId: account.userId)
+                : accounts
+            let resolvedRate = BuyTransactionValidator.resolvedExchangeRate(
+                account: account,
+                assetType: assetType,
+                exchangeRate: exchangeRate
+            )
+            if let message = BuyTransactionValidator.validate(
+                account: account,
+                assetType: assetType,
+                quantity: quantity,
+                price: price,
+                currency: currency,
+                fee: fee,
+                exchangeRate: resolvedRate,
+                deductFromAccount: deductFromAccount,
+                accountTransactions: accountTransactions,
+                allAccounts: allAccounts,
+                existingTransaction: existingTransaction
+            ) {
+                errorMessage = message
+                return false
+            }
+            return true
+        } catch {
+            errorMessage = "無法驗證帳戶餘額：\(error.localizedDescription)"
+            return false
+        }
+    }
+    
     func createBuyTransaction(
         account: Account,
         assetType: AssetType,
@@ -277,19 +322,45 @@ class TransactionsViewModel: ObservableObject {
         transactionDate: Date,
         allowDuplicate: Bool = false
     ) async {
-        let notes: String? = (symbolName.map { $0.isEmpty ? nil : "買入 \(symbol) - \($0)" } ?? nil)
+        errorMessage = nil
+        let resolvedRate = BuyTransactionValidator.resolvedExchangeRate(
+            account: account,
+            assetType: assetType,
+            exchangeRate: exchangeRate
+        )
+        guard await validateBuyMutation(
+            account: account,
+            assetType: assetType,
+            quantity: quantity,
+            price: price,
+            currency: currency,
+            fee: fee,
+            exchangeRate: resolvedRate,
+            deductFromAccount: deductFromAccount,
+            existingTransaction: nil
+        ) else { return }
+        
+        let resolvedSymbol = assetType == .crypto
+            ? SymbolListService.normalizedCryptoSymbol(symbol)
+            : symbol
+        let notes: String? = {
+            guard let symbolName, !symbolName.isEmpty, assetType != .crypto else {
+                return assetType == .crypto ? "買入 \(resolvedSymbol)" : nil
+            }
+            return "買入 \(resolvedSymbol) - \(symbolName)"
+        }()
         let transaction = Transaction(
             accountId: account.id,
             type: .buy,
             assetType: assetType,
-            symbol: symbol,
+            symbol: resolvedSymbol,
             quantity: quantity,
             price: price,
             currency: currency,
             fee: fee,
             notes: notes,
             transactionDate: transactionDate,
-            exchangeRate: exchangeRate,
+            exchangeRate: resolvedRate,
             deductFromAccount: deductFromAccount
         )
         
@@ -317,7 +388,9 @@ class TransactionsViewModel: ObservableObject {
                 await updateSnapshotsIfNeeded(for: previousAccountId)
                 await updateHoldings(accountId: previousAccountId)
             }
-            await loadTransactions(userId: accounts.first?.userId ?? "")
+            let userId = await resolveUserId(for: transaction.accountId) ?? AppUser.id
+            await loadTransactions(userId: userId)
+            notifyTransactionsDidChange()
         } catch {
             errorMessage = "更新交易失敗：\(error.localizedDescription)"
         }
@@ -336,6 +409,24 @@ class TransactionsViewModel: ObservableObject {
         symbolName: String?,
         allowDuplicate: Bool = false
     ) async {
+        errorMessage = nil
+        let resolvedRate = BuyTransactionValidator.resolvedExchangeRate(
+            account: account,
+            assetType: existing.assetType,
+            exchangeRate: exchangeRate
+        )
+        guard await validateBuyMutation(
+            account: account,
+            assetType: existing.assetType,
+            quantity: quantity,
+            price: price,
+            currency: currency,
+            fee: fee,
+            exchangeRate: resolvedRate,
+            deductFromAccount: deductFromAccount,
+            existingTransaction: existing
+        ) else { return }
+        
         let notes: String? = {
             if let symbolName, !symbolName.isEmpty {
                 return "買入 \(existing.symbol) - \(symbolName)"
@@ -356,7 +447,7 @@ class TransactionsViewModel: ObservableObject {
             transactionDate: transactionDate,
             createdAt: existing.createdAt,
             updatedAt: Date(),
-            exchangeRate: exchangeRate,
+            exchangeRate: resolvedRate,
             deductFromAccount: deductFromAccount
         )
         await updateTransaction(updated, previousAccountId: existing.accountId, allowDuplicate: allowDuplicate)
@@ -373,6 +464,30 @@ class TransactionsViewModel: ObservableObject {
         averageCostFallback: Decimal,
         allowDuplicate: Bool = false
     ) async {
+        errorMessage = nil
+        let resolvedRate = SellTransactionValidator.resolvedExchangeRate(
+            account: account,
+            assetType: existing.assetType,
+            exchangeRate: exchangeRate
+        )
+        let maxSellQuantity = await resolveMaxSellQuantity(
+            account: account,
+            assetType: existing.assetType,
+            symbol: existing.symbol,
+            editingTransaction: existing
+        )
+        if let message = SellTransactionValidator.validate(
+            account: account,
+            assetType: existing.assetType,
+            symbol: existing.symbol,
+            quantity: quantity,
+            exchangeRate: resolvedRate,
+            maxSellQuantity: maxSellQuantity
+        ) {
+            errorMessage = message
+            return
+        }
+
         do {
             let costBasis = try await calculateCostBasis(
                 userId: account.userId,
@@ -401,7 +516,7 @@ class TransactionsViewModel: ObservableObject {
                 transactionDate: transactionDate,
                 createdAt: existing.createdAt,
                 updatedAt: Date(),
-                exchangeRate: exchangeRate,
+                exchangeRate: resolvedRate,
                 realizedGainLoss: realizedGainLoss,
                 realizedGainLossPercent: realizedGainLossPercent,
                 realizedCostBasis: costBasis,
@@ -426,20 +541,21 @@ class TransactionsViewModel: ObservableObject {
             return (true, nil)
         }
         
-        // 如果是還款交易，需要檢查是否為最新紀錄
         do {
-            guard let targetAccountId = transaction.targetAccountId,
-                  let targetAccount = try? await dataService.fetchAccounts(userId: userId).first(where: { $0.id == targetAccountId }),
-                  targetAccount.accountType == .debt else {
-                // 不是債務帳戶的還款交易，可以刪除
+            guard transaction.type == .repayment else {
                 return (true, nil)
             }
             
-            // 獲取所有還款交易，檢查是否為最新紀錄
+            let allAccounts = try await dataService.fetchAccounts(userId: userId)
+            guard let debtAccount = allAccounts.first(where: { $0.id == transaction.accountId }),
+                  debtAccount.accountType == .debt else {
+                return (true, nil)
+            }
+            
             let allTransactions = try await dataService.fetchAllTransactions(userId: userId)
             let repaymentTransactions = allTransactions
-                .filter { ($0.type == .repayment || $0.notes?.contains("還款") == true) && $0.targetAccountId == targetAccountId }
-                .sorted { $0.transactionDate > $1.transactionDate }  // 按日期降序排序
+                .filter { $0.type == .repayment && $0.accountId == debtAccount.id }
+                .sorted { $0.transactionDate > $1.transactionDate }
             
             // 檢查當前交易是否為最新還款紀錄（第一個）
             if let latestRepayment = repaymentTransactions.first,
@@ -465,173 +581,98 @@ class TransactionsViewModel: ObservableObject {
             
             let userId = accounts.first?.userId ?? AppUser.id
             
-            // 檢查是否為還款或轉帳交易（還款使用轉帳的邏輯）
-            let isRepayment = (transaction.notes?.contains("還款至") ?? false) || 
-                             (transaction.notes?.contains("還款自") ?? false) ||
-                             (transaction.notes?.contains("還款到") ?? false)
-            
-            // 如果是轉帳或還款交易，使用相同的邏輯處理
-            if transaction.type == .transfer || transaction.type == .repayment || isTransferTransaction(transaction) || isRepayment {
-                // 現在轉帳/還款只記錄在一筆交易中，只需要刪除這筆交易
-                // 但如果是還款交易，需要恢復債務的剩餘本金
-                if transaction.type == .repayment || isRepayment {
-                    // ===== 還款交易：檢查是否為最新還款紀錄，並恢復還款前狀態 =====
-                    if let targetAccountId = transaction.targetAccountId,
-                       let targetAccount = try? await dataService.fetchAccounts(userId: userId).first(where: { $0.id == targetAccountId }),
-                       targetAccount.accountType == .debt {
-                        
-                        // 1. 檢查是否為最新還款紀錄（只能刪除最新的一筆）
-                        let allTransactions = try await dataService.fetchAllTransactions(userId: userId)
-                        let repaymentTransactions = allTransactions
-                            .filter { ($0.type == .repayment || $0.notes?.contains("還款") == true) && $0.targetAccountId == targetAccountId }
-                            .sorted { $0.transactionDate > $1.transactionDate }  // 按日期降序排序
-                        
-                        // 檢查當前交易是否為最新還款紀錄（第一個）
-                        guard let latestRepayment = repaymentTransactions.first,
-                              latestRepayment.id == transaction.id else {
-                            // 不是最新還款紀錄，不允許刪除
-                            await MainActor.run {
-                                errorMessage = "只能刪除最新的還款紀錄。請先刪除較新的還款紀錄。"
-                            }
-                            return
+            if transaction.type == .repayment {
+                let allAccounts = try await dataService.fetchAccounts(userId: userId)
+                if let debtAccount = allAccounts.first(where: { $0.id == transaction.accountId }),
+                   debtAccount.accountType == .debt {
+                    let allTransactions = try await dataService.fetchAllTransactions(userId: userId)
+                    let repaymentTransactions = allTransactions
+                        .filter { $0.type == .repayment && $0.accountId == debtAccount.id }
+                        .sorted { $0.transactionDate > $1.transactionDate }
+                    
+                    guard let latestRepayment = repaymentTransactions.first,
+                          latestRepayment.id == transaction.id else {
+                        await MainActor.run {
+                            errorMessage = "只能刪除最新的還款紀錄。請先刪除較新的還款紀錄。"
                         }
-                        
-                        // 2. 找到對應的債務並使用存儲的還款前狀態直接恢復
-                        // 注意：Liability 的 accountId 是還款帳戶的 ID（不是債務帳戶的 ID），name 是債務名稱
-                        let allAccounts = try await dataService.fetchAccounts(userId: userId)
-                        let debtAccountName = targetAccount.name  // 債務名稱
-                        
-                        // 在所有非債務帳戶中查找對應的 Liability（通過 name 匹配）
-                        // 因為一個債務名稱應該只對應一個 Liability，所以找到第一個匹配的就夠了
-                        var foundLiability: Liability? = nil
-                        for account in allAccounts {
-                            if account.accountType != .debt {
-                                // Liability 的 accountId 是還款帳戶的 ID，name 是債務名稱
-                                let accountLiabilities = try await dataService.fetchLiabilities(accountId: account.id)
-                                if let liability = accountLiabilities.first(where: { $0.name == debtAccountName }) {
-                                    foundLiability = liability
-                                    break
-                                }
-                            }
+                        return
+                    }
+                    
+                    let accountLiabilities = try await dataService.fetchLiabilities(accountId: debtAccount.id)
+                    guard var liability = accountLiabilities.first(where: { $0.name == debtAccount.name }) ?? accountLiabilities.first else {
+                        await MainActor.run {
+                            errorMessage = "找不到對應的債務記錄：\(debtAccount.name)"
                         }
-                        
-                        guard var liability = foundLiability else {
-                            await MainActor.run {
-                                errorMessage = "找不到對應的債務記錄：\(debtAccountName)"
-                            }
-                            return
-                        }
-                        
-                        // 使用存儲的還款前狀態直接恢復（不需要重新計算）
+                        return
+                    }
+                    
+                    if debtAccount.accountType == .debt {
                         guard let beforeBalance = transaction.beforeRepaymentBalance,
                               let beforePaidPeriods = transaction.beforeRepaymentPaidPeriods else {
-                            // 如果交易中沒有存儲還款前狀態（舊數據），則不允許刪除
                             await MainActor.run {
-                                errorMessage = "無法恢復還款前狀態：交易記錄中缺少還款前狀態資訊。這可能是舊版本的交易記錄，無法安全刪除。"
+                                errorMessage = "無法恢復還款前狀態：交易記錄中缺少還款前狀態資訊。"
                             }
                             return
                         }
                         
-                        // 直接恢復還款前的狀態
                         liability.remainingBalance = beforeBalance
                         liability.paidPeriods = beforePaidPeriods
-                        
-                        // 如果存儲了還款前的總期數，恢復總期數（提前還款時總期數應該不變，但為了安全起見還是恢復）
                         if let beforeTotalPeriods = transaction.beforeRepaymentTotalPeriods {
                             liability.totalPeriods = beforeTotalPeriods
                         }
-                        // 注意：如果沒有存儲還款前的總期數（舊數據），總期數保持當前值不變
-                        
-                        // 恢復已還款本金、已支出利息、節省利息
-                        // 直接從交易記錄中讀取 principalAmount 和 interestAmount（不使用字符串解析）
                         if let principalAmount = transaction.principalAmount {
                             liability.totalPaidPrincipal -= principalAmount
                         }
                         if let interestAmount = transaction.interestAmount {
                             liability.totalPaidInterest -= interestAmount
                         }
-                        
-                        // 如果是提前還款，需要恢復節省利息
-                        // 直接從交易記錄中讀取 savedInterest（不使用字符串解析）
                         if let savedInterest = transaction.savedInterest, savedInterest > 0 {
                             liability.totalSavedInterest -= savedInterest
                         }
-                        
-                        // 確保不會出現負數
-                        if liability.totalPaidPrincipal < 0 {
-                            liability.totalPaidPrincipal = 0
-                        }
-                        if liability.totalPaidInterest < 0 {
-                            liability.totalPaidInterest = 0
-                        }
-                        if liability.totalSavedInterest < 0 {
-                            liability.totalSavedInterest = 0
-                        }
-                        
+                        liability.totalPaidPrincipal = max(0, liability.totalPaidPrincipal)
+                        liability.totalPaidInterest = max(0, liability.totalPaidInterest)
+                        liability.totalSavedInterest = max(0, liability.totalSavedInterest)
                         liability.updatedAt = Date()
                         try await dataService.updateLiability(liability)
                     }
                 }
                 
-                // 刪除交易
                 try await dataService.deleteTransaction(transactionId)
-                
-                // 更新兩個帳戶的持股
                 await updateHoldings(accountId: transaction.accountId)
-                if let targetAccountId = transaction.targetAccountId {
-                    await updateHoldings(accountId: targetAccountId)
-                }
             }
-            // 如果是債務交易，需要同時刪除對應的債務、債務帳戶和交易記錄
             else if transaction.type == .liability {
-                // transaction.accountId 是債務帳戶的 ID
-                let debtAccountId = transaction.accountId
-                
-                // 1. 先找到債務帳戶，獲取債務名稱
                 let allAccounts = try await dataService.fetchAccounts(userId: userId)
-                guard let debtAccount = allAccounts.first(where: { $0.id == debtAccountId && $0.accountType == .debt }) else {
-                    // 如果找不到債務帳戶，只刪除交易記錄
-                    try await dataService.deleteTransaction(transactionId)
-                    await loadTransactions(userId: userId)
-                    return
-                }
-                
-                let liabilityName = debtAccount.name
-                
-                // 2. 找到對應的 Liability 記錄（需要遍歷所有還款帳戶的 Liability 記錄）
-                // Liability 的 accountId 是還款帳戶的 ID，name 是債務名稱
-                var foundLiability: Liability? = nil
-                for account in allAccounts {
-                    if account.accountType != .debt {
-                        let accountLiabilities = try await dataService.fetchLiabilities(accountId: account.id)
-                        if let liability = accountLiabilities.first(where: { $0.name == liabilityName }) {
-                            foundLiability = liability
-                            break
+                if let liabilityAccount = allAccounts.first(where: { $0.id == transaction.accountId }) {
+                    switch liabilityAccount.accountType {
+                    case .otherDebt:
+                        // 其他債務：僅刪除該筆欠款紀錄，保留帳戶
+                        try await dataService.deleteTransaction(transactionId)
+                    case .debt:
+                        let debtAccountId = liabilityAccount.id
+                        let liabilityName = liabilityAccount.name
+                        let accountLiabilities = try await dataService.fetchLiabilities(accountId: debtAccountId)
+                        let foundLiability = accountLiabilities.first(where: { $0.name == liabilityName }) ?? accountLiabilities.first
+                        
+                        try await dataService.deleteTransaction(transactionId)
+                        if let liability = foundLiability {
+                            try await dataService.deleteLiability(liability.id)
                         }
+                        try await dataService.deleteAccount(debtAccountId)
+                    default:
+                        try await dataService.deleteTransaction(transactionId)
+                        await updateHoldings(accountId: transaction.accountId)
                     }
+                } else {
+                    try await dataService.deleteTransaction(transactionId)
                 }
-                
-                // 3. 先刪除交易記錄（在刪除帳戶之前）
-                try await dataService.deleteTransaction(transactionId)
-                
-                // 4. 如果找到 Liability 記錄，刪除它
-                if let liability = foundLiability {
-                    try await dataService.deleteLiability(liability.id)
-                }
-                
-                // 5. 最後刪除債務帳戶（這會自動刪除該帳戶的所有交易和持股）
-                // 注意：雖然我們已經手動刪除了交易記錄，但 deleteAccount 也會刪除該帳戶的所有交易
-                // 這樣可以確保數據一致性，即使某些交易沒有被手動刪除
-                try await dataService.deleteAccount(debtAccountId)
             } else {
-                // 普通交易：只刪除一筆
                 try await dataService.deleteTransaction(transactionId)
                 await updateHoldings(accountId: transaction.accountId)
             }
             
-            // 重新載入交易以確保數據一致性（這會更新本地數組）
-            await updateSnapshotsIfNeeded(for: transaction.accountId)
             await loadTransactions(userId: userId)
+            await refreshPortfolioSnapshots(userId: userId)
+            notifyTransactionsDidChange()
             // 清除錯誤訊息（如果刪除成功）
             await MainActor.run {
                 errorMessage = nil
@@ -645,13 +686,36 @@ class TransactionsViewModel: ObservableObject {
         }
     }
 
+    private func refreshPortfolioSnapshots(userId: String) async {
+        await SnapshotRefreshCoordinator.rebuildAndNotify(
+            userId: userId,
+            dataService: dataService
+        )
+    }
+    
     private func updateSnapshotsIfNeeded(for accountId: String) async {
-        if let userId = await resolveUserId(for: accountId) {
-            await SnapshotRefreshCoordinator.rebuildAndNotify(
-                userId: userId,
-                dataService: dataService
-            )
-        }
+        let userId = await resolveUserId(for: accountId) ?? AppUser.id
+        await refreshPortfolioSnapshots(userId: userId)
+    }
+
+    private func notifyTransactionsDidChange() {
+        NotificationCenter.default.post(name: .transactionsDidChange, object: nil)
+    }
+
+    private func resolveMaxSellQuantity(
+        account: Account,
+        assetType: AssetType,
+        symbol: String,
+        editingTransaction: Transaction
+    ) async -> Decimal {
+        let options = await SellHoldingAvailability.accountsWithSellCapacity(
+            symbol: symbol,
+            assetType: assetType,
+            candidateAccounts: [account],
+            dataService: dataService,
+            editingTransaction: editingTransaction
+        )
+        return options.first?.maxSellQuantity ?? editingTransaction.quantity
     }
 
     private func resolveUserId(for accountId: String) async -> String? {
@@ -688,64 +752,6 @@ class TransactionsViewModel: ObservableObject {
             }
         }
         return averageCostFallback * quantity
-    }
-    
-    /// 檢查是否為轉帳交易
-    private func isTransferTransaction(_ transaction: Transaction) -> Bool {
-        if let notes = transaction.notes {
-            return notes.contains("轉帳至") || notes.contains("轉帳自")
-        }
-        return false
-    }
-    
-    /// 從轉帳交易的 notes 中提取帳戶名稱
-    private func extractAccountNameFromTransferNotes(_ notes: String, isFrom: Bool) -> String {
-        let prefix = isFrom ? "轉帳至 " : "轉帳自 "
-        
-        if let range = notes.range(of: prefix) {
-            let afterPrefix = String(notes[range.upperBound...])
-            // 移除可能的匯率部分和備註部分
-            var accountName = afterPrefix
-            
-            // 移除 " (匯率: ...)" 部分
-            if let rateRange = accountName.range(of: " (匯率:") {
-                accountName = String(accountName[..<rateRange.lowerBound])
-            }
-            
-            // 如果有 " - " 分隔符，取後面的部分
-            if let dashRange = accountName.range(of: " - ") {
-                accountName = String(accountName[dashRange.upperBound...])
-            }
-            
-            return accountName.trimmingCharacters(in: .whitespaces)
-        }
-        
-        return ""
-    }
-    
-    /// 從還款交易的 notes 中提取帳戶名稱
-    private func extractAccountNameFromRepaymentNotes(_ notes: String, isFrom: Bool) -> String {
-        let prefix = isFrom ? "還款至 " : "還款自 "
-        
-        if let range = notes.range(of: prefix) {
-            let afterPrefix = String(notes[range.upperBound...])
-            // 移除可能的匯率部分和備註部分
-            var accountName = afterPrefix
-            
-            // 移除 " (匯率: ...)" 部分
-            if let rateRange = accountName.range(of: " (匯率:") {
-                accountName = String(accountName[..<rateRange.lowerBound])
-            }
-            
-            // 如果有 " - " 分隔符，取前面的部分（帳戶名稱在備註之前）
-            if let dashRange = accountName.range(of: " - ") {
-                accountName = String(accountName[..<dashRange.lowerBound])
-            }
-            
-            return accountName.trimmingCharacters(in: .whitespaces)
-        }
-        
-        return ""
     }
     
     /// 更新持股（根據交易記錄重播）

@@ -1,130 +1,164 @@
 # 變更記錄 - 2026/05/24
 
-> 今日重點：每日投資組合快照（後端排程 + App 走勢圖接 Supabase）、匯率流程釐清、Git 備份與 push。
+> 今日重點：本機估值 B 全線落地、走勢圖（雲端歷史 + 當日即時）、雲端每日快照 bug 修正、歷史走勢 backfill、Phase 5 首頁 UX。
 
-**Commit：** `6e68aeb`  
-**備份分支：** `backup/snapshot-20260524-004749`（指向改動前的 `349baa9`）
+**最新 commit：** `8c3e16b`  
+**備份分支（今晚）：**
+- `backup/snapshot-20260524-pre-import-235505` @ `308fe9c`（匯入 SQL 前）
+- `backup/snapshot-20260524-import-235505` @ `8c3e16b`（匯入 SQL 後）
 
 ---
 
-## 一、每日投資組合快照（Phase 2 完成）
+## 今日 commit 時間軸
 
-### 背景
+| Commit | 摘要 |
+|--------|------|
+| `6e68aeb` | 每日投資組合快照（後端排程 + App 走勢讀 Supabase） |
+| `7304f09` | 帳戶 CSV 匯入、台股簡稱、股價截斷顯示 |
+| `3bbcb82` | 每月 symbols 清單 GitHub Actions |
+| `6c26f2b` | Monthly Symbols workflow YAML 修正 |
+| `fbfca7f` / `735a982` | symbols 自動更新（CI） |
+| `99be06f` | 首頁金額隱私、工程手冊 `ENGINEERING_HANDBOOK.md` |
+| `9913b2f` | 首頁分享、今日損益、走勢區間顯示 |
+| `3154f50` | 本機 JSON 持久化、`AppUser` 分使用者 |
+| `288d61c` | Phase 1–3：Splash、本機 B 冷啟動、股價 gate、重複交易檢查 |
+| `df4f2c1` | Phase 4：`rebuildAndNotify` 統一路徑、走勢 session 快取 |
+| `4ecc6d6` | Phase 5：Tab 更新時間、十色圖表、分享預覽、排程改 **22:30** |
+| `308fe9c` | 雲端快照持股計算修正、走勢「今天即時」、首頁換匯修正 |
+| `8c3e16b` | david.hsu / piggy.lu 歷史走勢 SQL backfill |
 
-- Phase 1 已完成：App 交易後 sync `user_portfolio_state`（現金 / 持股 / 負債）
-- 今日補上 Phase 2～4：後端每天算淨資產 → 寫入 `user_daily_snapshots` → App 走勢圖讀真實資料
+---
 
-### 新增／修改檔案
+## 一、本機估值 B + 冷啟動（Phase 1–4）
 
-| 檔案 | 說明 |
+### 核心行為
+
+- 交易／帳戶變更 → `SnapshotRefreshCoordinator.rebuildAndNotify` → 寫本機 JSON + sync `user_portfolio_state`
+- Splash（`LaunchCoordinator` / `AppRootView`）先灌入 persisted 快照，首頁不再先閃 0
+- 三大 Tab（首頁／帳戶／資產）共用 persisted 估值 B，不再各自重算 Supabase
+- 移除 mock 種子與舊 Supabase 重算 dead code
+
+### 主要檔案
+
+- `LaunchCoordinator.swift`、`AppRootView.swift`、`LaunchSplashView.swift`
+- `LocalUserDataStore.swift`、`DataService.swift` 持久化
+- `SnapshotRefreshCoordinator.swift`、`SnapshotUpdater.swift`
+- `PortfolioViewModel.prepareFromPersisted`
+
+---
+
+## 二、走勢圖
+
+### 資料來源（`308fe9c` 後）
+
+| 日期 | 來源 |
 |------|------|
-| `backend/supabase/migrations/006_user_daily_snapshots.sql` | 每日快照表（主鍵 `user_id + snapshot_date`） |
-| `backend/supabase/migrations/003_exchange_rates.sql` | 匯率表 migration（補進 repo） |
-| `backend/scripts/daily_portfolio_snapshot.py` | 讀 state + 股價 + 匯率 → 算總資產／淨資產 → upsert |
-| `.github/workflows/daily-portfolio-snapshot.yml` | 每天 **23:40 台灣時間**（UTC 15:40）自動跑 |
-| `Snapvest/Services/SupabaseDailySnapshotService.swift` | App 從 Supabase 讀走勢資料 |
-| `Snapvest/Views/HomeTrendChartView.swift` | 改讀 Supabase；不足 2 天顯示空狀態 |
-| `Snapvest/Views/HomeView.swift` | 走勢圖傳入 `userId` |
-| `Snapvest/Models/PortfolioStateSyncPayload.swift` | 持股 sync 新增 `averageCost`（後端算未實現損益） |
-| `backend/scripts/daily_price_update.py` | 移除重複的匯率更新函式 |
+| **過去** | Supabase `user_daily_snapshots`（每人 `user_id` 篩選，約 400 天） |
+| **今天** | 本機 `HomeDashboardSnapshot`（與首頁卡片同源，交易後即更新） |
 
-### 資料流
+實作：`TrendChartPointMerger` + `HomeTrendChartSessionCache`（只快取雲端歷史，不含當日）。
 
-```
-App 交易 → user_portfolio_state（最新狀態，每次覆蓋）
+### 歷史 backfill（`8c3e16b`）
 
-GitHub Actions 23:40
-  → 讀 user_portfolio_state
-  → 讀 asset_price_snapshots、exchange_rates
-  → 寫 user_daily_snapshots（每人每天一筆，同天 upsert 不蓋昨天）
+從 Numbers 匯出，產生 Supabase SQL（手動在 SQL Editor 執行）：
 
-App 首頁走勢圖 → 讀 user_daily_snapshots（依 user_id）
-```
+| 檔案 | user_id | 筆數 | 日期範圍 |
+|------|---------|------|----------|
+| `backend/scripts/import_david_hsu_daily_snapshots.sql` | `david.hsu` | 97 | 2025-12-25～2026-05-23 |
+| `backend/scripts/import_piggy_lu_daily_snapshots.sql` | `piggy.lu` | 103 | 2025-12-25～2026-05-23 |
 
-### 重要行為
+欄位對應：總資產→`total_assets`、投資資產→`total_investments`、總現金→`total_cash`、總負債→`total_liabilities`、淨資產→`net_worth`；`unrealized_gain_loss` = 0。
+
+---
+
+## 三、雲端每日快照 bug 修正（`308fe9c`）
+
+### 問題
+
+`user_daily_snapshots` 的 `total_investments`、`unrealized_gain_loss` 為 0，`total_assets` 只剩現金。
+
+### 根因
+
+- App sync 的 JSONB 用 **camelCase**（`assetType`、`averageCost`）
+- `daily_portfolio_snapshot.py` 舊版只讀 **snake_case**（`asset_type`）→ 對不到股價 → 投資市值全 0
+
+### 修正
+
+- Python：`_field()` 同時支援 camelCase / snake_case；`stock_us` 代號大寫
+- Swift：`PortfolioStateSyncPayload` 編碼改 snake_case（`asset_type`、`average_cost`）
+- 首頁 `SnapshotUpdater`：持股市值換匯改依 **`holding.currency`**（與帳戶 Tab、後端腳本一致）
+
+修正後本地驗算 david.hsu 約：總資產 561 萬、投資 449 萬、未實現 97 萬（需重跑 GitHub Actions **Daily Portfolio Snapshot** 才寫入雲端）。
+
+---
+
+## 四、Phase 5 首頁體驗（`4ecc6d6`）
+
+- 各 Tab **資料更新時間** footer（`DataFreshnessStore`）
+- 首頁現金卡片 **USD/TWD 匯率** caption
+- 表單 **鍵盤／月曆收起**（`KeyboardDismiss` / `snapFormSheetChrome`）
+- 圓餅圖／績效圖 **十色** + 切換閃爍修正
+- **分享預覽** debounce + 淡入淡出
+- Supabase REST **微秒時間戳**解析修正
+- 每日快照排程：**23:40 → 22:30（台灣）**（cron `30 14 * * *` UTC）
+
+---
+
+## 五、其他功能與工具
 
 | 項目 | 說明 |
 |------|------|
-| **不覆蓋歷史** | 主鍵 `(user_id, snapshot_date)`，每天新增一列；同天重跑只更新當天 |
-| **多使用者** | 每位在 `user_portfolio_state` 的使用者，每天各一筆 |
-| **走勢圖門檻** | 至少 **2 個不同日期** 才畫線，否則「尚無足夠資料顯示走勢」 |
-| **不回填** | 排程只寫「當天」，過去沒跑的日子不會自動補 |
-
-### Supabase（使用者已手動完成）
-
-- `user_daily_snapshots` 表與 RLS 已在 Dashboard 建立（policy 名稱與 migration 檔略有不同，功能相同）
-- 已手動跑過 `daily_portfolio_snapshot.py`，目前有至少 1 筆快照
+| CSV 帳戶匯入 | 證券戶 buy-sell 流水、無標題列容錯 |
+| 每月 symbols CI | 美股／台股／加密 Top 500 → App Bundle |
+| 首頁分享 | 走勢／圓餅／績效圖分享 sheet |
+| 金額隱私模式 | 首頁敏感數字可隱藏 |
+| 工程手冊 | `ENGINEERING_HANDBOOK.md` |
+| 重複交易 | 已排查（並行 submit + 雙重檢查），**尚未修 code** |
 
 ---
 
-## 二、匯率（討論與決策，未另 commit）
+## 六、Supabase 架構備忘
 
-### 問題釐清
-
-- 後端 `open.er-api.com` 一次回傳 **160+ 種**匯率，全部寫入 `exchange_rates`
-- App 實際主要只用 **USD → TWD**
-- 曾規劃 **方案 B（15 種白名單）**，後決定 **維持全部一起更新**（已還原白名單改動）
-
-### 操作備忘
-
-```bash
-cd backend/scripts
-export SUPABASE_URL='...'
-export SUPABASE_SERVICE_ROLE_KEY='...'
-python3 update_exchange_rates_only.py   # 只更新匯率
-python3 daily_portfolio_snapshot.py   # 只跑每日快照
-```
+- `user_daily_snapshots`：**單表 + `user_id` 欄**，無子資料夾；App 查詢帶 `user_id=eq.xxx`，不會因多人而變慢
+- 索引：`(user_id, snapshot_date DESC)`
+- 目前 anon 可讀全表 RLS；多人時長期應改為每人只能讀自己的列
 
 ---
 
-## 三、Git 備份
+## 七、Git 備份（今日）
 
-| 項目 | 內容 |
-|------|------|
-| 備份分支（改動前） | `backup/snapshot-20260524-004749` @ `349baa9` |
-| 備份分支（改動後） | `backup/snapshot-20260524-post-daily` @ `6e68aeb` |
-| 本地 tag | `backup-20260524-daily-snapshot` @ `6e68aeb` |
-| **本地資料夾副本** | **`/Users/david/Desktop/Snapvest-backup-20260524`**（含完整 `.git`） |
-| Push | `main` 與改動前備份分支均已 push 至 `origin` |
+| 分支 | 指向 | 說明 |
+|------|------|------|
+| `backup/snapshot-20260524-pre-import-235505` | `308fe9c` | 歷史 SQL 匯入前 |
+| `backup/snapshot-20260524-import-235505` | `8c3e16b` | 歷史 SQL 匯入後 |
+| `backup/snapshot-20260524-pre-push-212941` 等 | 較早 | Phase 5 commit 前後備份 |
 
-還原改動前：
-
-```bash
-git checkout backup/snapshot-20260524-004749
-```
-
-還原今日完成版（本地）：
-
-```bash
-git checkout backup/snapshot-20260524-post-daily
-# 或直接開 Desktop 上的 Snapvest-backup-20260524 資料夾
-```
+均已 push 至 `origin`。
 
 ---
 
-## 四、待你後續確認的事
+## 八、待辦／確認
 
-1. **GitHub Actions → Daily Portfolio Snapshot** 是否已手動 Run 過、secrets 是否正常
-2. **明天 23:40 後** `user_daily_snapshots` 是否自動多一筆（第二個日期 → 走勢圖可畫線）
-3. 比對 App 首頁數字與 `user_daily_snapshots` 當日 `total_assets` / `net_worth` 是否接近
-
----
-
-## 五、已知架構差異（尚未修）
-
-| 項目 | App | 後端快照腳本 |
-|------|-----|--------------|
-| 持股換匯 | 依**帳戶幣別** | 依**持股標的 currency** |
-| 影響 | 美股放在台幣證券戶時可能與後端數字有差 | 示範資料（美股戶）無此問題 |
+1. [ ] GitHub Actions **Daily Portfolio Snapshot** 手動 Run（`308fe9c` 部署後）
+2. [ ] Supabase SQL Editor 執行兩份 import SQL（若尚未執行）
+3. [ ] 重開 App 驗收走勢圖（歷史 + 今天即時）
+4. [ ] 比對首頁總資產與雲端當日快照（排程跑完後）
+5. [ ] 重複交易提示一閃而過 — 待同意後再修（提交鎖 + 單次 duplicate 檢查）
 
 ---
 
-## 六、新建檔案清單
+## 九、新建／重要檔案清單
 
 ```
 .github/workflows/daily-portfolio-snapshot.yml
 backend/scripts/daily_portfolio_snapshot.py
-backend/supabase/migrations/003_exchange_rates.sql
+backend/scripts/import_david_hsu_daily_snapshots.sql
+backend/scripts/import_piggy_lu_daily_snapshots.sql
 backend/supabase/migrations/006_user_daily_snapshots.sql
 Snapvest/Snapvest/Services/SupabaseDailySnapshotService.swift
+Snapvest/Snapvest/Views/HomeTrendChartView.swift
+Snapvest/Snapvest/Utilities/HomeTrendChartSessionCache.swift
+Snapvest/Snapvest/Services/LaunchCoordinator.swift
+Snapvest/Snapvest/Views/AppRootView.swift
+ENGINEERING_HANDBOOK.md
 ```

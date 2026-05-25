@@ -15,11 +15,11 @@ struct TransactionHistoryView: View {
     @State private var expandedTransactionId: String? = nil
     @State private var showingEditIncome = false
     @State private var showingEditExpense = false
-    @State private var showingEditTransfer = false
+    @State private var showingEditRepayment = false
     @State private var showingEditTransaction: Transaction?
     @State private var editingIncomeTransaction: Transaction?
     @State private var editingExpenseTransaction: Transaction?
-    @State private var editingTransferTransaction: Transaction?
+    @State private var editingRepaymentTransaction: Transaction?
     @StateObject private var editingAccountViewModel = AccountDetailViewModel()
     @State private var showingDeleteError = false
     @State private var deleteErrorMessage: String? = nil
@@ -99,20 +99,20 @@ struct TransactionHistoryView: View {
                         }
                 }
             }
-            .sheet(isPresented: $showingEditTransfer) {
-                if let transaction = editingTransferTransaction {
-                    TransferView(account: account, viewModel: editingAccountViewModel, editingTransaction: transaction)
-                        .onAppear {
+            .sheet(isPresented: $showingEditRepayment) {
+                if let transaction = editingRepaymentTransaction {
+                    RepaymentEditWrapperView(
+                        transaction: transaction,
+                        viewModel: transactionsViewModel,
+                        portfolioViewModel: PortfolioViewModel(),
+                        userId: account.userId,
+                        onDismiss: {
                             Task {
-                                await editingAccountViewModel.loadAccountData(accountId: account.id)
+                                await viewModel.loadTransactions(accountId: account.id, userId: account.userId)
+                                await transactionsViewModel.loadTransactions(userId: account.userId)
                             }
                         }
-                        .onDisappear {
-                            // 編輯完成後刷新交易紀錄
-                            Task {
-                await viewModel.loadTransactions(accountId: account.id)
-                            }
-                        }
+                    )
                 }
             }
             .sheet(item: $showingEditTransaction) { transaction in
@@ -259,53 +259,25 @@ struct TransactionHistoryView: View {
     }
     
     private func handleEditTransaction(_ transaction: Transaction) {
-        // 還款和債務交易不能編輯，只能刪除
-        if transaction.type == .repayment || transaction.type == .liability {
+        if transaction.type == .liability {
             return
         }
         
-        // 檢查是否為轉帳交易（使用新的類型）
-        if transaction.type == .transfer {
-            // 轉帳交易：直接編輯
-            editingTransferTransaction = transaction
-            showingEditTransfer = true
+        if transaction.type == .repayment,
+           account.accountType == .debt {
+            editingRepaymentTransaction = transaction
+            showingEditRepayment = true
             return
         }
         
-        // 舊的轉帳交易格式（兼容舊數據）
-        let isTransfer = (transaction.notes?.contains("轉帳至") ?? false) || 
-                        (transaction.notes?.contains("轉帳自") ?? false)
+        if transaction.type == .withdraw,
+           transaction.notes?.contains("還款扣款：") == true {
+            editingExpenseTransaction = transaction
+            showingEditExpense = true
+            return
+        }
         
-        if isTransfer {
-            // 轉帳交易：如果是轉入交易（deposit），需要找到對應的轉出交易
-            if transaction.type == .deposit && transaction.notes?.contains("轉帳自") == true {
-                // 這是轉入交易，需要找到對應的轉出交易來編輯
-                // 解析轉出帳戶名稱
-                if let notes = transaction.notes {
-                    let accountName = extractAccountNameFromTransferNotes(notes, isFrom: false)
-                    // 如果轉出帳戶就是當前帳戶，直接使用當前交易
-                    if accountName == account.name {
-                        editingTransferTransaction = transaction
-                        showingEditTransfer = true
-                    } else {
-                        // 找到對應的轉出交易
-                        if let fromTransaction = viewModel.transactions.first(where: { trans in
-                            trans.accountId == account.id &&
-                            trans.type == .withdraw &&
-                            abs(trans.transactionDate.timeIntervalSince(transaction.transactionDate)) < 1.0 &&
-                            (trans.notes?.contains("轉帳至") ?? false)
-                        }) {
-                            editingTransferTransaction = fromTransaction
-                            showingEditTransfer = true
-                        }
-                    }
-                }
-            } else {
-                // 轉出交易（withdraw），直接使用
-                editingTransferTransaction = transaction
-                showingEditTransfer = true
-            }
-        } else if transaction.type == .deposit {
+        if transaction.type == .deposit {
             // 收入交易
             editingIncomeTransaction = transaction
             showingEditIncome = true
@@ -600,63 +572,14 @@ struct TransactionHistoryRowView: View {
         case .withdraw, .fee, .liability:
             return -transaction.totalAmountWithFee
         case .buy:
-            if transaction.deductFromAccount ?? true {
+            if transaction.deductFromAccount == true {
                 return -CashCalculator.buySellAmountInAccountCurrency(transaction: transaction, accountCurrency: accountCurrency)
             }
             return 0
-        case .transfer:
-            // 轉帳：判斷是轉出還是轉入
-            if transaction.accountId == accountId {
-                // 這是轉出帳戶：減少（使用轉出金額）
-                return -transaction.totalAmount
-            } else if transaction.targetAccountId == accountId {
-                // 這是轉入帳戶：增加（需要計算轉入金額）
-                if transaction.currency != accountCurrency {
-                    // 跨幣別轉帳：優先使用 transaction.exchangeRate，向後兼容從備註解析
-                    var receivedAmount = transaction.totalAmount
-                    if let rate = transaction.exchangeRate, rate > 0 {
-                        if transaction.currency == .TWD && accountCurrency == .USD {
-                            receivedAmount = transaction.totalAmount / rate
-                        } else if transaction.currency == .USD && accountCurrency == .TWD {
-                            receivedAmount = transaction.totalAmount * rate
-                        }
-                    } else if let notes = transaction.notes,
-                       let rateRange = notes.range(of: "匯率: ") {
-                        let rateString = String(notes[rateRange.upperBound...])
-                        if let rateEnd = rateString.firstIndex(of: ")") {
-                            let rateValue = String(rateString[..<rateEnd]).trimmingCharacters(in: .whitespaces)
-                            if let rate = Decimal(string: rateValue), rate > 0 {
-                                if transaction.currency == .TWD && accountCurrency == .USD {
-                                    receivedAmount = transaction.totalAmount / rate
-                                } else if transaction.currency == .USD && accountCurrency == .TWD {
-                                    receivedAmount = transaction.totalAmount * rate
-                                }
-                            }
-                        }
-                    }
-                    return receivedAmount
-                } else {
-                    // 同幣別轉帳：直接使用交易金額
-                    return transaction.totalAmount
-                }
-            }
-            return 0
         case .repayment:
-            // 還款：判斷是還款帳戶（轉出）還是債務帳戶（轉入）
-            if transaction.accountId == accountId {
-                // 這是還款帳戶（源帳戶）：減少總還款金額（本金+利息）
-                // 還款帳戶顯示的是總還款金額
-                return -transaction.totalAmount
-            } else if transaction.targetAccountId == accountId {
-                // 這是債務帳戶（目標帳戶）：只增加本金部分（直接從 transaction.principalAmount 讀取）
-                // 債務帳戶的餘額就是剩餘本金，所以餘額變化只計算本金部分
-                if let principalAmount = transaction.principalAmount {
-                    return principalAmount
-                }
-                // 如果沒有本金數據，返回0（這種情況不應該發生）
-                return 0
-            }
-            return 0
+            guard transaction.accountId == accountId else { return 0 }
+            let principal = transaction.principalAmount ?? transaction.totalAmount
+            return -principal
         }
     }
     
@@ -688,21 +611,7 @@ class TransactionHistoryViewModel: ObservableObject {
         errorMessage = nil
         
         do {
-            // 獲取該帳戶的交易（包括轉出交易）
-            var fetchedTransactions = try await dataService.fetchTransactions(accountId: accountId)
-            
-            // 同時獲取所有交易，找出以該帳戶為目標帳戶的轉帳/還款交易
-            // 這樣轉入帳戶也能看到轉入的轉帳/還款交易
-            if let userId = userId, let allTransactions = try? await dataService.fetchAllTransactions(userId: userId) {
-                let incomingTransactions = allTransactions.filter { transaction in
-                    (transaction.type == .transfer || transaction.type == .repayment) &&
-                    transaction.targetAccountId == accountId &&
-                    transaction.accountId != accountId
-                }
-                fetchedTransactions.append(contentsOf: incomingTransactions)
-            }
-            
-            // 按日期排序（最新的在前）
+            let fetchedTransactions = try await dataService.fetchTransactions(accountId: accountId)
             transactions = fetchedTransactions.sorted { $0.transactionDate > $1.transactionDate }
         } catch {
             errorMessage = "載入交易紀錄失敗：\(error.localizedDescription)"
@@ -733,58 +642,13 @@ class TransactionHistoryViewModel: ObservableObject {
             case .withdraw, .fee, .liability:
                 balance -= t.totalAmountWithFee
             case .buy:
-                if t.deductFromAccount ?? true {
+                if t.deductFromAccount == true {
                     balance -= CashCalculator.buySellAmountInAccountCurrency(transaction: t, accountCurrency: accountCurrency)
                 }
-            case .transfer:
-                // 轉帳：判斷是轉出還是轉入
-                if t.accountId == accountId {
-                    // 這是轉出帳戶：減少（使用轉出金額）
-                    balance -= t.totalAmount
-                } else if t.targetAccountId == accountId {
-                    // 這是轉入帳戶：增加（需要計算轉入金額）
-                    if t.currency != accountCurrency {
-                        // 跨幣別轉帳：優先使用 transaction.exchangeRate，向後兼容從備註解析
-                        var receivedAmount = t.totalAmount
-                        if let rate = t.exchangeRate, rate > 0 {
-                            if t.currency == .TWD && accountCurrency == .USD {
-                                receivedAmount = t.totalAmount / rate
-                            } else if t.currency == .USD && accountCurrency == .TWD {
-                                receivedAmount = t.totalAmount * rate
-                            }
-                        } else if let notes = t.notes,
-                           let rateRange = notes.range(of: "匯率: ") {
-                            let rateString = String(notes[rateRange.upperBound...])
-                            if let rateEnd = rateString.firstIndex(of: ")") {
-                                let rateValue = String(rateString[..<rateEnd]).trimmingCharacters(in: .whitespaces)
-                                if let rate = Decimal(string: rateValue), rate > 0 {
-                                    if t.currency == .TWD && accountCurrency == .USD {
-                                        receivedAmount = t.totalAmount / rate
-                                    } else if t.currency == .USD && accountCurrency == .TWD {
-                                        receivedAmount = t.totalAmount * rate
-                                    }
-                                }
-                            }
-                        }
-                        balance += receivedAmount
-                    } else {
-                        // 同幣別轉帳：直接使用交易金額
-                        balance += t.totalAmount
-                    }
-                }
             case .repayment:
-                // 還款：判斷是還款帳戶（轉出）還是債務帳戶（轉入）
                 if t.accountId == accountId {
-                    // 這是還款帳戶（源帳戶）：減少總還款金額（本金+利息）
-                    // 還款帳戶顯示的是總還款金額
-                    balance -= t.totalAmount
-                } else if t.targetAccountId == accountId {
-                    // 這是債務帳戶（目標帳戶）：只增加本金部分（直接從 transaction.principalAmount 讀取）
-                    // 債務帳戶的餘額就是剩餘本金，所以餘額變化只計算本金部分
-                    if let principalAmount = t.principalAmount {
-                        balance += principalAmount
-                    }
-                    // 如果沒有本金數據，不增加餘額（這種情況不應該發生）
+                    let principal = t.principalAmount ?? t.totalAmount
+                    balance -= principal
                 }
             }
         }

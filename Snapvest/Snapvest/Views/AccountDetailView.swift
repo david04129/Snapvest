@@ -25,7 +25,6 @@ struct AccountDetailView: View {
     @State private var showingRepayment = false
     @State private var repaymentSheetItem: DebtRepaymentSheetItem?
     @State private var currentLiability: Liability?
-    @State private var repaymentAccountName: String = ""
     @State private var isDetailsExpanded: Bool = false
     @State private var showTransactionHistory = false
     @State private var selectedHolding: HoldingNavigationItem?
@@ -39,6 +38,7 @@ struct AccountDetailView: View {
     @State private var otherDebtRepaid: Decimal = 0
     @State private var showingOtherDebtRepayment = false
     @State private var showingTransactionImport = false
+    @State private var showingNewTradeFlow = false
     @StateObject private var importTransactionsViewModel = TransactionsViewModel()
     
     init(account: Account, prefilledBalance: AccountBalanceDisplay? = nil) {
@@ -169,7 +169,15 @@ struct AccountDetailView: View {
             .sharedBackgroundVisibility(.hidden)
         }
         .safeAreaInset(edge: .bottom) {
-            adjustCashBalanceBottomBar
+            accountDetailBottomBar
+        }
+        .sheet(isPresented: $showingNewTradeFlow) {
+            NewTradeFlowView(sourceAccount: account) { _, _ in
+                Task {
+                    await viewModel.refresh(accountId: account.id, account: account)
+                    await accountsViewModel.loadAccounts(userId: account.userId)
+                }
+            }
         }
         .sheet(isPresented: $showingAdjustCashBalance) {
             AdjustCashBalanceView(
@@ -345,27 +353,54 @@ struct AccountDetailView: View {
         .shadow(color: AppColors.shadowMedium, radius: 8, x: 0, y: 2)
     }
     
+    @ViewBuilder
     private var accountCashHoldingsMetricsRow: some View {
-        LazyVGrid(
-            columns: [
-                GridItem(.flexible(), spacing: 10),
-                GridItem(.flexible(), spacing: 10)
-            ],
-            spacing: 10
-        ) {
+        if account.accountType == .twdDeposit {
             MetricTile(
                 title: "現金餘額",
                 value: accountDisplayCashBalance.formatted(currency: viewModel.displayCurrency)
             )
-            MetricTile(
-                title: "持股市值",
-                value: accountDisplayHoldingsValue.formatted(currency: viewModel.displayCurrency)
-            )
+        } else {
+            LazyVGrid(
+                columns: [
+                    GridItem(.flexible(), spacing: 10),
+                    GridItem(.flexible(), spacing: 10)
+                ],
+                spacing: 10
+            ) {
+                MetricTile(
+                    title: "現金餘額",
+                    value: accountDisplayCashBalance.formatted(currency: viewModel.displayCurrency)
+                )
+                MetricTile(
+                    title: "持股市值",
+                    value: accountDisplayHoldingsValue.formatted(currency: viewModel.displayCurrency)
+                )
+            }
         }
     }
     
-    private var adjustCashBalanceBottomBar: some View {
+    @ViewBuilder
+    private var accountDetailBottomBar: some View {
         HStack(spacing: 12) {
+            if account.accountType.supportsStockTrading {
+                Button(action: {
+                    showingNewTradeFlow = true
+                }) {
+                    HStack {
+                        Image(systemName: "plus.circle.fill")
+                        Text("新增交易")
+                    }
+                    .font(.headline)
+                    .foregroundColor(AppColors.actionForeground)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Color.profitGreen)
+                    .cornerRadius(12)
+                }
+                .buttonStyle(.plain)
+            }
+            
             Button(action: {
                 showingAdjustCashBalance = true
             }) {
@@ -409,11 +444,7 @@ struct AccountDetailView: View {
                         isExpanded: $isDetailsExpanded
                     )
                     
-                    RepaymentInfoCard(
-                        liability: liability,
-                        repaymentAccount: accountsViewModel.accounts.first(where: { $0.id == liability.accountId }),
-                        repaymentAccountName: repaymentAccountName
-                    )
+                    RepaymentInfoCard(liability: liability)
                 }
             }
             .padding(.horizontal, 20)
@@ -455,7 +486,7 @@ struct AccountDetailView: View {
                 Task { await performArchiveDebtAccount() }
             }
         } message: {
-            Text("封存後將自帳戶列表隱藏，還款紀錄會保留。確定要封存「\(liveDebtAccount.name)」嗎？")
+            Text("封存後將自帳戶列表隱藏，還款紀錄會保留。若要完全移除，可於帳戶列表左滑刪除。確定要封存「\(liveDebtAccount.name)」嗎？")
         }
         .alert("無法封存", isPresented: Binding(
             get: { archiveErrorMessage != nil },
@@ -618,7 +649,6 @@ struct AccountDetailView: View {
             }
             .buttonStyle(.plain)
             .disabled(isArchiving)
-            .containerRelativeFrame(.horizontal, count: 2, span: 1, spacing: 12)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 20)
@@ -633,7 +663,7 @@ struct AccountDetailView: View {
     }
     
     private var archivedDebtBottomNotice: some View {
-        Text("此債務帳戶已封存，僅供查閱紀錄。")
+        Text("此債務帳戶已封存，僅供查閱紀錄。若要完全移除，可於帳戶列表左滑刪除。")
             .font(.subheadline)
             .foregroundColor(.secondaryText)
             .frame(maxWidth: .infinity)
@@ -730,7 +760,7 @@ struct AccountDetailView: View {
                 Task { await performArchiveOtherDebtAccount() }
             }
         } message: {
-            Text("封存後將自帳戶列表隱藏，還款紀錄會保留。確定要封存「\(liveOtherDebtAccount.name)」嗎？")
+            Text("封存後將自帳戶列表隱藏，還款紀錄會保留。若要完全移除，可於帳戶列表左滑刪除。確定要封存「\(liveOtherDebtAccount.name)」嗎？")
         }
         .alert("無法封存", isPresented: Binding(
             get: { archiveErrorMessage != nil },
@@ -882,9 +912,6 @@ struct AccountDetailView: View {
 
         if let liability = portfolioViewModel.liabilities.first(where: { $0.name == debtName }) {
             currentLiability = liability
-            if let repaymentAccount = accountsViewModel.accounts.first(where: { $0.id == liability.accountId }) {
-                repaymentAccountName = repaymentAccount.name
-            }
         }
     }
 
@@ -1284,20 +1311,23 @@ struct DetailsCard: View {
                         isExpanded.toggle()
                     }
                 }) {
-                    HStack {
+                    HStack(alignment: .center, spacing: 12) {
                         Text("詳細資訊")
                             .font(.headline)
                             .foregroundColor(.primaryText)
                         
-                        Spacer()
+                        Spacer(minLength: 0)
                         
                         Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 14, weight: .semibold))
                             .foregroundColor(.secondaryText)
-                            .font(.caption)
-                            .rotationEffect(.degrees(isExpanded ? 0 : 0))
+                            .frame(width: 24, height: 24)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
                 }
-                .buttonStyle(PlainButtonStyle())
+                .buttonStyle(.plain)
                 
                 // 可折疊內容
                 if isExpanded {
@@ -1440,8 +1470,6 @@ struct OtherDebtInfoCard: View {
 // MARK: - 還款資訊卡片
 struct RepaymentInfoCard: View {
     let liability: Liability
-    let repaymentAccount: Account?
-    let repaymentAccountName: String
     
     private func calculateRepaymentDay(liability: Liability) -> String {
         let calendar = Calendar.current
@@ -1458,37 +1486,6 @@ struct RepaymentInfoCard: View {
                     .foregroundColor(.secondaryText)
                 
             VStack(spacing: 16) {
-                // 還款帳戶（ICON 在帳戶名稱前面）
-                HStack {
-                    Text("還款帳戶")
-                        .font(.subheadline)
-                        .foregroundColor(.secondaryText)
-                    
-                    Spacer()
-                    
-                    // 右側：ICON + 帳戶名稱
-                    HStack(spacing: 6) {
-                        if let account = repaymentAccount {
-                            Image(systemName: account.accountType.icon)
-                                .foregroundColor(account.accountType.color)
-                                .font(.system(size: 16))
-                        } else {
-                            // 如果找不到帳戶，顯示灰色圖標
-                            Image(systemName: "building.columns.fill")
-                                .foregroundColor(.secondaryText)
-                                .font(.system(size: 16))
-                        }
-                        
-                        Text(repaymentAccountName.isEmpty ? "載入中..." : repaymentAccountName)
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.primaryText)
-                    }
-                }
-                
-                Divider()
-                
-                // 還款總期數（無 ICON）
                 InfoRowWithoutIcon(
                     label: "還款總期數",
                     value: "\(liability.totalPeriods) 期"

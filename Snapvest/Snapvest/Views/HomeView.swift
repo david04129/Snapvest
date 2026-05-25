@@ -772,8 +772,10 @@ struct RealizedPLCardView: View {
     @State private var expandedTransactionIds: Set<String> = []
     @State private var isLoadingDetails = false
     @State private var detailLoadFailed = false
+    @State private var detailsRevision = UUID()
     
     private var realizedTransactionsByCurrency: [Currency: [Transaction]] {
+        let _ = detailsRevision
         let sells = RealizedPLDetailCache.sellTransactions
         return Dictionary(grouping: sells, by: { $0.currency })
     }
@@ -814,10 +816,18 @@ struct RealizedPLCardView: View {
             Task { await loadDetailsIfNeeded(force: false) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { _ in
-            RealizedPLDetailCache.invalidate()
-            guard isExpanded else { return }
-            Task { await loadDetailsIfNeeded(force: true) }
+            scheduleDetailsRefresh(force: true)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .transactionsDidChange)) { _ in
+            scheduleDetailsRefresh(force: true)
+        }
+    }
+
+    private func scheduleDetailsRefresh(force: Bool) {
+        RealizedPLDetailCache.invalidate()
+        detailsRevision = UUID()
+        guard isExpanded else { return }
+        Task { await loadDetailsIfNeeded(force: force) }
     }
     
     private func loadDetailsIfNeeded(force: Bool) async {
@@ -831,6 +841,7 @@ struct RealizedPLCardView: View {
         do {
             let allTransactions = try await MockDataService.shared.fetchAllTransactions(userId: userId)
             RealizedPLDetailCache.apply(userId: userId, transactions: allTransactions)
+            detailsRevision = UUID()
         } catch {
             detailLoadFailed = true
         }
@@ -1001,10 +1012,19 @@ struct RealizedPLCardView: View {
     }
     
     private func displayName(for transaction: Transaction, currency: Currency) -> String {
-        if currency == .TWD {
+        switch transaction.assetType {
+        case .stockTW:
             return SymbolListService.twDisplayName(for: transaction.symbol) ?? transaction.symbol
+        case .crypto:
+            return SymbolListService.cryptoDisplayName(
+                for: transaction.symbol,
+                storedName: transaction.buySymbolNameFromNotes
+            )
+        case .stockUS:
+            return transaction.symbol.uppercased()
+        default:
+            return transaction.symbol
         }
-        return transaction.symbol
     }
     
     private func formatDate(_ date: Date) -> String {

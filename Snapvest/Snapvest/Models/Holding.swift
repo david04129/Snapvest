@@ -43,12 +43,19 @@ struct Holding: Identifiable, Codable {
         quantity * averageCost
     }
     
-    /// 顯示名稱：台股顯示 name，美股和加密貨幣顯示 symbol
+    /// 顯示名稱：台股顯示名稱；加密顯示清單名稱或大寫代號；美股顯示代號
     var displayName: String {
-        if assetType == .stockTW, let name = name, !name.isEmpty {
-            return name
+        switch assetType {
+        case .stockTW:
+            if let name = name, !name.isEmpty { return name }
+            return symbol
+        case .crypto:
+            return SymbolListService.cryptoDisplayName(for: symbol, storedName: name)
+        case .stockUS:
+            return symbol.uppercased()
+        default:
+            return symbol
         }
-        return symbol
     }
 }
 

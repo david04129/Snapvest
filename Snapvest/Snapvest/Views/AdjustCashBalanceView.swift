@@ -135,6 +135,7 @@ struct AdjustCashBalanceView: View {
                     TextField("0", text: $newBalanceText)
                         .keyboardType(.decimalPad)
                         .font(.headline)
+                        .snapFormFieldTapTarget()
                         .onChange(of: newBalanceText) { oldValue, newValue in
                             handleBalanceChange(oldValue: oldValue, newValue: newValue)
                         }

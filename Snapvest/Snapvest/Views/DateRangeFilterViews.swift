@@ -276,7 +276,7 @@ struct SnapTappableDateField: View {
                     .font(.system(size: 14))
                     .foregroundColor(.secondaryText)
             }
-            .contentShape(Rectangle())
+            .snapFormFieldTapTarget()
         }
         .buttonStyle(.plain)
         .sheet(isPresented: $showSheet) {

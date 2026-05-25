@@ -136,15 +136,18 @@ struct SymbolPickerView: View {
                                 .font(.subheadline)
                                 .foregroundColor(.secondaryText)
                                 .lineLimit(2)
+                                .multilineTextAlignment(.leading)
                             Spacer(minLength: 0)
                             Image(systemName: "chevron.right")
                                 .font(.caption)
                                 .foregroundColor(.tertiaryText)
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)
                     }
-                    .buttonStyle(PlainButtonStyle())
+                    .buttonStyle(.plain)
                     
                     if item.id != filteredItems.last?.id {
                         Divider()

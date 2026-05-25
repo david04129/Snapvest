@@ -28,7 +28,7 @@ struct BuyTradeFormView: View {
     @State private var exchangeRateText: String = ""
 
     @State private var transactionDate: Date = Date()
-    @State private var deductFromAccount: Bool = true
+    @State private var deductFromAccount: Bool = false
     @State private var errorMessage: String?
     @State private var showingSymbolPicker = false
     @State private var currentPrice: Decimal?
@@ -71,6 +71,10 @@ struct BuyTradeFormView: View {
         isEditMode || prefill?.lockSymbol == true
     }
     
+    private var isAccountLocked: Bool {
+        isImportDraftMode || prefill?.lockAccount == true
+    }
+    
     private var availableAccounts: [Account] {
         accountsViewModel.accounts.filter { account in
             switch market {
@@ -102,6 +106,12 @@ struct BuyTradeFormView: View {
     
     private var exchangeRateValue: Decimal? {
         Decimal(string: exchangeRateText)
+    }
+    
+    /// 儲存用匯率：僅複委托美股帶入，改為美金戶時為 nil
+    private var exchangeRateForSave: Decimal? {
+        guard needsExchangeRate else { return nil }
+        return exchangeRateValue
     }
     
     private var priceCurrency: Currency {
@@ -210,14 +220,19 @@ struct BuyTradeFormView: View {
             validateInput()
         }
         .onChange(of: selectedAccountId) { _, newValue in
-            if needsExchangeRate && exchangeRateText.isEmpty {
-                loadExchangeRate()
+            if needsExchangeRate {
+                if exchangeRateText.isEmpty {
+                    loadExchangeRate()
+                }
+            } else {
+                exchangeRateText = ""
             }
             if !newValue.isEmpty {
                 loadAccountCashBalance(accountId: newValue)
             } else {
                 accountCashBalance = 0
             }
+            validateInput()
         }
         .onChange(of: quantityText) { _, _ in validateInput() }
         .onChange(of: priceText) { _, _ in validateInput() }
@@ -225,7 +240,9 @@ struct BuyTradeFormView: View {
         .onChange(of: deductFromAccount) { _, _ in validateInput() }
         .sheet(isPresented: $showingSymbolPicker) {
             SymbolPickerView(market: market) { symbol, name in
-                selectedSymbol = symbol
+                selectedSymbol = market == .crypto
+                    ? SymbolListService.normalizedCryptoSymbol(symbol)
+                    : symbol
                 selectedSymbolName = name
                 currentPrice = nil
                 Task { await loadCurrentPrice() }
@@ -281,7 +298,8 @@ struct BuyTradeFormView: View {
     
     private var accountBalanceFootnote: String? {
         guard deductFromAccount, let account = selectedAccount else { return nil }
-        return "帳戶餘額 \(accountCashBalance.formatted(currency: account.currency))"
+        let label = isEditMode ? "可用餘額" : "帳戶餘額"
+        return "\(label) \(accountCashBalance.formatted(currency: account.currency))"
     }
     
     private var formCard: some View {
@@ -309,15 +327,20 @@ struct BuyTradeFormView: View {
     
     private var accountSection: some View {
         buyFormRow(title: "帳戶", icon: "building.columns.fill", color: market.themeColor) {
-            if isImportDraftMode, let account = selectedAccount {
-                HStack(spacing: 8) {
-                    Image(systemName: account.accountType.icon)
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(account.accountType.color)
-                    Text(account.name)
-                        .foregroundColor(.primaryText)
+            if isAccountLocked {
+                if let account = selectedAccount {
+                    HStack(spacing: 8) {
+                        Image(systemName: account.accountType.icon)
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(account.accountType.color)
+                        Text(account.name)
+                            .foregroundColor(.primaryText)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 Picker(selection: $selectedAccountId) {
                 ForEach(availableAccounts) { account in
@@ -339,12 +362,12 @@ struct BuyTradeFormView: View {
                     } else {
                         Text("選擇帳戶").foregroundColor(.secondaryText)
                     }
-                    Spacer()
+                    Spacer(minLength: 0)
                     Image(systemName: "chevron.down")
                         .foregroundColor(.secondaryText)
                         .font(.caption)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .snapFormFieldTapTarget()
             }
             .pickerStyle(.menu)
             .labelsHidden()
@@ -362,7 +385,7 @@ struct BuyTradeFormView: View {
                             Text(selectedSymbol)
                                 .fontWeight(.semibold)
                                 .foregroundColor(.primaryText)
-                            if !selectedSymbolName.isEmpty {
+                            if market != .crypto, !selectedSymbolName.isEmpty {
                                 Text("—")
                                     .foregroundColor(.secondaryText)
                                 Text(selectedSymbolName)
@@ -374,20 +397,21 @@ struct BuyTradeFormView: View {
                             Text("點擊選擇")
                                 .foregroundColor(.secondaryText)
                         }
-                        Spacer()
+                        Spacer(minLength: 0)
                         Image(systemName: "chevron.right")
                             .foregroundColor(.secondaryText)
                             .font(.caption)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .snapFormFieldTapTarget()
                     
                     if let price = currentPrice {
                         buyInfoRow(label: "目前股價", value: price.formattedTradePrice(currency: priceCurrency))
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .buttonStyle(PlainButtonStyle())
+            .buttonStyle(.plain)
         }
     }
     
@@ -396,6 +420,7 @@ struct BuyTradeFormView: View {
             VStack(alignment: .leading, spacing: 4) {
                 TextField("0", text: $quantityText)
                     .keyboardType(.decimalPad)
+                    .snapFormFieldTapTarget()
                 if market == .crypto {
                     Text("加密貨幣可輸入小數，例如 0.01")
                         .font(.caption)
@@ -413,7 +438,9 @@ struct BuyTradeFormView: View {
                 }
                 TextField("0", text: $priceText)
                     .keyboardType(.decimalPad)
+                    .snapFormFieldTapTarget()
             }
+            .snapFormFieldTapTarget()
         }
     }
     
@@ -422,6 +449,7 @@ struct BuyTradeFormView: View {
         buyFormRow(title: "美金對台匯率", icon: "arrow.triangle.2.circlepath", color: market.themeColor) {
             TextField("0", text: $exchangeRateText)
                 .keyboardType(.decimalPad)
+                .snapFormFieldTapTarget()
         }
     }
     
@@ -433,6 +461,7 @@ struct BuyTradeFormView: View {
                     .foregroundColor(.primaryText)
             }
             .toggleStyle(SwitchToggleStyle(tint: market.themeColor))
+            .snapFormFieldTapTarget()
         }
     }
     
@@ -507,7 +536,7 @@ struct BuyTradeFormView: View {
                 transactionDate: transactionDate,
                 createdAt: existing.createdAt,
                 updatedAt: Date(),
-                exchangeRate: exchangeRateValue,
+                exchangeRate: exchangeRateForSave,
                 deductFromAccount: deductFromAccount
             )
             onImportDraftSave(updated)
@@ -528,7 +557,7 @@ struct BuyTradeFormView: View {
                 fee: 0,
                 notes: selectedSymbolName.isEmpty ? nil : "買入 \(selectedSymbol) - \(selectedSymbolName)",
                 transactionDate: transactionDate,
-                exchangeRate: exchangeRateValue,
+                exchangeRate: exchangeRateForSave,
                 deductFromAccount: deductFromAccount
             )
             if let duplicate = await transactionsViewModel.findDuplicateMatch(
@@ -544,6 +573,8 @@ struct BuyTradeFormView: View {
             }
         }
         
+        transactionsViewModel.errorMessage = nil
+        
         if let existing = editingTransaction {
             await transactionsViewModel.updateBuyTransaction(
                 existing: existing,
@@ -552,7 +583,7 @@ struct BuyTradeFormView: View {
                 price: price,
                 currency: priceCurrency,
                 fee: 0,
-                exchangeRate: exchangeRateValue,
+                exchangeRate: exchangeRateForSave,
                 deductFromAccount: deductFromAccount,
                 transactionDate: transactionDate,
                 symbolName: selectedSymbolName.isEmpty ? nil : selectedSymbolName,
@@ -568,12 +599,18 @@ struct BuyTradeFormView: View {
                 price: price,
                 currency: priceCurrency,
                 fee: 0,
-                exchangeRate: exchangeRateValue,
+                exchangeRate: exchangeRateForSave,
                 deductFromAccount: deductFromAccount,
                 transactionDate: transactionDate,
                 allowDuplicate: allowDuplicate
             )
         }
+        
+        if let vmError = transactionsViewModel.errorMessage {
+            errorMessage = vmError
+            return
+        }
+        
         onSubmit?()
         dismiss()
     }
@@ -587,9 +624,11 @@ struct BuyTradeFormView: View {
         )
         priceText = transaction.price.formattedQuantityInput(maxFractionDigits: 4)
         transactionDate = transaction.transactionDate
-        deductFromAccount = transaction.deductFromAccount ?? (isImportDraftMode ? false : true)
-        if let rate = transaction.exchangeRate {
+        deductFromAccount = transaction.deductFromAccount ?? false
+        if needsExchangeRate, let rate = transaction.exchangeRate {
             exchangeRateText = rate.formatted(fractionDigits: 2)
+        } else {
+            exchangeRateText = ""
         }
     }
     
@@ -607,29 +646,45 @@ struct BuyTradeFormView: View {
             return
         }
         
+        if needsExchangeRate,
+           (exchangeRateValue == nil || (exchangeRateValue ?? 0) <= 0) {
+            errorMessage = "複委托買入美股請填寫美金對台匯率"
+            return
+        }
+        
         if !isImportDraftMode,
-           !isEditMode,
            deductFromAccount,
            let amount = transactionAmountInAccountCurrency,
            let account = selectedAccount,
            amount > accountCashBalance {
-            errorMessage = "現金餘額不足。帳戶餘額：\(accountCashBalance.formatted(currency: account.currency))，本筆需扣款：\(amount.formatted(currency: account.currency))"
+            let balanceLabel = isEditMode ? "可用餘額" : "帳戶餘額"
+            errorMessage = "現金餘額不足。\(balanceLabel)：\(accountCashBalance.formatted(currency: account.currency))，本筆需扣款：\(amount.formatted(currency: account.currency))"
         }
     }
     
     private func loadAccountCashBalance(accountId: String) {
         Task {
             do {
-                var transactions = try await dataService.fetchTransactions(accountId: accountId)
+                let transactions = try await dataService.fetchTransactions(accountId: accountId)
                 let allAccounts = try await dataService.fetchAccounts(userId: userId)
-                if let account = allAccounts.first(where: { $0.id == accountId }) {
-                    let allTransactions = try await dataService.fetchAllTransactions(userId: account.userId)
-                    let incoming = allTransactions.filter { t in
-                        (t.type == .transfer || t.type == .repayment) && t.targetAccountId == accountId && t.accountId != accountId
-                    }
-                    transactions.append(contentsOf: incoming)
+                let account = allAccounts.first { $0.id == accountId }
+                    ?? availableAccounts.first { $0.id == accountId }
+                let balance: Decimal
+                if let account {
+                    balance = CashCalculator.availableCashForBuy(
+                        accountId: accountId,
+                        account: account,
+                        transactions: transactions,
+                        accounts: allAccounts,
+                        existingTransaction: editingTransaction
+                    )
+                } else {
+                    balance = CashCalculator.calculateCash(
+                        accountId: accountId,
+                        transactions: transactions,
+                        accounts: allAccounts
+                    )
                 }
-                let balance = CashCalculator.calculateCash(accountId: accountId, transactions: transactions, accounts: allAccounts)
                 await MainActor.run {
                     accountCashBalance = balance
                     validateInput()
@@ -715,6 +770,8 @@ private struct buyFormRow<Content: View>: View {
             content
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
                 .background(Color.secondaryBackground)
                 .cornerRadius(12)
                 .overlay(

@@ -18,8 +18,6 @@ struct TransactionDisplayFormatter {
             return "買入 \(tradeTitleSuffix)"
         case .sell:
             return "賣出 \(tradeTitleSuffix)"
-        case .transfer:
-            return "轉帳"
         case .repayment:
             return "還款"
         case .deposit:
@@ -134,8 +132,6 @@ struct TransactionDisplayFormatter {
     
     var typeAccentColor: Color {
         switch transaction.type {
-        case .transfer:
-            return .appPrimary
         case .repayment:
             return .lossRed
         case .buy:
@@ -160,10 +156,19 @@ struct TransactionDisplayFormatter {
     }
     
     private var tradeDisplayName: String {
-        if transaction.assetType == .stockTW {
+        switch transaction.assetType {
+        case .stockTW:
             return SymbolListService.twDisplayName(for: transaction.symbol) ?? transaction.symbol
+        case .crypto:
+            return SymbolListService.cryptoDisplayName(
+                for: transaction.symbol,
+                storedName: transaction.buySymbolNameFromNotes
+            )
+        case .stockUS:
+            return transaction.symbol.uppercased()
+        default:
+            return transaction.symbol
         }
-        return transaction.symbol
     }
     
     private static func formatQuantity(_ quantity: Decimal) -> String {

@@ -724,8 +724,7 @@ struct TransactionImportView: View {
         }
         let syncResult = TransactionImportService.validate(
             parsedRows: parsed.rows,
-            account: account,
-            allAccounts: viewModel.accounts
+            account: account
         )
         validationResult = syncResult
         previewRows = syncResult.rows

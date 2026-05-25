@@ -20,12 +20,29 @@ struct AccountsView: View {
     @State private var accountOrders: [AccountType: [String]] = [:]
     @State private var navigationStackResetID = UUID()
     @State private var accountsCurrencyDisplay: AssetsCurrencyDisplay = .twd
+    @State private var isEditingOrder = false
+    @State private var accountPendingDelete: Account?
+    @State private var showDeleteConfirmation = false
+    @State private var deleteConfirmationMessage = ""
+    @State private var deleteErrorMessage: String?
+    @State private var isDeleting = false
+    @State private var accountDetailRoute: AccountDetailRoute?
     
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 12) {
-                    AccountsCurrencyControlsBar(currencyDisplay: $accountsCurrencyDisplay)
+                    AccountsCurrencyControlsBar(
+                        currencyDisplay: $accountsCurrencyDisplay,
+                        showsEditControl: true,
+                        isEditingOrder: isEditingOrder,
+                        isEditDisabled: viewModel.accounts.filter(\.isActiveForListing).isEmpty,
+                        onEditTapped: {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                isEditingOrder.toggle()
+                            }
+                        }
+                    )
                     
                     ForEach(accountOrder, id: \.self) { accountType in
                         accountCategorySection(for: accountType)
@@ -39,21 +56,37 @@ struct AccountsView: View {
             }
             .background(Color.mainBackground)
             .navigationBarBackButtonHidden(true)
+            .environment(\.editMode, .constant(isEditingOrder ? .active : .inactive))
             .safeAreaInset(edge: .top) {
-                customHeaderBarWithAddButton(icon: "building.columns.fill", title: "帳戶管理", addButtonText: "新增帳戶", addButtonAction: {
-                    showingAddAccount = true
-                })
+                accountsHeaderBar
             }
             .refreshable {
                 await SnapshotRefreshCoordinator.rebuildAndNotify(userId: userId)
             }
             .sheet(isPresented: $showingAddAccount, onDismiss: {
                 loadAccountOrder()
+                reconcileAccountOrders()
             }) {
                 AddAccountView(viewModel: viewModel)
             }
             .onAppear {
                 loadAccountOrder()
+                reconcileAccountOrders()
+            }
+            .onChange(of: selectedTab) { _, newTab in
+                guard newTab == AppTab.accounts.rawValue else { return }
+                Task {
+                    await LaunchCoordinator.applyPersistedState(
+                        userId: userId,
+                        portfolioViewModel: portfolioViewModel,
+                        accountsViewModel: viewModel,
+                        assetsViewModel: assetsViewModel
+                    )
+                    reconcileAccountOrders()
+                }
+            }
+            .onChange(of: viewModel.accounts.map(\.id)) { _, _ in
+                reconcileAccountOrders()
             }
             .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { _ in
                 Task {
@@ -63,12 +96,51 @@ struct AccountsView: View {
                         accountsViewModel: viewModel,
                         assetsViewModel: assetsViewModel
                     )
+                    reconcileAccountOrders()
                 }
+            }
+            .alert("刪除帳戶", isPresented: $showDeleteConfirmation) {
+                Button("取消", role: .cancel) {
+                    accountPendingDelete = nil
+                }
+                Button("刪除", role: .destructive) {
+                    Task { await performDeleteAccount() }
+                }
+            } message: {
+                Text(deleteConfirmationMessage)
+            }
+            .alert("無法刪除", isPresented: Binding(
+                get: { deleteErrorMessage != nil },
+                set: { if !$0 { deleteErrorMessage = nil } }
+            )) {
+                Button("好", role: .cancel) {}
+            } message: {
+                Text(deleteErrorMessage ?? "")
+            }
+            .navigationDestination(item: $accountDetailRoute) { route in
+                accountDetailDestination(for: route)
             }
         }
         .id(navigationStackResetID)
         .resetNavigationWhenTabReappears(selectedTab: $selectedTab, resignedTab: .accounts) {
             navigationStackResetID = UUID()
+        }
+    }
+    
+    private func openAccountDetail(_ account: Account) {
+        guard !isEditingOrder else { return }
+        accountDetailRoute = AccountDetailRoute(accountId: account.id)
+    }
+    
+    @ViewBuilder
+    private func accountDetailDestination(for route: AccountDetailRoute) -> some View {
+        if let account = viewModel.accounts.first(where: { $0.id == route.accountId }) {
+            AccountDetailView(
+                account: account,
+                prefilledBalance: viewModel.balancesByAccountId[account.id]
+            )
+        } else {
+            ContentUnavailableView("找不到帳戶", systemImage: "building.columns")
         }
     }
     
@@ -82,15 +154,24 @@ struct AccountsView: View {
                 : accountType == .otherDebt
                 ? -viewModel.otherDebtCategoryTotalBalance
                 : (viewModel.categoryTotalsTWD[accountType] ?? 0)
+            let ordered = getOrderedAccounts(typeAccounts, for: accountType)
             ExpandableAccountCategorySection(
                 accountType: accountType,
-                accounts: typeAccounts,
+                accounts: ordered,
                 categoryTotalTWD: categoryTotal,
                 currencyDisplay: accountsCurrencyDisplay,
                 isCategoryLoading: isLoading,
                 balancesByAccountId: viewModel.balancesByAccountId,
                 isBalanceLoading: isLoading,
-                isExpanded: expandedBinding(for: accountType)
+                isExpanded: expandedBinding(for: accountType),
+                isEditingOrder: isEditingOrder,
+                onMove: { source, destination in
+                    moveAccounts(from: source, to: destination, for: accountType)
+                },
+                onRequestDelete: { account in
+                    presentDeleteConfirmation(for: account)
+                },
+                onOpenAccount: openAccountDetail
             )
         }
     }
@@ -117,21 +198,26 @@ struct AccountsView: View {
             ArchivedDebtAccountsSection(
                 accounts: archived,
                 balancesByAccountId: viewModel.balancesByAccountId,
-                currencyDisplay: accountsCurrencyDisplay
+                currencyDisplay: accountsCurrencyDisplay,
+                isEditingOrder: isEditingOrder,
+                onRequestDelete: { account in
+                    presentDeleteConfirmation(for: account)
+                },
+                onOpenAccount: openAccountDetail
             )
         }
     }
     
-    // MARK: - 自定義標題欄（帶新增按鈕）
-    private func customHeaderBarWithAddButton(icon: String, title: String, addButtonText: String, addButtonAction: @escaping () -> Void) -> some View {
+    // MARK: - 標題欄
+    
+    private var accountsHeaderBar: some View {
         HStack {
-            // 左側：ICON + 標題
             HStack(spacing: 6) {
-                Image(systemName: icon)
+                Image(systemName: "building.columns.fill")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(.appPrimary)
                 
-                Text(title)
+                Text("帳戶管理")
                     .font(.headline)
                     .fontWeight(.bold)
                     .foregroundColor(.primaryText)
@@ -139,21 +225,20 @@ struct AccountsView: View {
             
             Spacer()
             
-            // 右側：新增按鈕 + 使用者頭像
             HStack(spacing: 12) {
-                Button(action: addButtonAction) {
+                Button {
+                    showingAddAccount = true
+                } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "plus.circle.fill")
-                        Text(addButtonText)
+                        Text("新增帳戶")
                     }
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.appPrimary)
                 }
                 
-                Button(action: {
-                    // TODO: 點擊後的功能
-                }) {
+                Button(action: {}) {
                     Circle()
                         .fill(Color.appPrimary.opacity(0.2))
                         .frame(width: 32, height: 32)
@@ -170,6 +255,39 @@ struct AccountsView: View {
         .background(Color.mainBackground)
     }
     
+    // MARK: - 刪除帳戶
+    
+    private func presentDeleteConfirmation(for account: Account) {
+        guard !isDeleting else { return }
+        accountPendingDelete = account
+        Task {
+            deleteConfirmationMessage = await AccountDeletionSummaryBuilder.buildForAccountList(
+                account: account,
+                dataService: MockDataService.shared,
+                balancesByAccountId: viewModel.balancesByAccountId,
+                liabilities: portfolioViewModel.liabilities,
+                accounts: viewModel.accounts
+            )
+            showDeleteConfirmation = true
+        }
+    }
+    
+    private func performDeleteAccount() async {
+        guard let account = accountPendingDelete else { return }
+        isDeleting = true
+        defer { isDeleting = false }
+        
+        if let error = await viewModel.deleteAccount(account) {
+            deleteErrorMessage = error
+        } else {
+            var order = accountOrders[account.accountType] ?? []
+            order.removeAll { $0 == account.id }
+            accountOrders[account.accountType] = order
+            saveAccountOrder()
+            accountPendingDelete = nil
+        }
+    }
+    
     // MARK: - 拖曳排序輔助函數
     private func getOrderedAccounts(_ accounts: [Account], for accountType: AccountType) -> [Account] {
         let order = accountOrders[accountType] ?? []
@@ -182,11 +300,23 @@ struct AccountsView: View {
     }
     
     private func moveAccounts(from source: IndexSet, to destination: Int, for accountType: AccountType) {
-        let accounts = viewModel.accounts.filter { $0.accountType == accountType }
-        var order = accountOrders[accountType] ?? accounts.map { $0.id }
+        let accounts = viewModel.accounts.activeAccounts(ofType: accountType)
+        var order = accountOrders[accountType] ?? accounts.map(\.id)
         order.move(fromOffsets: source, toOffset: destination)
         accountOrders[accountType] = order
         saveAccountOrder()
+    }
+    
+    private func reconcileAccountOrders() {
+        for accountType in AccountType.allCases {
+            let active = viewModel.accounts.activeAccounts(ofType: accountType)
+            var order = accountOrders[accountType] ?? []
+            order = order.filter { id in active.contains { $0.id == id } }
+            for account in active where !order.contains(account.id) {
+                order.append(account.id)
+            }
+            accountOrders[accountType] = order
+        }
     }
     
     private func loadAccountOrder() {
@@ -222,6 +352,10 @@ struct AccountsView: View {
     }
 }
 
+private struct AccountDetailRoute: Identifiable, Hashable {
+    let accountId: String
+    var id: String { accountId }
+}
 
 // MARK: - 已封存債務帳戶
 
@@ -229,6 +363,9 @@ struct ArchivedDebtAccountsSection: View {
     let accounts: [Account]
     let balancesByAccountId: [String: AccountBalanceDisplay]
     let currencyDisplay: AssetsCurrencyDisplay
+    let isEditingOrder: Bool
+    let onRequestDelete: (Account) -> Void
+    let onOpenAccount: (Account) -> Void
     @State private var isExpanded = false
     
     var body: some View {
@@ -252,6 +389,8 @@ struct ArchivedDebtAccountsSection: View {
                         .font(.caption)
                         .foregroundColor(.secondaryText)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
                 .padding(16)
                 .background(Color.cardBackground)
                 .cornerRadius(16)
@@ -265,13 +404,13 @@ struct ArchivedDebtAccountsSection: View {
             .buttonStyle(.plain)
             
             if isExpanded {
-                VStack(spacing: 8) {
+                List {
                     ForEach(accounts) { account in
-                        NavigationLink(
-                            destination: AccountDetailView(
-                                account: account,
-                                prefilledBalance: balancesByAccountId[account.id]
-                            )
+                        AccountListRowButton(
+                            account: account,
+                            isEditingOrder: isEditingOrder,
+                            onOpen: { onOpenAccount(account) },
+                            onDelete: { onRequestDelete(account) }
                         ) {
                             AccountCardView(
                                 account: account,
@@ -281,10 +420,43 @@ struct ArchivedDebtAccountsSection: View {
                                 showsArchivedBadge: true
                             )
                         }
-                        .buttonStyle(.plain)
                     }
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .scrollDisabled(true)
+                .frame(minHeight: CGFloat(accounts.count) * 88)
                 .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+}
+
+// MARK: - 帳戶列（無 NavigationLink 箭頭）
+
+private struct AccountListRowButton<RowContent: View>: View {
+    let account: Account
+    let isEditingOrder: Bool
+    let onOpen: () -> Void
+    let onDelete: () -> Void
+    @ViewBuilder let rowContent: () -> RowContent
+    
+    var body: some View {
+        Button(action: onOpen) {
+            rowContent()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .disabled(isEditingOrder)
+        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            if !isEditingOrder {
+                Button(role: .destructive, action: onDelete) {
+                    SwiftUI.Label("刪除", systemImage: "trash")
+                }
             }
         }
     }
@@ -355,6 +527,10 @@ struct ExpandableAccountCategorySection: View {
     let balancesByAccountId: [String: AccountBalanceDisplay]
     let isBalanceLoading: Bool
     @Binding var isExpanded: Bool
+    let isEditingOrder: Bool
+    let onMove: (IndexSet, Int) -> Void
+    let onRequestDelete: (Account) -> Void
+    let onOpenAccount: (Account) -> Void
     
     private var categoryTotalText: String {
         if isCategoryLoading { return "—" }
@@ -413,18 +589,20 @@ struct ExpandableAccountCategorySection: View {
                         .foregroundColor(.secondaryText)
                         .font(.caption)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
                 .padding()
             }
             .buttonStyle(.plain)
             
             if isExpanded {
-                VStack(spacing: 8) {
+                List {
                     ForEach(accounts) { account in
-                        NavigationLink(
-                            destination: AccountDetailView(
-                                account: account,
-                                prefilledBalance: balancesByAccountId[account.id]
-                            )
+                        AccountListRowButton(
+                            account: account,
+                            isEditingOrder: isEditingOrder,
+                            onOpen: { onOpenAccount(account) },
+                            onDelete: { onRequestDelete(account) }
                         ) {
                             AccountCardView(
                                 account: account,
@@ -433,9 +611,13 @@ struct ExpandableAccountCategorySection: View {
                                 isBalanceLoading: isBalanceLoading
                             )
                         }
-                        .buttonStyle(.plain)
                     }
+                    .onMove(perform: onMove)
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .scrollDisabled(true)
+                .frame(minHeight: CGFloat(accounts.count) * 88)
                 .padding(.horizontal)
                 .padding(.bottom)
                 .transition(.opacity.combined(with: .move(edge: .top)))

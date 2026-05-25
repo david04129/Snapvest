@@ -16,7 +16,6 @@ enum TransactionType: String, Codable, CaseIterable {
     case dividend = "dividend"      // 股利
     case fee = "fee"                // 手續費
     case liability = "liability"    // 債務
-    case transfer = "transfer"       // 轉帳
     case repayment = "repayment"    // 還款
     
     var displayName: String {
@@ -28,7 +27,6 @@ enum TransactionType: String, Codable, CaseIterable {
         case .dividend: return "股利"
         case .fee: return "手續費"
         case .liability: return "債務"
-        case .transfer: return "轉帳"
         case .repayment: return "還款"
         }
     }
@@ -48,16 +46,15 @@ struct Transaction: Identifiable, Codable, Equatable {
     var transactionDate: Date
     var createdAt: Date
     var updatedAt: Date
-    var targetAccountId: String?  // 轉帳/還款目標帳戶ID
     
     // 交易金額（儲存欄位，在交易當下計算並儲存）
     var totalAmount: Decimal      // 交易總金額（不含手續費）
     var totalAmountWithFee: Decimal  // 交易總金額（含手續費）
     
     // 匯率（跨幣別交易時使用，格式：USD to TWD，1 USD = exchangeRate TWD）
-    var exchangeRate: Decimal?    // 交易當下的匯率（跨幣別買賣股票、轉帳、還款時使用）
+    var exchangeRate: Decimal?    // 交易當下的匯率（跨幣別買賣股票時使用）
     
-    // 買入時是否從帳戶扣款（nil 或 true = 扣款，false = 不扣款，用於外部資金買入等情境）
+    // 買入時是否從帳戶扣款（true = 扣款，nil 或 false = 不扣款，用於外部資金買入等情境）
     var deductFromAccount: Bool?
     
     // 已實現損益（僅用於賣出交易）
@@ -89,9 +86,8 @@ struct Transaction: Identifiable, Codable, Equatable {
          transactionDate: Date = Date(),
          createdAt: Date = Date(),
          updatedAt: Date = Date(),
-         targetAccountId: String? = nil,
          exchangeRate: Decimal? = nil,
-         deductFromAccount: Bool? = true,
+         deductFromAccount: Bool? = false,
          beforeRepaymentBalance: Decimal? = nil,
          beforeRepaymentInterest: Decimal? = nil,
          beforeRepaymentPaidPeriods: Int? = nil,
@@ -116,7 +112,6 @@ struct Transaction: Identifiable, Codable, Equatable {
         self.transactionDate = transactionDate
         self.createdAt = createdAt
         self.updatedAt = updatedAt
-        self.targetAccountId = targetAccountId
         self.exchangeRate = exchangeRate
         self.deductFromAccount = deductFromAccount
         self.realizedGainLoss = realizedGainLoss
@@ -140,8 +135,7 @@ struct Transaction: Identifiable, Codable, Equatable {
             self.totalAmountWithFee = fee
         case .liability:
             self.totalAmountWithFee = calculatedTotalAmount
-        case .transfer, .repayment:
-            // 轉帳/還款：從轉出帳戶角度看是減少，從轉入帳戶角度看是增加
+        case .repayment:
             self.totalAmountWithFee = calculatedTotalAmount
         }
         
@@ -182,8 +176,6 @@ extension Transaction {
             return "確定刪除這筆收入？（\(dateText)）此操作無法復原。"
         case .withdraw:
             return "確定刪除這筆支出？（\(dateText)）此操作無法復原。"
-        case .transfer:
-            return "確定刪除這筆轉帳？（\(dateText)）此操作無法復原。"
         case .repayment:
             return "確定刪除這筆還款？（\(dateText)）此操作無法復原。"
         default:

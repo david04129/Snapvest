@@ -103,27 +103,9 @@ enum SnapshotUpdater {
     ) -> [AccountSnapshot] {
         var snapshots: [AccountSnapshot] = []
         
-        var allTransactionsSet: Set<String> = []
-        var allTransactions: [Transaction] = transactions
-        
         for account in accounts {
-            let incomingTransactions = transactions.filter { transaction in
-                (transaction.type == .transfer || transaction.type == .repayment) &&
-                transaction.targetAccountId == account.id &&
-                transaction.accountId != account.id &&
-                !allTransactionsSet.contains(transaction.id)
-            }
-            for transaction in incomingTransactions {
-                allTransactionsSet.insert(transaction.id)
-                allTransactions.append(transaction)
-            }
-        }
-        
-        for account in accounts {
-            let accountTransactions = allTransactions.filter { transaction in
-                transaction.accountId == account.id ||
-                ((transaction.type == .transfer || transaction.type == .repayment) &&
-                 transaction.targetAccountId == account.id)
+            let accountTransactions = transactions.filter { transaction in
+                transaction.accountId == account.id
             }
             
             let cashBalance = CashCalculator.calculateCash(

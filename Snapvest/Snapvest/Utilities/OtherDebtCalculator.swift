@@ -19,16 +19,12 @@ enum OtherDebtCalculator {
         let sorted = transactions.sorted { $0.transactionDate < $1.transactionDate }
         
         for transaction in sorted {
-            if transaction.accountId == accountId && transaction.type == .liability {
+            guard transaction.accountId == accountId else { continue }
+            
+            if transaction.type == .liability {
                 balance += transaction.totalAmountWithFee
-            }
-            if transaction.targetAccountId == accountId
-                && (transaction.type == .repayment || transaction.type == .transfer) {
-                balance -= repaymentAmount(
-                    transaction: transaction,
-                    targetAccountId: accountId,
-                    accounts: accounts
-                )
+            } else if transaction.type == .repayment {
+                balance -= transaction.totalAmount
             }
         }
         
@@ -42,38 +38,7 @@ enum OtherDebtCalculator {
         accounts: [Account] = []
     ) -> Decimal {
         transactions
-            .filter {
-                $0.targetAccountId == accountId
-                    && ($0.type == .repayment || $0.type == .transfer)
-            }
-            .reduce(Decimal.zero) { partial, transaction in
-                partial + repaymentAmount(
-                    transaction: transaction,
-                    targetAccountId: accountId,
-                    accounts: accounts
-                )
-            }
-    }
-    
-    private static func repaymentAmount(
-        transaction: Transaction,
-        targetAccountId: String,
-        accounts: [Account]
-    ) -> Decimal {
-        guard let targetAccount = accounts.first(where: { $0.id == targetAccountId }) else {
-            return transaction.totalAmount
-        }
-        
-        var amount = transaction.totalAmount
-        if transaction.currency != targetAccount.currency {
-            if let rate = transaction.exchangeRate, rate > 0 {
-                if transaction.currency == .TWD && targetAccount.currency == .USD {
-                    amount = transaction.totalAmount / rate
-                } else if transaction.currency == .USD && targetAccount.currency == .TWD {
-                    amount = transaction.totalAmount * rate
-                }
-            }
-        }
-        return amount
+            .filter { $0.accountId == accountId && $0.type == .repayment }
+            .reduce(Decimal.zero) { $0 + $1.totalAmount }
     }
 }

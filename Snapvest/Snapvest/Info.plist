@@ -5,7 +5,7 @@
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Snapvest 需要將分享圖儲存到您的相簿。</string>
 	<key>SNAPVEST_USER_ID</key>
-	<string>david.hsu</string>
+	<string>test.david</string>
 	<key>SUPABASE_ANON_KEY</key>
 	<string>sb_publishable__E7HewKbHnA47_P1Z6mkOg_qMxiC3os</string>
 	<key>SUPABASE_URL</key>

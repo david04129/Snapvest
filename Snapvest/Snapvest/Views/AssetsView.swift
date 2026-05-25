@@ -15,7 +15,6 @@ struct AssetsView: View {
     @State private var userId: String = AppUser.id
     @State private var selectedSort: SortOption = .totalAssets
     @State private var selectedHolding: HoldingNavigationItem?
-    @State private var showingNewTradeFlow = false
     @State private var holdingsSelectedCategories: Set<AssetType> = []
     @State private var holdingsRatioType: HoldingRatioType = HoldingRatioPreference.get()
     @State private var holdingsCurrencyDisplay: AssetsCurrencyDisplay = .twd
@@ -102,9 +101,7 @@ struct AssetsView: View {
             .background(Color.mainBackground)
             .navigationBarBackButtonHidden(true)
             .safeAreaInset(edge: .top) {
-                customHeaderBarWithAddButton(icon: "chart.bar.fill", title: "資產", addButtonText: "新增交易", addButtonAction: {
-                    showingNewTradeFlow = true
-                })
+                customHeaderBar(icon: "chart.bar.fill", title: "資產")
             }
             .refreshable {
                 await SnapshotRefreshCoordinator.rebuildAndNotify(userId: userId)
@@ -127,9 +124,6 @@ struct AssetsView: View {
                     totalAssets: item.totalAssets,
                     totalInvestments: item.totalInvestments
                 )
-            }
-            .sheet(isPresented: $showingNewTradeFlow) {
-                NewTradeFlowView()
             }
         }
         .resetNavigationWhenTabReappears(selectedTab: $selectedTab, resignedTab: .assets) {
@@ -158,10 +152,9 @@ struct AssetsView: View {
         selectedHolding = holdingNavigationItem(for: holding)
     }
     
-    // MARK: - 自定義標題欄（帶新增按鈕）
-    private func customHeaderBarWithAddButton(icon: String, title: String, addButtonText: String, addButtonAction: @escaping () -> Void) -> some View {
+    // MARK: - 自定義標題欄
+    private func customHeaderBar(icon: String, title: String) -> some View {
         HStack {
-            // 左側：ICON + 標題
             HStack(spacing: 6) {
                 Image(systemName: icon)
                     .font(.system(size: 16, weight: .semibold))
@@ -175,30 +168,17 @@ struct AssetsView: View {
             
             Spacer()
             
-            // 右側：新增按鈕 + 使用者頭像
-            HStack(spacing: 12) {
-                Button(action: addButtonAction) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "plus.circle.fill")
-                        Text(addButtonText)
+            Button(action: {
+                // TODO: 點擊後的功能
+            }) {
+                Circle()
+                    .fill(Color.appPrimary.opacity(0.2))
+                    .frame(width: 32, height: 32)
+                    .overlay {
+                        Image(systemName: "person.fill")
+                            .foregroundColor(.appPrimary)
+                            .font(.caption)
                     }
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.appPrimary)
-                }
-                
-                Button(action: {
-                    // TODO: 點擊後的功能
-                }) {
-                    Circle()
-                        .fill(Color.appPrimary.opacity(0.2))
-                        .frame(width: 32, height: 32)
-                        .overlay {
-                            Image(systemName: "person.fill")
-                                .foregroundColor(.appPrimary)
-                                .font(.caption)
-                        }
-                }
             }
         }
         .padding(.horizontal, 16)
@@ -309,9 +289,16 @@ struct AllHoldingsSection: View {
             
             // 獲取顯示名稱
             let displayName: String
-            if holding.assetType == .stockTW, let name = holding.name, !name.isEmpty {
-                displayName = name
-            } else {
+            switch holding.assetType {
+            case .stockTW:
+                displayName = (holding.name.flatMap { $0.isEmpty ? nil : $0 })
+                    ?? SymbolListService.twDisplayName(for: holding.symbol)
+                    ?? holding.symbol
+            case .crypto:
+                displayName = SymbolListService.cryptoDisplayName(for: holding.symbol, storedName: holding.name)
+            case .stockUS:
+                displayName = holding.symbol.uppercased()
+            default:
                 displayName = holding.symbol
             }
             
