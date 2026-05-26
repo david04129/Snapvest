@@ -160,8 +160,9 @@ Snapvest 用 Supabase 當「**會變動資料的倉庫**」：
 | [008_price_source.sql](./backend/supabase/migrations/008_price_source.sql) | `asset_price_snapshots.price_source` | 標記股價來源 |
 | [009_price_snapshot_eod_columns.sql](./backend/supabase/migrations/009_price_snapshot_eod_columns.sql) | 收盤日 + 更新時間欄位 | 取代 `current_price_date` / `last_updated` 等 |
 | [010_price_source_current_previous.sql](./backend/supabase/migrations/010_price_source_current_previous.sql) | `current_price_source`、`previous_price_source` | 取代單一 `price_source` |
+| [011_price_snapshot_column_order.sql](./backend/supabase/migrations/011_price_snapshot_column_order.sql) | 欄位顯示順序 | source 緊接在對應 updated_at 後 |
 
-**`asset_price_snapshots` 主要欄位：** `current_price`、`current_close_date`、`current_updated_at`、`current_price_source`、`previous_*` 對應欄位。
+**`asset_price_snapshots` 欄位順序：** 代號 → 現價 → 收盤日 → 更新時間 → **現價來源** → 上次價 → 上次收盤日 → 上次更新時間 → **上次來源**。
 
 **RLS（Row Level Security）白話：** 像門禁——App 的 key 只能進「讀取區」；GitHub Actions 的 service_role key 才能「寫入區」。
 
