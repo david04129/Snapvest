@@ -100,7 +100,7 @@ flowchart TB
 
 | 內容 | 資料表 | 誰寫入 | App 用途 |
 |------|--------|--------|----------|
-| 各檔股價 | `asset_price_snapshots` | 每日腳本 + Edge Function | 顯示現價、算損益；`price_source` 標記來源 |
+| 各檔股價 | `asset_price_snapshots` | 每日腳本 + Edge Function | 顯示現價、算損益；`current_price_source` / `previous_price_source` |
 | 全站最後更新時間 | `price_update_metadata` | 每日腳本 | 判斷要不要刷新 |
 | 熱門股清單 | `hot_stocks` | 每日由 `hot_stocks_seed` ∪ 全使用者 `user_portfolio_state.holdings` 覆寫；備份 `hot_stocks_backup`（保留 2 日） | 每日腳本抓價清單 |
 | 種子熱門股 | `hot_stocks_seed` | migration 固定 ~30 檔 | 每日併入 hot_stocks，不隨覆寫消失 |
@@ -159,8 +159,9 @@ Snapvest 用 Supabase 當「**會變動資料的倉庫**」：
 | [007_hot_stocks_seed_and_backup.sql](./backend/supabase/migrations/007_hot_stocks_seed_and_backup.sql) | `hot_stocks_seed`、`hot_stocks_backup` | 種子清單與備份 |
 | [008_price_source.sql](./backend/supabase/migrations/008_price_source.sql) | `asset_price_snapshots.price_source` | 標記股價來源 |
 | [009_price_snapshot_eod_columns.sql](./backend/supabase/migrations/009_price_snapshot_eod_columns.sql) | 收盤日 + 更新時間欄位 | 取代 `current_price_date` / `last_updated` 等 |
+| [010_price_source_current_previous.sql](./backend/supabase/migrations/010_price_source_current_previous.sql) | `current_price_source`、`previous_price_source` | 取代單一 `price_source` |
 
-**`asset_price_snapshots` 主要欄位：** `current_price`、`current_close_date`（收盤所屬日）、`current_updated_at`（寫入時間）、`previous_*`、`price_source`。
+**`asset_price_snapshots` 主要欄位：** `current_price`、`current_close_date`、`current_updated_at`、`current_price_source`、`previous_*` 對應欄位。
 
 **RLS（Row Level Security）白話：** 像門禁——App 的 key 只能進「讀取區」；GitHub Actions 的 service_role key 才能「寫入區」。
 
@@ -291,9 +292,9 @@ App 查 `asset_price_snapshots` 發現**沒有這檔的價格**時，會 POST �
 | **美股** | Yahoo Finance Chart API | `https://query1.finance.yahoo.com/v8/finance/chart/{代號}` | 例：`AAPL` |
 | **加密** | CoinGecko Simple Price | [Simple Price API](https://docs.coingecko.com/reference/simple-price) | 可帶 `coingeckoId`；也會搜尋 CoinGecko |
 
-抓到價格後會寫入 `asset_price_snapshots`（`price_source`：`yahoo` 或 `coingecko`；不加入 `hot_stocks`）
+抓到價格後會寫入 `asset_price_snapshots`（`current_price_source`：`yahoo` 或 `coingecko`；不加入 `hot_stocks`）
 
-**`price_source` 常見值：** 排程 `yfinance`／`coingecko`；Edge `yahoo`／`coingecko`；日後排程可為 `finmind`／`finnhub`。本輪抓失敗未 upsert 的列，**`price_source` 與價格皆維持上一輪**。
+**來源欄常見值：** 排程 `finmind`／`finnhub`／`yfinance`／`coingecko`；Edge `yahoo`／`coingecko`。本輪抓失敗未 upsert 的列，**現價與 `current_*` 皆維持上一輪**。
 
 **部署方式（手動，不經 GitHub Actions）：**
 

@@ -315,7 +315,8 @@ private struct SupabasePriceRow: Decodable, Sendable {
     let current_updated_at: String?
     let previous_close_date: String?
     let previous_updated_at: String?
-    let price_source: String?
+    let current_price_source: String?
+    let previous_price_source: String?
     
     nonisolated static func toAssetPriceSnapshot(_ row: SupabasePriceRow) -> AssetPriceSnapshot? {
         let price = (row.current_price?.decimalValue ?? row.previous_price?.decimalValue)
@@ -332,7 +333,8 @@ private struct SupabasePriceRow: Decodable, Sendable {
             currentUpdatedAt: SupabaseRESTTimestampParser.parse(row.current_updated_at),
             previousCloseDate: SupabaseRESTTimestampParser.parseCloseDate(row.previous_close_date),
             previousUpdatedAt: SupabaseRESTTimestampParser.parse(row.previous_updated_at),
-            priceSource: row.price_source
+            currentPriceSource: row.current_price_source,
+            previousPriceSource: row.previous_price_source
         )
     }
 }

@@ -107,7 +107,8 @@ enum PriceSnapshotMerger {
             currentUpdatedAt: Date(),
             previousCloseDate: existing.currentCloseDate ?? existing.previousCloseDate,
             previousUpdatedAt: existing.currentUpdatedAt ?? existing.previousUpdatedAt,
-            priceSource: incoming.priceSource ?? existing.priceSource
+            currentPriceSource: incoming.currentPriceSource ?? existing.currentPriceSource,
+            previousPriceSource: existing.currentPriceSource ?? existing.previousPriceSource
         )
     }
     
@@ -123,7 +124,8 @@ enum PriceSnapshotMerger {
             currentUpdatedAt: Date(),
             previousCloseDate: incoming.previousCloseDate,
             previousUpdatedAt: incoming.previousUpdatedAt,
-            priceSource: incoming.priceSource
+            currentPriceSource: incoming.currentPriceSource,
+            previousPriceSource: incoming.previousPriceSource
         )
     }
     
@@ -139,7 +141,8 @@ enum PriceSnapshotMerger {
             currentUpdatedAt: Date(),
             previousCloseDate: nil,
             previousUpdatedAt: nil,
-            priceSource: incoming.priceSource
+            currentPriceSource: incoming.currentPriceSource,
+            previousPriceSource: incoming.previousPriceSource
         )
     }
 }

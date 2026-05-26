@@ -169,7 +169,7 @@ serve(async (req) => {
     const updatedAt = taipeiUpdatedAtISOSeconds()
     const { data: prior } = await supabase
       .from("asset_price_snapshots")
-      .select("current_price, current_close_date, current_updated_at")
+      .select("current_price, current_close_date, current_updated_at, current_price_source")
       .eq("asset_type", assetType)
       .eq("symbol", symbol)
       .maybeSingle()
@@ -181,12 +181,13 @@ serve(async (req) => {
       current_price: price,
       current_close_date: closeDate,
       current_updated_at: updatedAt,
-      price_source: priceSource,
+      current_price_source: priceSource,
     }
     if (prior?.current_price) {
       row.previous_price = prior.current_price
       row.previous_close_date = prior.current_close_date
       row.previous_updated_at = prior.current_updated_at
+      row.previous_price_source = prior.current_price_source
     }
 
     await supabase.from("asset_price_snapshots").upsert(row, { onConflict: "asset_type,symbol" })

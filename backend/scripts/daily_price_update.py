@@ -626,7 +626,7 @@ def upsert_prices(supabase: Client, updates: list[dict]):
             existing = (
                 supabase.table("asset_price_snapshots")
                 .select(
-                    "current_price, current_close_date, current_updated_at"
+                    "current_price, current_close_date, current_updated_at, current_price_source"
                 )
                 .eq("asset_type", row["asset_type"])
                 .eq("symbol", row["symbol"])
@@ -637,6 +637,7 @@ def upsert_prices(supabase: Client, updates: list[dict]):
                 row["previous_price"] = str(prev["current_price"])
                 row["previous_close_date"] = prev.get("current_close_date")
                 row["previous_updated_at"] = prev.get("current_updated_at")
+                row["previous_price_source"] = prev.get("current_price_source")
             supabase.table("asset_price_snapshots").upsert(
                 row,
                 on_conflict="asset_type,symbol",
@@ -725,7 +726,7 @@ def run_price_update(markets: Optional[Set[str]] = None) -> None:
             "current_price": str(q.price),
             "current_close_date": q.close_date.isoformat(),
             "current_updated_at": updated_at,
-            "price_source": q.source,
+            "current_price_source": q.source,
         })
 
     upsert_prices(supabase, rows)

@@ -30,7 +30,8 @@ struct AssetPriceSnapshot: Identifiable, Codable, Equatable {
     var previousCloseDate: Date?
     var previousUpdatedAt: Date?
     
-    var priceSource: String?
+    var currentPriceSource: String?
+    var previousPriceSource: String?
     
     nonisolated init(
         assetType: AssetType,
@@ -43,7 +44,8 @@ struct AssetPriceSnapshot: Identifiable, Codable, Equatable {
         currentUpdatedAt: Date? = nil,
         previousCloseDate: Date? = nil,
         previousUpdatedAt: Date? = nil,
-        priceSource: String? = nil
+        currentPriceSource: String? = nil,
+        previousPriceSource: String? = nil
     ) {
         self.assetType = assetType
         self.symbol = symbol
@@ -55,7 +57,8 @@ struct AssetPriceSnapshot: Identifiable, Codable, Equatable {
         self.currentUpdatedAt = currentUpdatedAt
         self.previousCloseDate = previousCloseDate
         self.previousUpdatedAt = previousUpdatedAt
-        self.priceSource = priceSource
+        self.currentPriceSource = currentPriceSource
+        self.previousPriceSource = previousPriceSource
     }
     
     enum CodingKeys: String, CodingKey {
@@ -63,12 +66,12 @@ struct AssetPriceSnapshot: Identifiable, Codable, Equatable {
         case currentPrice, previousPrice
         case currentCloseDate, currentUpdatedAt
         case previousCloseDate, previousUpdatedAt
-        case priceSource
-        // 本機舊快取相容
+        case currentPriceSource, previousPriceSource
         case legacyCurrentPriceDate = "currentPriceDate"
         case legacyPreviousPriceDate = "previousPriceDate"
         case legacyLastUpdated = "lastUpdated"
         case legacyLastSuccessfulUpdate = "lastSuccessfulUpdate"
+        case legacyPriceSource = "priceSource"
     }
     
     init(from decoder: Decoder) throws {
@@ -87,7 +90,9 @@ struct AssetPriceSnapshot: Identifiable, Codable, Equatable {
         previousCloseDate = try c.decodeIfPresent(Date.self, forKey: .previousCloseDate)
             ?? c.decodeIfPresent(Date.self, forKey: .legacyPreviousPriceDate)
         previousUpdatedAt = try c.decodeIfPresent(Date.self, forKey: .previousUpdatedAt)
-        priceSource = try c.decodeIfPresent(String.self, forKey: .priceSource)
+        currentPriceSource = try c.decodeIfPresent(String.self, forKey: .currentPriceSource)
+            ?? c.decodeIfPresent(String.self, forKey: .legacyPriceSource)
+        previousPriceSource = try c.decodeIfPresent(String.self, forKey: .previousPriceSource)
     }
     
     func encode(to encoder: Encoder) throws {
@@ -102,21 +107,25 @@ struct AssetPriceSnapshot: Identifiable, Codable, Equatable {
         try c.encodeIfPresent(currentUpdatedAt, forKey: .currentUpdatedAt)
         try c.encodeIfPresent(previousCloseDate, forKey: .previousCloseDate)
         try c.encodeIfPresent(previousUpdatedAt, forKey: .previousUpdatedAt)
-        try c.encodeIfPresent(priceSource, forKey: .priceSource)
+        try c.encodeIfPresent(currentPriceSource, forKey: .currentPriceSource)
+        try c.encodeIfPresent(previousPriceSource, forKey: .previousPriceSource)
     }
     
     var displayPrice: Decimal? {
         currentPrice ?? previousPrice
     }
     
-    /// 顯示用收盤所屬日
     var displayCloseDate: Date? {
         currentCloseDate ?? previousCloseDate
     }
     
-    /// 相容舊呼叫點
     var displayPriceDate: Date? {
         displayCloseDate
+    }
+    
+    /// 顯示用現價來源
+    var displayPriceSource: String? {
+        currentPriceSource ?? previousPriceSource
     }
     
     var hasValidPrice: Bool {
