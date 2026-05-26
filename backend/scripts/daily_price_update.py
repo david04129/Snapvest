@@ -3,16 +3,19 @@
 Snapvest 每日股價更新腳本
 - 每次股價更新前：備份 hot_stocks（保留 2 日）→ 以 hot_stocks_seed ∪ 全使用者 holdings 覆寫 hot_stocks
 - 僅對 hot_stocks 清單抓價（去重，每檔只查一次）
-- API: 美股+台股 yfinance, 加密貨幣 CoinGecko
+- 台股 FinMind、美股 Finnhub；失敗 → 等 60s 重試 → 仍失敗則 yfinance 補洞
+- 加密 CoinGecko（曆日快照）
 """
 import json
 import math
 import os
 import time
-from datetime import datetime, timezone, timedelta
+from collections import deque
+from dataclasses import dataclass
+from datetime import date, datetime, timezone, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import Optional, Set
+from typing import Callable, Optional, Set
 
 # 台灣時區 UTC+8
 TW_TZ = timezone(timedelta(hours=8))
@@ -28,12 +31,70 @@ except ImportError:
 # 從環境變數讀取
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY", "").strip()
+FINMIND_TOKEN = os.environ.get("FINMIND_TOKEN", "").strip() or None
 
 COINGECKO_BASE = "https://api.coingecko.com/api/v3"
+FINNHUB_QUOTE_URL = "https://finnhub.io/api/v1/quote"
+FINMIND_DATA_URL = "https://api.finmindtrade.com/api/v4/data"
+REQUESTS_PER_MINUTE = 58
+MIN_INTERVAL_SEC = 60.0 / REQUESTS_PER_MINUTE
+RETRY_PAUSE_SEC = 60
+HOURLY_LIMIT_FINMIND = 600 if FINMIND_TOKEN else 300
 CRYPTO_ID_MAP_PATH = Path(__file__).parent / "data" / "crypto_coingecko_map.json"
 YAHOO_TW_SUFFIX = ".TW"  # 台股 Yahoo symbol 格式
 # 與 migration 003_exchange_rates.sql 註解一致
 EXCHANGE_RATE_API_URL = "https://open.er-api.com/v6/latest/USD"
+
+
+@dataclass
+class FetchedQuote:
+    price: float
+    source: str
+    close_date: date
+
+
+def tw_now() -> datetime:
+    return datetime.now(TW_TZ)
+
+
+def tw_now_iso_seconds() -> str:
+    return tw_now().replace(microsecond=0).isoformat()
+
+
+def parse_close_date(value) -> Optional[date]:
+    if value is None:
+        return None
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except ValueError:
+        return None
+
+
+def last_weekday(cal: date, max_lookback: int = 10) -> date:
+    d = cal
+    for _ in range(max_lookback):
+        if d.weekday() < 5:
+            return d
+        d -= timedelta(days=1)
+    return cal
+
+
+def resolve_session_close_date(market: str) -> date:
+    """本輪排程宣告的收盤所屬日（不含國定假日，假日由 API 空值 → fallback）。"""
+    today = tw_now().date()
+    if market == "tw":
+        return last_weekday(today)
+    if market == "us":
+        return last_weekday(today - timedelta(days=1))
+    return today
+
+
+def is_retryable_error(msg: str) -> bool:
+    lowered = msg.lower()
+    return "429" in msg or "timeout" in lowered or "timed out" in lowered
 
 
 def _is_valid_price(val) -> bool:
@@ -293,25 +354,199 @@ def get_symbols_to_update(supabase: Client) -> list[dict]:
     return symbols_list
 
 
-def fetch_stock_prices_yahoo(symbols: list[dict]) -> dict[tuple, float]:
-    """用 yfinance 抓美股+台股（逐檔抓取較穩定）"""
-    result = {}
-    stock_symbols = [s for s in symbols if s["asset_type"] in ("stock_tw", "stock_us")]
-    if not stock_symbols:
-        return result
+def _rate_limit_wait(last_request_at: float) -> float:
+    if last_request_at > 0:
+        elapsed = time.monotonic() - last_request_at
+        if elapsed < MIN_INTERVAL_SEC:
+            time.sleep(MIN_INTERVAL_SEC - elapsed)
+    return time.monotonic()
 
-    for s in stock_symbols:
-        ys = f"{s['symbol']}{YAHOO_TW_SUFFIX}" if s["asset_type"] == "stock_tw" else s["symbol"]
+
+def _finmind_wait_hourly(request_times: deque[float]) -> None:
+    now = time.monotonic()
+    while request_times and now - request_times[0] >= 3600.0:
+        request_times.popleft()
+    if len(request_times) >= HOURLY_LIMIT_FINMIND:
+        sleep_sec = 3600.0 - (now - request_times[0]) + 0.1
+        if sleep_sec > 0:
+            print(f"  FinMind 達每小時 {HOURLY_LIMIT_FINMIND} 次，等待 {sleep_sec:.0f}s…")
+            time.sleep(sleep_sec)
+
+
+def fetch_finmind_one(
+    http: requests.Session,
+    stock_id: str,
+    session_close: date,
+) -> tuple[Optional[FetchedQuote], str]:
+    ds = session_close.isoformat()
+    params: dict[str, str] = {
+        "dataset": "TaiwanStockPrice",
+        "data_id": stock_id,
+        "start_date": ds,
+        "end_date": ds,
+    }
+    if FINMIND_TOKEN:
+        params["token"] = FINMIND_TOKEN
+    try:
+        resp = http.get(FINMIND_DATA_URL, params=params, timeout=30)
+        if resp.status_code == 429:
+            return None, "429"
+        resp.raise_for_status()
+        body = resp.json()
+        if body.get("status") != 200:
+            return None, str(body.get("msg", body))
+        rows = body.get("data") or []
+        if not rows:
+            return None, "empty"
+        last = rows[-1]
+        close = last.get("close")
+        if not _is_valid_price(close):
+            return None, "invalid_close"
+        row_date = parse_close_date(last.get("date")) or session_close
+        return FetchedQuote(float(close), "finmind", row_date), ""
+    except Exception as e:
+        return None, str(e)
+
+
+def fetch_finnhub_one(
+    http: requests.Session,
+    symbol: str,
+    session_close: date,
+) -> tuple[Optional[FetchedQuote], str]:
+    if not FINNHUB_API_KEY:
+        return None, "no_finnhub_key"
+    try:
+        resp = http.get(
+            FINNHUB_QUOTE_URL,
+            params={"symbol": symbol, "token": FINNHUB_API_KEY},
+            timeout=15,
+        )
+        if resp.status_code == 429:
+            return None, "429"
+        resp.raise_for_status()
+        data = resp.json()
+        price = data.get("c")
+        if not _is_valid_price(price):
+            return None, "invalid_quote"
+        return FetchedQuote(float(price), "finnhub", session_close), ""
+    except Exception as e:
+        return None, str(e)
+
+
+def fetch_yahoo_one(s: dict, session_close: date) -> tuple[Optional[FetchedQuote], str]:
+    ys = f"{s['symbol']}{YAHOO_TW_SUFFIX}" if s["asset_type"] == "stock_tw" else s["symbol"]
+    try:
+        ticker = yf.Ticker(ys)
+        hist = ticker.history(period="5d")
+        if hist.empty or "Close" not in hist.columns:
+            return None, "empty"
+        price = float(hist["Close"].iloc[-1])
+        if not _is_valid_price(price):
+            return None, "invalid_close"
+        return FetchedQuote(price, "yfinance", session_close), ""
+    except Exception as e:
+        return None, str(e)
+
+
+def _fetch_primary_batch(
+    symbols: list[dict],
+    session_close: date,
+    fetch_one: Callable,
+    label: str,
+    finmind_hourly: Optional[deque[float]] = None,
+) -> tuple[dict[tuple[str, str], FetchedQuote], dict[tuple[str, str], str]]:
+    ok: dict[tuple[str, str], FetchedQuote] = {}
+    fail: dict[tuple[str, str], str] = {}
+    if not symbols:
+        return ok, fail
+
+    http = requests.Session()
+    last_at = 0.0
+    for s in symbols:
         key = (s["asset_type"], s["symbol"])
-        try:
-            ticker = yf.Ticker(ys)
-            hist = ticker.history(period="1d")
-            if not hist.empty and "Close" in hist.columns:
-                result[key] = float(hist["Close"].iloc[-1])
-        except Exception as e:
-            print(f"  {ys}: {e}")
-        time.sleep(0.3)
-    return result
+        if finmind_hourly is not None:
+            _finmind_wait_hourly(finmind_hourly)
+        last_at = _rate_limit_wait(last_at)
+        if finmind_hourly is not None:
+            finmind_hourly.append(time.monotonic())
+
+        if s["asset_type"] == "stock_tw":
+            quote, err = fetch_one(http, s["symbol"], session_close)
+        else:
+            quote, err = fetch_one(http, s["symbol"], session_close)
+
+        if quote:
+            ok[key] = quote
+        else:
+            fail[key] = err or "unknown"
+
+    print(f"  {label} 第一輪: 成功 {len(ok)} / {len(symbols)}")
+    return ok, fail
+
+
+def fetch_stocks_for_market(
+    asset_type: str,
+    symbols: list[dict],
+    session_close: date,
+) -> dict[tuple[str, str], FetchedQuote]:
+    """Primary → 等 60s → retry 可重試失敗 → yfinance 補其餘。"""
+    market_symbols = [s for s in symbols if s["asset_type"] == asset_type]
+    if not market_symbols:
+        return {}
+
+    label = "FinMind" if asset_type == "stock_tw" else "Finnhub"
+    finmind_times: Optional[deque[float]] = deque() if asset_type == "stock_tw" else None
+
+    if asset_type == "stock_tw":
+        if not FINMIND_TOKEN:
+            print("  未設定 FINMIND_TOKEN，台股將直接嘗試 yfinance fallback")
+        fetch_one = fetch_finmind_one
+    else:
+        if not FINNHUB_API_KEY:
+            print("  未設定 FINNHUB_API_KEY，美股將直接嘗試 yfinance fallback")
+        fetch_one = fetch_finnhub_one
+
+    ok, fail = _fetch_primary_batch(
+        market_symbols, session_close, fetch_one, label, finmind_times
+    )
+
+    if fail:
+        print(f"  {label} 等待 {RETRY_PAUSE_SEC}s 後重試失敗檔…")
+        time.sleep(RETRY_PAUSE_SEC)
+        retry_list = [
+            s
+            for s in market_symbols
+            if (s["asset_type"], s["symbol"]) in fail
+            and is_retryable_error(fail[(s["asset_type"], s["symbol"])])
+        ]
+        if retry_list:
+            ok2, fail2 = _fetch_primary_batch(
+                retry_list, session_close, fetch_one, f"{label} retry", finmind_times
+            )
+            ok.update(ok2)
+            for k, v in fail2.items():
+                fail[k] = v
+            for k in ok2:
+                fail.pop(k, None)
+        print(f"  {label} 重試後累計成功 {len(ok)} / {len(market_symbols)}")
+
+    still_missing = [
+        s
+        for s in market_symbols
+        if (s["asset_type"], s["symbol"]) not in ok
+    ]
+    if still_missing:
+        print(f"  yfinance fallback: {len(still_missing)} 檔")
+        for s in still_missing:
+            key = (s["asset_type"], s["symbol"])
+            quote, err = fetch_yahoo_one(s, session_close)
+            if quote:
+                ok[key] = quote
+            else:
+                print(f"    {s['symbol']}: {err}")
+            time.sleep(0.3)
+
+    return ok
 
 
 def load_crypto_coingecko_map() -> dict[str, str]:
@@ -383,28 +618,36 @@ def fetch_crypto_prices_coingecko(symbols: list[dict]) -> dict[tuple, float]:
 
 
 def upsert_prices(supabase: Client, updates: list[dict]):
-    """寫入或更新 asset_price_snapshots，保留 previous_price 邏輯"""
+    """寫入 asset_price_snapshots；舊 current 滾入 previous_*"""
     if not updates:
         return
     for row in updates:
         try:
-            # 若已存在，將舊的 current_price 當作 previous_price
-            existing = supabase.table("asset_price_snapshots").select("current_price, current_price_date").eq("asset_type", row["asset_type"]).eq("symbol", row["symbol"]).execute()
-            if existing.data and len(existing.data) > 0 and existing.data[0].get("current_price"):
-                row["previous_price"] = str(existing.data[0]["current_price"])
-                row["previous_price_date"] = existing.data[0].get("current_price_date")  # 使用 DB 舊值
+            existing = (
+                supabase.table("asset_price_snapshots")
+                .select(
+                    "current_price, current_close_date, current_updated_at"
+                )
+                .eq("asset_type", row["asset_type"])
+                .eq("symbol", row["symbol"])
+                .execute()
+            )
+            if existing.data and existing.data[0].get("current_price"):
+                prev = existing.data[0]
+                row["previous_price"] = str(prev["current_price"])
+                row["previous_close_date"] = prev.get("current_close_date")
+                row["previous_updated_at"] = prev.get("current_updated_at")
             supabase.table("asset_price_snapshots").upsert(
                 row,
                 on_conflict="asset_type,symbol",
-                ignore_duplicates=False
+                ignore_duplicates=False,
             ).execute()
         except Exception as e:
             print(f"寫入 {row.get('asset_type')}/{row.get('symbol')} 失敗: {e}")
         time.sleep(0.05)
-    # 更新 global 最後更新時間
     supabase.table("price_update_metadata").upsert(
-        {"id": "global", "last_updated_at": datetime.now(TW_TZ).isoformat()},
-        on_conflict="id"
+        {"id": "global", "last_updated_at": tw_now_iso_seconds()},
+        on_conflict="id",
     ).execute()
 
 
@@ -436,7 +679,7 @@ def filter_symbols_by_markets(symbols: list[dict], markets: Optional[Set[str]]) 
 def run_price_update(markets: Optional[Set[str]] = None) -> None:
     """更新股價。markets: {'tw','us','crypto'} 子集；None = 全部。不含匯率。"""
     label = ",".join(sorted(markets)) if markets else "all"
-    print(f"[{datetime.now()}] 開始股價更新（markets={label}）")
+    print(f"[{tw_now().isoformat()}] 開始股價更新（markets={label}）")
     supabase = get_supabase()
 
     print("重建 hot_stocks 清單（seed ∪ 使用者持股）…")
@@ -448,51 +691,45 @@ def run_price_update(markets: Optional[Set[str]] = None) -> None:
         print("無符合條件的標的，結束")
         return
 
-    all_prices = {}
-    include_stocks = markets is None or "tw" in markets or "us" in markets
+    include_tw = markets is None or "tw" in markets
+    include_us = markets is None or "us" in markets
     include_crypto = markets is None or "crypto" in markets
-    stock_prices: dict[tuple, float] = {}
-    crypto_prices: dict[tuple, float] = {}
 
-    if include_stocks:
-        stock_prices = fetch_stock_prices_yahoo(symbols)
-        all_prices.update(stock_prices)
-        print(f"Yahoo: 取得 {len(stock_prices)} 筆")
+    quotes: dict[tuple[str, str], FetchedQuote] = {}
+
+    if include_tw:
+        tw_close = resolve_session_close_date("tw")
+        print(f"本輪台股收盤日: {tw_close.isoformat()}")
+        quotes.update(fetch_stocks_for_market("stock_tw", symbols, tw_close))
+
+    if include_us:
+        us_close = resolve_session_close_date("us")
+        print(f"本輪美股收盤日: {us_close.isoformat()}")
+        quotes.update(fetch_stocks_for_market("stock_us", symbols, us_close))
 
     if include_crypto:
-        crypto_prices = fetch_crypto_prices_coingecko(symbols)
-        all_prices.update(crypto_prices)
-        print(f"CoinGecko: 取得 {len(crypto_prices)} 筆")
+        crypto_close = resolve_session_close_date("crypto")
+        print(f"本輪加密快照曆日: {crypto_close.isoformat()}")
+        for key, price in fetch_crypto_prices_coingecko(symbols).items():
+            if _is_valid_price(price):
+                quotes[key] = FetchedQuote(float(price), "coingecko", crypto_close)
 
-    # 組裝 upsert 資料（price_source 標記本輪實際寫入來源）
+    updated_at = tw_now_iso_seconds()
     currency_map = {"stock_tw": "TWD", "stock_us": "USD", "crypto": "USD"}
     rows = []
-    stock_keys = set(stock_prices.keys()) if include_stocks else set()
-    crypto_keys = set(crypto_prices.keys()) if include_crypto else set()
-    for (asset_type, symbol), price in all_prices.items():
-        if price is None or price <= 0:
-            continue
-        key = (asset_type, symbol)
-        if key in crypto_keys:
-            source = "coingecko"
-        elif key in stock_keys:
-            source = "yfinance"
-        else:
-            source = "unknown"
+    for (asset_type, symbol), q in quotes.items():
         rows.append({
             "asset_type": asset_type,
             "symbol": symbol,
             "currency": currency_map.get(asset_type, "USD"),
-            "current_price": str(price),
-            "previous_price": None,  # 可由 DB 觸發或在此讀取舊值後填入
-            "current_price_date": datetime.now(TW_TZ).isoformat(),
-            "last_updated": datetime.now(TW_TZ).isoformat(),
-            "last_successful_update": datetime.now(TW_TZ).isoformat(),
-            "price_source": source,
+            "current_price": str(q.price),
+            "current_close_date": q.close_date.isoformat(),
+            "current_updated_at": updated_at,
+            "price_source": q.source,
         })
 
     upsert_prices(supabase, rows)
-    print(f"已寫入 {len(rows)} 筆至 Supabase")
+    print(f"已寫入 {len(rows)} 筆至 Supabase（更新時間 {updated_at}）")
     print("更新完成")
 
 

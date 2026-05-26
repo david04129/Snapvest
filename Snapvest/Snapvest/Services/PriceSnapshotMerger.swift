@@ -29,7 +29,7 @@ enum PriceSnapshotMerger {
                 incoming: incoming,
                 existing: existing,
                 candidate: candidate,
-                candidateDate: incoming.currentPriceDate ?? incoming.lastSuccessfulUpdate ?? Date()
+                candidateDate: incoming.currentCloseDate ?? incoming.currentUpdatedAt ?? Date()
             )
         }
         
@@ -103,10 +103,10 @@ enum PriceSnapshotMerger {
             currency: incoming.currency,
             currentPrice: candidate,
             previousPrice: existing.currentPrice ?? existing.previousPrice,
-            currentPriceDate: candidateDate,
-            previousPriceDate: existing.currentPriceDate ?? existing.previousPriceDate,
-            lastUpdated: Date(),
-            lastSuccessfulUpdate: Date(),
+            currentCloseDate: incoming.currentCloseDate ?? existing.currentCloseDate,
+            currentUpdatedAt: Date(),
+            previousCloseDate: existing.currentCloseDate ?? existing.previousCloseDate,
+            previousUpdatedAt: existing.currentUpdatedAt ?? existing.previousUpdatedAt,
             priceSource: incoming.priceSource ?? existing.priceSource
         )
     }
@@ -119,10 +119,10 @@ enum PriceSnapshotMerger {
             currency: incoming.currency,
             currentPrice: candidate,
             previousPrice: incoming.previousPrice != candidate ? incoming.previousPrice : nil,
-            currentPriceDate: incoming.currentPriceDate ?? incoming.lastSuccessfulUpdate ?? Date(),
-            previousPriceDate: incoming.previousPriceDate,
-            lastUpdated: Date(),
-            lastSuccessfulUpdate: Date(),
+            currentCloseDate: incoming.currentCloseDate ?? incoming.currentUpdatedAt ?? Date(),
+            currentUpdatedAt: Date(),
+            previousCloseDate: incoming.previousCloseDate,
+            previousUpdatedAt: incoming.previousUpdatedAt,
             priceSource: incoming.priceSource
         )
     }
@@ -135,10 +135,10 @@ enum PriceSnapshotMerger {
             currency: incoming.currency,
             currentPrice: previous,
             previousPrice: nil,
-            currentPriceDate: incoming.previousPriceDate ?? incoming.lastUpdated,
-            previousPriceDate: nil,
-            lastUpdated: Date(),
-            lastSuccessfulUpdate: Date(),
+            currentCloseDate: incoming.previousCloseDate ?? incoming.previousUpdatedAt,
+            currentUpdatedAt: Date(),
+            previousCloseDate: nil,
+            previousUpdatedAt: nil,
             priceSource: incoming.priceSource
         )
     }

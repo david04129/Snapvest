@@ -158,6 +158,9 @@ Snapvest 用 Supabase 當「**會變動資料的倉庫**」：
 | [006_user_daily_snapshots.sql](./backend/supabase/migrations/006_user_daily_snapshots.sql) | `user_daily_snapshots` | 首頁走勢圖資料 |
 | [007_hot_stocks_seed_and_backup.sql](./backend/supabase/migrations/007_hot_stocks_seed_and_backup.sql) | `hot_stocks_seed`、`hot_stocks_backup` | 種子清單與備份 |
 | [008_price_source.sql](./backend/supabase/migrations/008_price_source.sql) | `asset_price_snapshots.price_source` | 標記股價來源 |
+| [009_price_snapshot_eod_columns.sql](./backend/supabase/migrations/009_price_snapshot_eod_columns.sql) | 收盤日 + 更新時間欄位 | 取代 `current_price_date` / `last_updated` 等 |
+
+**`asset_price_snapshots` 主要欄位：** `current_price`、`current_close_date`（收盤所屬日）、`current_updated_at`（寫入時間）、`previous_*`、`price_source`。
 
 **RLS（Row Level Security）白話：** 像門禁——App 的 key 只能進「讀取區」；GitHub Actions 的 service_role key 才能「寫入區」。
 
@@ -203,28 +206,28 @@ Snapvest 用 Supabase 當「**會變動資料的倉庫**」：
 
 | 時間 | Workflow 名稱 | 做什麼 | 寫到哪 |
 |------|---------------|--------|--------|
-| **週一～五 16:00** | [Daily Price Update](./.github/workflows/daily-price-update.yml) | ① 更新匯率 ② 更新台股 ③ 更新加密 | Supabase |
-| **週六、日 16:00** | 同上 | 只更新加密（Crypto 24/7） | Supabase |
+| **週一～五 18:00** | [Daily Price Update](./.github/workflows/daily-price-update.yml) | ① 更新匯率 ② 更新台股 ③ 更新加密 | Supabase |
+| **週六、日 18:00** | 同上 | 只更新加密（Crypto 24/7） | Supabase |
 | **週二～六 07:00** | 同上 | 只更新美股（配合美股收盤後） | Supabase |
 | **每天 00:05** | [Daily Portfolio Snapshot](./.github/workflows/daily-portfolio-snapshot.yml) | 讀持股 + 股價 + 匯率 → 算淨資產，**寫入前一日** `snapshot_date` | Supabase `user_daily_snapshots` |
 
 **00:05 為什麼在隔天凌晨？**  
-日終結算：5/26 00:05 執行 → 記錄 **5/25** 的快照，可納入 5/25 晚間交易。台股／加密用前一日 16:00 股價；美股接受 **lag 一個美股交易日**（沿用最近一次 07:00 更新）。
+日終結算：5/26 00:05 執行 → 記錄 **5/25** 的快照，可納入 5/25 晚間交易。台股／加密用前一日 18:00 股價；美股接受 **lag 一個美股交易日**（沿用最近一次 07:00 更新）。
 
 #### 一天時間軸（平日）
 
 ```
 07:00  更新美股股價
-16:00  更新匯率 + 台股 + 加密
+18:00  更新匯率 + 台股 + 加密
 00:05（隔天）結算並寫入「前一日」淨資產走勢
 ```
 
 #### 週末
 
 ```
-週六 16:00  只更新加密
-週日 16:00  只更新加密
-（美股／台股週末不開盤，週一 07:00 / 16:00 再更新）
+週六 18:00  只更新加密
+週日 18:00  只更新加密
+（美股／台股週末不開盤，週一 07:00 / 18:00 再更新）
 ```
 
 ### 每月
@@ -265,11 +268,11 @@ Snapvest 有 **兩條抓價路線**：
 | 資料 | API | 連結 | 備註 |
 |------|-----|------|------|
 | **匯率** | ExchangeRate-API（open.er-api.com） | [https://open.er-api.com/v6/latest/USD](https://open.er-api.com/v6/latest/USD) | 免 API key；以 USD 為基準 |
-| **美股** | Yahoo Finance（透過 Python `yfinance`） | [yfinance 專案](https://github.com/ranaroussi/yfinance) | 免費；可能遇到 rate limit |
-| **台股** | Yahoo Finance（symbol 格式 `2330.TW`） | 同上 | 免費；可能遇到 rate limit |
-| **加密貨幣** | CoinGecko Simple Price | [CoinGecko API 文件](https://docs.coingecko.com/reference/simple-price) | 免費有頻率限制；需 `crypto_coingecko_map.json` 對照 symbol → id |
+| **台股** | FinMind `TaiwanStockPrice` | [FinMind](https://finmindtrade.com/) | 主線；失敗 → 60s 重試 → `yfinance` |
+| **美股** | Finnhub `/quote` | [Finnhub](https://finnhub.io/) | 主線；失敗 → 60s 重試 → `yfinance` |
+| **加密貨幣** | CoinGecko Simple Price | [CoinGecko API 文件](https://docs.coingecko.com/reference/simple-price) | 曆日快照；需 `crypto_coingecko_map.json` |
 
-寫入 Supabase 時會帶 **`price_source`**（台美股 `yfinance`、加密 `coingecko`）。
+排程會印出**本輪收盤日**（`session_close_date`），寫入 `current_close_date`；`current_updated_at` 為寫入時間（到秒）。GitHub Secrets 需 **`FINNHUB_API_KEY`**、**`FINMIND_TOKEN`**。
 
 **加密 symbol 對照表：** [backend/scripts/data/crypto_coingecko_map.json](./backend/scripts/data/crypto_coingecko_map.json)（由 `build_symbols_crypto.py` 產生）
 

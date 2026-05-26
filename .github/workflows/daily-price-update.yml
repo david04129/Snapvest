@@ -1,14 +1,14 @@
 # 股價／匯率排程（台灣時間）
-# - 週一～五 16:00：匯率 + 台股 + 加密
-# - 週六、週日 16:00：僅加密
+# - 週一～五 18:00：匯率 + 台股 + 加密
+# - 週六、週日 18:00：僅加密
 # - 週二～六 07:00：僅美股（UTC 週一～五 23:00）
-# 需在 repo Settings > Secrets 設定 SUPABASE_URL、SUPABASE_SERVICE_ROLE_KEY
+# Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, FINNHUB_API_KEY, FINMIND_TOKEN
 name: Daily Price Update
 
 on:
   schedule:
-    - cron: '0 8 * * 1-5'   # 台灣 週一～五 16:00
-    - cron: '0 8 * * 0,6'   # 台灣 週六、週日 16:00（僅加密）
+    - cron: '0 10 * * 1-5'  # 台灣 週一～五 18:00
+    - cron: '0 10 * * 0,6'  # 台灣 週六、週日 18:00（僅加密）
     - cron: '0 23 * * 1-5'  # 台灣 週二～六 07:00（美股）
   workflow_dispatch:
 
@@ -18,8 +18,8 @@ concurrency:
 
 jobs:
   weekday-afternoon:
-    name: 週一～五 16:00 匯率+台股+加密
-    if: github.event.schedule == '0 8 * * 1-5'
+    name: 週一～五 18:00 匯率+台股+加密
+    if: github.event.schedule == '0 10 * * 1-5'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -47,11 +47,13 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
         run: python backend/scripts/daily_price_update.py --markets tw,crypto
 
   weekend-crypto:
-    name: 週六日 16:00 僅加密
-    if: github.event.schedule == '0 8 * * 0,6'
+    name: 週六日 18:00 僅加密
+    if: github.event.schedule == '0 10 * * 0,6'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -81,6 +83,8 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
         run: python backend/scripts/daily_price_update.py --markets us
 
   manual-full:
@@ -98,4 +102,6 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
         run: python backend/scripts/daily_price_update.py

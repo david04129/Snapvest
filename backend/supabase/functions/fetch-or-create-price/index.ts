@@ -19,6 +19,32 @@ const coingeckoHeaders = {
   Accept: "application/json",
 }
 
+const TAIPEI_TZ = "Asia/Taipei"
+
+function taipeiCloseDateString(d = new Date()): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: TAIPEI_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d)
+}
+
+function taipeiUpdatedAtISOSeconds(d = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: TAIPEI_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(d)
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "00"
+  return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}:${get("second")}+08:00`
+}
+
 async function fetchYahooChart(yahooSymbol: string): Promise<Response> {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1d&range=1d`
   return fetch(url, { headers: yahooFetchHeaders })
@@ -138,18 +164,32 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "Price not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } })
     }
 
-    // 3. 寫入 DB（每日 hot_stocks 由排程依 seed ∪ 全使用者 holdings 重建）
-    const now = new Date().toISOString()
-    await supabase.from("asset_price_snapshots").upsert({
+    // 3. 寫入 DB（零散參考價；收盤日＝台北曆日，非排程 EOD）
+    const closeDate = taipeiCloseDateString()
+    const updatedAt = taipeiUpdatedAtISOSeconds()
+    const { data: prior } = await supabase
+      .from("asset_price_snapshots")
+      .select("current_price, current_close_date, current_updated_at")
+      .eq("asset_type", assetType)
+      .eq("symbol", symbol)
+      .maybeSingle()
+
+    const row: Record<string, unknown> = {
       asset_type: assetType,
       symbol,
       currency,
       current_price: price,
-      current_price_date: now,
-      last_updated: now,
-      last_successful_update: now,
+      current_close_date: closeDate,
+      current_updated_at: updatedAt,
       price_source: priceSource,
-    }, { onConflict: "asset_type,symbol" })
+    }
+    if (prior?.current_price) {
+      row.previous_price = prior.current_price
+      row.previous_close_date = prior.current_close_date
+      row.previous_updated_at = prior.current_updated_at
+    }
+
+    await supabase.from("asset_price_snapshots").upsert(row, { onConflict: "asset_type,symbol" })
 
     return new Response(JSON.stringify({ price, currency, source: priceSource }), { headers: { ...corsHeaders, "Content-Type": "application/json" } })
   } catch (e) {

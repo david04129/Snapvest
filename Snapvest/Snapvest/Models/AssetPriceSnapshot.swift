@@ -14,26 +14,22 @@ struct AssetPriceSnapshot: Identifiable, Codable, Equatable {
         "\(assetType.rawValue)_\(symbol)"
     }
     
-    let assetType: AssetType      // 資產類型（台股、美股、加密貨幣）
-    let symbol: String            // 股票代號（唯一識別碼，API 使用）
+    let assetType: AssetType
+    let symbol: String
     
-    /// 股票資訊
-    var name: String?             // 股票名稱（顯示用，可選，後續維護）
-    var currency: Currency        // 貨幣
+    var name: String?
+    var currency: Currency
     
-    /// 價格數據
-    var currentPrice: Decimal?    // 當前價格（最新一次成功獲取的價格）
-    var previousPrice: Decimal?   // 上一次價格（容錯備份）
+    var currentPrice: Decimal?
+    var previousPrice: Decimal?
     
-    /// 價格日期
-    var currentPriceDate: Date?   // 當前價格的日期（後端提供，例如昨天收盤價的日期）
-    var previousPriceDate: Date?  // 上一次價格的日期
+    /// 此 current_price 對應的收盤所屬日（僅日期）
+    var currentCloseDate: Date?
+    /// 本列 current_price 寫入時間
+    var currentUpdatedAt: Date?
+    var previousCloseDate: Date?
+    var previousUpdatedAt: Date?
     
-    /// 時間戳記
-    var lastUpdated: Date         // 快照最後更新時間（無論成功或失敗）
-    var lastSuccessfulUpdate: Date? // 最後一次成功獲取價格的時間
-    
-    /// 最後一次成功寫入的價格來源（yfinance / coingecko / yahoo / finmind / finnhub）
     var priceSource: String?
     
     nonisolated init(
@@ -43,10 +39,10 @@ struct AssetPriceSnapshot: Identifiable, Codable, Equatable {
         currency: Currency,
         currentPrice: Decimal? = nil,
         previousPrice: Decimal? = nil,
-        currentPriceDate: Date? = nil,
-        previousPriceDate: Date? = nil,
-        lastUpdated: Date = Date(),
-        lastSuccessfulUpdate: Date? = nil,
+        currentCloseDate: Date? = nil,
+        currentUpdatedAt: Date? = nil,
+        previousCloseDate: Date? = nil,
+        previousUpdatedAt: Date? = nil,
         priceSource: String? = nil
     ) {
         self.assetType = assetType
@@ -55,35 +51,78 @@ struct AssetPriceSnapshot: Identifiable, Codable, Equatable {
         self.currency = currency
         self.currentPrice = currentPrice
         self.previousPrice = previousPrice
-        self.currentPriceDate = currentPriceDate
-        self.previousPriceDate = previousPriceDate
-        self.lastUpdated = lastUpdated
-        self.lastSuccessfulUpdate = lastSuccessfulUpdate
+        self.currentCloseDate = currentCloseDate
+        self.currentUpdatedAt = currentUpdatedAt
+        self.previousCloseDate = previousCloseDate
+        self.previousUpdatedAt = previousUpdatedAt
         self.priceSource = priceSource
     }
     
-    /// 本輪排程／同步是否可能為過期價（僅供除錯或進階 UI；需搭配 lastSuccessfulUpdate）
-    var hasPriceSource: Bool {
-        guard let priceSource else { return false }
-        return !priceSource.isEmpty
+    enum CodingKeys: String, CodingKey {
+        case assetType, symbol, name, currency
+        case currentPrice, previousPrice
+        case currentCloseDate, currentUpdatedAt
+        case previousCloseDate, previousUpdatedAt
+        case priceSource
+        // 本機舊快取相容
+        case legacyCurrentPriceDate = "currentPriceDate"
+        case legacyPreviousPriceDate = "previousPriceDate"
+        case legacyLastUpdated = "lastUpdated"
+        case legacyLastSuccessfulUpdate = "lastSuccessfulUpdate"
     }
     
-    /// 獲取顯示用的價格（優先使用 currentPrice，如果為 nil 則使用 previousPrice）
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        assetType = try c.decode(AssetType.self, forKey: .assetType)
+        symbol = try c.decode(String.self, forKey: .symbol)
+        name = try c.decodeIfPresent(String.self, forKey: .name)
+        currency = try c.decode(Currency.self, forKey: .currency)
+        currentPrice = try c.decodeIfPresent(Decimal.self, forKey: .currentPrice)
+        previousPrice = try c.decodeIfPresent(Decimal.self, forKey: .previousPrice)
+        currentCloseDate = try c.decodeIfPresent(Date.self, forKey: .currentCloseDate)
+            ?? c.decodeIfPresent(Date.self, forKey: .legacyCurrentPriceDate)
+        currentUpdatedAt = try c.decodeIfPresent(Date.self, forKey: .currentUpdatedAt)
+            ?? c.decodeIfPresent(Date.self, forKey: .legacyLastSuccessfulUpdate)
+            ?? c.decodeIfPresent(Date.self, forKey: .legacyLastUpdated)
+        previousCloseDate = try c.decodeIfPresent(Date.self, forKey: .previousCloseDate)
+            ?? c.decodeIfPresent(Date.self, forKey: .legacyPreviousPriceDate)
+        previousUpdatedAt = try c.decodeIfPresent(Date.self, forKey: .previousUpdatedAt)
+        priceSource = try c.decodeIfPresent(String.self, forKey: .priceSource)
+    }
+    
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(assetType, forKey: .assetType)
+        try c.encode(symbol, forKey: .symbol)
+        try c.encodeIfPresent(name, forKey: .name)
+        try c.encode(currency, forKey: .currency)
+        try c.encodeIfPresent(currentPrice, forKey: .currentPrice)
+        try c.encodeIfPresent(previousPrice, forKey: .previousPrice)
+        try c.encodeIfPresent(currentCloseDate, forKey: .currentCloseDate)
+        try c.encodeIfPresent(currentUpdatedAt, forKey: .currentUpdatedAt)
+        try c.encodeIfPresent(previousCloseDate, forKey: .previousCloseDate)
+        try c.encodeIfPresent(previousUpdatedAt, forKey: .previousUpdatedAt)
+        try c.encodeIfPresent(priceSource, forKey: .priceSource)
+    }
+    
     var displayPrice: Decimal? {
         currentPrice ?? previousPrice
     }
     
-    /// 獲取顯示用的價格日期（優先使用 currentPriceDate，如果為 nil 則使用 previousPriceDate）
-    var displayPriceDate: Date? {
-        currentPriceDate ?? previousPriceDate
+    /// 顯示用收盤所屬日
+    var displayCloseDate: Date? {
+        currentCloseDate ?? previousCloseDate
     }
     
-    /// 判斷價格是否有效（至少有一個價格）
+    /// 相容舊呼叫點
+    var displayPriceDate: Date? {
+        displayCloseDate
+    }
+    
     var hasValidPrice: Bool {
         currentPrice != nil || previousPrice != nil
     }
     
-    /// 判斷當前價格是否有效
     var hasCurrentPrice: Bool {
         currentPrice != nil
     }

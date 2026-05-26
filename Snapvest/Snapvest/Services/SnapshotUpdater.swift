@@ -214,6 +214,7 @@ enum SnapshotUpdater {
             guard let currentPrice else { continue }
             
             let holdingInfo = holdingsBySymbol[key]
+            let now = Date()
             let rawSnapshot = AssetPriceSnapshot(
                 assetType: symbolInfo.assetType,
                 symbol: symbolInfo.symbol,
@@ -221,10 +222,8 @@ enum SnapshotUpdater {
                 currency: holdingInfo?.currency ?? (symbolInfo.assetType == .stockTW ? .TWD : .USD),
                 currentPrice: currentPrice,
                 previousPrice: nil,
-                currentPriceDate: Date(),
-                previousPriceDate: nil,
-                lastUpdated: Date(),
-                lastSuccessfulUpdate: Date()
+                currentCloseDate: Calendar.current.startOfDay(for: now),
+                currentUpdatedAt: now
             )
             let existing = try? await dataService.fetchAssetPriceSnapshot(
                 assetType: symbolInfo.assetType,

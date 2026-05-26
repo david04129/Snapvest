@@ -23,6 +23,16 @@ private enum SupabaseRESTTimestampParser {
         withoutFraction.timeZone = TimeZone(identifier: "UTC")
         return withFraction.date(from: string) ?? withoutFraction.date(from: string)
     }
+    
+    /// PostgreSQL DATE（yyyy-MM-dd）
+    nonisolated static func parseCloseDate(_ string: String?) -> Date? {
+        guard let string, string.count >= 10 else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "Asia/Taipei")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.date(from: String(string.prefix(10)))
+    }
 }
 
 /// Supabase 連線設定（請在 App 啟動時設定）
@@ -301,19 +311,16 @@ private struct SupabasePriceRow: Decodable, Sendable {
     let currency: String
     let current_price: DecimalOrDouble?
     let previous_price: DecimalOrDouble?
-    let current_price_date: String?
-    let previous_price_date: String?
-    let last_updated: String
-    let last_successful_update: String?
+    let current_close_date: String?
+    let current_updated_at: String?
+    let previous_close_date: String?
+    let previous_updated_at: String?
     let price_source: String?
     
     nonisolated static func toAssetPriceSnapshot(_ row: SupabasePriceRow) -> AssetPriceSnapshot? {
         let price = (row.current_price?.decimalValue ?? row.previous_price?.decimalValue)
         guard let _ = price, let curr = Currency(rawValue: row.currency),
               let at = AssetType(rawValue: row.asset_type) else { return nil }
-        func parseDate(_ s: String?) -> Date? {
-            SupabaseRESTTimestampParser.parse(s)
-        }
         return AssetPriceSnapshot(
             assetType: at,
             symbol: row.symbol,
@@ -321,10 +328,10 @@ private struct SupabasePriceRow: Decodable, Sendable {
             currency: curr,
             currentPrice: row.current_price?.decimalValue,
             previousPrice: row.previous_price?.decimalValue,
-            currentPriceDate: parseDate(row.current_price_date),
-            previousPriceDate: parseDate(row.previous_price_date),
-            lastUpdated: parseDate(row.last_updated) ?? Date(),
-            lastSuccessfulUpdate: parseDate(row.last_successful_update),
+            currentCloseDate: SupabaseRESTTimestampParser.parseCloseDate(row.current_close_date),
+            currentUpdatedAt: SupabaseRESTTimestampParser.parse(row.current_updated_at),
+            previousCloseDate: SupabaseRESTTimestampParser.parseCloseDate(row.previous_close_date),
+            previousUpdatedAt: SupabaseRESTTimestampParser.parse(row.previous_updated_at),
             priceSource: row.price_source
         )
     }
