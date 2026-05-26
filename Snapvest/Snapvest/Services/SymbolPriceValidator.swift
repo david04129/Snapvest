@@ -20,7 +20,7 @@ enum SymbolPriceValidationError: LocalizedError {
 
 enum SymbolPriceValidator {
     static func needsValidation(assetType: AssetType, transactionType: TransactionType) -> Bool {
-        (transactionType == .buy || transactionType == .sell) && assetType != .cash
+        transactionType == .buy && assetType != .cash
     }
     
     /// 驗證成功回傳 `nil`；失敗回傳使用者可讀錯誤訊息。

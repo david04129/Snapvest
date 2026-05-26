@@ -84,10 +84,12 @@ struct TransactionImportBatchResult: Equatable {
 
 enum TransactionImportError: LocalizedError {
     case missingAccount
+    case validationFailed(String)
     
     var errorDescription: String? {
         switch self {
         case .missingAccount: return "找不到交易所屬帳戶"
+        case .validationFailed(let message): return message
         }
     }
 }
@@ -109,6 +111,43 @@ enum TransactionImportService {
         guard account.accountType.supportsTransactionImport else { return nil }
         guard !importableTypes(for: account).contains(type) else { return nil }
         return "非股票交易（\(type.displayName)），已略過"
+    }
+    
+    /// 此帳戶 CSV 匯入允許的 asset_type
+    static func allowedAssetTypes(for account: Account) -> Set<AssetType> {
+        switch account.accountType {
+        case .usdAccount:
+            return [.stockUS]
+        case .twdSecurities:
+            return [.stockTW, .stockUS]
+        default:
+            return []
+        }
+    }
+    
+    static func assetTypeAccountMismatchMessage(assetType: AssetType, account: Account) -> String? {
+        guard account.accountType.supportsTransactionImport else { return nil }
+        guard !allowedAssetTypes(for: account).contains(assetType) else { return nil }
+        switch account.accountType {
+        case .usdAccount:
+            switch assetType {
+            case .stockTW:
+                return "此為美金證券戶，不可匯入台股（請改在台幣證券戶匯入）"
+            case .crypto:
+                return "此為美金證券戶，不可匯入加密貨幣"
+            default:
+                return "此帳戶不支援 asset_type「\(assetType.rawValue)」"
+            }
+        case .twdSecurities:
+            switch assetType {
+            case .crypto:
+                return "此為台幣證券戶，不可匯入加密貨幣"
+            default:
+                return "此帳戶不支援 asset_type「\(assetType.rawValue)」"
+            }
+        default:
+            return "此帳戶不支援 asset_type「\(assetType.rawValue)」"
+        }
     }
     
     static func validate(
@@ -135,12 +174,22 @@ enum TransactionImportService {
         if normalized.quantity <= 0 {
             errors.append("quantity 必須大於 0")
         }
-        if normalized.price < 0 {
+        if normalized.type == .buy || normalized.type == .sell {
+            if normalized.price <= 0 {
+                errors.append("price 必填且須大於 0")
+            }
+        } else if normalized.price < 0 {
             errors.append("price 無效")
         }
         if normalized.type == .buy || normalized.type == .sell {
             if normalized.symbol.isEmpty {
                 errors.append("需填 symbol")
+            }
+            if let message = assetTypeAccountMismatchMessage(
+                assetType: normalized.assetType,
+                account: account
+            ) {
+                errors.append(message)
             }
         }
         
@@ -167,6 +216,27 @@ enum TransactionImportService {
     
     static func validationResult(from rows: [TransactionImportValidatedRow]) -> TransactionImportValidationResult {
         TransactionImportValidationResult(rows: rows)
+    }
+    
+    /// 合併帳本模擬錯誤（例如 sell 超過可賣量）至預覽列。
+    static func applyLedgerSimulation(
+        rows: [TransactionImportValidatedRow],
+        simulation: ImportLedgerSimulationResult
+    ) -> [TransactionImportValidatedRow] {
+        rows.map { row in
+            guard let message = simulation.rowErrors[row.lineNumber] else { return row }
+            if let existing = row.errorMessage, !existing.isEmpty {
+                return row
+            }
+            return TransactionImportValidatedRow(
+                id: row.id,
+                lineNumber: row.lineNumber,
+                summary: row.summary,
+                transaction: row.transaction,
+                errorMessage: message,
+                skipReason: row.skipReason
+            )
+        }
     }
     
     /// 對已通過格式驗證的 buy/sell 列，向 Supabase 確認可取得有效報價（方案 A）。
@@ -281,7 +351,11 @@ enum TransactionImportService {
         }
         
         let price = row.price
-        if price == nil || (price ?? -1) < 0 {
+        if let type, type == .buy || type == .sell {
+            if price == nil || (price ?? 0) <= 0 {
+                errors.append("price 必填且須大於 0")
+            }
+        } else if price == nil || (price ?? -1) < 0 {
             errors.append("price 無效")
         }
         
@@ -291,7 +365,7 @@ enum TransactionImportService {
             }
         }
         
-        var assetType = row.assetType ?? inferredAssetType(for: account, type: row.type)
+        var assetType = resolveAssetType(row: row, account: account)
         var symbol = normalizedSymbol(row.symbol, assetType: assetType)
         
         switch row.type {
@@ -301,6 +375,18 @@ enum TransactionImportService {
             }
             if symbol.isEmpty {
                 errors.append("buy/sell/dividend 需填 symbol")
+            }
+            if let assetType {
+                if let message = assetTypeAccountMismatchMessage(assetType: assetType, account: account) {
+                    errors.append(message)
+                }
+                if let message = symbolAccountMismatchMessage(
+                    symbol: symbol,
+                    assetType: assetType,
+                    account: account
+                ) {
+                    errors.append(message)
+                }
             }
         case .deposit, .withdraw:
             assetType = .cash
@@ -429,6 +515,52 @@ enum TransactionImportService {
             return "\(action) \(symbol) - \(displayName)"
         }
         return "\(action) \(symbol)"
+    }
+    
+    private static func resolveAssetType(row: TransactionImportParsedRow, account: Account) -> AssetType? {
+        if let explicit = row.assetType {
+            return explicit
+        }
+        guard row.type == .buy || row.type == .sell || row.type == .dividend else {
+            return inferredAssetType(for: account, type: row.type)
+        }
+        switch account.accountType {
+        case .usdAccount:
+            return .stockUS
+        case .twdSecurities:
+            let sym = row.symbol.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !sym.isEmpty, sym.allSatisfy(\.isNumber) {
+                return .stockTW
+            }
+            return .stockUS
+        default:
+            return inferredAssetType(for: account, type: row.type)
+        }
+    }
+    
+    /// 美金戶若出現純數字代號（像台股），或台幣戶標成美股卻像台股代號
+    private static func symbolAccountMismatchMessage(
+        symbol: String,
+        assetType: AssetType,
+        account: Account
+    ) -> String? {
+        let sym = symbol.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !sym.isEmpty else { return nil }
+        let looksLikeTW = sym.allSatisfy(\.isNumber)
+        
+        switch account.accountType {
+        case .usdAccount:
+            if assetType == .stockTW || looksLikeTW {
+                return "代號「\(sym)」為台股格式，請在台幣證券戶匯入"
+            }
+        case .twdSecurities:
+            if assetType == .stockUS, looksLikeTW {
+                return "代號「\(sym)」像台股，請將 asset_type 改為 stock_tw"
+            }
+        default:
+            break
+        }
+        return nil
     }
     
     private static func inferredAssetType(for account: Account, type: TransactionType?) -> AssetType? {

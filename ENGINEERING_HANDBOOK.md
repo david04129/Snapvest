@@ -161,6 +161,7 @@ Snapvest 用 Supabase 當「**會變動資料的倉庫**」：
 | [009_price_snapshot_eod_columns.sql](./backend/supabase/migrations/009_price_snapshot_eod_columns.sql) | 收盤日 + 更新時間欄位 | 取代 `current_price_date` / `last_updated` 等 |
 | [010_price_source_current_previous.sql](./backend/supabase/migrations/010_price_source_current_previous.sql) | `current_price_source`、`previous_price_source` | 取代單一 `price_source` |
 | [011_price_snapshot_column_order.sql](./backend/supabase/migrations/011_price_snapshot_column_order.sql) | 欄位顯示順序 | source 緊接在對應 updated_at 後 |
+| [012_exchange_rates_previous.sql](./backend/supabase/migrations/012_exchange_rates_previous.sql) | `previous_rate`、`previous_updated_at` | 本輪抓不到時沿用上一輪 |
 
 **`asset_price_snapshots` 欄位順序：** 代號 → 現價 → 收盤日 → 更新時間 → **現價來源** → 上次價 → 上次收盤日 → 上次更新時間 → **上次來源**。
 
@@ -269,7 +270,7 @@ Snapvest 有 **兩條抓價路線**：
 
 | 資料 | API | 連結 | 備註 |
 |------|-----|------|------|
-| **匯率** | ExchangeRate-API（open.er-api.com） | [https://open.er-api.com/v6/latest/USD](https://open.er-api.com/v6/latest/USD) | 免 API key；以 USD 為基準 |
+| **匯率** | FinMind `TaiwanExchangeRate`（台銀牌告） | [FinMind 匯率](https://finmind.github.io/tutor/ExchangeRate/) | 與台股同輪更新；USD/EUR/JPY/CNY/HKD/AUD → TWD |
 | **台股** | FinMind `TaiwanStockPrice` | [FinMind](https://finmindtrade.com/) | 主線；失敗 → 60s 重試 → `yfinance` |
 | **美股** | Finnhub `/quote` | [Finnhub](https://finnhub.io/) | 主線；失敗 → 60s 重試 → `yfinance` |
 | **加密貨幣** | CoinGecko Simple Price | [CoinGecko API 文件](https://docs.coingecko.com/reference/simple-price) | 曆日快照；需 `crypto_coingecko_map.json` |

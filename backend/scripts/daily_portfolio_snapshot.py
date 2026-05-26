@@ -69,38 +69,42 @@ def _display_price(row: dict[str, Any]) -> Decimal | None:
     return None
 
 
-def fetch_usd_rates(supabase) -> dict[str, Decimal]:
+def _effective_fx_rate(row: dict) -> Decimal:
+    """本輪 rate 優先，否則 previous_rate。"""
+    rate = _parse_decimal(row.get("rate"))
+    if rate > 0:
+        return rate
+    return _parse_decimal(row.get("previous_rate"))
+
+
+def fetch_fx_to_twd(supabase) -> dict[str, Decimal]:
+    """1 單位外幣 = ? TWD（FinMind 牌告列）。"""
     resp = (
         supabase.table("exchange_rates")
-        .select("to_currency,rate")
-        .eq("from_currency", "USD")
+        .select("from_currency,rate,previous_rate")
+        .eq("to_currency", "TWD")
         .execute()
     )
     _raise_on_supabase_error(resp, "exchange_rates read")
     rates: dict[str, Decimal] = {}
     for row in resp.data or []:
-        code = row.get("to_currency")
+        code = row.get("from_currency")
         if not code:
             continue
-        rate = _parse_decimal(row.get("rate"))
+        rate = _effective_fx_rate(row)
         if rate > 0:
             rates[str(code)] = rate
     return rates
 
 
-def to_twd(amount: Decimal, currency: str, rates: dict[str, Decimal]) -> Decimal:
+def to_twd(amount: Decimal, currency: str, rates_to_twd: dict[str, Decimal]) -> Decimal:
     if amount == 0:
         return Decimal("0")
     if currency == "TWD":
         return amount
-
-    twd_rate = rates.get("TWD")
-    if currency == "USD":
-        return amount * twd_rate if twd_rate else amount
-
-    foreign_rate = rates.get(currency)
-    if foreign_rate and twd_rate and foreign_rate > 0:
-        return amount / foreign_rate * twd_rate
+    twd_per_unit = rates_to_twd.get(currency)
+    if twd_per_unit and twd_per_unit > 0:
+        return amount * twd_per_unit
     return amount
 
 
@@ -195,10 +199,10 @@ def main() -> None:
     )
 
     supabase = get_supabase()
-    rates = fetch_usd_rates(supabase)
-    twd = rates.get("TWD")
-    if twd:
-        print(f"USD/TWD = {twd}")
+    rates = fetch_fx_to_twd(supabase)
+    usd_twd = rates.get("USD")
+    if usd_twd:
+        print(f"USD/TWD = {usd_twd}")
 
     states_resp = supabase.table("user_portfolio_state").select("*").execute()
     _raise_on_supabase_error(states_resp, "user_portfolio_state read")

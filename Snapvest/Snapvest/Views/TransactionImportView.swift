@@ -26,11 +26,14 @@ struct TransactionImportView: View {
     @State private var importResultAlertTitle = ""
     @State private var importResultAlertMessage = ""
     @State private var dismissAfterImportResultAlert = false
-    @State private var didCopyPrompt = false
+    @State private var didCopyStatementPrompt = false
+    @State private var didCopyHoldingsPrompt = false
     @FocusState private var isCSVFocused: Bool
     @State private var scrollToPreviewTrigger = 0
     @State private var duplicateMatches: [Int: TransactionDuplicateMatch] = [:]
     @State private var duplicateImportOverrides: Set<Int> = []
+    @State private var projectedHoldings: [ImportProjectedHolding] = []
+    @State private var holdingsCompareText: String = ""
     
     var body: some View {
         NavigationStack {
@@ -39,7 +42,7 @@ struct TransactionImportView: View {
                     VStack(alignment: .leading, spacing: 20) {
                         accountHeaderCard
                         flowStepsCard
-                        copyPromptButton
+                        copyPromptButtons
                         pasteSection
                         
                         if let fatal = parseResult?.fatalError {
@@ -143,15 +146,15 @@ struct TransactionImportView: View {
             
             importFlowStep(
                 number: 1,
-                title: "複製提示詞",
+                title: "複製提示詞（成交明細或持倉）",
                 isHighlighted: false
             )
             
             importFlowStep(
                 number: 2,
-                title: "到外部 AI App 轉換對帳單",
-                detail: "貼上提示詞，再附上對帳單（PDF、Excel 或照片），等 AI 產出表格文字。",
-                footnote: "可用 ChatGPT、Gemini...",
+                title: "到外部 AI 轉成 CSV",
+                detail: "流水用「成交明細提示詞」；只有持倉截圖用「持倉建倉提示詞」。附上 PDF／Excel／照片即可。",
+                footnote: "可用 ChatGPT、Gemini…",
                 isHighlighted: true
             )
             
@@ -211,31 +214,77 @@ struct TransactionImportView: View {
         }
     }
     
-    private var copyPromptButton: some View {
-        Button {
-            UIPasteboard.general.string = Self.aiPromptTemplate(account: account)
-            withAnimation(.easeInOut(duration: 0.2)) {
-                didCopyPrompt = true
+    private var copyPromptButtons: some View {
+        VStack(spacing: 10) {
+            copyPromptButton(
+                title: didCopyStatementPrompt ? "已複製成交明細提示詞" : "複製成交明細提示詞",
+                systemImage: didCopyStatementPrompt ? "checkmark.circle.fill" : "list.bullet.rectangle"
+            ) {
+                UIPasteboard.general.string = Self.statementPromptTemplate(account: account)
+                flashCopiedPrompt(.statement)
             }
-            Task {
-                try? await Task.sleep(for: .seconds(2.5))
-                await MainActor.run {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        didCopyPrompt = false
+            
+            copyPromptButton(
+                title: didCopyHoldingsPrompt ? "已複製持倉建倉提示詞" : "複製持倉建倉提示詞",
+                systemImage: didCopyHoldingsPrompt ? "checkmark.circle.fill" : "photo.on.rectangle",
+                prominent: false
+            ) {
+                UIPasteboard.general.string = Self.holdingsSnapshotPromptTemplate(account: account)
+                flashCopiedPrompt(.holdings)
+            }
+        }
+    }
+    
+    private enum CopiedPromptKind { case statement, holdings }
+    
+    @ViewBuilder
+    private func copyPromptButton(
+        title: String,
+        systemImage: String,
+        prominent: Bool = true,
+        action: @escaping () -> Void
+    ) -> some View {
+        if prominent {
+            Button(action: action) {
+                Label(title, systemImage: systemImage)
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.appPrimary)
+        } else {
+            Button(action: action) {
+                Label(title, systemImage: systemImage)
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+            }
+            .buttonStyle(.bordered)
+            .tint(.appPrimary)
+        }
+    }
+    
+    private func flashCopiedPrompt(_ kind: CopiedPromptKind) {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            switch kind {
+            case .statement:
+                didCopyStatementPrompt = true
+            case .holdings:
+                didCopyHoldingsPrompt = true
+            }
+        }
+        Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            await MainActor.run {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    switch kind {
+                    case .statement: didCopyStatementPrompt = false
+                    case .holdings: didCopyHoldingsPrompt = false
                     }
                 }
             }
-        } label: {
-            Label(
-                didCopyPrompt ? "已複製" : "複製提示詞",
-                systemImage: didCopyPrompt ? "checkmark.circle.fill" : "doc.on.doc"
-            )
-            .font(.subheadline.weight(.semibold))
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 4)
         }
-        .buttonStyle(.borderedProminent)
-        .tint(.appPrimary)
     }
     
     private var pasteSection: some View {
@@ -420,12 +469,109 @@ struct TransactionImportView: View {
                     .foregroundColor(.secondaryText)
             }
             
+            if !projectedHoldings.isEmpty, effectiveImportCount > 0 {
+                holdingsCompareSection
+            }
+            
             importActionSection(validation: validation)
         }
         .padding(16)
         .background(Color.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .shadow(color: AppColors.shadowMedium, radius: 8, x: 0, y: 2)
+    }
+    
+    private var holdingsCompareDiffs: [HoldingsCompareDiff] {
+        let stated = HoldingsCompareParser.parse(holdingsCompareText, defaultAssetType: nil)
+        guard !stated.isEmpty else { return [] }
+        return HoldingsCompareParser.compare(
+            projected: projectedHoldings,
+            stated: stated,
+            account: account
+        )
+    }
+    
+    private var holdingsCompareSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("持倉對照（選填）")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundColor(.primaryText)
+            
+            Text("貼上券商 App 目前持倉（symbol,quantity），與下方「匯入後預期持股」比對。")
+                .font(.caption)
+                .foregroundColor(.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+            
+            TextEditor(text: $holdingsCompareText)
+                .font(.system(.caption, design: .monospaced))
+                .frame(minHeight: 72)
+                .padding(8)
+                .scrollContentBackground(.hidden)
+                .background(Color.secondaryBackground.opacity(0.6))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            
+            VStack(alignment: .leading, spacing: 6) {
+                Text("匯入後預期持股")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.secondaryText)
+                if projectedHoldings.isEmpty {
+                    Text("—")
+                        .font(.caption)
+                        .foregroundColor(.tertiaryText)
+                } else {
+                    ForEach(projectedHoldings) { holding in
+                        HStack {
+                            Text(holding.symbol)
+                                .font(.caption)
+                                .fontWeight(.medium)
+                            Spacer()
+                            Text(holding.quantity.formattedQuantityInput(
+                                maxFractionDigits: holding.assetType == .crypto ? 8 : 4
+                            ))
+                                .font(.caption)
+                                .monospacedDigit()
+                        }
+                    }
+                }
+            }
+            
+            if !holdingsCompareDiffs.isEmpty {
+                let allMatch = holdingsCompareDiffs.allSatisfy(\.matches)
+                HStack(spacing: 6) {
+                    Image(systemName: allMatch ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                        .foregroundColor(allMatch ? .profitGreen : .orange)
+                    Text(allMatch ? "與你提供的持倉一致" : "與你提供的持倉有差異（請檢查流水或代號）")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(allMatch ? .profitGreen : .orange)
+                }
+                
+                ForEach(holdingsCompareDiffs.filter { !$0.matches }) { diff in
+                    HStack {
+                        Text(diff.symbol)
+                            .font(.caption)
+                        Spacer()
+                        Text("匯入 \(diff.projected.map { formatCompareQty($0) } ?? "—")")
+                            .font(.caption2)
+                        Text("／")
+                            .font(.caption2)
+                            .foregroundColor(.tertiaryText)
+                        Text("提供 \(diff.stated.map { formatCompareQty($0) } ?? "—")")
+                            .font(.caption2)
+                    }
+                    .foregroundColor(.secondaryText)
+                }
+            }
+        }
+        .padding(12)
+        .background(Color.secondaryBackground.opacity(0.5))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+    
+    private func formatCompareQty(_ value: Decimal) -> String {
+        value.formattedQuantityInput(maxFractionDigits: 8)
     }
     
     private var previewErrorSection: some View {
@@ -438,7 +584,7 @@ struct TransactionImportView: View {
                         .font(.subheadline)
                         .fontWeight(.semibold)
                         .foregroundColor(.lossRed)
-                    Text("請編輯代號或資料，或移除此筆後再匯入其餘交易。")
+                    Text("含格式錯誤、缺成本價，或賣出超過可賣股數。請點列編輯，或移除後再匯入。")
                         .font(.caption)
                         .foregroundColor(.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
@@ -589,6 +735,7 @@ struct TransactionImportView: View {
         } else {
             duplicateImportOverrides.remove(lineNumber)
         }
+        applyLedgerSimulationToPreview()
     }
     
     private func applyDuplicateCheck() {
@@ -606,6 +753,7 @@ struct TransactionImportView: View {
         duplicateImportOverrides.remove(lineNumber)
         validationResult = currentValidation
         applyDuplicateCheck()
+        applyLedgerSimulationToPreview()
     }
     
     private func openDraftEditor(for row: TransactionImportValidatedRow) {
@@ -714,6 +862,7 @@ struct TransactionImportView: View {
         isCSVFocused = false
         duplicateMatches = [:]
         duplicateImportOverrides = []
+        projectedHoldings = []
         
         let parsed = TransactionImportCSVParser.parse(csvText)
         parseResult = parsed
@@ -742,7 +891,31 @@ struct TransactionImportView: View {
         validationResult = pricedResult
         previewRows = pricedResult.rows
         applyDuplicateCheck()
+        applyLedgerSimulationToPreview()
         scrollToPreviewTrigger += 1
+    }
+    
+    private func applyLedgerSimulationToPreview() {
+        let existing = viewModel.transactions.filter { $0.accountId == account.id }
+        let scheduled: [(lineNumber: Int, transaction: Transaction)] = previewRows
+            .filter(isRowScheduledForImport)
+            .compactMap { row in
+                guard let transaction = row.transaction,
+                      transaction.type == .buy || transaction.type == .sell else { return nil }
+                return (row.lineNumber, transaction)
+            }
+        
+        let simulation = ImportLedgerSimulator.simulate(
+            account: account,
+            existingTransactions: existing,
+            scheduledImports: scheduled
+        )
+        projectedHoldings = simulation.projectedHoldings
+        previewRows = TransactionImportService.applyLedgerSimulation(
+            rows: previewRows,
+            simulation: simulation
+        )
+        validationResult = currentValidation
     }
     
     private func runImport() async {
@@ -760,9 +933,20 @@ struct TransactionImportView: View {
         dismissAfterImportResultAlert = result.isFullSuccess
         if result.imported > 0 {
             onFinished()
-            applyDuplicateCheck()
+        }
+        if result.isFullSuccess {
+            clearPreviewAfterSuccessfulImport()
         }
         showingImportResultAlert = true
+    }
+    
+    /// 匯入完成後不再對同一批預覽重跑重複檢查（否則會對到剛寫入的列）。
+    private func clearPreviewAfterSuccessfulImport() {
+        duplicateMatches = [:]
+        duplicateImportOverrides = []
+        previewRows = []
+        projectedHoldings = []
+        validationResult = nil
     }
     
     private func importResultMessage(
@@ -780,88 +964,97 @@ struct TransactionImportView: View {
         return lines.joined(separator: "\n")
     }
     
-    static func aiPromptTemplate(account: Account) -> String {
-        let header = "date,type,asset_type,symbol,quantity,price,currency,fee,target_account_name,exchange_rate,notes,deduct_from_account"
-        
-        let sharedRules = """
-        Convert the brokerage statement into Snapvest CSV. Output RAW CSV only (header + rows). No markdown, no explanation.
-
-        All rows import into the CURRENT account already selected in the app.
-        Do NOT output account names or other Snapvest account labels in any field.
-        For buy/sell: leave target_account_name, exchange_rate, notes empty unless the statement shows them.
-        For buy: leave deduct_from_account empty (defaults to NOT deducting from account cash).
-
-        ONLY output buy and sell rows (stock trades). Do NOT output deposit, withdraw, dividend, or transfer.
-        Ignore cash ledger sections (e.g. 交割專戶, e財庫, 授扣入金, 授扣提款, 資金異動). Use ONLY the securities trade table (有價證券買賣).
-        One trade = one buy/sell row. Do not duplicate settlement/cash entries for the same trade.
-
-        Header (exactly 12 columns):
-        \(header)
-
-        type: buy or sell only
-        date: YYYY-MM-DD, sorted ascending
-        Leave unknown fields empty (keep commas).
-        """
-        
+    private static let csvHeader = "date,type,asset_type,symbol,quantity,price,currency,fee,target_account_name,exchange_rate,notes,deduct_from_account"
+    
+    static func statementPromptTemplate(account: Account) -> String {
+        let accountHint: String
+        let examples: String
         switch account.accountType {
         case .twdSecurities:
-            return sharedRules + """
-
-            Account: TWD securities (台幣證券戶) — includes 台股 AND sub-brokerage 複委託 in the SAME account.
-
-            Source: ONLY parse「有價證券買賣」/ securities trade sections. Skip「交割專戶」「e財庫」and all cash in/out lines.
-
-            asset_type:
-            - 台股 → stock_tw, symbol digits (0050)
-            - 複委託 US stocks → stock_us, symbol UPPERCASE (VOO, QQQ)
-
-            KGI 凱基 mapping (有價證券買賣 table):
-            - 成交日 → date
-            - 交易類別 買進/賣出 → buy/sell
-            - 股票代碼 → symbol
-            - 數量 → quantity
-            - 單價 → price (TWD for 台股)
-            - 手續費 → fee
-
-            Cathay 國泰複委託 mapping:
-            - 成交時間 → date
-            - 買進/賣出 → buy/sell
-            - 代號 → symbol
-            - 成交均價 → price (USD per share, NOT TWD)
-            - 成交股數 → quantity (fractional OK)
-
-            複委託 buy/sell: currency empty. Do NOT write TWD. Do NOT put 美股帳戶 or any account name anywhere.
-
-            台股 buy/sell: price in TWD, currency empty.
-
-            Examples:
-            \(header)
+            accountHint = """
+            Account: Taiwan securities (台股 + 複委託同一帳戶).
+            asset_type: stock_tw (台股代號) or stock_us (複委託美股代號大寫).
+            台股 price=TWD/股; 複委託 price=USD/股. currency 留空.
+            """
+            examples = """
+            \(csvHeader)
             2025-06-17,buy,stock_us,VOO,1.35879,551.96,,0,,,
             2025-07-07,sell,stock_us,AMD,30,136.3,,0,,,
             2025-01-10,buy,stock_tw,0050,100,150.5,,20,,,
-
-            User statement:
             """
-            
         case .usdAccount:
-            return sharedRules + """
-
-            Account: USD account (美金帳戶) — US stocks only.
-
-            asset_type: stock_us. symbol UPPERCASE.
-            buy/sell: price in USD, currency empty.
-            Do NOT output deposit or withdraw.
-
-            Examples:
-            \(header)
-            2025-01-15,buy,stock_us,AAPL,10,185.20,,1,,,
-            2025-02-01,buy,stock_us,AAPL,0.0523,189.50,,0,,,
-
-            User statement:
+            accountHint = "Account: US stocks ONLY (asset_type=stock_us). Do NOT use stock_tw or Taiwan numeric symbols."
+            examples = """
+            \(csvHeader)
+            2025-01-15,buy,stock_us,AAPL,10,185.2,,1,,,
+            2025-02-01,sell,stock_us,AAPL,5,190,,0,,,
             """
-            
         default:
-            return sharedRules
+            accountHint = "Match asset_type to the statement."
+            examples = "\(csvHeader)\n"
         }
+        
+        return """
+        Convert the trade history / brokerage statement into Snapvest CSV.
+        Output RAW CSV only (header + data rows). No markdown, no explanation.
+
+        Rules:
+        - Header exactly: \(csvHeader)
+        - type: buy or sell only (include ALL sells from the statement)
+        - date: YYYY-MM-DD, ascending
+        - price: required, > 0 (per-share). Leave empty only if truly unknown.
+        - Ignore cash movements (deposits, withdrawals, 交割專戶). Securities trades only.
+        - All rows go to the account already selected in the app; leave target_account_name empty.
+        - buy: leave deduct_from_account empty (do not deduct cash by default).
+        - Leave unknown optional fields empty (keep commas).
+
+        \(accountHint)
+
+        Examples:
+        \(examples)
+
+        User data:
+        """
+    }
+    
+    static func holdingsSnapshotPromptTemplate(account: Account) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        let today = formatter.string(from: Date())
+        let accountHint: String
+        let example: String
+        switch account.accountType {
+        case .twdSecurities:
+            accountHint = "asset_type: stock_tw or stock_us. 台股 price=TWD; 複委託 price=USD."
+            example = "\(csvHeader)\n\(today),buy,stock_tw,0050,100,150.5,,0,,,"
+        case .usdAccount:
+            accountHint = "asset_type=stock_us, price=USD per share."
+            example = "\(csvHeader)\n\(today),buy,stock_us,VOO,1.5,520,,0,,,"
+        default:
+            accountHint = "Set asset_type per holding."
+            example = "\(csvHeader)\n\(today),buy,stock_tw,2330,10,100,,0,,,"
+        }
+        
+        return """
+        Extract CURRENT holdings from the screenshot / portfolio view into Snapvest CSV.
+        Output RAW CSV only (header + rows). No markdown, no explanation.
+
+        Rules:
+        - Header exactly: \(csvHeader)
+        - type: buy ONLY (one row per held symbol)
+        - date: use \(today) unless the image shows another as-of date (YYYY-MM-DD)
+        - quantity: shares held now
+        - price: cost per share or average cost; REQUIRED, > 0. If unknown, leave price empty.
+        - Do NOT invent sell rows or trade history.
+        - Leave optional fields empty (keep commas).
+
+        \(accountHint)
+
+        Example:
+        \(example)
+
+        User image / data:
+        """
     }
 }

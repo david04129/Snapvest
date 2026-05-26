@@ -9,36 +9,77 @@ import SwiftUI
 import UIKit
 
 enum HomeShareImageBuilder {
+    /// 邏輯畫布寬（pt）
     static let canvasWidth: CGFloat = 390
+    /// 邏輯畫布高（pt），固定 9:16；內容過多時等比縮小塞入，不裁切
+    static let canvasHeight: CGFloat = 760
+
+    /// 頂部留白（全螢幕瀏覽時保護 Logo 區）
+    static let topSafeInset: CGFloat = 56
+    static let headerBrandHeight: CGFloat = 72
+    static let headerSectionHeight: CGFloat = topSafeInset + headerBrandHeight
+    static let footerSectionHeight: CGFloat = 72
+    static let chartsSectionSpacing: CGFloat = 16
+
+    /// 輸出像素倍率（與裝置螢幕無關，確保相簿內每張分享圖解析度一致）
+    static let exportScale: CGFloat = 3
+
+    static var exportPixelSize: CGSize {
+        CGSize(width: canvasWidth * exportScale, height: canvasHeight * exportScale)
+    }
 
     @MainActor
     static func render(config: HomeShareRenderConfig) -> UIImage? {
-        let content = HomeShareCompositeView(config: config)
+        let intrinsicContent = HomeShareCompositeView(config: config)
             .frame(width: canvasWidth)
+            .fixedSize(horizontal: true, vertical: true)
             .background(Color.mainBackground)
             .transaction { $0.animation = nil }
 
-        let renderer = ImageRenderer(content: content)
-        renderer.isOpaque = true
-        renderer.scale = displayScale
-        return renderer.uiImage
-    }
+        let intrinsicRenderer = ImageRenderer(content: intrinsicContent)
+        intrinsicRenderer.isOpaque = true
+        intrinsicRenderer.scale = exportScale
+        guard let intrinsicImage = intrinsicRenderer.uiImage else { return nil }
 
-    /// 從目前 window scene 取得螢幕 scale（避免使用已 deprecated 的 UIScreen.main）
-    private static var displayScale: CGFloat {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .first { $0.activationState == .foregroundActive }?
-            .screen.scale
-            ?? UIApplication.shared.connectedScenes
-                .compactMap { $0 as? UIWindowScene }
-                .first?
-                .screen.scale
-            ?? 3.0
+        let fittedContent = HomeShareFittedCanvasView(
+            image: intrinsicImage,
+            isDarkMode: config.isDarkMode
+        )
+        .frame(width: canvasWidth, height: canvasHeight)
+        .background(Color.mainBackground)
+        .transaction { $0.animation = nil }
+
+        let fittedRenderer = ImageRenderer(content: fittedContent)
+        fittedRenderer.isOpaque = true
+        fittedRenderer.scale = exportScale
+        return fittedRenderer.uiImage
     }
 }
 
-// MARK: - 合成長圖
+/// 固定畫布：將內容等比縮放至完整可見（不裁切）
+private struct HomeShareFittedCanvasView: View {
+    let image: UIImage
+    let isDarkMode: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFit()
+                .frame(
+                    maxWidth: HomeShareImageBuilder.canvasWidth,
+                    maxHeight: HomeShareImageBuilder.canvasHeight,
+                    alignment: .top
+                )
+            Spacer(minLength: 0)
+        }
+        .frame(width: HomeShareImageBuilder.canvasWidth, height: HomeShareImageBuilder.canvasHeight, alignment: .top)
+        .background(Color.mainBackground)
+        .preferredColorScheme(isDarkMode ? .dark : .light)
+    }
+}
+
+// MARK: - 合成內容（自然高度，供縮放前渲染）
 
 private struct HomeShareCompositeView: View {
     let config: HomeShareRenderConfig
@@ -47,10 +88,9 @@ private struct HomeShareCompositeView: View {
         VStack(spacing: 0) {
             shareHeader
                 .padding(.horizontal, 20)
-                .padding(.top, 24)
-                .padding(.bottom, 16)
+                .frame(height: HomeShareImageBuilder.headerSectionHeight, alignment: .top)
 
-            VStack(spacing: 16) {
+            VStack(spacing: HomeShareImageBuilder.chartsSectionSpacing) {
                 if config.includeTrend, config.isAvailable(.trend) {
                     HomeTrendChartShareCard(config: config)
                 }
@@ -62,31 +102,32 @@ private struct HomeShareCompositeView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.bottom, 20)
+            .padding(.bottom, 12)
 
             shareFooter
                 .padding(.horizontal, 20)
                 .padding(.vertical, 16)
+                .frame(minHeight: HomeShareImageBuilder.footerSectionHeight, alignment: .bottom)
         }
+        .frame(width: HomeShareImageBuilder.canvasWidth)
         .background(Color.mainBackground)
         .environment(\.homeAmountsHidden, config.hideAmounts)
         .preferredColorScheme(config.isDarkMode ? .dark : .light)
     }
 
     private var shareHeader: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 0) {
+            Spacer(minLength: HomeShareImageBuilder.topSafeInset)
+            HStack(spacing: 0) {
                 SnapvestBrandMark(
-                    iconSize: 28,
-                    wordmarkSize: 20,
-                    spacing: 10,
+                    iconSize: 40,
+                    wordmarkSize: 28,
+                    spacing: 12,
                     layout: .horizontal
                 )
-                Text("投資組合分享")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.secondaryText)
+                Spacer(minLength: 0)
             }
-            Spacer()
+            .frame(height: HomeShareImageBuilder.headerBrandHeight, alignment: .leading)
         }
     }
 
@@ -120,14 +161,15 @@ private struct HomeShareCompositeView: View {
 
 struct HomeShareActivityView: UIViewControllerRepresentable {
     let image: UIImage
+    let shareText: String
     var onComplete: (() -> Void)?
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        var items: [Any] = [image]
-        if let fileURL = Self.writeTemporaryPNG(image) {
-            items.append(fileURL)
-        }
-        let controller = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        // 僅傳文字 + UIImage；勿再加檔案 URL，否則 LINE 等會收到兩張圖
+        let controller = UIActivityViewController(
+            activityItems: [shareText, image],
+            applicationActivities: nil
+        )
         controller.completionWithItemsHandler = { _, _, _, _ in
             onComplete?()
         }
@@ -135,16 +177,4 @@ struct HomeShareActivityView: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
-
-    private static func writeTemporaryPNG(_ image: UIImage) -> URL? {
-        guard let data = image.pngData() else { return nil }
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("Snapvest-share-\(UUID().uuidString).png")
-        do {
-            try data.write(to: url, options: .atomic)
-            return url
-        } catch {
-            return nil
-        }
-    }
 }

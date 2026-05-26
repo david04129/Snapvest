@@ -1,5 +1,5 @@
 # 股價／匯率排程（台灣時間）
-# - 週一～五 18:00：匯率 + 台股 + 加密
+# - 週一～五 18:00：台股 + 匯率（FinMind）+ 加密
 # - 週六、週日 18:00：僅加密
 # - 週二～六 07:00：僅美股（UTC 週一～五 23:00）
 # Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, FINNHUB_API_KEY, FINMIND_TOKEN
@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   weekday-afternoon:
-    name: 週一～五 18:00 匯率+台股+加密
+    name: 週一～五 18:00 台股+匯率+加密
     if: github.event.schedule == '0 10 * * 1-5'
     runs-on: ubuntu-latest
     steps:
@@ -38,12 +38,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      - name: Update exchange rates
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python backend/scripts/daily_price_update.py --exchange-only
-      - name: Update TW stocks and crypto
+      - name: Update TW stocks, FinMind FX, and crypto
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

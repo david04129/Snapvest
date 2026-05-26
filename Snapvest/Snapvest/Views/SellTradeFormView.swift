@@ -654,14 +654,6 @@ struct SellTradeFormView: View {
         if isImportDraftMode,
            let existing = editingTransaction,
            let onImportDraftSave {
-            if let priceError = await SymbolPriceValidator.validatePriceAvailable(
-                assetType: existing.assetType,
-                symbol: existing.symbol,
-                transactionType: .sell
-            ) {
-                errorMessage = priceError
-                return
-            }
             let updated = Transaction(
                 id: existing.id,
                 accountId: selectedAccount.id,
@@ -696,15 +688,6 @@ struct SellTradeFormView: View {
             sellSymbol = symbol
         } else {
             errorMessage = "請選擇要賣出的持股"
-            return
-        }
-        
-        if let priceError = await SymbolPriceValidator.validatePriceAvailable(
-            assetType: market.assetType,
-            symbol: sellSymbol,
-            transactionType: .sell
-        ) {
-            errorMessage = priceError
             return
         }
         

@@ -217,7 +217,7 @@ struct HomePieChartShareCard: View {
                     isGroupingEnabled: PieChartGroupingStore.shared.isGroupingEnabled,
                     isEditingGroups: false,
                     selectedMemberIds: .constant([]),
-                    expandedGroupIds: .constant([]),
+                    expandedGroupIds: .constant(config.pieExpandedGroupIds),
                     addToGroupId: .constant(nil),
                     selectionEditCategory: .constant(nil),
                     onRenameGroup: { _ in },

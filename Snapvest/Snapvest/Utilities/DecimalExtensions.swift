@@ -43,7 +43,7 @@ extension Decimal {
                 return formattedFlexibleDecimal(maxFractionDigits: maxFractionDigits, showGrouping: true, currencySymbol: "$")
             }
             return formatted(currency: .USD, fractionDigits: 2, showSymbol: true)
-        case .EUR, .JPY, .CNY:
+        case .EUR, .JPY, .CNY, .HKD, .AUD:
             return formatted(currency: currency, fractionDigits: maxFractionDigits, showSymbol: true)
         }
     }
@@ -51,6 +51,19 @@ extension Decimal {
     /// 成交金額（與股價相同規則）
     func formattedTradeAmount(currency: Currency, maxFractionDigits: Int = 4) -> String {
         formattedTradePrice(currency: currency, maxFractionDigits: maxFractionDigits)
+    }
+    
+    /// 美股／加密等原幣「每股」價格乘即時匯率後的台幣顯示（僅 UI，最多 1 位小數、截斷）
+    func formattedForeignUnitPriceInTWD() -> String {
+        formatted(currency: .TWD, fractionDigits: 1, showSymbol: false)
+    }
+    
+    /// 每股現價／成本等單價顯示
+    func formattedDisplayUnitPrice(currency: Currency, convertedFromForeignToTWD: Bool) -> String {
+        if convertedFromForeignToTWD {
+            return formattedForeignUnitPriceInTWD()
+        }
+        return formattedTradePrice(currency: currency)
     }
     
     /// 台幣整數（現金餘額等）
@@ -98,6 +111,11 @@ extension Decimal {
         let signed = isNegative ? "-\(formattedValue)" : formattedValue
         guard let currencySymbol, !currencySymbol.isEmpty else { return signed }
         return isNegative ? "-\(currencySymbol)\(formattedValue)" : "\(currencySymbol)\(formattedValue)"
+    }
+    
+    /// 百分比數值（不含 %）：最多 maxFractionDigits 位、整數不帶小數、去尾 0
+    func formattedPercentValue(maxFractionDigits: Int = 1) -> String {
+        formattedFlexibleDecimal(maxFractionDigits: maxFractionDigits, showGrouping: false)
     }
     
     /// 格式化為百分比字串

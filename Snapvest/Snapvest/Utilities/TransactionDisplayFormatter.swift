@@ -61,7 +61,7 @@ struct TransactionDisplayFormatter {
     
     var tradeDetailLine: String? {
         guard transaction.type == .buy || transaction.type == .sell else { return nil }
-        let qty = Self.formatQuantity(transaction.quantity)
+        let qty = formatQuantity(transaction.quantity)
         let price = transaction.price.formattedTradePrice(currency: tradePriceCurrency)
         return "\(qty) 股 @ \(price)"
     }
@@ -107,8 +107,8 @@ struct TransactionDisplayFormatter {
         if transaction.type == .buy || transaction.type == .sell {
             let action = transaction.type == .buy ? "買入" : "賣出"
             let name = tradeDisplayName
-            let quantityText = Self.formatQuantity(transaction.quantity)
-            let priceText = transaction.price.formattedTradePrice(currency: transaction.currency)
+            let quantityText = formatQuantity(transaction.quantity)
+            let priceText = transaction.price.formattedTradePrice(currency: tradePriceCurrency)
             let autoNote = "\(action)\(quantityText)股\(name)，股價\(priceText)"
             
             if hasUserNote {
@@ -126,6 +126,41 @@ struct TransactionDisplayFormatter {
     /// 有自訂備註時可展開完整明細（紀錄分頁、帳戶交易紀錄共用）
     var shouldShowExpandedDetail: Bool {
         expandedNotes != nil && userNotePreview != nil
+    }
+    
+    // MARK: - 已實現損益明細（首頁）
+    
+    var realizedQuantityText: String {
+        transaction.quantity.formattedQuantityInput(
+            maxFractionDigits: transaction.assetType == .crypto ? 8 : 4
+        )
+    }
+    
+    var realizedCostPerUnitText: String? {
+        transaction.realizedCostPerUnit.map {
+            $0.formattedTradePrice(currency: tradePriceCurrency)
+        }
+    }
+    
+    var realizedSellPriceText: String {
+        transaction.price.formattedTradePrice(currency: tradePriceCurrency)
+    }
+    
+    var realizedGainLossText: String? {
+        guard let realized = transaction.realizedGainLoss else { return nil }
+        switch transaction.currency {
+        case .TWD:
+            return realized.formatted(currency: .TWD)
+        case .USD:
+            return realized.formattedTradeAmount(currency: .USD)
+        default:
+            return realized.formatted(currency: transaction.currency)
+        }
+    }
+    
+    var realizedGainLossPercentText: String? {
+        guard let percent = transaction.realizedGainLossPercent else { return nil }
+        return "(\(percent.formattedPercentValue(maxFractionDigits: 1))%)"
     }
     
     // MARK: - 樣式
@@ -171,12 +206,9 @@ struct TransactionDisplayFormatter {
         }
     }
     
-    private static func formatQuantity(_ quantity: Decimal) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.minimumFractionDigits = 0
-        formatter.maximumFractionDigits = 3
-        formatter.usesGroupingSeparator = true
-        return formatter.string(from: quantity as NSDecimalNumber) ?? "\(quantity)"
+    private func formatQuantity(_ quantity: Decimal) -> String {
+        quantity.formattedQuantityInput(
+            maxFractionDigits: transaction.assetType == .crypto ? 8 : 4
+        )
     }
 }

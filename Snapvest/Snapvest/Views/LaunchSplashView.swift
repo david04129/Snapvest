@@ -71,14 +71,14 @@ struct LaunchSplashView: View {
                         endRadius: 72
                     )
                 )
-                .frame(width: 168, height: 168)
-                .blur(radius: 22)
+                .frame(width: 196, height: 196)
+                .blur(radius: 24)
                 .scaleEffect(glowScale)
             
             SnapvestBrandMark(
-                iconSize: 56,
-                wordmarkSize: 34,
-                spacing: 14,
+                iconSize: 92,
+                wordmarkSize: 36,
+                spacing: 16,
                 layout: .vertical
             )
         }

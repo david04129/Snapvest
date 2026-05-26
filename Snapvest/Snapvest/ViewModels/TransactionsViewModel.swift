@@ -55,8 +55,13 @@ class TransactionsViewModel: ObservableObject {
         }
     }
     
-    func createTransaction(_ transaction: Transaction, allowDuplicate: Bool = false) async {
-        if let priceError = await SymbolPriceValidator.validatePriceAvailable(
+    func createTransaction(
+        _ transaction: Transaction,
+        allowDuplicate: Bool = false,
+        skipPriceValidation: Bool = false
+    ) async {
+        if !skipPriceValidation,
+           let priceError = await SymbolPriceValidator.validatePriceAvailable(
             assetType: transaction.assetType,
             symbol: transaction.symbol,
             transactionType: transaction.type
@@ -111,8 +116,14 @@ class TransactionsViewModel: ObservableObject {
         defer { isBatchImporting = false }
         
         errorMessage = nil
-        let sortedRows = validation.rows
-            .filter(\.isValid)
+        let validRows = validation.rows.filter(\.isValid)
+        let sortedBuys = validRows
+            .filter { $0.transaction?.type == .buy }
+            .sorted {
+                ($0.transaction?.transactionDate ?? .distantPast) < ($1.transaction?.transactionDate ?? .distantPast)
+            }
+        let sortedSells = validRows
+            .filter { $0.transaction?.type == .sell }
             .sorted {
                 ($0.transaction?.transactionDate ?? .distantPast) < ($1.transaction?.transactionDate ?? .distantPast)
             }
@@ -124,8 +135,8 @@ class TransactionsViewModel: ObservableObject {
                 accounts = try await dataService.fetchAccounts(userId: userId)
             }
             
-            for row in sortedRows {
-                guard let draft = row.transaction else { continue }
+            func importRow(_ row: TransactionImportValidatedRow) async {
+                guard let draft = row.transaction else { return }
                 do {
                     try await SymbolPriceValidator.validatePriceAvailableOrThrow(
                         assetType: draft.assetType,
@@ -149,7 +160,20 @@ class TransactionsViewModel: ObservableObject {
                 }
             }
             
-            if imported > 0, let accountId = sortedRows.compactMap({ $0.transaction?.accountId }).first {
+            for row in sortedBuys {
+                await importRow(row)
+            }
+            
+            if !sortedBuys.isEmpty, imported > 0,
+               let accountId = validRows.compactMap({ $0.transaction?.accountId }).first {
+                await updateHoldings(accountId: accountId)
+            }
+            
+            for row in sortedSells {
+                await importRow(row)
+            }
+            
+            if imported > 0, let accountId = validRows.compactMap({ $0.transaction?.accountId }).first {
                 await updateSnapshotsIfNeeded(for: accountId)
             }
             await loadTransactions(userId: userId)
@@ -180,8 +204,29 @@ class TransactionsViewModel: ObservableObject {
             throw TransactionImportError.missingAccount
         }
         
+        let resolvedRate = SellTransactionValidator.resolvedExchangeRate(
+            account: account,
+            assetType: draft.assetType,
+            exchangeRate: draft.exchangeRate
+        )
+        let maxSellQuantity = await resolveMaxSellQuantity(
+            account: account,
+            assetType: draft.assetType,
+            symbol: draft.symbol,
+            editingTransaction: nil
+        )
+        if let message = SellTransactionValidator.validate(
+            account: account,
+            assetType: draft.assetType,
+            symbol: draft.symbol,
+            quantity: draft.quantity,
+            exchangeRate: resolvedRate,
+            maxSellQuantity: maxSellQuantity
+        ) {
+            throw TransactionImportError.validationFailed(message)
+        }
+        
         let costBasis = try await calculateCostBasis(
-            userId: account.userId,
             accountId: account.id,
             assetType: draft.assetType,
             symbol: draft.symbol,
@@ -228,7 +273,6 @@ class TransactionsViewModel: ObservableObject {
     ) async {
         do {
             let costBasis = try await calculateCostBasis(
-                userId: account.userId,
                 accountId: account.id,
                 assetType: assetType,
                 symbol: symbol,
@@ -320,7 +364,8 @@ class TransactionsViewModel: ObservableObject {
         exchangeRate: Decimal?,
         deductFromAccount: Bool,
         transactionDate: Date,
-        allowDuplicate: Bool = false
+        allowDuplicate: Bool = false,
+        skipPriceValidation: Bool = false
     ) async {
         errorMessage = nil
         let resolvedRate = BuyTransactionValidator.resolvedExchangeRate(
@@ -364,7 +409,11 @@ class TransactionsViewModel: ObservableObject {
             deductFromAccount: deductFromAccount
         )
         
-        await createTransaction(transaction, allowDuplicate: allowDuplicate)
+        await createTransaction(
+            transaction,
+            allowDuplicate: allowDuplicate,
+            skipPriceValidation: skipPriceValidation
+        )
     }
     
     func updateTransaction(_ transaction: Transaction, previousAccountId: String? = nil, allowDuplicate: Bool = false) async {
@@ -490,12 +539,12 @@ class TransactionsViewModel: ObservableObject {
 
         do {
             let costBasis = try await calculateCostBasis(
-                userId: account.userId,
                 accountId: account.id,
                 assetType: existing.assetType,
                 symbol: existing.symbol,
                 quantity: quantity,
-                averageCostFallback: averageCostFallback
+                averageCostFallback: averageCostFallback,
+                excludingTransactionId: existing.id
             )
             let proceeds = quantity * price
             let realizedGainLoss = proceeds - costBasis
@@ -706,7 +755,7 @@ class TransactionsViewModel: ObservableObject {
         account: Account,
         assetType: AssetType,
         symbol: String,
-        editingTransaction: Transaction
+        editingTransaction: Transaction?
     ) async -> Decimal {
         let options = await SellHoldingAvailability.accountsWithSellCapacity(
             symbol: symbol,
@@ -715,7 +764,7 @@ class TransactionsViewModel: ObservableObject {
             dataService: dataService,
             editingTransaction: editingTransaction
         )
-        return options.first?.maxSellQuantity ?? editingTransaction.quantity
+        return options.first?.maxSellQuantity ?? editingTransaction?.quantity ?? 0
     }
 
     private func resolveUserId(for accountId: String) async -> String? {
@@ -730,26 +779,24 @@ class TransactionsViewModel: ObservableObject {
     }
 
     private func calculateCostBasis(
-        userId: String,
         accountId: String,
         assetType: AssetType,
         symbol: String,
         quantity: Decimal,
-        averageCostFallback: Decimal
+        averageCostFallback: Decimal,
+        excludingTransactionId: String? = nil
     ) async throws -> Decimal {
-        if let snapshot = try await dataService.fetchAggregatedHoldingSnapshot(userId: userId, assetType: assetType, symbol: symbol),
-           let accountLots = snapshot.fifoLotsByAccount.first(where: { $0.accountId == accountId }) {
-            var remaining = quantity
-            var costBasis: Decimal = 0
-            for lot in accountLots.lots {
-                if remaining <= 0 { break }
-                let used = min(remaining, lot.remainingQuantity)
-                costBasis += used * lot.costPerUnit
-                remaining -= used
-            }
-            if costBasis > 0 {
-                return costBasis
-            }
+        let accountTransactions = try await dataService.fetchTransactions(accountId: accountId)
+        let costBasis = HoldingCalculator.fifoCostBasis(
+            accountId: accountId,
+            assetType: assetType,
+            symbol: symbol,
+            sellQuantity: quantity,
+            transactions: accountTransactions,
+            excludingTransactionId: excludingTransactionId
+        )
+        if costBasis > 0 {
+            return costBasis
         }
         return averageCostFallback * quantity
     }

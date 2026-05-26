@@ -192,6 +192,11 @@ struct HoldingDetailView: View {
         aggregatedHolding.currency != .TWD
     }
     
+    /// 美股／加密：原幣單價 × 即時匯率後以台幣顯示（僅格式化，不影響計算）
+    private var showsForeignUnitPriceInTWD: Bool {
+        metricAmountDisplay == .twd && aggregatedHolding.currency != .TWD
+    }
+    
     private var holdingsCurrencyDisplayBinding: Binding<AssetsCurrencyDisplay> {
         Binding(
             get: { metricAmountDisplay == .twd ? .twd : .original },
@@ -224,7 +229,10 @@ struct HoldingDetailView: View {
     private var displayedAverageCostText: String {
         switch metricAmountDisplay {
         case .twd:
-            return averageCostTWD.formattedTradePrice(currency: .TWD)
+            return averageCostTWD.formattedDisplayUnitPrice(
+                currency: .TWD,
+                convertedFromForeignToTWD: showsForeignUnitPriceInTWD
+            )
         case .original:
             return aggregatedHolding.weightedAverageCost.formattedTradePrice(currency: aggregatedHolding.currency)
         }
@@ -355,34 +363,17 @@ struct HoldingDetailView: View {
                     .clipShape(Capsule())
             }
             
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                if let price = displayedCurrentPrice {
-                    Text(price.formattedTradePrice(currency: displayedPriceCurrency))
-                        .font(.system(size: 26, weight: .bold))
-                        .foregroundColor(.primaryText)
-                } else {
-                    Text("--")
-                        .font(.system(size: 26, weight: .bold))
-                        .foregroundColor(.secondaryText)
-                }
-                
-                if let daily = displayedDailyPriceChange {
-                    dailyChangeBadge(
-                        amount: daily.amount,
-                        percent: daily.percent,
-                        currency: displayedPriceCurrency
-                    )
-                }
-                
-                Spacer(minLength: 0)
-            }
+            heroCurrentPriceBlock
+            
+            Divider()
+                .padding(.vertical, 2)
             
             VStack(alignment: .leading, spacing: 4) {
                 Text("持有數量")
                     .font(.caption)
                     .foregroundColor(.secondaryText)
                 Text(heroQuantityDisplayText)
-                    .font(.system(size: 22, weight: .bold))
+                    .font(.snapAmountTile)
                     .foregroundColor(.primaryText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
@@ -408,13 +399,65 @@ struct HoldingDetailView: View {
         .shadow(color: AppColors.shadowMedium, radius: 8, x: 0, y: 2)
     }
     
-    private func dailyChangeBadge(amount: Decimal, percent: Decimal, currency: Currency) -> some View {
+    /// 現價：左側短色條 + 大字（不用整條橫向底色框）
+    private var heroCurrentPriceBlock: some View {
+        HStack(alignment: .top, spacing: 12) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(assetAccentColor)
+                .frame(width: 4)
+                .frame(minHeight: 48)
+            
+            VStack(alignment: .leading, spacing: 6) {
+                Text("每股現價")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.secondaryText)
+                
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Group {
+                        if let price = displayedCurrentPrice {
+                            Text(price.formattedDisplayUnitPrice(
+                                currency: displayedPriceCurrency,
+                                convertedFromForeignToTWD: showsForeignUnitPriceInTWD
+                            ))
+                                .foregroundColor(.primaryText)
+                        } else {
+                            Text("--")
+                                .foregroundColor(.secondaryText)
+                        }
+                    }
+                    .font(.snapStockPriceHero)
+                    .monospacedDigit()
+                    
+                    if let daily = displayedDailyPriceChange {
+                        dailyChangeBadge(
+                            amount: daily.amount,
+                            percent: daily.percent,
+                            currency: displayedPriceCurrency,
+                            convertedFromForeignToTWD: showsForeignUnitPriceInTWD
+                        )
+                    }
+                    
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    
+    private func dailyChangeBadge(
+        amount: Decimal,
+        percent: Decimal,
+        currency: Currency,
+        convertedFromForeignToTWD: Bool = false
+    ) -> some View {
         let up = amount >= 0
         let color: Color = up ? .marketUp : .marketDown
+        let amountDigits = convertedFromForeignToTWD ? 1 : 2
         return HStack(spacing: 4) {
             Image(systemName: up ? "arrow.up" : "arrow.down")
                 .font(.caption2.weight(.bold))
-            Text("\(amount.formatted(currency: currency, fractionDigits: 2, showSymbol: false)) (\(percent.formatted(fractionDigits: 2))%)")
+            Text("\(amount.formatted(currency: currency, fractionDigits: amountDigits, showSymbol: false)) (\(percent.formatted(fractionDigits: 2))%)")
                 .font(.caption)
                 .fontWeight(.semibold)
         }
@@ -840,7 +883,10 @@ private struct FIFOLotTableDataRow: View {
             dataCell(formatLotQuantity(row.lot.remainingQuantity), alignment: .trailing, weight: .semibold)
                 .frame(minWidth: 44, maxWidth: .infinity, alignment: .trailing)
             dataCell(
-                displayCostPerUnit.formattedTradePrice(currency: displayCurrency),
+                displayCostPerUnit.formattedDisplayUnitPrice(
+                    currency: displayCurrency,
+                    convertedFromForeignToTWD: useTWDDisplay
+                ),
                 alignment: .trailing,
                 weight: .regular
             )

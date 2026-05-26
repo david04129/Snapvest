@@ -3,7 +3,7 @@
 Snapvest 每日股價更新腳本
 - 每次股價更新前：備份 hot_stocks（保留 2 日）→ 以 hot_stocks_seed ∪ 全使用者 holdings 覆寫 hot_stocks
 - 僅對 hot_stocks 清單抓價（去重，每檔只查一次）
-- 台股 FinMind、美股 Finnhub；失敗 → 等 60s 重試 → 仍失敗則 yfinance 補洞
+- 台股 FinMind、匯率 FinMind 台銀牌告（6 幣→TWD，與台股同輪）；美股 Finnhub；失敗 → 等 60s 重試 → yfinance 補洞
 - 加密 CoinGecko（曆日快照）
 """
 import json
@@ -43,8 +43,9 @@ RETRY_PAUSE_SEC = 60
 HOURLY_LIMIT_FINMIND = 600 if FINMIND_TOKEN else 300
 CRYPTO_ID_MAP_PATH = Path(__file__).parent / "data" / "crypto_coingecko_map.json"
 YAHOO_TW_SUFFIX = ".TW"  # 台股 Yahoo symbol 格式
-# 與 migration 003_exchange_rates.sql 註解一致
-EXCHANGE_RATE_API_URL = "https://open.er-api.com/v6/latest/USD"
+# FinMind 台銀牌告：1 單位外幣 = rate TWD（與台股更新共用 FinMind 配額）
+FINMIND_FX_CURRENCIES = ("USD", "EUR", "JPY", "CNY", "HKD", "AUD")
+FINMIND_FX_SOURCE = "finmind"
 
 
 @dataclass
@@ -110,15 +111,52 @@ def _is_valid_price(val) -> bool:
     return f > 0
 
 
-def fetch_usd_exchange_rates() -> dict[str, float]:
-    """從 open.er-api.com 取得以 USD 為基準的各幣匯率（1 USD = rate 單位外幣）"""
-    resp = requests.get(EXCHANGE_RATE_API_URL, timeout=20)
-    resp.raise_for_status()
-    payload = resp.json()
-    if payload.get("result") != "success":
-        raise RuntimeError(f"匯率 API 回應異常: {payload.get('error-type', payload)}")
-    rates = payload.get("rates") or {}
-    return {k: float(v) for k, v in rates.items() if _is_valid_price(v)}
+def _finmind_spot_mid(row: dict) -> Optional[float]:
+    """台銀即期中價；缺資料時 FinMind 可能為 -99。"""
+    buy, sell = row.get("spot_buy"), row.get("spot_sell")
+    if _is_valid_price(buy) and _is_valid_price(sell):
+        return (float(buy) + float(sell)) / 2
+    if _is_valid_price(sell):
+        return float(sell)
+    if _is_valid_price(buy):
+        return float(buy)
+    return None
+
+
+def fetch_finmind_exchange_one(
+    http: requests.Session,
+    currency: str,
+) -> tuple[Optional[float], Optional[str], str]:
+    """TaiwanExchangeRate：回傳 (twd_per_unit, rate_date, error)。"""
+    end = tw_now().date()
+    start = end - timedelta(days=14)
+    params: dict[str, str] = {
+        "dataset": "TaiwanExchangeRate",
+        "data_id": currency,
+        "start_date": start.isoformat(),
+        "end_date": end.isoformat(),
+    }
+    if FINMIND_TOKEN:
+        params["token"] = FINMIND_TOKEN
+    try:
+        resp = http.get(FINMIND_DATA_URL, params=params, timeout=30)
+        if resp.status_code == 429:
+            return None, None, "429"
+        resp.raise_for_status()
+        body = resp.json()
+        if body.get("status") != 200:
+            return None, None, str(body.get("msg", body))
+        rows = body.get("data") or []
+        if not rows:
+            return None, None, "empty"
+        last = rows[-1]
+        mid = _finmind_spot_mid(last)
+        if not _is_valid_price(mid):
+            return None, None, "invalid_spot"
+        rate_date = str(last.get("date") or end.isoformat())[:10]
+        return float(mid), rate_date, ""
+    except Exception as e:
+        return None, None, str(e)
 
 
 def _raise_on_supabase_error(response, context: str) -> None:
@@ -128,49 +166,87 @@ def _raise_on_supabase_error(response, context: str) -> None:
         raise RuntimeError(f"{context}: {err}")
 
 
-def update_exchange_rates(supabase: Client) -> int:
-    """寫入 exchange_rates（from_currency=USD），供 App 讀取"""
-    rates = fetch_usd_exchange_rates()
-    if not rates:
-        raise RuntimeError("匯率 API 無有效資料")
+def _upsert_one_exchange_rate(supabase: Client, row: dict) -> None:
+    """成功抓到新價時寫入；舊 rate 滾入 previous_*。抓不到則不呼叫。"""
+    existing = (
+        supabase.table("exchange_rates")
+        .select("rate, updated_at")
+        .eq("from_currency", row["from_currency"])
+        .eq("to_currency", row["to_currency"])
+        .limit(1)
+        .execute()
+    )
+    _raise_on_supabase_error(existing, f"exchange_rates read {row['from_currency']}")
+    if existing.data and existing.data[0].get("rate") is not None:
+        prev = existing.data[0]
+        row["previous_rate"] = str(prev["rate"])
+        row["previous_updated_at"] = prev.get("updated_at")
+    resp = supabase.table("exchange_rates").upsert(
+        row,
+        on_conflict="from_currency,to_currency",
+    ).execute()
+    _raise_on_supabase_error(resp, f"exchange_rates upsert {row['from_currency']}")
 
-    now = datetime.now(TW_TZ).isoformat()
-    rows = [
-        {
-            "from_currency": "USD",
-            "to_currency": to_currency,
-            "rate": str(rate),
-            "updated_at": now,
-        }
-        for to_currency, rate in rates.items()
-    ]
 
-    chunk_size = 100
-    written = 0
-    for i in range(0, len(rows), chunk_size):
-        chunk = rows[i : i + chunk_size]
-        resp = supabase.table("exchange_rates").upsert(
-            chunk,
-            on_conflict="from_currency,to_currency",
-        ).execute()
-        _raise_on_supabase_error(resp, f"exchange_rates upsert chunk {i // chunk_size + 1}")
-        written += len(chunk)
+def update_exchange_rates(
+    supabase: Client,
+    finmind_times: Optional[deque[float]] = None,
+) -> int:
+    """FinMind 台銀牌告 → exchange_rates（1 外幣 = rate TWD）；失敗列保留現值。"""
+    http = requests.Session()
+    times = finmind_times if finmind_times is not None else deque()
+    now = tw_now_iso_seconds()
+    ok_count = 0
+    skip_count = 0
+    last_at = 0.0
 
-    # 讓 App 的 shouldFetchPrices() 判定 DB 較新，一併刷新匯率快取
+    for currency in FINMIND_FX_CURRENCIES:
+        _finmind_wait_hourly(times)
+        last_at = _rate_limit_wait(last_at)
+        times.append(time.monotonic())
+
+        twd_per_unit, rate_date, err = fetch_finmind_exchange_one(http, currency)
+        if twd_per_unit is not None:
+            row = {
+                "from_currency": currency,
+                "to_currency": "TWD",
+                "rate": str(twd_per_unit),
+                "updated_at": now,
+            }
+            _upsert_one_exchange_rate(supabase, row)
+            ok_count += 1
+            print(
+                f"  {currency}/TWD = {twd_per_unit:.6f}"
+                + (f"（牌告日 {rate_date}）" if rate_date else "")
+            )
+        else:
+            skip_count += 1
+            print(f"  {currency}/TWD 保留現值: {err or 'no_data'}")
+
+    if ok_count == 0:
+        probe = (
+            supabase.table("exchange_rates")
+            .select("from_currency")
+            .eq("to_currency", "TWD")
+            .in_("from_currency", list(FINMIND_FX_CURRENCIES))
+            .limit(1)
+            .execute()
+        )
+        _raise_on_supabase_error(probe, "exchange_rates probe")
+        if not probe.data:
+            raise RuntimeError("FinMind 匯率無有效資料，且資料庫尚無歷史匯率")
+        print(f"  本輪 0 筆更新、{skip_count} 筆略過，沿用資料庫現值／previous")
+        return 0
+
     meta_resp = supabase.table("price_update_metadata").upsert(
         {"id": "global", "last_updated_at": now},
         on_conflict="id",
     ).execute()
     _raise_on_supabase_error(meta_resp, "price_update_metadata upsert")
 
-    twd = rates.get("TWD")
-    if twd:
-        print(f"  USD/TWD ≈ {twd:.4f}（updated_at={now}）")
-
-    # 寫入後驗證（anon 可讀）
     verify = (
         supabase.table("exchange_rates")
-        .select("rate,updated_at")
+        .select("rate, updated_at, previous_rate, previous_updated_at")
         .eq("from_currency", "USD")
         .eq("to_currency", "TWD")
         .limit(1)
@@ -179,8 +255,13 @@ def update_exchange_rates(supabase: Client) -> int:
     _raise_on_supabase_error(verify, "exchange_rates verify read")
     if verify.data:
         row = verify.data[0]
-        print(f"  DB 驗證 TWD: rate={row.get('rate')} updated_at={row.get('updated_at')}")
-    return written
+        print(
+            f"  DB 驗證 USD/TWD: rate={row.get('rate')} "
+            f"prev={row.get('previous_rate')} updated_at={row.get('updated_at')}"
+        )
+    if skip_count:
+        print(f"  匯率摘要: 更新 {ok_count} 筆，保留現值 {skip_count} 筆")
+    return ok_count
 
 
 def get_supabase() -> Client:
@@ -488,6 +569,7 @@ def fetch_stocks_for_market(
     asset_type: str,
     symbols: list[dict],
     session_close: date,
+    finmind_times: Optional[deque[float]] = None,
 ) -> dict[tuple[str, str], FetchedQuote]:
     """Primary → 等 60s → retry 可重試失敗 → yfinance 補其餘。"""
     market_symbols = [s for s in symbols if s["asset_type"] == asset_type]
@@ -495,7 +577,11 @@ def fetch_stocks_for_market(
         return {}
 
     label = "FinMind" if asset_type == "stock_tw" else "Finnhub"
-    finmind_times: Optional[deque[float]] = deque() if asset_type == "stock_tw" else None
+    if asset_type == "stock_tw":
+        if finmind_times is None:
+            finmind_times = deque()
+    else:
+        finmind_times = None
 
     if asset_type == "stock_tw":
         if not FINMIND_TOKEN:
@@ -697,11 +783,18 @@ def run_price_update(markets: Optional[Set[str]] = None) -> None:
     include_crypto = markets is None or "crypto" in markets
 
     quotes: dict[tuple[str, str], FetchedQuote] = {}
+    finmind_times: Optional[deque[float]] = deque() if include_tw else None
 
     if include_tw:
+        print("更新匯率（FinMind 台銀牌告，與台股同輪）…")
+        n_rates = update_exchange_rates(supabase, finmind_times)
+        print(f"匯率: 已 upsert {n_rates} 筆（{', '.join(FINMIND_FX_CURRENCIES)} → TWD）")
+
         tw_close = resolve_session_close_date("tw")
         print(f"本輪台股收盤日: {tw_close.isoformat()}")
-        quotes.update(fetch_stocks_for_market("stock_tw", symbols, tw_close))
+        quotes.update(
+            fetch_stocks_for_market("stock_tw", symbols, tw_close, finmind_times)
+        )
 
     if include_us:
         us_close = resolve_session_close_date("us")
@@ -735,11 +828,8 @@ def run_price_update(markets: Optional[Set[str]] = None) -> None:
 
 
 def main() -> None:
-    """更新匯率 + 全部市場股價（本機手動或 workflow_dispatch 用）"""
-    print(f"[{datetime.now()}] 開始完整更新（匯率 + 全部股價）")
-    supabase = get_supabase()
-    n_rates = update_exchange_rates(supabase)
-    print(f"匯率: 已 upsert {n_rates} 筆至 exchange_rates")
+    """完整更新（匯率隨台股；美股／加密另跑）— workflow_dispatch 用"""
+    print(f"[{datetime.now()}] 開始完整更新（全部市場；匯率於台股步驟）")
     run_price_update(markets=None)
 
 

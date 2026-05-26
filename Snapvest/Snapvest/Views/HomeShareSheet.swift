@@ -22,9 +22,11 @@ struct HomeShareSheet: View {
 
     @ObservedObject private var privacy = HomePrivacyManager.shared
     @ObservedObject private var theme = ThemeManager.shared
+    @ObservedObject private var pieGroupingStore = PieChartGroupingStore.shared
     @Environment(\.dismiss) private var dismiss
 
-    @State private var selectedKinds: Set<HomeShareChartKind> = [.trend, .pie, .performance]
+    @State private var selectedKinds: Set<HomeShareChartKind> = []
+    @State private var hasLoadedSharePreferences = false
     @State private var previewImage: UIImage?
     @State private var isRendering = false
     @State private var isUpdatingPreview = false
@@ -51,6 +53,7 @@ struct HomeShareSheet: View {
             includePie: false,
             pieInputs: pieInputs,
             pieMode: pieMode,
+            pieExpandedGroupIds: pieGroupingStore.expandedLegendGroupIds,
             totalAssets: totalAssets,
             totalInvestments: totalInvestments,
             includePerformance: false,
@@ -74,6 +77,7 @@ struct HomeShareSheet: View {
             includePie: selectedKinds.contains(.pie),
             pieInputs: pieInputs,
             pieMode: pieMode,
+            pieExpandedGroupIds: pieGroupingStore.expandedLegendGroupIds,
             totalAssets: totalAssets,
             totalInvestments: totalInvestments,
             includePerformance: selectedKinds.contains(.performance),
@@ -108,6 +112,7 @@ struct HomeShareSheet: View {
                 }
             }
             .onAppear {
+                loadSharePreferencesIfNeeded()
                 syncSelectionToAvailable()
                 refreshPreview()
             }
@@ -115,12 +120,22 @@ struct HomeShareSheet: View {
                 syncSelectionToAvailable()
                 refreshPreview()
             }
-            .onChange(of: selectedKinds) { _, _ in refreshPreview() }
+            .onChange(of: selectedKinds) { _, newValue in
+                HomeSharePreferences.saveSelectedKinds(newValue)
+                refreshPreview()
+            }
+            .onChange(of: pieGroupingStore.expandedLegendGroupIds) { _, _ in
+                guard selectedKinds.contains(.pie) else { return }
+                refreshPreview()
+            }
             .onChange(of: privacy.isAmountHidden) { _, _ in refreshPreview() }
             .onChange(of: theme.isDarkMode) { _, _ in refreshPreview() }
             .sheet(isPresented: $showActivitySheet) {
-                if let previewImage {
-                    HomeShareActivityView(image: previewImage) {
+                if let previewImage, let config = renderConfig {
+                    HomeShareActivityView(
+                        image: previewImage,
+                        shareText: HomeShareMessageBuilder.shareText(config: config)
+                    ) {
                         showActivitySheet = false
                     }
                 }
@@ -134,46 +149,66 @@ struct HomeShareSheet: View {
     }
 
     private var actionButtons: some View {
-        VStack(spacing: 12) {
-            Button(action: saveToPhotoLibrary) {
-                HStack(spacing: 8) {
-                    if isSaving {
-                        ProgressView()
-                            .tint(.white)
-                    } else {
-                        Image(systemName: "square.and.arrow.down")
-                    }
-                    Text("儲存到相簿")
-                        .fontWeight(.semibold)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
+        VStack(spacing: 14) {
+            shareActionButton(
+                title: "儲存到相簿",
+                systemImage: "square.and.arrow.down",
+                isPrimary: true,
+                showsProgress: isSaving
+            ) {
+                saveToPhotoLibrary()
             }
-            .buttonStyle(.plain)
-            .foregroundColor(.white)
-            .background(canUseImage ? Color.appPrimary : Color.secondaryText.opacity(0.35))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .disabled(!canUseImage || isSaving || isRendering)
 
-            Button(action: openSystemShare) {
-                HStack(spacing: 8) {
-                    Image(systemName: "square.and.arrow.up")
-                    Text("分享到其他 App")
-                        .fontWeight(.semibold)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
+            shareActionButton(
+                title: "分享到其他 App",
+                systemImage: "square.and.arrow.up",
+                isPrimary: false,
+                showsProgress: false
+            ) {
+                openSystemShare()
             }
-            .buttonStyle(.plain)
-            .foregroundColor(canUseImage ? .appPrimary : .secondaryText)
-            .background(Color.cardBackground)
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(canUseImage ? Color.appPrimary.opacity(0.45) : Color.separator, lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .disabled(!canUseImage || isSaving || isRendering)
         }
+    }
+
+    private func shareActionButton(
+        title: String,
+        systemImage: String,
+        isPrimary: Bool,
+        showsProgress: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                if showsProgress {
+                    ProgressView()
+                        .tint(isPrimary ? .white : .appPrimary)
+                } else {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 18, weight: .semibold))
+                }
+                Text(title)
+                    .font(.system(size: 17, weight: .semibold))
+            }
+            .frame(maxWidth: .infinity, minHeight: 52)
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .foregroundColor(isPrimary ? .white : (canUseImage ? .appPrimary : .secondaryText))
+        .background {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(
+                    isPrimary
+                        ? (canUseImage ? Color.appPrimary : Color.secondaryText.opacity(0.35))
+                        : Color.cardBackground
+                )
+        }
+        .overlay {
+            if !isPrimary {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(canUseImage ? Color.appPrimary.opacity(0.45) : Color.separator, lineWidth: 1)
+            }
+        }
+        .disabled(!canUseImage || isSaving || isRendering)
     }
 
     private var selectionSection: some View {
@@ -249,7 +284,10 @@ struct HomeShareSheet: View {
                 if let previewImage {
                     Image(uiImage: previewImage)
                         .resizable()
-                        .scaledToFit()
+                        .aspectRatio(
+                            HomeShareImageBuilder.canvasWidth / HomeShareImageBuilder.canvasHeight,
+                            contentMode: .fit
+                        )
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 2)
                         .opacity(previewFade)
@@ -287,12 +325,23 @@ struct HomeShareSheet: View {
         canShare && previewImage != nil
     }
 
+    private func loadSharePreferencesIfNeeded() {
+        guard !hasLoadedSharePreferences else { return }
+        hasLoadedSharePreferences = true
+        if let saved = HomeSharePreferences.loadSelectedKinds() {
+            selectedKinds = saved
+        } else {
+            selectedKinds = [.trend, .pie, .performance]
+        }
+    }
+
     private func syncSelectionToAvailable() {
         let available = Set(HomeShareChartKind.allCases.filter { baseConfig.isAvailable($0) })
         selectedKinds = selectedKinds.intersection(available)
         if selectedKinds.isEmpty {
             selectedKinds = available
         }
+        HomeSharePreferences.saveSelectedKinds(selectedKinds)
     }
 
     private func toggle(_ kind: HomeShareChartKind) {
@@ -302,6 +351,7 @@ struct HomeShareSheet: View {
             } else {
                 selectedKinds.insert(kind)
             }
+            HomeSharePreferences.saveSelectedKinds(selectedKinds)
         }
     }
 

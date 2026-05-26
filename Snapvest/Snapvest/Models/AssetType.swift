@@ -31,6 +31,8 @@ enum Currency: String, Codable, CaseIterable {
     case EUR = "EUR"
     case JPY = "JPY"
     case CNY = "CNY"
+    case HKD = "HKD"
+    case AUD = "AUD"
     
     var symbol: String {
         switch self {
@@ -39,6 +41,8 @@ enum Currency: String, Codable, CaseIterable {
         case .EUR: return "€"
         case .JPY: return "¥"
         case .CNY: return "¥"
+        case .HKD: return "HK$"
+        case .AUD: return "A$"
         }
     }
     
@@ -49,6 +53,8 @@ enum Currency: String, Codable, CaseIterable {
         case .EUR: return "歐元"
         case .JPY: return "日圓"
         case .CNY: return "人民幣"
+        case .HKD: return "港幣"
+        case .AUD: return "澳幣"
         }
     }
 }

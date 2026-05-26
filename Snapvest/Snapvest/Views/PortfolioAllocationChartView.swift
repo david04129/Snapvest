@@ -158,7 +158,6 @@ struct HomePieChartSection: View {
     @ObservedObject var groupingStore: PieChartGroupingStore
     @State private var selectedId: String?
     @State private var selectedMemberIds: Set<String> = []
-    @State private var expandedGroupIds: Set<String> = []
     @State private var renamingGroupId: UUID?
     @State private var renameText = ""
     @State private var showRenameAlert = false
@@ -299,7 +298,10 @@ struct HomePieChartSection: View {
                         isGroupingEnabled: isGroupingEnabled,
                         isEditingGroups: isEditingGroups,
                         selectedMemberIds: $selectedMemberIds,
-                        expandedGroupIds: $expandedGroupIds,
+                        expandedGroupIds: Binding(
+                            get: { groupingStore.expandedLegendGroupIds },
+                            set: { groupingStore.setExpandedLegendGroupIds($0) }
+                        ),
                         addToGroupId: $addToGroupId,
                         selectionEditCategory: $selectionEditCategory,
                         onRenameGroup: beginRename,
@@ -363,7 +365,7 @@ struct HomePieChartSection: View {
             AssetsFilterChipButton(
                 title: isEditingGroups ? "結束編輯" : "編輯群組",
                 icon: isEditingGroups ? "checkmark" : "square.and.pencil",
-                isActive: isEditingGroups
+                isActive: true
             ) {
                 withAnimation(ChartMotion.switchSpring) {
                     let entering = !isEditingGroups
@@ -508,12 +510,10 @@ struct HomePieChartSection: View {
             guard !Task.isCancelled else { return }
             
             groupingStore.toggleDisplayMode()
-            if isGroupingEnabled {
-                expandAllGroups()
-            } else {
+            if !isGroupingEnabled {
                 groupingStore.setEditingGroups(false)
                 selectedMemberIds.removeAll()
-                expandedGroupIds.removeAll()
+                groupingStore.clearExpandedLegendGroups()
                 addToGroupId = nil
                 selectionEditCategory = nil
             }
@@ -539,12 +539,12 @@ struct HomePieChartSection: View {
     }
     
     private func expandAllGroups() {
-        expandedGroupIds = Set(activeGroups.map { PieChartGroupingEngine.groupSliceId($0.id) })
+        groupingStore.expandAllLegendGroups(groupIds: activeGroups.map(\.id))
     }
     
     private func pruneExpandedGroups() {
         let valid = Set(activeGroups.map { PieChartGroupingEngine.groupSliceId($0.id) })
-        expandedGroupIds = expandedGroupIds.intersection(valid)
+        groupingStore.pruneExpandedLegendGroups(validSliceIds: valid)
     }
     
     private func pickLargest() {
@@ -596,7 +596,9 @@ struct HomePieChartSection: View {
                 selectedMemberIds = Set(
                     selectedMemberIds.filter { groupCategory.contains(itemId: $0) }
                 )
-                expandedGroupIds.insert(PieChartGroupingEngine.groupSliceId(groupId))
+                groupingStore.insertExpandedLegendGroup(
+                    sliceId: PieChartGroupingEngine.groupSliceId(groupId)
+                )
             }
         }
     }
@@ -660,7 +662,9 @@ struct HomePieChartSection: View {
         var groups = activeGroups
         groups.removeAll { $0.id == groupId }
         groupingStore.updateGroups(groups)
-        expandedGroupIds.remove(PieChartGroupingEngine.groupSliceId(groupId))
+        groupingStore.removeExpandedLegendGroup(
+            sliceId: PieChartGroupingEngine.groupSliceId(groupId)
+        )
         if addToGroupId == groupId {
             addToGroupId = nil
             if selectedMemberIds.isEmpty {
@@ -725,12 +729,14 @@ struct PortfolioDonutChart: View {
     var displayMode: PieChartDisplayMode = .totalAssets
     var isGroupingEnabled: Bool = false
     var allowsSelection: Bool = true
-    @State private var selectedAngle: Double?
     @Environment(\.homeAmountsHidden) private var hideHomeAmounts
     
     private let chartSize: CGFloat = 228
     /// 環變瘦：內徑比例越大環越細
     private let innerRadiusRatio: CGFloat = 0.78
+    /// 點擊判定比視覺環更寬，方便點中
+    private let hitInnerRadiusRatio: CGFloat = 0.62
+    private let hitOuterPadding: CGFloat = 18
     
     private var chartIdentity: String {
         "\(isGroupingEnabled)-" + data.map(\.id).joined(separator: "|")
@@ -779,10 +785,10 @@ struct PortfolioDonutChart: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
         .onChange(of: chartIdentity) { _, _ in
-            selectedAngle = nil
+            if allowsSelection { pickLargestSliceIfNeeded() }
         }
         .onChange(of: allowsSelection) { _, enabled in
-            if !enabled { selectedAngle = nil }
+            if !enabled { selectedId = nil }
         }
     }
     
@@ -794,16 +800,30 @@ struct PortfolioDonutChart: View {
             }
         }
         .chartLegend(.hidden)
-        .chartAngleSelection(value: allowsSelection ? $selectedAngle : .constant(nil))
-        .onChange(of: selectedAngle) { _, v in
-            guard allowsSelection, let v else { return }
-            updateSelection(from: v)
-        }
         .frame(width: chartSize, height: chartSize)
+        .overlay {
+            if allowsSelection {
+                donutTouchOverlay
+            }
+        }
         .transaction { transaction in
             transaction.animation = nil
         }
         .animation(ChartMotion.switchQuick, value: selectedId)
+    }
+
+    /// 自訂環帶手勢（比 chartAngleSelection 更好點中細環）
+    private var donutTouchOverlay: some View {
+        GeometryReader { geometry in
+            Color.clear
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                        .onChanged { value in
+                            selectItem(at: value.location, in: geometry.size)
+                        }
+                )
+        }
     }
     
     @ChartContentBuilder
@@ -823,34 +843,37 @@ struct PortfolioDonutChart: View {
         return String(format: "%.2f%%", pct)
     }
     
-    private func updateSelection(from value: Double) {
+    private func selectItem(at location: CGPoint, in size: CGSize) {
+        let center = CGPoint(x: size.width / 2, y: size.height / 2)
+        let dx = location.x - center.x
+        let dy = location.y - center.y
+        let distance = hypot(dx, dy)
+        let radius = min(size.width, size.height) / 2
+        let hitInner = radius * hitInnerRadiusRatio
+        let hitOuter = radius + hitOuterPadding
+        guard distance >= hitInner, distance <= hitOuter else { return }
+
         let sum = data.reduce(0.0) { $0 + $1.value }
         guard sum > 0 else { return }
-        if value >= 0, value <= sum * 1.001 {
-            var cumulative: Double = 0
-            for item in data {
-                cumulative += item.value
-                if value <= cumulative {
-                    selectedId = item.id
-                    return
-                }
-            }
-            selectedId = data.last?.id
-            return
-        }
-        var angle = value
-        while angle < 0 { angle += 360 }
-        while angle >= 360 { angle -= 360 }
-        let normalized = (angle - 90) < -90 ? angle - 90 + 360 : angle - 90
-        var start: Double = -90
+
+        var angleFromTop = atan2(dx, -dy) * 180 / .pi
+        if angleFromTop < 0 { angleFromTop += 360 }
+
+        var start: Double = 0
         for item in data {
-            let span = max((item.value / sum) * 360, 1)
-            if normalized >= start - 1 && normalized < start + span + 1 {
+            let span = max((item.value / sum) * 360, 0.5)
+            if angleFromTop >= start, angleFromTop < start + span {
                 selectedId = item.id
                 return
             }
             start += span
         }
+        selectedId = data.last?.id
+    }
+
+    private func pickLargestSliceIfNeeded() {
+        guard selectedId == nil, let largest = data.max(by: { $0.value < $1.value }) else { return }
+        selectedId = largest.id
     }
 }
 
@@ -1106,19 +1129,15 @@ struct PortfolioGroupedAllocationLegend: View {
         }
     }
     
-    /// 群組化瀏覽：自動展開；編輯群組：展開並顯示移除
+    /// 群組化瀏覽：依 expandedGroupIds 收合；編輯群組：一律展開並顯示移除
     private func shouldExpandGroupMembers(id: String) -> Bool {
         guard isGroupingEnabled else { return false }
         if isEditingGroups { return true }
-        return expandedGroupIds.contains(id) || autoExpandGroupedMembers
-    }
-    
-    private var autoExpandGroupedMembers: Bool {
-        isGroupingEnabled && !isEditingGroups
+        return expandedGroupIds.contains(id)
     }
     
     private var memberRowIndent: CGFloat {
-        (autoExpandGroupedMembers || isEditingGroups) ? 24 : 28
+        isEditingGroups ? 24 : 28
     }
     
     @ViewBuilder
@@ -1178,51 +1197,53 @@ struct PortfolioGroupedAllocationLegend: View {
         let isSelected = selectedId == id
         let isAddTarget = addToGroupId == groupId
         
-        HStack(spacing: 8) {
-            if isGroupingEnabled, !isEditingGroups, !autoExpandGroupedMembers {
-                Button {
-                    withAnimation(ChartMotion.switchSpring) {
-                        if expandedGroupIds.contains(id) {
-                            expandedGroupIds.remove(id)
-                        } else {
-                            expandedGroupIds.insert(id)
-                        }
-                    }
-                } label: {
-                    Image(systemName: expandedGroupIds.contains(id) ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.secondaryText)
-                        .frame(width: 16)
-                }
-                .buttonStyle(.plain)
-            }
-            
+        Group {
             if isEditingGroups, isGroupingEnabled {
-                groupHeaderEditContent(
-                    color: color,
-                    name: name,
-                    pct: pct,
-                    marketValue: marketValue,
-                    groupId: groupId,
-                    editSection: editSection
-                )
+                HStack(spacing: 8) {
+                    groupHeaderEditContent(
+                        color: color,
+                        name: name,
+                        pct: pct,
+                        marketValue: marketValue,
+                        groupId: groupId,
+                        editSection: editSection
+                    )
+                }
             } else {
                 Button {
                     withAnimation(ChartMotion.switchSpring) {
+                        if isGroupingEnabled {
+                            var ids = expandedGroupIds
+                            if ids.contains(id) {
+                                ids.remove(id)
+                            } else {
+                                ids.insert(id)
+                            }
+                            expandedGroupIds = ids
+                        }
                         selectedId = id
                     }
                 } label: {
-                    rowContent(
-                        color: color,
-                        title: name,
-                        pct: pct,
-                        marketValue: marketValue,
-                        isSelected: isSelected,
-                        isBold: isSelected,
-                        showsCheckbox: false,
-                        isChecked: false,
-                        checkboxEnabled: false
-                    )
+                    HStack(spacing: 8) {
+                        if isGroupingEnabled {
+                            Image(systemName: expandedGroupIds.contains(id) ? "chevron.down" : "chevron.right")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.secondaryText)
+                                .frame(width: 16)
+                        }
+                        rowContent(
+                            color: color,
+                            title: name,
+                            pct: pct,
+                            marketValue: marketValue,
+                            isSelected: isSelected,
+                            isBold: isSelected,
+                            showsCheckbox: false,
+                            isChecked: false,
+                            checkboxEnabled: false
+                        )
+                    }
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }

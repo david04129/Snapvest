@@ -39,6 +39,8 @@ struct HomeShareRenderConfig {
     let includePie: Bool
     let pieInputs: PieChartInputs?
     let pieMode: PieChartDisplayMode
+    /// 與首頁圓餅圖明細同步的群組展開狀態
+    let pieExpandedGroupIds: Set<String>
     let totalAssets: Decimal
     let totalInvestments: Decimal
 

@@ -827,6 +827,7 @@ struct RealizedPLCardView: View {
                         
                         VStack(spacing: 0) {
                             ForEach(transactions) { transaction in
+                                let display = TransactionDisplayFormatter(transaction: transaction)
                                 VStack(spacing: 8) {
                                     Button(action: {
                                         withAnimation(.easeInOut(duration: 0.2)) {
@@ -848,8 +849,9 @@ struct RealizedPLCardView: View {
                                             Spacer(minLength: 8)
                                             
                                             VStack(alignment: .trailing, spacing: 4) {
-                                                if let realized = transaction.realizedGainLoss {
-                                                    Text(realized.formatted(currency: transaction.currency))
+                                                if let realizedText = display.realizedGainLossText,
+                                                   let realized = transaction.realizedGainLoss {
+                                                    Text(realizedText)
                                                         .font(.subheadline)
                                                         .fontWeight(.semibold)
                                                         .foregroundColor(Color.marketColor(for: realized))
@@ -860,8 +862,8 @@ struct RealizedPLCardView: View {
                                                         .foregroundColor(.secondaryText)
                                                 }
                                                 
-                                                if let percent = transaction.realizedGainLossPercent {
-                                                    Text("(\(percent.formatted(fractionDigits: 2))%)")
+                                                if let percentText = display.realizedGainLossPercentText {
+                                                    Text(percentText)
                                                         .font(.caption)
                                                         .foregroundColor(.secondaryText)
                                                 }
@@ -883,7 +885,7 @@ struct RealizedPLCardView: View {
                                                 Text("數量")
                                                     .font(.caption)
                                                     .foregroundColor(.secondaryText)
-                                                Text(transaction.quantity.formatted(fractionDigits: 4))
+                                                Text(display.realizedQuantityText)
                                                     .font(.subheadline)
                                                     .fontWeight(.semibold)
                                                     .foregroundColor(.primaryText)
@@ -898,8 +900,8 @@ struct RealizedPLCardView: View {
                                                 Text("成本價")
                                                     .font(.caption)
                                                     .foregroundColor(.secondaryText)
-                                                if let costPerUnit = transaction.realizedCostPerUnit {
-                                                    Text(costPerUnit.formattedTradePrice(currency: transaction.currency))
+                                                if let costText = display.realizedCostPerUnitText {
+                                                    Text(costText)
                                                         .font(.subheadline)
                                                         .fontWeight(.semibold)
                                                         .foregroundColor(.primaryText)
@@ -920,7 +922,7 @@ struct RealizedPLCardView: View {
                                                 Text("成交均價")
                                                     .font(.caption)
                                                     .foregroundColor(.secondaryText)
-                                                Text(transaction.price.formattedTradePrice(currency: transaction.currency))
+                                                Text(display.realizedSellPriceText)
                                                     .font(.subheadline)
                                                     .fontWeight(.semibold)
                                                     .foregroundColor(.primaryText)

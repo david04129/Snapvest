@@ -158,6 +158,67 @@ class HoldingCalculator {
         }
     }
     
+    /// 依帳戶交易重播 FIFO，計算賣出指定數量時應扣除的成本（僅統計已寫入的 buy/sell）。
+    static func fifoCostBasis(
+        accountId: String,
+        assetType: AssetType,
+        symbol: String,
+        sellQuantity: Decimal,
+        transactions: [Transaction],
+        excludingTransactionId: String? = nil
+    ) -> Decimal {
+        let targetSymbol = normalizedSymbol(assetType: assetType, symbol: symbol)
+        var lots: [HoldingLot] = []
+        
+        let sorted = transactions
+            .filter { $0.accountId == accountId }
+            .sorted { $0.transactionDate < $1.transactionDate }
+        
+        for transaction in sorted {
+            if transaction.id == excludingTransactionId { continue }
+            guard transaction.assetType == assetType else { continue }
+            guard normalizedSymbol(assetType: transaction.assetType, symbol: transaction.symbol) == targetSymbol else {
+                continue
+            }
+            
+            switch transaction.type {
+            case .buy:
+                guard transaction.quantity > 0 else { continue }
+                let costPerUnit = transaction.totalAmountWithFee / transaction.quantity
+                lots.append(
+                    HoldingLot(
+                        quantity: transaction.quantity,
+                        costPerUnit: costPerUnit,
+                        transactionDate: transaction.transactionDate
+                    )
+                )
+            case .sell:
+                var remaining = transaction.quantity
+                while remaining > 0, !lots.isEmpty {
+                    if lots[0].quantity <= remaining {
+                        remaining -= lots[0].quantity
+                        lots.removeFirst()
+                    } else {
+                        lots[0].quantity -= remaining
+                        remaining = 0
+                    }
+                }
+            default:
+                break
+            }
+        }
+        
+        var remaining = sellQuantity
+        var costBasis: Decimal = 0
+        for lot in lots {
+            if remaining <= 0 { break }
+            let used = min(remaining, lot.quantity)
+            costBasis += used * lot.costPerUnit
+            remaining -= used
+        }
+        return costBasis
+    }
+    
     /// 計算已實現損益（使用 FIFO）
     static func calculateRealizedGainLoss(from transactions: [Transaction]) -> Decimal {
         var realizedGainLoss: Decimal = 0

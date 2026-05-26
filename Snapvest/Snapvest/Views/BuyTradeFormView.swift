@@ -35,6 +35,9 @@ struct BuyTradeFormView: View {
     @State private var userId: String = AppUser.id
     @State private var showingDuplicateAlert = false
     @State private var duplicateAlertMessage = ""
+    @State private var livePriceState: SymbolLiveReferencePrice.State = .idle
+    @State private var livePriceFetchedForSymbol: String = ""
+    @State private var livePriceTaskToken = 0
     
     private let dataService: DataServiceProtocol = MockDataService.shared
     
@@ -137,8 +140,25 @@ struct BuyTradeFormView: View {
         return amountInTradeCurrency * rate
     }
     
+    /// 新增買進需先完成選股預抓參考現價；編輯既有交易不強制。
+    private var needsLiveReferencePrice: Bool {
+        !isEditMode
+    }
+
+    private var normalizedSelectedSymbol: String {
+        SymbolLiveReferencePrice.normalizedSymbol(assetType: assetType, symbol: selectedSymbol)
+    }
+
+    private var livePriceReady: Bool {
+        guard needsLiveReferencePrice else { return true }
+        guard !normalizedSelectedSymbol.isEmpty else { return false }
+        guard livePriceFetchedForSymbol == normalizedSelectedSymbol else { return false }
+        if case .ready = livePriceState { return true }
+        return false
+    }
+
     private var canSubmit: Bool {
-        isValid && errorMessage == nil
+        isValid && errorMessage == nil && livePriceReady
     }
     
     private var isValid: Bool {
@@ -216,6 +236,9 @@ struct BuyTradeFormView: View {
                 loadAccountCashBalance(accountId: selectedAccountId)
             }
             validateInput()
+            if needsLiveReferencePrice, !normalizedSelectedSymbol.isEmpty {
+                await prefetchLiveReferencePrice()
+            }
         }
         .onChange(of: selectedAccountId) { _, newValue in
             if needsExchangeRate {
@@ -236,6 +259,14 @@ struct BuyTradeFormView: View {
         .onChange(of: priceText) { _, _ in validateInput() }
         .onChange(of: exchangeRateText) { _, _ in validateInput() }
         .onChange(of: deductFromAccount) { _, _ in validateInput() }
+        .onChange(of: selectedSymbol) { _, newSymbol in
+            guard needsLiveReferencePrice else { return }
+            if newSymbol.isEmpty {
+                resetLiveReferencePrice()
+            } else {
+                Task { await prefetchLiveReferencePrice() }
+            }
+        }
         .sheet(isPresented: $showingSymbolPicker) {
             SymbolPickerView(market: market) { symbol, name in
                 selectedSymbol = market == .crypto
@@ -404,6 +435,52 @@ struct BuyTradeFormView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            liveReferencePriceStatus
+        }
+    }
+
+    @ViewBuilder
+    private var liveReferencePriceStatus: some View {
+        if needsLiveReferencePrice, !normalizedSelectedSymbol.isEmpty {
+            switch livePriceState {
+            case .idle, .loading:
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("股價載入中…")
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                }
+                .padding(.top, 4)
+            case .ready(let price):
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("參考現價")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.secondaryText)
+                    Text(price.formattedTradePrice(currency: priceCurrency))
+                        .font(.snapReferencePrice)
+                        .foregroundColor(.primaryText)
+                        .monospacedDigit()
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(market.themeColor.opacity(0.1))
+                .cornerRadius(10)
+                .padding(.top, 6)
+            case .failed(let message):
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundColor(.lossRed)
+                    Button("重試載入股價") {
+                        Task { await prefetchLiveReferencePrice() }
+                    }
+                    .font(.caption)
+                }
+                .padding(.top, 4)
+            }
         }
     }
     
@@ -496,12 +573,15 @@ struct BuyTradeFormView: View {
               let qty = quantityValue,
               let price = priceValue else { return }
         
-        if let priceError = await SymbolPriceValidator.validatePriceAvailable(
-            assetType: assetType,
-            symbol: selectedSymbol,
-            transactionType: .buy
-        ) {
-            errorMessage = priceError
+        if needsLiveReferencePrice, !livePriceReady {
+            switch livePriceState {
+            case .failed(let message):
+                errorMessage = message
+            case .loading, .idle:
+                errorMessage = "股價載入中，請稍候"
+            case .ready:
+                errorMessage = "請重新選擇股票代號"
+            }
             return
         }
         
@@ -590,7 +670,8 @@ struct BuyTradeFormView: View {
                 exchangeRate: exchangeRateForSave,
                 deductFromAccount: deductFromAccount,
                 transactionDate: transactionDate,
-                allowDuplicate: allowDuplicate
+                allowDuplicate: allowDuplicate,
+                skipPriceValidation: livePriceReady
             )
         }
         
@@ -707,6 +788,34 @@ struct BuyTradeFormView: View {
         }
     }
     
+    private func resetLiveReferencePrice() {
+        livePriceTaskToken += 1
+        livePriceState = .idle
+        livePriceFetchedForSymbol = ""
+    }
+
+    @MainActor
+    private func prefetchLiveReferencePrice() async {
+        let key = normalizedSelectedSymbol
+        guard needsLiveReferencePrice, !key.isEmpty else {
+            resetLiveReferencePrice()
+            return
+        }
+
+        livePriceTaskToken += 1
+        let token = livePriceTaskToken
+        livePriceFetchedForSymbol = key
+        livePriceState = .loading
+
+        let result = await SymbolLiveReferencePrice.prefetch(
+            assetType: assetType,
+            symbol: selectedSymbol
+        )
+
+        guard token == livePriceTaskToken, normalizedSelectedSymbol == key else { return }
+        livePriceState = result
+    }
+
     private func applySymbolPrefill() {
         guard let prefill, selectedSymbol.isEmpty else { return }
         selectedSymbol = prefill.symbol

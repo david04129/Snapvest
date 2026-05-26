@@ -8,7 +8,7 @@
 import SwiftUI
 
 enum SnapvestBrand {
-    static let iconSystemName = "chart.pie.fill"
+    static let logoImageName = "SnapvestLogo"
     static let appName = "Snapvest"
 }
 
@@ -42,9 +42,10 @@ struct SnapvestBrandMark: View {
     }
 
     private var brandIcon: some View {
-        Image(systemName: SnapvestBrand.iconSystemName)
-            .font(.system(size: iconSize, weight: .medium))
-            .foregroundStyle(AppColors.appPrimary)
+        Image(SnapvestBrand.logoImageName)
+            .resizable()
+            .aspectRatio(1, contentMode: .fit)
+            .frame(width: iconSize, height: iconSize)
     }
 
     private var brandWordmark: some View {

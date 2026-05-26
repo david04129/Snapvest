@@ -1,5 +1,5 @@
 -- Snapvest 匯率表（每日由批次腳本更新）
--- 來源: https://open.er-api.com/v6/latest/USD
+-- 來源: FinMind TaiwanExchangeRate（1 外幣 = rate TWD）；排程見 daily_price_update.py
 -- 執行方式：在 Supabase Dashboard > SQL Editor 中執行
 
 CREATE TABLE IF NOT EXISTS exchange_rates (

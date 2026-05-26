@@ -502,6 +502,8 @@ final class PieChartGroupingStore: ObservableObject {
 
     @Published private(set) var groups: [PieChartItemGroup] = []
     @Published var displayMode: PieChartGroupingDisplayMode = .ungrouped
+    /// 圓餅圖明細群組收合狀態（首頁與分享圖共用）
+    @Published var expandedLegendGroupIds: Set<String> = []
     /// 編輯群組中：首頁需先結束編輯才能操作其他區塊
     @Published var isEditingGroups = false
 
@@ -521,6 +523,38 @@ final class PieChartGroupingStore: ObservableObject {
         self.userId = userId
         groups = Self.loadGroups(userId: userId)
         displayMode = Self.loadDisplayMode(userId: userId)
+        expandedLegendGroupIds = Self.loadExpandedLegendGroupIds(userId: userId)
+    }
+
+    func setExpandedLegendGroupIds(_ ids: Set<String>) {
+        expandedLegendGroupIds = ids
+        persistExpandedLegendGroupIds()
+    }
+
+    func expandAllLegendGroups(groupIds: [UUID]) {
+        setExpandedLegendGroupIds(Set(groupIds.map { PieChartGroupingEngine.groupSliceId($0) }))
+    }
+
+    func pruneExpandedLegendGroups(validSliceIds: Set<String>) {
+        let pruned = expandedLegendGroupIds.intersection(validSliceIds)
+        guard pruned != expandedLegendGroupIds else { return }
+        setExpandedLegendGroupIds(pruned)
+    }
+
+    func clearExpandedLegendGroups() {
+        setExpandedLegendGroupIds([])
+    }
+
+    func removeExpandedLegendGroup(sliceId: String) {
+        var ids = expandedLegendGroupIds
+        ids.remove(sliceId)
+        setExpandedLegendGroupIds(ids)
+    }
+
+    func insertExpandedLegendGroup(sliceId: String) {
+        var ids = expandedLegendGroupIds
+        ids.insert(sliceId)
+        setExpandedLegendGroupIds(ids)
     }
 
     func updateGroups(_ newGroups: [PieChartItemGroup]) {
@@ -557,6 +591,23 @@ final class PieChartGroupingStore: ObservableObject {
 
     private static func displayModeStorageKey(userId: String) -> String {
         "pieChartGroupingDisplay_\(userId)"
+    }
+
+    private static func expandedLegendStorageKey(userId: String) -> String {
+        "pieChartExpandedLegend_\(userId)"
+    }
+
+    private func persistExpandedLegendGroupIds() {
+        UserDefaults.standard.set(
+            Array(expandedLegendGroupIds),
+            forKey: Self.expandedLegendStorageKey(userId: userId)
+        )
+    }
+
+    private static func loadExpandedLegendGroupIds(userId: String) -> Set<String> {
+        let key = expandedLegendStorageKey(userId: userId)
+        let stored = UserDefaults.standard.stringArray(forKey: key) ?? []
+        return Set(stored)
     }
 
     private static func loadDisplayMode(userId: String) -> PieChartGroupingDisplayMode {
