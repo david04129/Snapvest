@@ -431,16 +431,12 @@ struct BuyTradeFormView: View {
     }
     
     private var priceSection: some View {
-        buyFormRow(title: "每股買價", icon: "dollarsign.circle.fill", color: market.themeColor) {
-            HStack(spacing: 8) {
-                if priceCurrency == .USD {
-                    Text("$").foregroundColor(.secondaryText)
-                }
-                TextField("0", text: $priceText)
-                    .keyboardType(.decimalPad)
-                    .snapFormFieldTapTarget()
-            }
-            .snapFormFieldTapTarget()
+        buyFormRow(
+            title: TradeFormUnitPriceLabels.rowTitle(market: market, isSell: false),
+            icon: "dollarsign.circle.fill",
+            color: market.themeColor
+        ) {
+            TradeFormUnitPriceInput(priceText: $priceText, currency: priceCurrency)
         }
     }
     

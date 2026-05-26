@@ -590,16 +590,12 @@ struct SellTradeFormView: View {
     }
     
     private var priceSection: some View {
-        FormRow(title: "每股賣價", icon: "dollarsign.circle.fill", color: market.themeColor) {
-            HStack(spacing: 8) {
-                if priceCurrency == .USD {
-                    Text("$")
-                        .foregroundColor(.secondaryText)
-                }
-                TextField("0", text: $priceText)
-                    .keyboardType(.decimalPad)
-                    .snapFormFieldTapTarget()
-            }
+        FormRow(
+            title: TradeFormUnitPriceLabels.rowTitle(market: market, isSell: true),
+            icon: "dollarsign.circle.fill",
+            color: market.themeColor
+        ) {
+            TradeFormUnitPriceInput(priceText: $priceText, currency: priceCurrency)
         }
     }
     

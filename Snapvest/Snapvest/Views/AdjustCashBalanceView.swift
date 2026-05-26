@@ -17,9 +17,7 @@ struct AdjustCashBalanceView: View {
     @State private var notes: String = ""
     @State private var transactionDate: Date = Date()
     @State private var errorMessage: String? = nil
-    
-    // TODO: 從匯率服務獲取即時匯率
-    private let usdToTwdRate: Decimal = 32 // 臨時固定值
+    @State private var usdToTwdRate: Decimal? = ExchangeRateSessionCache.usdToTwd
     
     private var newBalanceValue: Decimal? {
         Decimal(string: newBalanceText)
@@ -124,14 +122,15 @@ struct AdjustCashBalanceView: View {
                 Image(systemName: "dollarsign.circle.fill")
                     .font(.system(size: 16))
                     .foregroundColor(themeColor)
-                Text("新餘額 (\(account.currency.rawValue))")
+                Text(TradeFormMoneyLabels.balanceRowTitle(currency: account.currency))
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.primaryText)
             }
             
             CardView {
-                HStack {
+                HStack(spacing: 8) {
+                    TradeFormCurrencyBadge(currency: account.currency)
                     TextField("0", text: $newBalanceText)
                         .keyboardType(.decimalPad)
                         .font(.headline)
@@ -155,29 +154,27 @@ struct AdjustCashBalanceView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     if let delta = delta {
                         let absDelta = delta > 0 ? delta : -delta
-                        HStack {
+                        let amountColor: Color = delta > 0 ? .profitGreen : .lossRed
+                        HStack(alignment: .top) {
                             Text(delta > 0 ? "將新增收入" : "將新增支出")
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
-                                .foregroundColor(delta > 0 ? .profitGreen : .lossRed)
+                                .foregroundColor(amountColor)
                             Spacer()
-                            Text(absDelta.formatted(currency: account.currency))
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                                .foregroundColor(delta > 0 ? .profitGreen : .lossRed)
-                        }
-                    }
-                    
-                    if account.currency == .USD, let delta = delta {
-                        let absDelta = delta > 0 ? delta : -delta
-                        let twd = absDelta * usdToTwdRate
-                        HStack(spacing: 6) {
-                            Image(systemName: "arrow.triangle.2.circlepath")
-                                .font(.caption2)
-                                .foregroundColor(.secondaryText)
-                            Text("≈ \(twd.formatted(currency: .TWD))")
-                                .font(.caption)
-                                .foregroundColor(.secondaryText)
+                            VStack(alignment: .trailing, spacing: 4) {
+                                Text(absDelta.formatted(currency: account.currency))
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(amountColor)
+                                if account.currency == .USD,
+                                   let rate = usdToTwdRate, rate > 0 {
+                                    let twd = absDelta * rate
+                                    Text("≈ NT$\(twd.formatted(currency: .TWD))")
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                        .foregroundColor(.secondaryText)
+                                }
+                            }
                         }
                     }
                 }
@@ -315,12 +312,29 @@ struct AdjustCashBalanceView: View {
                 if newBalanceText.isEmpty {
                     newBalanceText = formattedBalanceInput(currentBalance)
                 }
+                await loadUsdToTwdRate()
             }
         }
         .snapFormSheetChrome()
     }
     
     // MARK: - Helper Methods
+    
+    private func loadUsdToTwdRate() async {
+        if let cached = ExchangeRateSessionCache.usdToTwd, cached > 0 {
+            usdToTwdRate = cached
+            return
+        }
+        if let rate = try? await MockDataService.shared.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate,
+           rate > 0 {
+            usdToTwdRate = rate
+            return
+        }
+        if viewModel.exchangeRate > 0 {
+            usdToTwdRate = viewModel.exchangeRate
+        }
+    }
+    
     private func handleBalanceChange(oldValue: String, newValue: String) {
         let filtered = newValue.filter { $0.isNumber || $0 == "." }
         if filtered != newValue {

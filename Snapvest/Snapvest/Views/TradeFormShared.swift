@@ -7,6 +7,77 @@
 
 import SwiftUI
 
+// MARK: - 單價輸入（幣別標示）
+
+enum TradeFormUnitPriceLabels {
+    static func rowTitle(market: TradeMarket, isSell: Bool) -> String {
+        let verb = isSell ? "賣價" : "買價"
+        switch market {
+        case .stockTW:
+            return "每股\(verb)（台幣）"
+        case .stockUS:
+            return "每股\(verb)（美金）"
+        case .crypto:
+            return "每單位\(verb)（美金）"
+        }
+    }
+}
+
+enum TradeFormMoneyLabels {
+    static func balanceRowTitle(currency: Currency) -> String {
+        switch currency {
+        case .TWD:
+            return "新餘額（台幣）"
+        case .USD:
+            return "新餘額（美金）"
+        default:
+            return "新餘額（\(currency.rawValue)）"
+        }
+    }
+}
+
+struct TradeFormCurrencyBadge: View {
+    let currency: Currency
+    
+    private var code: String {
+        switch currency {
+        case .TWD: return "TWD"
+        case .USD: return "USD"
+        default: return currency.rawValue
+        }
+    }
+    
+    var body: some View {
+        Text(code)
+            .font(.caption)
+            .fontWeight(.bold)
+            .foregroundColor(.primaryText)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(Color.tertiaryBackground)
+            .cornerRadius(6)
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(Color.separator.opacity(0.45), lineWidth: 1)
+            )
+    }
+}
+
+struct TradeFormUnitPriceInput: View {
+    @Binding var priceText: String
+    let currency: Currency
+    
+    var body: some View {
+        HStack(spacing: 8) {
+            TradeFormCurrencyBadge(currency: currency)
+            TextField("0", text: $priceText)
+                .keyboardType(.decimalPad)
+                .snapFormFieldTapTarget()
+        }
+        .snapFormFieldTapTarget()
+    }
+}
+
 // MARK: - 精簡標題列
 
 struct TradeFormCompactHeader: View {
