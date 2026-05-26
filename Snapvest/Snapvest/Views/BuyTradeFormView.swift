@@ -16,6 +16,7 @@ struct BuyTradeFormView: View {
     let onSubmit: (() -> Void)?
     var isImportDraftMode: Bool = false
     var onImportDraftSave: ((Transaction) -> Void)? = nil
+    var onImportDraftRemove: (() -> Void)? = nil
     
     @StateObject private var accountsViewModel = AccountsViewModel()
     @StateObject private var transactionsViewModel = TransactionsViewModel()
@@ -50,6 +51,7 @@ struct BuyTradeFormView: View {
         embedInTradeFlow: Bool = false,
         isImportDraftMode: Bool = false,
         onImportDraftSave: ((Transaction) -> Void)? = nil,
+        onImportDraftRemove: (() -> Void)? = nil,
         onSubmit: (() -> Void)? = nil
     ) {
         self.market = market
@@ -58,6 +60,7 @@ struct BuyTradeFormView: View {
         self.embedInTradeFlow = embedInTradeFlow
         self.isImportDraftMode = isImportDraftMode
         self.onImportDraftSave = onImportDraftSave
+        self.onImportDraftRemove = onImportDraftRemove
         self.onSubmit = onSubmit
     }
     
@@ -200,19 +203,51 @@ struct BuyTradeFormView: View {
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 10) {
                 buyAmountSummary
-                Button(action: handleSubmit) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "arrow.up")
-                        Text(submitButtonTitle)
+                if isImportDraftMode {
+                    HStack(spacing: 10) {
+                        Button(role: .destructive) {
+                            onImportDraftRemove?()
+                            dismiss()
+                        } label: {
+                            Text("移除")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 16)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(.lossRed)
+                        .background(Color.lossRed.opacity(0.10))
+                        .cornerRadius(12)
+                        
+                        Button(action: handleSubmit) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "checkmark")
+                                Text("確認")
+                            }
+                            .font(.headline)
+                            .foregroundColor(AppColors.actionForeground)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(canSubmit ? Color.profitGreen : AppColors.disabledBackground)
+                            .cornerRadius(12)
+                        }
+                        .disabled(!canSubmit)
                     }
-                    .font(.headline)
-                    .foregroundColor(AppColors.actionForeground)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .background(canSubmit ? Color.profitGreen : AppColors.disabledBackground)
-                    .cornerRadius(12)
+                } else {
+                    Button(action: handleSubmit) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "arrow.up")
+                            Text(submitButtonTitle)
+                        }
+                        .font(.headline)
+                        .foregroundColor(AppColors.actionForeground)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(canSubmit ? Color.profitGreen : AppColors.disabledBackground)
+                        .cornerRadius(12)
+                    }
+                    .disabled(!canSubmit)
                 }
-                .disabled(!canSubmit)
             }
             .padding(.horizontal)
             .padding(.vertical, 12)

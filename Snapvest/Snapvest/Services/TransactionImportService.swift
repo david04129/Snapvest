@@ -120,6 +120,8 @@ enum TransactionImportService {
             return [.stockUS]
         case .twdSecurities:
             return [.stockTW, .stockUS]
+        case .cryptoWallet:
+            return [.crypto]
         default:
             return []
         }
@@ -142,6 +144,15 @@ enum TransactionImportService {
             switch assetType {
             case .crypto:
                 return "此為台幣證券戶，不可匯入加密貨幣"
+            default:
+                return "此帳戶不支援 asset_type「\(assetType.rawValue)」"
+            }
+        case .cryptoWallet:
+            switch assetType {
+            case .stockTW:
+                return "此為加密貨幣帳戶，不可匯入台股"
+            case .stockUS:
+                return "此為加密貨幣帳戶，不可匯入美股"
             default:
                 return "此帳戶不支援 asset_type「\(assetType.rawValue)」"
             }

@@ -71,54 +71,55 @@ struct ThemePalette {
         stockUSColor: Color(hex: "#2563EB"),
         stockUSDeep: Color(hex: "#1D4ED8"),
         stockUSLight: Color(hex: "#2563EB").opacity(0.16),
-        stockTWColor: Color(hex: "#D97706"),
-        stockTWDeepAmber: Color(hex: "#B45309"),
-        stockTWLight: Color(hex: "#D97706").opacity(0.18),
-        cryptoColor: Color(hex: "#0D9488"),
-        cryptoDeep: Color(hex: "#0F766E"),
-        cryptoLight: Color(hex: "#0D9488").opacity(0.16),
+        stockTWColor: Color(hex: "#F2C078"),
+        stockTWDeepAmber: Color(hex: "#F2C078"),
+        stockTWLight: Color(hex: "#F2C078").opacity(0.22),
+        cryptoColor: Color(hex: "#4CAF36"),
+        cryptoDeep: Color(hex: "#3F8F2D"),
+        cryptoLight: Color(hex: "#B7E99A").opacity(0.28),
         pieChartTWColors: [
-            Color(hex: "#D97706"), Color(hex: "#F59E0B"), Color(hex: "#B45309"),
-            Color(hex: "#92400E"), Color(hex: "#78350F"), Color(hex: "#FBBF24")
+            Color(hex: "#F2C078"), Color(hex: "#D97706"), Color(hex: "#F59E0B"),
+            Color(hex: "#B45309"), Color(hex: "#92400E"), Color(hex: "#FBBF24")
         ],
         pieChartUSColors: [
             Color(hex: "#2563EB"), Color(hex: "#3B82F6"), Color(hex: "#1D4ED8"),
             Color(hex: "#60A5FA"), Color(hex: "#93C5FD"), Color(hex: "#BFDBFE")
         ],
         pieChartCryptoColors: [
-            Color(hex: "#0D9488"), Color(hex: "#14B8A6"), Color(hex: "#0F766E"),
-            Color(hex: "#2DD4BF"), Color(hex: "#5EEAD4"), Color(hex: "#99F6E4")
+            Color(hex: "#4CAF36"), Color(hex: "#7ED957"), Color(hex: "#B7E99A"),
+            Color(hex: "#14B8A6"), Color(hex: "#2DD4BF"), Color(hex: "#99F6E4")
         ],
         holdingChartColors: [
-            Color(hex: "#0F766E"), Color(hex: "#2563EB"), Color(hex: "#D97706"),
+            Color(hex: "#4CAF36"), Color(hex: "#7ED957"), Color(hex: "#F2C078"),
             Color(hex: "#7C3AED"), Color(hex: "#0891B2"), Color(hex: "#4F46E5"),
             Color(hex: "#EA580C"), Color(hex: "#DB2777"), Color(hex: "#CA8A04"),
             Color(hex: "#64748B")
         ],
-        allocationTwdCash: Color(hex: "#059669"),
-        allocationUsdCash: Color(hex: "#34D399"),
+        allocationTwdCash: Color(hex: "#4CAF36"),
+        allocationUsdCash: Color(hex: "#B7E99A"),
         allocationStockUS: Color(hex: "#2563EB"),
-        allocationStockTW: Color(hex: "#D97706"),
-        allocationCrypto: Color(hex: "#0D9488"),
+        allocationStockTW: Color(hex: "#F2C078"),
+        allocationCrypto: Color(hex: "#4CAF36"),
         pieChartVibrantColors: [
-            Color(hex: "#0F766E"), Color(hex: "#2563EB"), Color(hex: "#D97706"),
+            Color(hex: "#4CAF36"), Color(hex: "#7ED957"), Color(hex: "#F2C078"),
             Color(hex: "#7C3AED"), Color(hex: "#0891B2"), Color(hex: "#4F46E5"),
             Color(hex: "#EA580C"), Color(hex: "#DB2777"), Color(hex: "#CA8A04"),
             Color(hex: "#64748B")
         ],
         colorOptionsForPicker: [
+            Color(hex: "#4CAF36"), Color(hex: "#7ED957"), Color(hex: "#B7E99A"),
+            Color(hex: "#F2C078"),
             Color(hex: "#0F766E"), Color(hex: "#0D9488"), Color(hex: "#14B8A6"),
-            Color(hex: "#2563EB"), Color(hex: "#3B82F6"), Color(hex: "#60A5FA"),
-            Color(hex: "#D97706"), Color(hex: "#F59E0B"), Color(hex: "#B45309"),
-            Color(hex: "#059669"), Color(hex: "#64748B"), Color(hex: "#94A3B8")
+            Color(hex: "#2563EB"), Color(hex: "#3B82F6"), Color(hex: "#D97706"),
+            Color(hex: "#F59E0B"), Color(hex: "#64748B")
         ],
-        appPrimary: Color(hex: "#0F766E"),
-        appSecondary: Color(hex: "#0D9488"),
+        appPrimary: Color(hex: "#4CAF36"),
+        appSecondary: Color(hex: "#7ED957"),
         mainBackground: Color(hex: "#F4F6F8"),
         cardBackground: Color.white,
         secondaryBackground: Color(hex: "#EEF2F6"),
         tertiaryBackground: Color(hex: "#F4F6F8"),
-        profitGreen: Color(hex: "#059669"),
+        profitGreen: Color(hex: "#4CAF36"),
         lossRed: Color(hex: "#DC2626"),
         primaryText: Color(hex: "#111827"),
         secondaryText: Color(hex: "#64748B"),
@@ -144,54 +145,54 @@ struct ThemePalette {
         stockUSColor: Color(hex: "#60A5FA"),
         stockUSDeep: Color(hex: "#93C5FD"),
         stockUSLight: Color(hex: "#60A5FA").opacity(0.22),
-        stockTWColor: Color(hex: "#FBBF24"),
-        stockTWDeepAmber: Color(hex: "#FCD34D"),
-        stockTWLight: Color(hex: "#FBBF24").opacity(0.2),
-        cryptoColor: Color(hex: "#2DD4BF"),
-        cryptoDeep: Color(hex: "#5EEAD4"),
-        cryptoLight: Color(hex: "#2DD4BF").opacity(0.2),
+        stockTWColor: Color(hex: "#F2C078"),
+        stockTWDeepAmber: Color(hex: "#F2C078"),
+        stockTWLight: Color(hex: "#F2C078").opacity(0.24),
+        cryptoColor: Color(hex: "#7ED957"),
+        cryptoDeep: Color(hex: "#B7E99A"),
+        cryptoLight: Color(hex: "#7ED957").opacity(0.22),
         pieChartTWColors: [
-            Color(hex: "#FBBF24"), Color(hex: "#F59E0B"), Color(hex: "#D97706"),
-            Color(hex: "#B45309"), Color(hex: "#92400E"), Color(hex: "#FCD34D")
+            Color(hex: "#F2C078"), Color(hex: "#FBBF24"), Color(hex: "#F59E0B"),
+            Color(hex: "#D97706"), Color(hex: "#B45309"), Color(hex: "#FCD34D")
         ],
         pieChartUSColors: [
             Color(hex: "#3B82F6"), Color(hex: "#60A5FA"), Color(hex: "#93C5FD"),
             Color(hex: "#BFDBFE"), Color(hex: "#DBEAFE"), Color(hex: "#EFF6FF")
         ],
         pieChartCryptoColors: [
-            Color(hex: "#14B8A6"), Color(hex: "#2DD4BF"), Color(hex: "#5EEAD4"),
-            Color(hex: "#99F6E4"), Color(hex: "#0D9488"), Color(hex: "#0F766E")
+            Color(hex: "#7ED957"), Color(hex: "#B7E99A"), Color(hex: "#2DD4BF"),
+            Color(hex: "#5EEAD4"), Color(hex: "#14B8A6"), Color(hex: "#99F6E4")
         ],
         holdingChartColors: [
-            Color(hex: "#2DD4BF"), Color(hex: "#60A5FA"), Color(hex: "#FBBF24"),
+            Color(hex: "#7ED957"), Color(hex: "#B7E99A"), Color(hex: "#F2C078"),
             Color(hex: "#A78BFA"), Color(hex: "#22D3EE"), Color(hex: "#818CF8"),
             Color(hex: "#FB923C"), Color(hex: "#F472B6"), Color(hex: "#FACC15"),
             Color(hex: "#94A3B8")
         ],
-        allocationTwdCash: Color(hex: "#34D399"),
-        allocationUsdCash: Color(hex: "#6EE7B7"),
+        allocationTwdCash: Color(hex: "#7ED957"),
+        allocationUsdCash: Color(hex: "#B7E99A"),
         allocationStockUS: Color(hex: "#60A5FA"),
-        allocationStockTW: Color(hex: "#FBBF24"),
-        allocationCrypto: Color(hex: "#2DD4BF"),
+        allocationStockTW: Color(hex: "#F2C078"),
+        allocationCrypto: Color(hex: "#7ED957"),
         pieChartVibrantColors: [
-            Color(hex: "#2DD4BF"), Color(hex: "#60A5FA"), Color(hex: "#FBBF24"),
+            Color(hex: "#7ED957"), Color(hex: "#B7E99A"), Color(hex: "#F2C078"),
             Color(hex: "#A78BFA"), Color(hex: "#22D3EE"), Color(hex: "#818CF8"),
             Color(hex: "#FB923C"), Color(hex: "#F472B6"), Color(hex: "#FACC15"),
             Color(hex: "#94A3B8")
         ],
         colorOptionsForPicker: [
+            Color(hex: "#7ED957"), Color(hex: "#B7E99A"), Color(hex: "#F2C078"),
             Color(hex: "#2DD4BF"), Color(hex: "#14B8A6"), Color(hex: "#5EEAD4"),
             Color(hex: "#60A5FA"), Color(hex: "#38BDF8"), Color(hex: "#93C5FD"),
-            Color(hex: "#FBBF24"), Color(hex: "#FCD34D"), Color(hex: "#F59E0B"),
-            Color(hex: "#34D399"), Color(hex: "#94A3B8"), Color(hex: "#CBD5E1")
+            Color(hex: "#FBBF24"), Color(hex: "#FCD34D"), Color(hex: "#94A3B8")
         ],
-        appPrimary: Color(hex: "#2DD4BF"),
-        appSecondary: Color(hex: "#5EEAD4"),
+        appPrimary: Color(hex: "#7ED957"),
+        appSecondary: Color(hex: "#B7E99A"),
         mainBackground: Color(hex: "#0B1220"),
         cardBackground: Color(hex: "#1E293B"),
         secondaryBackground: Color(hex: "#334155"),
         tertiaryBackground: Color(hex: "#0F172A"),
-        profitGreen: Color(hex: "#34D399"),
+        profitGreen: Color(hex: "#7ED957"),
         lossRed: Color(hex: "#F87171"),
         primaryText: Color(hex: "#F1F5F9"),
         secondaryText: Color(hex: "#94A3B8"),

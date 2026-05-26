@@ -14,17 +14,19 @@ enum SnapshotRefreshCoordinator {
         userId: String,
         dataService: DataServiceProtocol? = nil,
         priceService: PriceServiceProtocol? = nil,
-        syncPortfolio: Bool = true
+        syncPortfolio: Bool = true,
+        updatePriceMetadata: Bool = true
     ) async -> Bool {
         let resolvedDataService = dataService ?? MockDataService.shared
         let resolvedPriceService = priceService ?? PriceService(dataService: resolvedDataService)
+        let isDemoMode = (resolvedDataService as? MockDataService)?.isDemoModeActive == true
         do {
             let bundle = try await SnapshotUpdater.rebuildSnapshots(
                 userId: userId,
                 dataService: resolvedDataService,
                 priceService: resolvedPriceService
             )
-            if syncPortfolio {
+            if syncPortfolio, !isDemoMode {
                 await PortfolioStateSync.sync(
                     userId: userId,
                     dataService: resolvedDataService,
@@ -32,10 +34,12 @@ enum SnapshotRefreshCoordinator {
                     bundle: bundle
                 )
             }
-            await SupabasePriceService.recordSuccessfulPriceSync(
-                userId: userId,
-                dataService: resolvedDataService
-            )
+            if updatePriceMetadata, !isDemoMode {
+                await SupabasePriceService.recordSuccessfulPriceSync(
+                    userId: userId,
+                    dataService: resolvedDataService
+                )
+            }
             resolvedDataService.persistLocalStore(for: userId)
             NotificationCenter.default.post(name: .snapshotsDidUpdate, object: nil)
             return true

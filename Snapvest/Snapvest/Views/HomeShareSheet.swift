@@ -20,7 +20,6 @@ struct HomeShareSheet: View {
     let performanceMode: PerformanceDisplayMode
     let currency: Currency
 
-    @ObservedObject private var privacy = HomePrivacyManager.shared
     @ObservedObject private var theme = ThemeManager.shared
     @ObservedObject private var pieGroupingStore = PieChartGroupingStore.shared
     @Environment(\.dismiss) private var dismiss
@@ -37,52 +36,122 @@ struct HomeShareSheet: View {
     @State private var alertTitle = ""
     @State private var alertMessage = ""
     @State private var showAlert = false
+    @State private var shareHideAmounts = false
+    @State private var shareTrendMetricMode: TrendMetricMode
+    @State private var shareTrendTimeRange: DateRangePreset
+    @State private var shareTrendCustomStart: Date
+    @State private var shareTrendCustomEnd: Date
+    @State private var sharePieMode: PieChartDisplayMode
+    @State private var sharePieIsGroupingEnabled: Bool
+    @State private var sharePieShowsLegend = true
+    @State private var sharePieShowsSliceLabels = true
+    @State private var sharePerformanceMode: PerformanceDisplayMode
+    @State private var activeShareCustomDateField: CustomDatePickerField?
+
+    init(
+        trendPoints: Binding<[TrendChartPoint]>,
+        trendMetricMode: TrendMetricMode,
+        trendTimeRange: DateRangePreset,
+        trendCustomStart: Date,
+        trendCustomEnd: Date,
+        pieInputs: PieChartInputs?,
+        pieMode: PieChartDisplayMode,
+        totalAssets: Decimal,
+        totalInvestments: Decimal,
+        performanceMode: PerformanceDisplayMode,
+        currency: Currency
+    ) {
+        _trendPoints = trendPoints
+        self.trendMetricMode = trendMetricMode
+        self.trendTimeRange = trendTimeRange
+        self.trendCustomStart = trendCustomStart
+        self.trendCustomEnd = trendCustomEnd
+        self.pieInputs = pieInputs
+        self.pieMode = pieMode
+        self.totalAssets = totalAssets
+        self.totalInvestments = totalInvestments
+        self.performanceMode = performanceMode
+        self.currency = currency
+        _shareHideAmounts = State(initialValue: HomePrivacyManager.shared.isAmountHidden)
+        _shareTrendMetricMode = State(initialValue: trendMetricMode)
+        _shareTrendTimeRange = State(initialValue: trendTimeRange)
+        _shareTrendCustomStart = State(initialValue: trendCustomStart)
+        _shareTrendCustomEnd = State(initialValue: trendCustomEnd)
+        _sharePieMode = State(initialValue: pieMode)
+        _sharePieIsGroupingEnabled = State(initialValue: PieChartGroupingStore.shared.isGroupingEnabled)
+        _sharePerformanceMode = State(initialValue: performanceMode)
+    }
 
     private var baseConfig: HomeShareRenderConfig {
         HomeShareRenderConfig(
-            hideAmounts: privacy.isAmountHidden,
+            hideAmounts: shareHideAmounts,
             isDarkMode: theme.isDarkMode,
             currency: currency,
             generatedAt: Date(),
             includeTrend: false,
             trendPoints: trendPoints,
-            trendMetricMode: trendMetricMode,
-            trendTimeRange: trendTimeRange,
-            trendCustomStart: trendCustomStart,
-            trendCustomEnd: trendCustomEnd,
+            trendMetricMode: shareTrendMetricMode,
+            trendTimeRange: shareTrendTimeRange,
+            trendCustomStart: shareTrendCustomStart,
+            trendCustomEnd: shareTrendCustomEnd,
             includePie: false,
             pieInputs: pieInputs,
-            pieMode: pieMode,
+            pieMode: sharePieMode,
+            pieIsGroupingEnabled: sharePieIsGroupingEnabled,
+            pieShowsLegend: sharePieShowsLegend,
+            pieShowsSliceLabels: sharePieShowsSliceLabels,
             pieExpandedGroupIds: pieGroupingStore.expandedLegendGroupIds,
             totalAssets: totalAssets,
             totalInvestments: totalInvestments,
             includePerformance: false,
-            performanceMode: performanceMode
+            performanceMode: sharePerformanceMode
         )
     }
 
     private var renderConfig: HomeShareRenderConfig? {
         guard !selectedKinds.isEmpty else { return nil }
         return HomeShareRenderConfig(
-            hideAmounts: privacy.isAmountHidden,
+            hideAmounts: shareHideAmounts,
             isDarkMode: theme.isDarkMode,
             currency: currency,
             generatedAt: Date(),
             includeTrend: selectedKinds.contains(.trend),
             trendPoints: trendPoints,
-            trendMetricMode: trendMetricMode,
-            trendTimeRange: trendTimeRange,
-            trendCustomStart: trendCustomStart,
-            trendCustomEnd: trendCustomEnd,
+            trendMetricMode: shareTrendMetricMode,
+            trendTimeRange: shareTrendTimeRange,
+            trendCustomStart: shareTrendCustomStart,
+            trendCustomEnd: shareTrendCustomEnd,
             includePie: selectedKinds.contains(.pie),
             pieInputs: pieInputs,
-            pieMode: pieMode,
+            pieMode: sharePieMode,
+            pieIsGroupingEnabled: sharePieIsGroupingEnabled,
+            pieShowsLegend: sharePieShowsLegend,
+            pieShowsSliceLabels: sharePieShowsSliceLabels,
             pieExpandedGroupIds: pieGroupingStore.expandedLegendGroupIds,
             totalAssets: totalAssets,
             totalInvestments: totalInvestments,
             includePerformance: selectedKinds.contains(.performance),
-            performanceMode: performanceMode
+            performanceMode: sharePerformanceMode
         )
+    }
+    
+    private var previewRefreshToken: String {
+        [
+            "selected=\(selectedKinds.map(\.rawValue).sorted().joined(separator: ","))",
+            "hide=\(shareHideAmounts)",
+            "trendMetric=\(shareTrendMetricMode.rawValue)",
+            "trendRange=\(shareTrendTimeRange.rawValue)",
+            "trendStart=\(shareTrendCustomStart.timeIntervalSince1970)",
+            "trendEnd=\(shareTrendCustomEnd.timeIntervalSince1970)",
+            "pieMode=\(sharePieMode.rawValue)",
+            "pieGrouping=\(sharePieIsGroupingEnabled)",
+            "pieLegend=\(sharePieShowsLegend)",
+            "pieLabels=\(sharePieShowsSliceLabels)",
+            "expanded=\(pieGroupingStore.expandedLegendGroupIds.sorted().joined(separator: ","))",
+            "performance=\(sharePerformanceMode.rawValue)",
+            "dark=\(theme.isDarkMode)",
+            "points=\(trendPoints.count)"
+        ].joined(separator: "|")
     }
 
     var body: some View {
@@ -116,20 +185,13 @@ struct HomeShareSheet: View {
                 syncSelectionToAvailable()
                 refreshPreview()
             }
-            .onChange(of: trendPoints.count) { _, _ in
+            .onChange(of: selectedKinds) { _, newValue in
+                HomeSharePreferences.saveSelectedKinds(newValue)
+            }
+            .onChange(of: previewRefreshToken) { _, _ in
                 syncSelectionToAvailable()
                 refreshPreview()
             }
-            .onChange(of: selectedKinds) { _, newValue in
-                HomeSharePreferences.saveSelectedKinds(newValue)
-                refreshPreview()
-            }
-            .onChange(of: pieGroupingStore.expandedLegendGroupIds) { _, _ in
-                guard selectedKinds.contains(.pie) else { return }
-                refreshPreview()
-            }
-            .onChange(of: privacy.isAmountHidden) { _, _ in refreshPreview() }
-            .onChange(of: theme.isDarkMode) { _, _ in refreshPreview() }
             .sheet(isPresented: $showActivitySheet) {
                 if let previewImage, let config = renderConfig {
                     HomeShareActivityView(
@@ -139,6 +201,17 @@ struct HomeShareSheet: View {
                         showActivitySheet = false
                     }
                 }
+            }
+            .sheet(item: $activeShareCustomDateField) { field in
+                WheelDatePickerSheet(
+                    title: field.title,
+                    selection: field == .start ? $shareTrendCustomStart : $shareTrendCustomEnd,
+                    earliestDate: earliestShareTrendDate,
+                    onDone: {
+                        normalizeShareCustomRange()
+                        activeShareCustomDateField = nil
+                    }
+                )
             }
             .alert(alertTitle, isPresented: $showAlert) {
                 Button("好", role: .cancel) {}
@@ -219,58 +292,174 @@ struct HomeShareSheet: View {
 
             ForEach(HomeShareChartKind.allCases) { kind in
                 let available = baseConfig.isAvailable(kind)
-                Button {
-                    guard available else { return }
-                    toggle(kind)
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: kind.iconName)
-                            .font(.system(size: 18))
-                            .foregroundColor(available ? .appPrimary : .secondaryText)
-                            .frame(width: 28)
+                VStack(spacing: 8) {
+                    Button {
+                        guard available else { return }
+                        toggle(kind)
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: kind.iconName)
+                                .font(.system(size: 18))
+                                .foregroundColor(available ? .appPrimary : .secondaryText)
+                                .frame(width: 28)
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(kind.rawValue)
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                                .foregroundColor(available ? .primaryText : .secondaryText)
-                            Text(available ? baseConfig.subtitle(for: kind) : "尚無資料")
-                                .font(.caption)
-                                .foregroundColor(.secondaryText)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(kind.rawValue)
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(available ? .primaryText : .secondaryText)
+                                Text(available ? baseConfig.subtitle(for: kind) : "尚無資料")
+                                    .font(.caption)
+                                    .foregroundColor(.secondaryText)
+                            }
+
+                            Spacer()
+
+                            Image(systemName: selectedKinds.contains(kind) ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 22))
+                                .foregroundColor(
+                                    available
+                                        ? (selectedKinds.contains(kind) ? .appPrimary : .secondaryText)
+                                        : .secondaryText.opacity(0.35)
+                                )
                         }
-
-                        Spacer()
-
-                        Image(systemName: selectedKinds.contains(kind) ? "checkmark.circle.fill" : "circle")
-                            .font(.system(size: 22))
-                            .foregroundColor(
-                                available
-                                    ? (selectedKinds.contains(kind) ? .appPrimary : .secondaryText)
-                                    : .secondaryText.opacity(0.35)
-                            )
+                        .padding(14)
                     }
-                    .padding(14)
-                    .background(Color.cardBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .buttonStyle(.plain)
+                    .disabled(!available)
+
+                    if available, selectedKinds.contains(kind) {
+                        shareOptions(for: kind)
+                            .padding(.horizontal, 14)
+                            .padding(.bottom, 14)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
                 }
-                .buttonStyle(.plain)
-                .disabled(!available)
+                .background(Color.cardBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
         }
     }
 
     private var privacyHint: some View {
-        HStack(spacing: 8) {
-            Image(systemName: privacy.isAmountHidden ? "eye.slash" : "eye")
-                .foregroundColor(.appPrimary)
-            Text(privacy.isAmountHidden ? "目前為隱藏金額模式，分享圖將不含具體金額" : "目前為正常顯示，分享圖將包含金額")
-                .font(.caption)
-                .foregroundColor(.secondaryText)
+        Button {
+            withAnimation(ChartMotion.switchQuick) {
+                shareHideAmounts.toggle()
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: shareHideAmounts ? "eye.slash" : "eye")
+                    .foregroundColor(.appPrimary)
+                Text(shareHideAmounts ? "分享圖將隱藏具體金額" : "分享圖將包含金額")
+                    .font(.caption)
+                    .foregroundColor(.secondaryText)
+                Spacer()
+                Text(shareHideAmounts ? "已隱藏" : "顯示中")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.appPrimary)
+            }
         }
+        .buttonStyle(.plain)
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.appPrimary.opacity(0.08))
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    @ViewBuilder
+    private func shareOptions(for kind: HomeShareChartKind) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            switch kind {
+            case .trend:
+                shareOptionLabel("指標")
+                ChartSegmentedControl(
+                    options: TrendMetricMode.allCases,
+                    selection: $shareTrendMetricMode,
+                    label: { $0.rawValue },
+                    fontSize: 12
+                )
+                shareOptionLabel("時間")
+                ChartSegmentedControl(
+                    options: [.sevenDays, .oneMonth, .threeMonths, .oneYear, .all, .custom],
+                    selection: $shareTrendTimeRange,
+                    label: { $0.rawValue },
+                    fontSize: 12
+                )
+                if shareTrendTimeRange == .custom {
+                    shareCustomDateRangeControls
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            case .pie:
+                shareOptionLabel("圓餅圖")
+                ChartSegmentedControl(
+                    options: PieChartDisplayMode.allCases,
+                    selection: $sharePieMode,
+                    label: { $0.rawValue },
+                    fontSize: 12
+                )
+                shareOptionLabel("顯示方式")
+                HStack(spacing: 8) {
+                    AssetsFilterChipButton(
+                        title: "群組",
+                        icon: "square.grid.2x2.fill",
+                        isActive: sharePieIsGroupingEnabled
+                    ) {
+                        sharePieIsGroupingEnabled = true
+                    }
+                    AssetsFilterChipButton(
+                        title: "明細",
+                        icon: "list.bullet",
+                        isActive: !sharePieIsGroupingEnabled
+                    ) {
+                        sharePieIsGroupingEnabled = false
+                    }
+                    AssetsFilterChipButton(
+                        title: "清單",
+                        icon: "list.bullet.rectangle",
+                        isActive: sharePieShowsLegend
+                    ) {
+                        sharePieShowsLegend.toggle()
+                    }
+                    AssetsFilterChipButton(
+                        title: "圖標",
+                        icon: "tag.fill",
+                        isActive: sharePieShowsSliceLabels
+                    ) {
+                        sharePieShowsSliceLabels.toggle()
+                    }
+                    Spacer(minLength: 0)
+                }
+            case .performance:
+                shareOptionLabel("績效")
+                ChartSegmentedControl(
+                    options: PerformanceDisplayMode.allCases,
+                    selection: $sharePerformanceMode,
+                    label: { $0.rawValue },
+                    fontSize: 12
+                )
+            }
+        }
+    }
+
+    private func shareOptionLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.caption.weight(.semibold))
+            .foregroundColor(.secondaryText)
+    }
+
+    private var shareCustomDateRangeControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            CustomDateRangeBar(
+                startDate: shareTrendCustomStart,
+                endDate: shareTrendCustomEnd,
+                onStartTapped: { activeShareCustomDateField = .start },
+                onEndTapped: { activeShareCustomDateField = .end }
+            )
+            
+            Text("自訂區間會套用在這次分享圖，不會改變首頁走勢圖設定。")
+                .font(.caption2)
+                .foregroundColor(.tertiaryText)
+        }
     }
 
     @ViewBuilder
@@ -324,6 +513,12 @@ struct HomeShareSheet: View {
     private var canUseImage: Bool {
         canShare && previewImage != nil
     }
+    
+    private var earliestShareTrendDate: Date {
+        trendPoints.map(\.date).min()
+            ?? Calendar.current.date(byAdding: .day, value: -120, to: Date())
+            ?? Date()
+    }
 
     private func loadSharePreferencesIfNeeded() {
         guard !hasLoadedSharePreferences else { return }
@@ -352,6 +547,12 @@ struct HomeShareSheet: View {
                 selectedKinds.insert(kind)
             }
             HomeSharePreferences.saveSelectedKinds(selectedKinds)
+        }
+    }
+    
+    private func normalizeShareCustomRange() {
+        if shareTrendCustomStart > shareTrendCustomEnd {
+            swap(&shareTrendCustomStart, &shareTrendCustomEnd)
         }
     }
 

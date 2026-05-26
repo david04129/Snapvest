@@ -183,7 +183,9 @@ enum SnapshotUpdater {
         holdingsBySymbol: [String: HoldingSnapshotItem]
     ) async throws -> [AssetPriceSnapshot] {
         var snapshots: [AssetPriceSnapshot] = []
-        if SupabaseConfig.isConfigured, !symbols.isEmpty {
+        let usesDemoPrices = priceService is DemoPriceService
+        let usesDemoData = (dataService as? MockDataService)?.isDemoModeActive == true
+        if SupabaseConfig.isConfigured, !symbols.isEmpty, !usesDemoPrices {
             snapshots = (try? await SupabasePriceService.fetchPrices(symbols: symbols)) ?? []
         } else if !symbols.isEmpty {
             snapshots = try await dataService.fetchAssetPriceSnapshots(symbols: symbols)
@@ -199,7 +201,19 @@ enum SnapshotUpdater {
             if snapshotByKey[key] != nil { continue }
             
             let currentPrice: Decimal?
-            if SupabaseConfig.isConfigured {
+            if usesDemoData {
+                if let realPrice = await SupabasePriceService.fetchDisplayPrice(
+                    assetType: symbolInfo.assetType,
+                    symbol: symbolInfo.symbol
+                ) {
+                    currentPrice = realPrice
+                } else {
+                    currentPrice = try await priceService.fetchCurrentPrice(
+                        assetType: symbolInfo.assetType,
+                        symbol: symbolInfo.symbol
+                    )
+                }
+            } else if SupabaseConfig.isConfigured, !usesDemoPrices {
                 currentPrice = await SupabasePriceService.fetchDisplayPrice(
                     assetType: symbolInfo.assetType,
                     symbol: symbolInfo.symbol

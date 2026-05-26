@@ -152,7 +152,7 @@ private struct HomeShareCompositeView: View {
     private var formattedDate: String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_TW")
-        formatter.dateFormat = "yyyy年M月d日 HH:mm"
+        formatter.dateFormat = "yyyy年M月d日"
         return formatter.string(from: config.generatedAt)
     }
 }

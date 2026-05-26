@@ -111,9 +111,9 @@ enum AccountType: String, Codable, CaseIterable {
         }
     }
     
-    /// 是否支援 CSV 匯入交易（台幣證券戶（複委托）、美金證券戶）
+    /// 是否支援 CSV 匯入交易（證券戶與加密貨幣戶）
     var supportsTransactionImport: Bool {
-        self == .twdSecurities || self == .usdAccount
+        self == .twdSecurities || self == .usdAccount || self == .cryptoWallet
     }
     
     /// 是否可從帳戶詳情新增買賣交易

@@ -12,6 +12,7 @@ struct TransactionsView: View {
     @EnvironmentObject private var portfolioViewModel: PortfolioViewModel
     @EnvironmentObject private var accountsViewModel: AccountsViewModel
     @EnvironmentObject private var assetsViewModel: AssetsViewModel
+    @Environment(\.openSettings) private var openSettings
     @StateObject private var viewModel = TransactionsViewModel()
     @State private var showingEditTransaction: Transaction?
     @State private var showingEditLiability = false
@@ -749,19 +750,7 @@ struct TransactionsView: View {
             
             Spacer()
             
-            // 右側：使用者頭像
-            Button(action: {
-                // TODO: 點擊後的功能
-            }) {
-                Circle()
-                    .fill(Color.appPrimary.opacity(0.2))
-                    .frame(width: 32, height: 32)
-                    .overlay {
-                        Image(systemName: "person.fill")
-                            .foregroundColor(.appPrimary)
-                            .font(.caption)
-                    }
-            }
+            AppHeaderMoreButton(action: openSettings)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)

@@ -8,10 +8,12 @@
 import SwiftUI
 
 struct AppRootView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var portfolioViewModel = PortfolioViewModel()
     @StateObject private var accountsViewModel = AccountsViewModel()
     @StateObject private var assetsViewModel = AssetsViewModel()
     @ObservedObject private var themeManager = ThemeManager.shared
+    @ObservedObject private var privacyLock = PrivacyLockManager.shared
     @State private var isLaunchComplete = false
     @State private var networkErrorMessage: String?
     @State private var blockedLaunchMessage: String?
@@ -22,17 +24,7 @@ struct AppRootView: View {
     
     var body: some View {
         Group {
-            if isLaunchComplete {
-                ContentView()
-                    .environmentObject(portfolioViewModel)
-                    .environmentObject(accountsViewModel)
-                    .environmentObject(assetsViewModel)
-                    .environmentObject(themeManager)
-                    .environmentObject(LaunchSessionState.shared)
-                    .environmentObject(DataFreshnessStore.shared)
-                    .snapDismissKeyboardOnTap()
-                    .transition(.opacity)
-            } else {
+            if !isLaunchComplete {
                 LaunchSplashView(
                     networkErrorMessage: networkErrorMessage,
                     blockedMessage: blockedLaunchMessage,
@@ -41,16 +33,30 @@ struct AppRootView: View {
                     onExitApp: exitApplication
                 )
                 .id(launchAttempt)
-                .transition(.opacity)
+            } else if privacyLock.isLocked {
+                PrivacyLockView()
+            } else {
+                ContentView()
+                    .environmentObject(portfolioViewModel)
+                    .environmentObject(accountsViewModel)
+                    .environmentObject(assetsViewModel)
+                    .environmentObject(themeManager)
+                    .environmentObject(LaunchSessionState.shared)
+                    .environmentObject(DataFreshnessStore.shared)
+                    .snapDismissKeyboardOnTap()
             }
         }
-        .id(themeManager.appearanceRefreshToken)
         .preferredColorScheme(themeManager.isDarkMode ? .dark : .light)
         .animation(.easeInOut(duration: 0.35), value: isLaunchComplete)
-        .animation(.easeInOut(duration: 0.28), value: themeManager.isDarkMode)
-        .animation(.easeInOut(duration: 0.22), value: themeManager.isRedUpGreenDown)
         .task(id: launchAttempt) {
             await runLaunchSequence()
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            privacyLock.handleScenePhase(newPhase, launchComplete: isLaunchComplete)
+        }
+        .onChange(of: isLaunchComplete) { _, launchComplete in
+            guard launchComplete else { return }
+            privacyLock.handleLaunchComplete()
         }
     }
     
@@ -64,7 +70,7 @@ struct AppRootView: View {
         
         guard await NetworkConnectivity.isConnected() else {
             networkErrorMessage = """
-            Snapvest 需要網路才能同步股價與資料。
+            Walleaf 需要網路才能同步股價與資料。
             請檢查 Wi‑Fi 或行動數據後重新開啟 App。
             """
             return
@@ -96,6 +102,7 @@ struct AppRootView: View {
         }
         
         try? await Task.sleep(for: LaunchSplashTiming.preTransitionHold)
+        privacyLock.prepareForProtectedPresentation()
         isLaunchComplete = true
     }
     

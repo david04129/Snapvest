@@ -39,6 +39,9 @@ struct HomeShareRenderConfig {
     let includePie: Bool
     let pieInputs: PieChartInputs?
     let pieMode: PieChartDisplayMode
+    let pieIsGroupingEnabled: Bool
+    let pieShowsLegend: Bool
+    let pieShowsSliceLabels: Bool
     /// 與首頁圓餅圖明細同步的群組展開狀態
     let pieExpandedGroupIds: Set<String>
     let totalAssets: Decimal
@@ -61,17 +64,16 @@ struct HomeShareRenderConfig {
             return trendPoints.count >= 2
         case .pie:
             guard let pieInputs else { return false }
-            let grouped = PieChartGroupingStore.shared.isGroupingEnabled
             let base = PieChartGroupingModeSupport.effectiveBaseItems(
                 mode: pieMode,
                 inputs: pieInputs,
-                isGroupingEnabled: grouped
+                isGroupingEnabled: pieIsGroupingEnabled
             )
             let display = PieChartGroupingEngine.applyGroups(
                 baseItems: base,
                 groups: PieChartGroupingStore.shared.groups,
                 mode: pieMode,
-                isGroupingEnabled: grouped
+                isGroupingEnabled: pieIsGroupingEnabled
             )
             return !display.isEmpty
         case .performance:
@@ -81,7 +83,7 @@ struct HomeShareRenderConfig {
                 inputs: pieInputs,
                 groups: groups,
                 pieMode: pieMode,
-                isGroupingEnabled: PieChartGroupingStore.shared.isGroupingEnabled
+                isGroupingEnabled: pieIsGroupingEnabled
             )
             return !rows.isEmpty
         }

@@ -10,31 +10,46 @@ import SwiftUI
 struct ContentView: View {
     @ObservedObject private var themeManager = ThemeManager.shared
     @ObservedObject private var pieGroupingStore = PieChartGroupingStore.shared
+    @ObservedObject private var privacy = HomePrivacyManager.shared
+    @ObservedObject private var demoMode = DemoModeManager.shared
     @EnvironmentObject private var launchSessionState: LaunchSessionState
     @EnvironmentObject private var dataFreshness: DataFreshnessStore
+    @EnvironmentObject private var portfolioViewModel: PortfolioViewModel
+    @EnvironmentObject private var accountsViewModel: AccountsViewModel
+    @EnvironmentObject private var assetsViewModel: AssetsViewModel
     @State private var selectedTab = 0
+    @State private var privacyBlockedTab: Int?
+    @State private var showsPrivacyModeTabAlert = false
+    @State private var isRevertingTabForPrivacy = false
+    @State private var isSettingsPresented = false
+    @State private var showsExitDemoModeAlert = false
     
     var body: some View {
         TabView(selection: $selectedTab) {
-            HomeView(selectedTab: $selectedTab)
+            HomeView(selectedTab: $selectedTab) {
+                isSettingsPresented = true
+            }
                 .tabItem {
                     Label("首頁", systemImage: "house.fill")
                 }
                 .tag(AppTab.home.rawValue)
             
             AccountsView(selectedTab: $selectedTab)
+                .environment(\.openSettings, { isSettingsPresented = true })
                 .tabItem {
                     Label("帳戶", systemImage: "building.columns.fill")
                 }
                 .tag(AppTab.accounts.rawValue)
             
             AssetsView(selectedTab: $selectedTab)
+                .environment(\.openSettings, { isSettingsPresented = true })
                 .tabItem {
                     Label("資產", systemImage: "chart.bar.fill")
                 }
                 .tag(AppTab.assets.rawValue)
             
             TransactionsView(selectedTab: $selectedTab)
+                .environment(\.openSettings, { isSettingsPresented = true })
                 .tabItem {
                     Label("紀錄", systemImage: "clock.fill")
                 }
@@ -44,6 +59,10 @@ struct ContentView: View {
         .tint(.appPrimary)
         .toolbarBackground(Color.cardBackground, for: .tabBar)
         .toolbarBackground(.visible, for: .tabBar)
+        .id(themeManager.appearanceRefreshToken)
+        .transaction { transaction in
+            transaction.animation = nil
+        }
         .safeAreaInset(edge: .top, spacing: 0) {
             if let notice = launchSessionState.startupNotice {
                 StartupNoticeBanner(message: notice) {
@@ -51,10 +70,29 @@ struct ContentView: View {
                 }
             }
         }
-        .id(themeManager.appearanceRefreshToken)
+        .overlay(alignment: .bottomTrailing) {
+            if demoMode.isEnabled {
+                DemoModeFloatingBadge {
+                    showsExitDemoModeAlert = true
+                }
+                    .padding(.trailing, 14)
+                    .padding(.bottom, 58)
+            }
+        }
         .onChange(of: selectedTab) { previousTab, newTab in
+            if isRevertingTabForPrivacy, newTab == AppTab.home.rawValue {
+                isRevertingTabForPrivacy = false
+                return
+            }
             if pieGroupingStore.isEditingGroups, newTab != previousTab {
                 selectedTab = previousTab
+                return
+            }
+            if privacy.isAmountHidden, newTab != AppTab.home.rawValue {
+                privacyBlockedTab = newTab
+                isRevertingTabForPrivacy = true
+                selectedTab = AppTab.home.rawValue
+                showsPrivacyModeTabAlert = true
                 return
             }
             NotificationCenter.default.post(
@@ -63,9 +101,77 @@ struct ContentView: View {
                 userInfo: [TabResignUserInfoKey.tabIndex: previousTab]
             )
         }
+        .onChange(of: privacy.isAmountHidden) { _, isHidden in
+            guard isHidden, selectedTab != AppTab.home.rawValue else { return }
+            privacyBlockedTab = selectedTab
+            isRevertingTabForPrivacy = true
+            selectedTab = AppTab.home.rawValue
+            showsPrivacyModeTabAlert = true
+        }
+        .alert("目前為隱藏金額模式", isPresented: $showsPrivacyModeTabAlert) {
+            Button("繼續隱藏", role: .cancel) {
+                privacyBlockedTab = nil
+            }
+            Button("關閉隱藏金額") {
+                let targetTab = privacyBlockedTab
+                privacyBlockedTab = nil
+                privacy.setAmountHidden(false)
+                if let targetTab {
+                    selectedTab = targetTab
+                }
+            }
+        } message: {
+            Text("為了避免顯示帳戶明細、持股成本與交易紀錄，隱藏金額模式下只能瀏覽首頁。若要查看其他頁面，請先關閉隱藏金額。")
+        }
+        .alert("結束示範模式？", isPresented: $showsExitDemoModeAlert) {
+            Button("取消", role: .cancel) {}
+            Button("結束示範模式", role: .destructive) {
+                Task { await demoMode.exitDemoMode() }
+            }
+        } message: {
+            Text("結束後會回到你的真實資料，沙盒中的操作不會保留。")
+        }
         .onAppear {
             dataFreshness.refresh()
         }
+        .onChange(of: demoMode.isEnabled) { _, _ in
+            Task {
+                await LaunchCoordinator.applyPersistedState(
+                    userId: AppUser.id,
+                    portfolioViewModel: portfolioViewModel,
+                    accountsViewModel: accountsViewModel,
+                    assetsViewModel: assetsViewModel,
+                    dataService: MockDataService.shared
+                )
+                dataFreshness.refresh()
+            }
+        }
+        .sheet(isPresented: $isSettingsPresented) {
+            SettingsView()
+        }
+    }
+}
+
+private struct DemoModeFloatingBadge: View {
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: "play.rectangle.fill")
+                    .font(.system(size: 12, weight: .bold))
+                
+                Text("示範模式")
+                    .font(.caption.weight(.bold))
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color.lossRed.opacity(0.94))
+            .clipShape(Capsule())
+            .shadow(color: AppColors.shadowLow, radius: 4, x: 0, y: 2)
+        }
+        .buttonStyle(.plain)
     }
 }
 

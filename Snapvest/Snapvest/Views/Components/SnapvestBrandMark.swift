@@ -9,7 +9,7 @@ import SwiftUI
 
 enum SnapvestBrand {
     static let logoImageName = "SnapvestLogo"
-    static let appName = "Snapvest"
+    static let appName = "Walleaf"
 }
 
 struct SnapvestBrandMark: View {

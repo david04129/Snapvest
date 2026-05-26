@@ -9,6 +9,7 @@ import SwiftUI
 
 struct HomeView: View {
     @Binding var selectedTab: Int
+    var onOpenSettings: () -> Void = {}
     @EnvironmentObject private var viewModel: PortfolioViewModel
     @EnvironmentObject private var accountsViewModel: AccountsViewModel
     @EnvironmentObject private var assetsViewModel: AssetsViewModel
@@ -155,27 +156,11 @@ struct HomeView: View {
                 HomeAmountPrivacyToggleButton()
                     .disabled(pieGroupingStore.isEditingGroups)
                     .opacity(pieGroupingStore.isEditingGroups ? 0.45 : 1)
-                MarketColorConventionToggleButton()
-                    .disabled(pieGroupingStore.isEditingGroups)
-                    .opacity(pieGroupingStore.isEditingGroups ? 0.45 : 1)
-                ThemeToggleButton()
-                    .disabled(pieGroupingStore.isEditingGroups)
-                    .opacity(pieGroupingStore.isEditingGroups ? 0.45 : 1)
             }
             
-            // 右側：使用者頭像
-            Button(action: {
-                // TODO: 點擊後的功能
-            }) {
-                Circle()
-                    .fill(Color.appPrimary.opacity(0.2))
-                    .frame(width: 32, height: 32)
-                    .overlay {
-                        Image(systemName: "person.fill")
-                            .foregroundColor(.appPrimary)
-                            .font(.caption)
-                    }
-            }
+            AppHeaderMoreButton(action: onOpenSettings)
+            .disabled(pieGroupingStore.isEditingGroups)
+            .opacity(pieGroupingStore.isEditingGroups ? 0.45 : 1)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)

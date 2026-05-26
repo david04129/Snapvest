@@ -27,7 +27,7 @@ final class ThemeManager: ObservableObject {
         }
     }
     
-    /// 供 ContentView 強制刷新整棵 UI 樹
+    /// 舊版曾供 ContentView 強制刷新整棵 UI 樹；目前保留相容但不再用於 View identity。
     var appearanceRefreshToken: String {
         "\(isDarkMode)-\(isRedUpGreenDown)"
     }
@@ -42,15 +42,21 @@ final class ThemeManager: ObservableObject {
     }
     
     func toggleDarkMode() {
-        withAnimation(.easeInOut(duration: 0.28)) {
-            isDarkMode.toggle()
-        }
+        isDarkMode.toggle()
+    }
+    
+    func setDarkMode(_ enabled: Bool) {
+        guard isDarkMode != enabled else { return }
+        isDarkMode = enabled
     }
     
     func toggleMarketColorConvention() {
-        withAnimation(.easeInOut(duration: 0.22)) {
-            isRedUpGreenDown.toggle()
-        }
+        isRedUpGreenDown.toggle()
+    }
+    
+    func setRedUpGreenDown(_ enabled: Bool) {
+        guard isRedUpGreenDown != enabled else { return }
+        isRedUpGreenDown = enabled
     }
     
     /// 舊 API 相容

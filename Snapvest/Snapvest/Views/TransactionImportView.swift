@@ -33,7 +33,10 @@ struct TransactionImportView: View {
     @State private var duplicateMatches: [Int: TransactionDuplicateMatch] = [:]
     @State private var duplicateImportOverrides: Set<Int> = []
     @State private var projectedHoldings: [ImportProjectedHolding] = []
-    @State private var holdingsCompareText: String = ""
+    
+    private var supportsStatementPrompt: Bool {
+        account.accountType != .cryptoWallet
+    }
     
     var body: some View {
         NavigationStack {
@@ -42,7 +45,6 @@ struct TransactionImportView: View {
                     VStack(alignment: .leading, spacing: 20) {
                         accountHeaderCard
                         flowStepsCard
-                        copyPromptButtons
                         pasteSection
                         
                         if let fatal = parseResult?.fatalError {
@@ -146,14 +148,20 @@ struct TransactionImportView: View {
             
             importFlowStep(
                 number: 1,
-                title: "複製提示詞（成交明細或持倉）",
+                title: "複製提示詞",
+                detail: supportsStatementPrompt
+                    ? "請依你手上的資料選一種。按下後會自動複製對應提示詞。"
+                    : "加密貨幣帳戶目前支援用持倉截圖或明細建立持倉。按下後會自動複製提示詞。",
                 isHighlighted: false
             )
+            
+            copyPromptOptions
+                .padding(.leading, 36)
             
             importFlowStep(
                 number: 2,
                 title: "到外部 AI 轉成 CSV",
-                detail: "流水用「成交明細提示詞」；只有持倉截圖用「持倉建倉提示詞」。附上 PDF／Excel／照片即可。",
+                detail: "把剛剛複製的提示詞貼到 ChatGPT、Gemini 等工具，再附上檔案或截圖。",
                 footnote: "可用 ChatGPT、Gemini…",
                 isHighlighted: true
             )
@@ -214,20 +222,27 @@ struct TransactionImportView: View {
         }
     }
     
-    private var copyPromptButtons: some View {
-        VStack(spacing: 10) {
-            copyPromptButton(
-                title: didCopyStatementPrompt ? "已複製成交明細提示詞" : "複製成交明細提示詞",
-                systemImage: didCopyStatementPrompt ? "checkmark.circle.fill" : "list.bullet.rectangle"
-            ) {
-                UIPasteboard.general.string = Self.statementPromptTemplate(account: account)
-                flashCopiedPrompt(.statement)
+    private var copyPromptOptions: some View {
+        VStack(spacing: 8) {
+            if supportsStatementPrompt {
+                copyPromptOptionButton(
+                    title: "成交明細檔案或截圖",
+                    subtitle: "適合券商匯出的成交紀錄、對帳單、PDF、Excel 或截圖",
+                    isCopied: didCopyStatementPrompt,
+                    systemImage: "list.bullet.rectangle"
+                ) {
+                    UIPasteboard.general.string = Self.statementPromptTemplate(account: account)
+                    flashCopiedPrompt(.statement)
+                }
             }
             
-            copyPromptButton(
-                title: didCopyHoldingsPrompt ? "已複製持倉建倉提示詞" : "複製持倉建倉提示詞",
-                systemImage: didCopyHoldingsPrompt ? "checkmark.circle.fill" : "photo.on.rectangle",
-                prominent: false
+            copyPromptOptionButton(
+                title: account.accountType == .cryptoWallet ? "加密貨幣持倉截圖或明細" : "持倉截圖或明細",
+                subtitle: account.accountType == .cryptoWallet
+                    ? "適合交易所資產頁、現貨帳戶截圖或幣種持倉列表"
+                    : "適合只有目前庫存、持股明細或資產列表，沒有完整成交流水",
+                isCopied: didCopyHoldingsPrompt,
+                systemImage: "photo.on.rectangle"
             ) {
                 UIPasteboard.general.string = Self.holdingsSnapshotPromptTemplate(account: account)
                 flashCopiedPrompt(.holdings)
@@ -237,32 +252,46 @@ struct TransactionImportView: View {
     
     private enum CopiedPromptKind { case statement, holdings }
     
-    @ViewBuilder
-    private func copyPromptButton(
+    private func copyPromptOptionButton(
         title: String,
+        subtitle: String,
+        isCopied: Bool,
         systemImage: String,
-        prominent: Bool = true,
         action: @escaping () -> Void
     ) -> some View {
-        if prominent {
-            Button(action: action) {
-                Label(title, systemImage: systemImage)
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 4)
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: isCopied ? "checkmark.circle.fill" : systemImage)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(.appPrimary)
+                    .frame(width: 24)
+                
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(isCopied ? "已複製提示詞" : title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.primaryText)
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                
+                Spacer(minLength: 8)
+                
+                Image(systemName: "doc.on.doc")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.secondaryText)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.appPrimary)
-        } else {
-            Button(action: action) {
-                Label(title, systemImage: systemImage)
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 4)
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isCopied ? Color.appPrimary.opacity(0.12) : Color.secondaryBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(isCopied ? Color.appPrimary.opacity(0.35) : Color.separator.opacity(0.4), lineWidth: 1)
             }
-            .buttonStyle(.bordered)
-            .tint(.appPrimary)
         }
+        .buttonStyle(.plain)
     }
     
     private func flashCopiedPrompt(_ kind: CopiedPromptKind) {
@@ -481,97 +510,68 @@ struct TransactionImportView: View {
         .shadow(color: AppColors.shadowMedium, radius: 8, x: 0, y: 2)
     }
     
-    private var holdingsCompareDiffs: [HoldingsCompareDiff] {
-        let stated = HoldingsCompareParser.parse(holdingsCompareText, defaultAssetType: nil)
-        guard !stated.isEmpty else { return [] }
-        return HoldingsCompareParser.compare(
-            projected: projectedHoldings,
-            stated: stated,
-            account: account
-        )
-    }
-    
     private var holdingsCompareSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("持倉對照（選填）")
-                .font(.subheadline)
-                .fontWeight(.semibold)
-                .foregroundColor(.primaryText)
-            
-            Text("貼上券商 App 目前持倉（symbol,quantity），與下方「匯入後預期持股」比對。")
-                .font(.caption)
-                .foregroundColor(.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
-            
-            TextEditor(text: $holdingsCompareText)
-                .font(.system(.caption, design: .monospaced))
-                .frame(minHeight: 72)
-                .padding(8)
-                .scrollContentBackground(.hidden)
-                .background(Color.secondaryBackground.opacity(0.6))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            
-            VStack(alignment: .leading, spacing: 6) {
-                Text("匯入後預期持股")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.secondaryText)
-                if projectedHoldings.isEmpty {
-                    Text("—")
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "chart.pie.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.appPrimary)
+                    .frame(width: 28, height: 28)
+                    .background(Color.appPrimary.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("匯入後預計持股")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.primaryText)
+                    Text("依照既有交易與本次預覽，匯入後帳戶會留下的數量。")
                         .font(.caption)
-                        .foregroundColor(.tertiaryText)
-                } else {
-                    ForEach(projectedHoldings) { holding in
-                        HStack {
-                            Text(holding.symbol)
-                                .font(.caption)
-                                .fontWeight(.medium)
-                            Spacer()
-                            Text(holding.quantity.formattedQuantityInput(
-                                maxFractionDigits: holding.assetType == .crypto ? 8 : 4
-                            ))
-                                .font(.caption)
-                                .monospacedDigit()
-                        }
-                    }
+                        .foregroundColor(.secondaryText)
                 }
             }
             
-            if !holdingsCompareDiffs.isEmpty {
-                let allMatch = holdingsCompareDiffs.allSatisfy(\.matches)
-                HStack(spacing: 6) {
-                    Image(systemName: allMatch ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                        .foregroundColor(allMatch ? .profitGreen : .orange)
-                    Text(allMatch ? "與你提供的持倉一致" : "與你提供的持倉有差異（請檢查流水或代號）")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(allMatch ? .profitGreen : .orange)
-                }
-                
-                ForEach(holdingsCompareDiffs.filter { !$0.matches }) { diff in
-                    HStack {
-                        Text(diff.symbol)
-                            .font(.caption)
-                        Spacer()
-                        Text("匯入 \(diff.projected.map { formatCompareQty($0) } ?? "—")")
-                            .font(.caption2)
-                        Text("／")
-                            .font(.caption2)
-                            .foregroundColor(.tertiaryText)
-                        Text("提供 \(diff.stated.map { formatCompareQty($0) } ?? "—")")
-                            .font(.caption2)
+            VStack(spacing: 8) {
+                if projectedHoldings.isEmpty {
+                    Text("—")
+                        .font(.subheadline)
+                        .foregroundColor(.tertiaryText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    ForEach(projectedHoldings) { holding in
+                        HStack(spacing: 10) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(holding.symbol)
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundColor(.primaryText)
+                                Text(holding.assetType.displayName)
+                                    .font(.caption2)
+                                    .foregroundColor(.secondaryText)
+                            }
+                            
+                            Spacer()
+                            
+                            Text(projectedHoldingQuantityText(holding))
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(.appPrimary)
+                                .monospacedDigit()
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(Color.cardBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
-                    .foregroundColor(.secondaryText)
                 }
             }
         }
-        .padding(12)
+        .padding(14)
         .background(Color.secondaryBackground.opacity(0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
     
-    private func formatCompareQty(_ value: Decimal) -> String {
-        value.formattedQuantityInput(maxFractionDigits: 8)
+    private func projectedHoldingQuantityText(_ holding: ImportProjectedHolding) -> String {
+        let digits = holding.assetType == .crypto ? 8 : 4
+        let unit = holding.assetType == .crypto ? "單位" : "股"
+        return "\(holding.quantity.formattedQuantityInput(maxFractionDigits: digits)) \(unit)"
     }
     
     private var previewErrorSection: some View {
@@ -797,6 +797,10 @@ struct TransactionImportView: View {
                 onImportDraftSave: { updated in
                     applyDraftUpdate(lineNumber: item.lineNumber, updated: updated)
                 },
+                onImportDraftRemove: {
+                    removeRowFromPreview(lineNumber: item.lineNumber)
+                    importBuyDraftItem = nil
+                },
                 onSubmit: {
                     importBuyDraftItem = nil
                 }
@@ -826,6 +830,10 @@ struct TransactionImportView: View {
                 isImportDraftMode: true,
                 onImportDraftSave: { updated in
                     applyDraftUpdate(lineNumber: item.lineNumber, updated: updated)
+                },
+                onImportDraftRemove: {
+                    removeRowFromPreview(lineNumber: item.lineNumber)
+                    importSellDraftItem = nil
                 },
                 onSubmit: { _ in
                     importSellDraftItem = nil
@@ -995,7 +1003,7 @@ struct TransactionImportView: View {
         }
         
         return """
-        Convert the trade history / brokerage statement into Snapvest CSV.
+        Convert the trade history / brokerage statement into Walleaf CSV.
         Output RAW CSV only (header + data rows). No markdown, no explanation.
 
         Rules:
@@ -1031,21 +1039,35 @@ struct TransactionImportView: View {
         case .usdAccount:
             accountHint = "asset_type=stock_us, price=USD per share."
             example = "\(csvHeader)\n\(today),buy,stock_us,VOO,1.5,520,,0,,,"
+        case .cryptoWallet:
+            accountHint = """
+            asset_type=crypto only.
+            symbol: use uppercase crypto tickers from the screenshot, e.g. BTC, ETH, SOL, USDT.
+            quantity: exact coin amount shown.
+            price: USD/USDT cost per coin or average cost. If only total cost is shown, compute price = total cost / quantity. If cost is truly unavailable, use current value / quantity and add notes="缺少成本價，使用目前估值".
+            currency: leave empty or use USD.
+            fee: 0 unless the image clearly shows a fee.
+            """
+            example = "\(csvHeader)\n\(today),buy,crypto,BTC,0.03634362,87283.68,,0,,,,false\n\(today),buy,crypto,USDT,0.4825466,1,,0,,,,false"
         default:
             accountHint = "Set asset_type per holding."
             example = "\(csvHeader)\n\(today),buy,stock_tw,2330,10,100,,0,,,"
         }
         
+        let title = account.accountType == .cryptoWallet
+            ? "Extract CURRENT crypto holdings from the exchange screenshot / asset page into Walleaf CSV."
+            : "Extract CURRENT holdings from the screenshot / portfolio view into Walleaf CSV."
+        
         return """
-        Extract CURRENT holdings from the screenshot / portfolio view into Snapvest CSV.
+        \(title)
         Output RAW CSV only (header + rows). No markdown, no explanation.
 
         Rules:
         - Header exactly: \(csvHeader)
         - type: buy ONLY (one row per held symbol)
         - date: use \(today) unless the image shows another as-of date (YYYY-MM-DD)
-        - quantity: shares held now
-        - price: cost per share or average cost; REQUIRED, > 0. If unknown, leave price empty.
+        - quantity: units held now
+        - price: cost per unit or average cost; REQUIRED, > 0. If unknown, follow the account-specific rule below.
         - Do NOT invent sell rows or trade history.
         - Leave optional fields empty (keep commas).
 

@@ -14,6 +14,7 @@ struct LaunchSplashView: View {
     var onRetryLaunch: () -> Void = {}
     var onExitApp: () -> Void = {}
     
+    @ObservedObject private var theme = ThemeManager.shared
     @State private var logoOpacity: Double = 0
     @State private var logoScale: CGFloat = 0.94
     @State private var breathScale: CGFloat = 1
@@ -63,7 +64,7 @@ struct LaunchSplashView: View {
                 .fill(
                     RadialGradient(
                         colors: [
-                            AppColors.appPrimary.opacity(glowOpacity),
+                            splashGlowColor.opacity(glowOpacity),
                             AppColors.appPrimary.opacity(0)
                         ],
                         center: .center,
@@ -74,6 +75,14 @@ struct LaunchSplashView: View {
                 .frame(width: 196, height: 196)
                 .blur(radius: 24)
                 .scaleEffect(glowScale)
+            
+            if !theme.isDarkMode {
+                Circle()
+                    .fill(Color.white.opacity(0.72))
+                    .frame(width: 150, height: 150)
+                    .blur(radius: 18)
+                    .scaleEffect(glowScale * 0.94)
+            }
             
             SnapvestBrandMark(
                 iconSize: 92,
@@ -88,13 +97,13 @@ struct LaunchSplashView: View {
     
     private var ambientBackground: some View {
         ZStack {
-            Color.mainBackground
+            splashBaseBackground
                 .ignoresSafeArea()
             
             RadialGradient(
                 colors: [
-                    AppColors.appPrimary.opacity(0.07),
-                    AppColors.appPrimary.opacity(0.02),
+                    splashAmbientColor.opacity(theme.isDarkMode ? 0.07 : 0.035),
+                    splashAmbientColor.opacity(theme.isDarkMode ? 0.02 : 0.012),
                     Color.clear
                 ],
                 center: UnitPoint(x: 0.5 + gradientPhase * 0.04, y: 0.42),
@@ -103,6 +112,18 @@ struct LaunchSplashView: View {
             )
             .ignoresSafeArea()
         }
+    }
+    
+    private var splashBaseBackground: Color {
+        theme.isDarkMode ? Color.mainBackground : Color(hex: "#F7FAF5")
+    }
+    
+    private var splashAmbientColor: Color {
+        theme.isDarkMode ? AppColors.appPrimary : Color(hex: "#B7E99A")
+    }
+    
+    private var splashGlowColor: Color {
+        theme.isDarkMode ? AppColors.appPrimary : Color(hex: "#B7E99A")
     }
     
     private func fatalErrorContent(
@@ -164,7 +185,7 @@ struct LaunchSplashView: View {
         logoOpacity = 0
         logoScale = 0.94
         breathScale = 0.94
-        glowOpacity = 0.1
+        glowOpacity = theme.isDarkMode ? 0.1 : 0.05
         glowScale = 0.86
         
         withAnimation(.easeOut(duration: 0.55)) {
@@ -181,7 +202,7 @@ struct LaunchSplashView: View {
             await MainActor.run {
                 withAnimation(.easeInOut(duration: 1.25).repeatForever(autoreverses: true)) {
                     breathScale = 1.14
-                    glowOpacity = 0.58
+                    glowOpacity = theme.isDarkMode ? 0.58 : 0.24
                     glowScale = 1.28
                 }
             }

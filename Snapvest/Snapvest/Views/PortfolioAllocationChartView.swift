@@ -1318,6 +1318,7 @@ struct PortfolioGroupedAllocationLegend: View {
 
     @ViewBuilder
     private func memberRowContent(groupId: UUID, member: PieChartDataItem, inGroupCard: Bool = false) -> some View {
+        let pct = (NSDecimalNumber(decimal: member.marketValue).doubleValue / totalDouble) * 100
         HStack(spacing: 12) {
             Spacer().frame(width: memberRowIndent)
             Circle().fill(member.color).frame(width: 10, height: 10)
@@ -1326,15 +1327,14 @@ struct PortfolioGroupedAllocationLegend: View {
                 .foregroundColor(.primaryText)
             Spacer()
             if isEditingGroups, isGroupingEnabled {
+                valueColumn(pct: pct, marketValue: member.marketValue)
                 Button("移除") {
                     onRemoveMember(groupId, member.id)
                 }
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundColor(.lossRed)
-            } else if !hideHomeAmounts {
-                Text(member.marketValue.formatted(currency: .TWD, fractionDigits: 0))
-                    .font(.system(size: 13))
-                    .foregroundColor(.secondaryText)
+            } else {
+                valueColumn(pct: pct, marketValue: member.marketValue)
             }
         }
         .padding(.horizontal, inGroupCard ? 4 : 12)

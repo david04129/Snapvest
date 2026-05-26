@@ -508,6 +508,7 @@ final class PieChartGroupingStore: ObservableObject {
     @Published var isEditingGroups = false
 
     private var userId: String = AppUser.id
+    private var isUsingTransientDemoDefaults = false
 
     var isGroupingEnabled: Bool { displayMode == .grouped }
 
@@ -521,9 +522,18 @@ final class PieChartGroupingStore: ObservableObject {
 
     func reload(for userId: String) {
         self.userId = userId
+        isUsingTransientDemoDefaults = false
         groups = Self.loadGroups(userId: userId)
         displayMode = Self.loadDisplayMode(userId: userId)
         expandedLegendGroupIds = Self.loadExpandedLegendGroupIds(userId: userId)
+    }
+    
+    func applyDemoDefaults() {
+        isUsingTransientDemoDefaults = true
+        groups = Self.demoDefaultGroups
+        displayMode = .grouped
+        expandedLegendGroupIds = Set(Self.demoDefaultGroups.map { PieChartGroupingEngine.groupSliceId($0.id) })
+        isEditingGroups = false
     }
 
     func setExpandedLegendGroupIds(_ ids: Set<String>) {
@@ -575,6 +585,7 @@ final class PieChartGroupingStore: ObservableObject {
     }
 
     private func persistGroups() {
+        guard !isUsingTransientDemoDefaults else { return }
         let key = Self.groupsStorageKey(userId: userId)
         if let data = try? JSONEncoder().encode(groups) {
             UserDefaults.standard.set(data, forKey: key)
@@ -582,11 +593,42 @@ final class PieChartGroupingStore: ObservableObject {
     }
 
     private func persistDisplayMode() {
+        guard !isUsingTransientDemoDefaults else { return }
         UserDefaults.standard.set(displayMode.rawValue, forKey: Self.displayModeStorageKey(userId: userId))
     }
 
     private static func groupsStorageKey(userId: String) -> String {
         "pieChartGroups_\(userId)"
+    }
+    
+    private static var demoDefaultGroups: [PieChartItemGroup] {
+        [
+            PieChartItemGroup(
+                id: UUID(uuidString: "10000000-0000-0000-0000-000000000001")!,
+                name: "現金部位",
+                memberItemIds: ["twd_cash", "usd_cash"]
+            ),
+            PieChartItemGroup(
+                id: UUID(uuidString: "10000000-0000-0000-0000-000000000002")!,
+                name: "指數 ETF",
+                memberItemIds: ["stock_tw_0050", "stock_us_VOO"]
+            ),
+            PieChartItemGroup(
+                id: UUID(uuidString: "10000000-0000-0000-0000-000000000003")!,
+                name: "台股權值",
+                memberItemIds: ["stock_tw_2330", "stock_tw_2317"]
+            ),
+            PieChartItemGroup(
+                id: UUID(uuidString: "10000000-0000-0000-0000-000000000004")!,
+                name: "美股科技",
+                memberItemIds: ["stock_us_AAPL", "stock_us_NVDA", "stock_us_MSFT"]
+            ),
+            PieChartItemGroup(
+                id: UUID(uuidString: "10000000-0000-0000-0000-000000000005")!,
+                name: "加密資產",
+                memberItemIds: ["crypto_BTC", "crypto_ETH", "crypto_USDT"]
+            )
+        ]
     }
 
     private static func displayModeStorageKey(userId: String) -> String {
@@ -598,6 +640,7 @@ final class PieChartGroupingStore: ObservableObject {
     }
 
     private func persistExpandedLegendGroupIds() {
+        guard !isUsingTransientDemoDefaults else { return }
         UserDefaults.standard.set(
             Array(expandedLegendGroupIds),
             forKey: Self.expandedLegendStorageKey(userId: userId)

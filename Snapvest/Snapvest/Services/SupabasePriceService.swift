@@ -146,7 +146,6 @@ struct SupabasePriceService {
         }
         return nil
     }
-    
     /// 與 DB / Edge Function 一致的代號格式（加密、美股大寫；台股保留原樣）
     static func normalizeSymbol(assetType: AssetType, symbol: String) -> String {
         let trimmed = symbol.trimmingCharacters(in: .whitespacesAndNewlines)

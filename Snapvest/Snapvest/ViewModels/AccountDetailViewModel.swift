@@ -16,7 +16,7 @@ class AccountDetailViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var displayCurrency: Currency = .TWD
-    @Published var exchangeRate: Decimal = 32 // USD to TWD 匯率
+    @Published var exchangeRate: Decimal = 0 // USD to TWD 匯率
     
     private(set) var hasLoadedOnce = false
     

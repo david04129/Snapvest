@@ -14,7 +14,7 @@ struct HoldingDetailView: View {
     let totalInvestments: Decimal
     
     @Environment(\.dismiss) private var dismiss
-    @State private var usdToTwdRate: Decimal = ExchangeRateSessionCache.usdToTwd ?? 32
+    @State private var usdToTwdRate: Decimal = ExchangeRateSessionCache.usdToTwd ?? 0
     @State private var activeTradeSheet: HoldingTradeSheet?
     @State private var metricAmountDisplay: MetricAmountDisplay
     
@@ -329,7 +329,7 @@ struct HoldingDetailView: View {
             if let cached = ExchangeRateSessionCache.usdToTwd, cached > 0 {
                 usdToTwdRate = cached
             } else if usdToTwdRate <= 0 {
-                usdToTwdRate = (try? await MockDataService.shared.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate) ?? 32
+                usdToTwdRate = (try? await MockDataService.shared.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate) ?? 0
             }
         }
         .sheet(item: $activeTradeSheet) { sheet in
@@ -670,7 +670,7 @@ struct HoldingFIFOLotsTableSection: View {
     let currency: Currency
     let currentPrice: Decimal?
     var amountDisplay: HoldingDetailView.MetricAmountDisplay = .original
-    var usdToTwdRate: Decimal = 32
+    var usdToTwdRate: Decimal = 0
 
     @State private var buyDateSort: HoldingsMarketValueSort = .descending
     @State private var sortByAccountFirst = false

@@ -2,8 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CFBundleDisplayName</key>
+	<string>Walleaf</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Snapvest 需要將分享圖儲存到您的相簿。</string>
+	<string>Walleaf 需要將分享圖儲存到您的相簿。</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Walleaf 需要使用 Face ID 來保護您的資產與交易資訊。</string>
 	<key>SNAPVEST_USER_ID</key>
 	<string>test.david</string>
 	<key>SUPABASE_ANON_KEY</key>

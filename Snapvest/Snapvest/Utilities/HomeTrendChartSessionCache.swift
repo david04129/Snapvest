@@ -10,6 +10,12 @@ import Foundation
 
 @MainActor
 enum HomeTrendChartSessionCache {
+    struct Snapshot {
+        let historicalPoints: [TrendChartPoint]
+        let loadFailed: Bool
+        let cachedUserId: String?
+    }
+    
     private(set) static var historicalPoints: [TrendChartPoint] = []
     private(set) static var loadFailed = false
     private static var cachedUserId: String?
@@ -22,6 +28,20 @@ enum HomeTrendChartSessionCache {
         cachedUserId = userId
         historicalPoints = points
         loadFailed = failed
+    }
+    
+    static func snapshot() -> Snapshot {
+        Snapshot(
+            historicalPoints: historicalPoints,
+            loadFailed: loadFailed,
+            cachedUserId: cachedUserId
+        )
+    }
+    
+    static func restore(_ snapshot: Snapshot) {
+        cachedUserId = snapshot.cachedUserId
+        historicalPoints = snapshot.historicalPoints
+        loadFailed = snapshot.loadFailed
     }
 
     static func invalidate() {

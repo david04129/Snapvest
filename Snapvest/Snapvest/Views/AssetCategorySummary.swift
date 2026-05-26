@@ -223,32 +223,49 @@ struct AccountsCurrencyControlsBar: View {
     }
     
     var body: some View {
-        HStack(spacing: 8) {
-            if showsEditControl, let onEditTapped {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                if showsEditControl, let onEditTapped {
+                    AssetsFilterChipButton(
+                        title: isEditingOrder ? "完成" : "編輯排序",
+                        icon: isEditingOrder ? "checkmark" : "square.and.pencil",
+                        isActive: !isEditDisabled
+                    ) {
+                        onEditTapped()
+                    }
+                    .disabled(isEditDisabled)
+                    .opacity(isEditDisabled ? 0.45 : 1)
+                }
+                
+                Spacer(minLength: 0)
+                
                 AssetsFilterChipButton(
-                    title: isEditingOrder ? "完成" : "編輯",
-                    icon: isEditingOrder ? "checkmark" : "line.3.horizontal",
-                    isActive: isEditingOrder
+                    title: currencyDisplay.label,
+                    icon: currencyIcon,
+                    isActive: true
                 ) {
-                    onEditTapped()
+                    withAnimation(ChartMotion.switchSpring) {
+                        currencyDisplay = currencyDisplay == .twd ? .original : .twd
+                    }
                 }
-                .disabled(isEditDisabled)
-                .opacity(isEditDisabled ? 0.45 : 1)
+                .disabled(isEditingOrder)
+                .opacity(isEditingOrder ? 0.45 : 1)
+                .animation(ChartMotion.switchSpring, value: currencyDisplay)
             }
             
-            Spacer(minLength: 0)
-            
-            AssetsFilterChipButton(
-                title: currencyDisplay.label,
-                icon: currencyIcon,
-                isActive: true
-            ) {
-                withAnimation(ChartMotion.switchSpring) {
-                    currencyDisplay = currencyDisplay == .twd ? .original : .twd
+            if isEditingOrder {
+                HStack(spacing: 6) {
+                    Image(systemName: "hand.draw.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("正在編輯帳戶排序，拖曳帳戶右側控制點調整順序，完成後才能進行其他操作。")
+                        .font(.system(size: 12))
                 }
+                .foregroundColor(.secondaryText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
-            .animation(ChartMotion.switchSpring, value: currencyDisplay)
         }
+        .animation(ChartMotion.switchSpring, value: isEditingOrder)
     }
 }
 

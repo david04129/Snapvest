@@ -63,4 +63,11 @@ final class HomePrivacyManager: ObservableObject {
             isAmountHidden.toggle()
         }
     }
+
+    func setAmountHidden(_ hidden: Bool) {
+        guard isAmountHidden != hidden else { return }
+        withAnimation(.easeInOut(duration: 0.22)) {
+            isAmountHidden = hidden
+        }
+    }
 }

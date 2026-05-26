@@ -148,7 +148,7 @@ struct HomePieChartShareCard: View {
     private var inputs: PieChartInputs? { config.pieInputs }
 
     private var isGroupingEnabled: Bool {
-        PieChartGroupingStore.shared.isGroupingEnabled
+        config.pieIsGroupingEnabled
     }
     
     private var baseItems: [PieChartDataItem] {
@@ -200,39 +200,198 @@ struct HomePieChartShareCard: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 32)
             } else {
-                PortfolioDonutChart(
+                HomeShareLabeledDonutChart(
                     data: displayItems,
                     denominator: denominator,
-                    selectedId: .constant(displayItems.max(by: { $0.value < $1.value })?.id),
-                    displayMode: config.pieMode,
-                    isGroupingEnabled: PieChartGroupingStore.shared.isGroupingEnabled
+                    centerTitle: config.pieMode.rawValue,
+                    showsSliceLabels: config.pieShowsSliceLabels
                 )
-                .padding(.vertical, 4)
+                .padding(.top, 4)
+                .padding(.bottom, 2)
 
-                PortfolioGroupedAllocationLegend(
-                    rows: legendRows,
-                    displayMode: config.pieMode,
-                    denominator: denominator,
-                    selectedId: .constant(displayItems.max(by: { $0.value < $1.value })?.id),
-                    isGroupingEnabled: PieChartGroupingStore.shared.isGroupingEnabled,
-                    isEditingGroups: false,
-                    selectedMemberIds: .constant([]),
-                    expandedGroupIds: .constant(config.pieExpandedGroupIds),
-                    addToGroupId: .constant(nil),
-                    selectionEditCategory: .constant(nil),
-                    onRenameGroup: { _ in },
-                    onRequestDissolveGroup: { _ in },
-                    onRemoveMember: { _, _ in },
-                    onToggleAddToGroup: { _ in },
-                    onToggleMemberSelection: { _ in },
-                    showsGroupActions: false
-                )
-                .padding(.horizontal, 12)
-                .padding(.bottom, 12)
+                if config.pieShowsLegend {
+                    PortfolioGroupedAllocationLegend(
+                        rows: legendRows,
+                        displayMode: config.pieMode,
+                        denominator: denominator,
+                        selectedId: .constant(nil),
+                        isGroupingEnabled: config.pieIsGroupingEnabled,
+                        isEditingGroups: false,
+                        selectedMemberIds: .constant([]),
+                        expandedGroupIds: .constant(config.pieExpandedGroupIds),
+                        addToGroupId: .constant(nil),
+                        selectionEditCategory: .constant(nil),
+                        onRenameGroup: { _ in },
+                        onRequestDissolveGroup: { _ in },
+                        onRemoveMember: { _, _ in },
+                        onToggleAddToGroup: { _ in },
+                        onToggleMemberSelection: { _ in },
+                        showsGroupActions: false
+                    )
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 12)
+                } else {
+                    Spacer(minLength: 10)
+                }
             }
         }
         .background(Color.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+}
+
+private struct HomeShareLabeledDonutChart: View {
+    let data: [PieChartDataItem]
+    let denominator: Decimal
+    let centerTitle: String
+    let showsSliceLabels: Bool
+
+    private let chartSize: CGFloat = 196
+    private let chartAreaHeight: CGFloat = 250
+    private let innerRadiusRatio: CGFloat = 0.78
+    private let labelWidth: CGFloat = 104
+
+    private var totalDouble: Double {
+        max(NSDecimalNumber(decimal: denominator).doubleValue, 0.001)
+    }
+
+    private var chartTotalDouble: Double {
+        max(data.reduce(0.0) { $0 + $1.value }, 0.001)
+    }
+
+    private var labelCandidates: [HomeSharePieSliceLabel] {
+        var startAngle: Double = 0
+        let candidates = data.compactMap { item -> HomeSharePieSliceLabel? in
+            let pct = item.value / totalDouble
+            let span = max((item.value / chartTotalDouble) * 360, 0)
+            defer { startAngle += span }
+
+            guard pct > 0.05 else { return nil }
+            return HomeSharePieSliceLabel(
+                item: item,
+                percentage: pct,
+                midAngleDegrees: startAngle + span / 2
+            )
+        }
+
+        return candidates
+            .sorted { $0.percentage > $1.percentage }
+            .reduce(into: [HomeSharePieSliceLabel]()) { accepted, label in
+                let sameSideLabels = accepted.filter { $0.isRightSide == label.isRightSide }
+                guard sameSideLabels.allSatisfy({ abs($0.verticalOffset - label.verticalOffset) >= 26 }) else { return }
+                accepted.append(label)
+            }
+            .sorted { $0.midAngleDegrees < $1.midAngleDegrees }
+    }
+
+    var body: some View {
+        ZStack {
+            chart
+                .frame(width: chartSize, height: chartSize)
+
+            centerSummary
+                .frame(width: chartSize * innerRadiusRatio * 1.18)
+
+            if showsSliceLabels {
+                ForEach(labelCandidates) { label in
+                    labelCallout(label)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: chartAreaHeight)
+    }
+
+    private var chart: some View {
+        Chart {
+            ForEach(data) { item in
+                SectorMark(
+                    angle: .value("配置", item.value),
+                    innerRadius: .ratio(innerRadiusRatio),
+                    outerRadius: .ratio(1.0),
+                    angularInset: 2.0
+                )
+                .foregroundStyle(item.color)
+            }
+        }
+        .chartLegend(.hidden)
+        .transaction { transaction in
+            transaction.animation = nil
+        }
+    }
+
+    @ViewBuilder
+    private var centerSummary: some View {
+        VStack(spacing: 4) {
+            Text(centerTitle)
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(.primaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+            Text("配置")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.secondaryText)
+        }
+    }
+
+    private func labelCallout(_ label: HomeSharePieSliceLabel) -> some View {
+        GeometryReader { geometry in
+            let center = CGPoint(x: geometry.size.width / 2, y: geometry.size.height / 2)
+            let textX = label.isRightSide
+                ? center.x + chartSize / 2 + 28
+                : center.x - chartSize / 2 - 28
+            let textY = min(max(center.y + label.verticalOffset, 30), chartAreaHeight - 30)
+
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(label.item.color)
+                    .frame(width: 6, height: 6)
+
+                Text(labelText(for: label))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.primaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            .padding(.horizontal, 7)
+            .padding(.vertical, 5)
+            .frame(width: labelWidth, alignment: label.isRightSide ? .leading : .trailing)
+            .background(Color.cardBackground.opacity(0.94))
+            .clipShape(Capsule())
+            .position(x: textX, y: textY)
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func labelText(for label: HomeSharePieSliceLabel) -> String {
+        "\(shortName(label.item.name)) \(percentText(label.percentage, fractionDigits: 0))"
+    }
+
+    private func shortName(_ name: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count > 6 else { return trimmed }
+        return String(trimmed.prefix(6))
+    }
+
+    private func percentText(_ value: Double, fractionDigits: Int) -> String {
+        String(format: "%.\(fractionDigits)f%%", value * 100)
+    }
+
+}
+
+private struct HomeSharePieSliceLabel: Identifiable {
+    let item: PieChartDataItem
+    let percentage: Double
+    let midAngleDegrees: Double
+
+    var id: String { item.id }
+
+    var isRightSide: Bool {
+        midAngleDegrees < 180
+    }
+
+    var verticalOffset: CGFloat {
+        CGFloat(-cos(midAngleDegrees * .pi / 180)) * 88
     }
 }
 
@@ -249,7 +408,7 @@ struct HomePerformanceChartShareCard: View {
             inputs: inputs,
             groups: groups,
             pieMode: config.pieMode,
-            isGroupingEnabled: PieChartGroupingStore.shared.isGroupingEnabled
+            isGroupingEnabled: config.pieIsGroupingEnabled
         )
         if config.performanceMode == .gainLoss { return all }
         return all.sorted { $0.returnPercentDouble > $1.returnPercentDouble }

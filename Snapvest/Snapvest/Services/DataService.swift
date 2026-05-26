@@ -134,9 +134,103 @@ class MockDataService: DataServiceProtocol {
     private var valuationUpdatedAtByUserId: [String: Date] = [:]
     private var structureUpdatedAtByUserId: [String: Date] = [:]
     private var pendingStructurePersistWorkItem: DispatchWorkItem?
+    private var realStoreBackup: RuntimeStore?
+    private var isDemoModeRuntimeActive: Bool {
+        realStoreBackup != nil
+    }
+    
+    var isDemoModeActive: Bool {
+        isDemoModeRuntimeActive
+    }
+    
+    private struct RuntimeStore {
+        var accounts: [String: [Account]]
+        var transactions: [String: [Transaction]]
+        var holdings: [String: [Holding]]
+        var liabilities: [String: [Liability]]
+        var accountSnapshots: [String: AccountSnapshot]
+        var assetPriceSnapshots: [String: AssetPriceSnapshot]
+        var userHoldingsSnapshots: [String: UserHoldingsSnapshot]
+        var aggregatedHoldingSnapshots: [String: AggregatedHoldingSnapshot]
+        var homeDashboardSnapshots: [String: HomeDashboardSnapshot]
+        var portfolioStates: [String: PortfolioStateSyncPayload]
+        var priceSyncedAtByUserId: [String: Date]
+        var priceSourceUpdatedAtByUserId: [String: Date]
+        var valuationUpdatedAtByUserId: [String: Date]
+        var structureUpdatedAtByUserId: [String: Date]
+    }
     
     private init() {
         restorePersistedData(for: AppUser.id)
+    }
+    
+    func beginDemoMode(seed: DemoSeedData) {
+        if realStoreBackup == nil {
+            realStoreBackup = currentRuntimeStore()
+        }
+        pendingStructurePersistWorkItem?.cancel()
+        pendingStructurePersistWorkItem = nil
+        
+        accounts = [seed.userId: seed.accounts]
+        transactions = seed.transactionsByAccountId
+        holdings = [:]
+        liabilities = seed.liabilitiesByAccountId
+        accountSnapshots = [:]
+        assetPriceSnapshots = Dictionary(uniqueKeysWithValues: seed.assetPriceSnapshots.map { ($0.id, $0) })
+        userHoldingsSnapshots = [:]
+        aggregatedHoldingSnapshots = [:]
+        homeDashboardSnapshots = [:]
+        portfolioStates = [:]
+        let now = Date()
+        priceSyncedAtByUserId = [seed.userId: now]
+        priceSourceUpdatedAtByUserId = [seed.userId: now]
+        valuationUpdatedAtByUserId = [seed.userId: now]
+        structureUpdatedAtByUserId = [seed.userId: now]
+    }
+    
+    func endDemoMode() {
+        pendingStructurePersistWorkItem?.cancel()
+        pendingStructurePersistWorkItem = nil
+        if let realStoreBackup {
+            applyRuntimeStore(realStoreBackup)
+        }
+        realStoreBackup = nil
+    }
+    
+    private func currentRuntimeStore() -> RuntimeStore {
+        RuntimeStore(
+            accounts: accounts,
+            transactions: transactions,
+            holdings: holdings,
+            liabilities: liabilities,
+            accountSnapshots: accountSnapshots,
+            assetPriceSnapshots: assetPriceSnapshots,
+            userHoldingsSnapshots: userHoldingsSnapshots,
+            aggregatedHoldingSnapshots: aggregatedHoldingSnapshots,
+            homeDashboardSnapshots: homeDashboardSnapshots,
+            portfolioStates: portfolioStates,
+            priceSyncedAtByUserId: priceSyncedAtByUserId,
+            priceSourceUpdatedAtByUserId: priceSourceUpdatedAtByUserId,
+            valuationUpdatedAtByUserId: valuationUpdatedAtByUserId,
+            structureUpdatedAtByUserId: structureUpdatedAtByUserId
+        )
+    }
+    
+    private func applyRuntimeStore(_ store: RuntimeStore) {
+        accounts = store.accounts
+        transactions = store.transactions
+        holdings = store.holdings
+        liabilities = store.liabilities
+        accountSnapshots = store.accountSnapshots
+        assetPriceSnapshots = store.assetPriceSnapshots
+        userHoldingsSnapshots = store.userHoldingsSnapshots
+        aggregatedHoldingSnapshots = store.aggregatedHoldingSnapshots
+        homeDashboardSnapshots = store.homeDashboardSnapshots
+        portfolioStates = store.portfolioStates
+        priceSyncedAtByUserId = store.priceSyncedAtByUserId
+        priceSourceUpdatedAtByUserId = store.priceSourceUpdatedAtByUserId
+        valuationUpdatedAtByUserId = store.valuationUpdatedAtByUserId
+        structureUpdatedAtByUserId = store.structureUpdatedAtByUserId
     }
     
     private func restorePersistedData(for userId: String) {
@@ -263,6 +357,7 @@ class MockDataService: DataServiceProtocol {
     }
     
     func persistLocalStore(for userId: String) {
+        guard !isDemoModeRuntimeActive else { return }
         guard userId == AppUser.id else { return }
         pendingStructurePersistWorkItem?.cancel()
         pendingStructurePersistWorkItem = nil
@@ -270,6 +365,7 @@ class MockDataService: DataServiceProtocol {
     }
     
     func persistLocalStructure(for userId: String) {
+        guard !isDemoModeRuntimeActive else { return }
         guard userId == AppUser.id else { return }
         pendingStructurePersistWorkItem?.cancel()
         pendingStructurePersistWorkItem = nil
@@ -277,6 +373,7 @@ class MockDataService: DataServiceProtocol {
     }
     
     func persistLocalValuation(for userId: String) {
+        guard !isDemoModeRuntimeActive else { return }
         guard userId == AppUser.id else { return }
         persistValuationStore(for: userId)
     }
@@ -302,10 +399,12 @@ class MockDataService: DataServiceProtocol {
         if let sourceUpdatedAt {
             priceSourceUpdatedAtByUserId[userId] = sourceUpdatedAt
         }
+        guard !isDemoModeRuntimeActive else { return }
         persistValuationStore(for: userId)
     }
     
     private func persistStructureIfActiveUser(_ userId: String, debounce: Bool = false) {
+        guard !isDemoModeRuntimeActive else { return }
         guard userId == AppUser.id else { return }
         if debounce {
             scheduleStructurePersist(userId: userId)
@@ -602,14 +701,19 @@ class MockDataService: DataServiceProtocol {
     // MARK: - 資產價格快照
     
     func fetchAssetPriceSnapshot(assetType: AssetType, symbol: String) async throws -> AssetPriceSnapshot? {
-        let key = "\(assetType.rawValue)_\(symbol)"
+        let normalized = SupabasePriceService.normalizeSymbol(assetType: assetType, symbol: symbol)
+        let key = "\(assetType.rawValue)_\(normalized)"
         return assetPriceSnapshots[key]
     }
     
     func fetchAssetPriceSnapshots(symbols: [SymbolInfo]) async throws -> [AssetPriceSnapshot] {
         var snapshots: [AssetPriceSnapshot] = []
         for symbolInfo in symbols {
-            let key = "\(symbolInfo.assetType.rawValue)_\(symbolInfo.symbol)"
+            let normalized = SupabasePriceService.normalizeSymbol(
+                assetType: symbolInfo.assetType,
+                symbol: symbolInfo.symbol
+            )
+            let key = "\(symbolInfo.assetType.rawValue)_\(normalized)"
             if let snapshot = assetPriceSnapshots[key] {
                 snapshots.append(snapshot)
             }
@@ -686,6 +790,7 @@ class MockDataService: DataServiceProtocol {
     
     func syncPortfolioState(_ payload: PortfolioStateSyncPayload) async throws {
         portfolioStates[payload.userId] = payload
+        guard !isDemoModeRuntimeActive else { return }
         if SupabaseConfig.isConfigured {
             try await SupabasePortfolioStateService.sync(payload)
         }

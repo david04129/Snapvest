@@ -20,9 +20,7 @@ struct ExpenseView: View {
     @State private var transactionDate: Date = Date()
     @State private var twdEquivalent: Decimal? = nil
     @State private var errorMessage: String? = nil
-    
-    // TODO: 從匯率服務獲取即時匯率
-    private let usdToTwdRate: Decimal = 32 // 臨時固定值
+    @State private var usdToTwdRate: Decimal? = ExchangeRateSessionCache.usdToTwd
     
     init(account: Account, viewModel: AccountDetailViewModel, editingTransaction: Transaction? = nil) {
         self.account = account
@@ -248,6 +246,7 @@ struct ExpenseView: View {
                 .background(Color.cardBackground)
             }
             .task {
+                await loadExchangeRateIfNeeded()
                 // 如果是編輯模式，預填資料
                 if let transaction = editingTransaction {
                     amount = transaction.quantity.formatted(fractionDigits: 2)
@@ -294,13 +293,22 @@ struct ExpenseView: View {
         }
     }
     
+    private func loadExchangeRateIfNeeded() async {
+        guard account.currency == .USD, usdToTwdRate == nil else { return }
+        if let rate = try? await MockDataService.shared.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate,
+           rate > 0 {
+            usdToTwdRate = rate
+            calculateTwdEquivalent(amount)
+        }
+    }
+    
     private func calculateTwdEquivalent(_ amountString: String) {
         guard let amountValue = Decimal(string: amountString) else {
             twdEquivalent = nil
             return
         }
         
-        if account.currency == .USD {
+        if account.currency == .USD, let usdToTwdRate {
             twdEquivalent = amountValue * usdToTwdRate
         } else {
             twdEquivalent = nil

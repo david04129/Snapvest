@@ -13,7 +13,7 @@ enum HomeShareMessageBuilder {
 
     static func shareText(config: HomeShareRenderConfig) -> String {
         var lines: [String] = []
-        lines.append("快來下載 Snapvest")
+        lines.append("快來下載 Walleaf")
         lines.append("台股、美股、加密貨幣與資產配置都能一起記錄，走勢、持股占比與損益一目瞭然。")
 
         let included = HomeShareChartKind.allCases.filter {
@@ -30,10 +30,10 @@ enum HomeShareMessageBuilder {
 
         lines.append("")
         if let url = appDownloadURL {
-            lines.append("下載 Snapvest：")
+            lines.append("下載 Walleaf：")
             lines.append(url.absoluteString)
         } else {
-            lines.append("到 App Store 搜尋「Snapvest」即可下載。")
+            lines.append("到 App Store 搜尋「Walleaf」即可下載。")
         }
 
         return lines.joined(separator: "\n")

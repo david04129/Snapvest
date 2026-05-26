@@ -17,7 +17,7 @@ enum PhotoLibrarySaver {
         var errorDescription: String? {
             switch self {
             case .denied:
-                return "請到「設定 > Snapvest > 照片」允許加入照片。"
+                return "請到「設定 > Walleaf > 照片」允許加入照片。"
             case .restricted:
                 return "此裝置無法存取相簿。"
             case .failed:

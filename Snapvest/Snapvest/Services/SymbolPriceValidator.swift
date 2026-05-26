@@ -33,13 +33,23 @@ enum SymbolPriceValidator {
             return nil
         }
         
-        guard SupabaseConfig.isConfigured else {
-            return "無法連線驗證股價，請確認網路與 Supabase 設定"
-        }
-        
         let normalized = SupabasePriceService.normalizeSymbol(assetType: assetType, symbol: symbol)
         guard !normalized.isEmpty else {
             return "需填 symbol"
+        }
+        
+        if MockDataService.shared.isDemoModeActive {
+            if let price = await SupabasePriceService.fetchDisplayPrice(
+                assetType: assetType,
+                symbol: normalized
+            ), price > 0 {
+                return nil
+            }
+            return failureMessage(assetType: assetType, symbol: normalized)
+        }
+        
+        guard SupabaseConfig.isConfigured else {
+            return "無法連線驗證股價，請確認網路與 Supabase 設定"
         }
         
         let coingeckoId = assetType == .crypto

@@ -25,6 +25,15 @@ enum SymbolLiveReferencePrice {
         guard !normalized.isEmpty else {
             return .failed("請選擇股票代號")
         }
+        if MockDataService.shared.isDemoModeActive {
+            if let price = await SupabasePriceService.fetchDisplayPrice(
+                assetType: assetType,
+                symbol: normalized
+            ), price > 0 {
+                return .ready(price)
+            }
+            return .failed(SymbolPriceValidator.failureMessage(assetType: assetType, symbol: normalized))
+        }
         guard SupabaseConfig.isConfigured else {
             return .failed("無法連線驗證股價，請確認網路與 Supabase 設定")
         }

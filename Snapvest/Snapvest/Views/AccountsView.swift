@@ -12,6 +12,7 @@ struct AccountsView: View {
     @EnvironmentObject private var viewModel: AccountsViewModel
     @EnvironmentObject private var portfolioViewModel: PortfolioViewModel
     @EnvironmentObject private var assetsViewModel: AssetsViewModel
+    @Environment(\.openSettings) private var openSettings
     @State private var showingAddAccount = false
     @State private var showingAddLiability = false
     @State private var userId: String = AppUser.id
@@ -38,9 +39,7 @@ struct AccountsView: View {
                         isEditingOrder: isEditingOrder,
                         isEditDisabled: viewModel.accounts.filter(\.isActiveForListing).isEmpty,
                         onEditTapped: {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                isEditingOrder.toggle()
-                            }
+                            toggleOrderEditing()
                         }
                     )
                     
@@ -74,6 +73,10 @@ struct AccountsView: View {
                 reconcileAccountOrders()
             }
             .onChange(of: selectedTab) { _, newTab in
+                if isEditingOrder, newTab != AppTab.accounts.rawValue {
+                    finishOrderEditing()
+                    return
+                }
                 guard newTab == AppTab.accounts.rawValue else { return }
                 Task {
                     await LaunchCoordinator.applyPersistedState(
@@ -227,6 +230,7 @@ struct AccountsView: View {
             
             HStack(spacing: 12) {
                 Button {
+                    guard !isEditingOrder else { return }
                     showingAddAccount = true
                 } label: {
                     HStack(spacing: 4) {
@@ -237,17 +241,12 @@ struct AccountsView: View {
                     .fontWeight(.semibold)
                     .foregroundColor(.appPrimary)
                 }
+                .disabled(isEditingOrder)
+                .opacity(isEditingOrder ? 0.45 : 1)
                 
-                Button(action: {}) {
-                    Circle()
-                        .fill(Color.appPrimary.opacity(0.2))
-                        .frame(width: 32, height: 32)
-                        .overlay {
-                            Image(systemName: "person.fill")
-                                .foregroundColor(.appPrimary)
-                                .font(.caption)
-                        }
-                }
+                AppHeaderMoreButton(action: openSettings)
+                    .disabled(isEditingOrder)
+                    .opacity(isEditingOrder ? 0.45 : 1)
             }
         }
         .padding(.horizontal, 16)
@@ -258,7 +257,7 @@ struct AccountsView: View {
     // MARK: - 刪除帳戶
     
     private func presentDeleteConfirmation(for account: Account) {
-        guard !isDeleting else { return }
+        guard !isDeleting, !isEditingOrder else { return }
         accountPendingDelete = account
         Task {
             deleteConfirmationMessage = await AccountDeletionSummaryBuilder.buildForAccountList(
@@ -350,6 +349,31 @@ struct AccountsView: View {
             }
         }
     }
+    
+    private func toggleOrderEditing() {
+        if isEditingOrder {
+            finishOrderEditing()
+        } else {
+            beginOrderEditing()
+        }
+    }
+    
+    private func beginOrderEditing() {
+        let nonEmptyTypes = AccountType.allCases.filter { accountType in
+            !viewModel.accounts.activeAccounts(ofType: accountType).isEmpty
+        }
+        withAnimation(ChartMotion.switchSpring) {
+            expandedCategories.formUnion(nonEmptyTypes)
+            isEditingOrder = true
+        }
+    }
+    
+    private func finishOrderEditing() {
+        saveAccountOrder()
+        withAnimation(ChartMotion.switchSpring) {
+            isEditingOrder = false
+        }
+    }
 }
 
 private struct AccountDetailRoute: Identifiable, Hashable {
@@ -371,6 +395,7 @@ struct ArchivedDebtAccountsSection: View {
     var body: some View {
         VStack(spacing: 8) {
             Button {
+                guard !isEditingOrder else { return }
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                     isExpanded.toggle()
                 }
@@ -551,6 +576,7 @@ struct ExpandableAccountCategorySection: View {
     var body: some View {
         VStack(spacing: 0) {
             Button(action: {
+                guard !isEditingOrder else { return }
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                     isExpanded.toggle()
                 }
@@ -629,6 +655,10 @@ struct ExpandableAccountCategorySection: View {
             RoundedRectangle(cornerRadius: 16)
                 .fill(accountType.color)
                 .frame(width: 4)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.appPrimary.opacity(isEditingOrder ? 0.28 : 0), lineWidth: isEditingOrder ? 1 : 0)
         }
         .shadow(color: AppColors.shadowMedium, radius: 8, x: 0, y: 2)
     }
