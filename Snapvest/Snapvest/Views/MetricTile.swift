@@ -7,6 +7,11 @@
 
 import SwiftUI
 
+enum MetricTileProminence {
+    case standard
+    case featured
+}
+
 struct MetricTile: View {
     let title: String
     let value: String
@@ -15,9 +20,25 @@ struct MetricTile: View {
     var footnoteColor: Color = .secondaryText
     var titleLineLimit: Int = 2
     var reservesFootnoteSpace: Bool = true
+    var prominence: MetricTileProminence = .standard
+    var accentColor: Color? = nil
+    
+    private var isFeatured: Bool { prominence == .featured }
+    
+    private var valueFont: Font {
+        isFeatured ? .snapAmountSecondary : .snapAmountTile
+    }
+    
+    private var tileMinHeight: CGFloat {
+        isFeatured ? 96 : 88
+    }
+    
+    private var tilePadding: CGFloat {
+        isFeatured ? 16 : 12
+    }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: isFeatured ? 10 : 8) {
             Text(title)
                 .font(.subheadline)
                 .fontWeight(.medium)
@@ -27,30 +48,39 @@ struct MetricTile: View {
                 .fixedSize(horizontal: false, vertical: true)
             
             Text(value)
-                .font(.snapAmountTile)
+                .font(valueFont)
                 .foregroundColor(valueColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
             
             if let footnote, !footnote.isEmpty {
                 Text(footnote)
-                    .font(.caption)
+                    .font(isFeatured ? .subheadline : .caption)
                     .fontWeight(.semibold)
                     .foregroundColor(footnoteColor)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             } else if reservesFootnoteSpace {
                 Text(" ")
                     .font(.caption)
                     .opacity(0)
             }
         }
-        .frame(maxWidth: .infinity, minHeight: 88, alignment: .leading)
-        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: tileMinHeight, alignment: .leading)
+        .padding(tilePadding)
         .background(Color.cardBackground)
-        .cornerRadius(12)
+        .cornerRadius(isFeatured ? 16 : 12)
+        .overlay(alignment: .leading) {
+            if isFeatured, let accentColor {
+                RoundedRectangle(cornerRadius: isFeatured ? 16 : 12)
+                    .fill(accentColor)
+                    .frame(width: 4)
+            }
+        }
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.separator.opacity(0.35), lineWidth: 1)
+            RoundedRectangle(cornerRadius: isFeatured ? 16 : 12)
+                .stroke(Color.separator.opacity(isFeatured ? 0.45 : 0.35), lineWidth: 1)
         )
+        .shadow(color: isFeatured ? AppColors.shadowMedium : .clear, radius: isFeatured ? 6 : 0, x: 0, y: isFeatured ? 2 : 0)
     }
 }

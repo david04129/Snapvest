@@ -50,7 +50,7 @@ flowchart TB
         Code[原始碼 / JSON 清單]
         WF1[Monthly Symbols Update<br/>每月 1 日]
         WF2[Daily Price Update<br/>每天多次]
-        WF3[Daily Portfolio Snapshot<br/>每天 22:30]
+        WF3[Daily Portfolio Snapshot<br/>每天 00:05 結算前一日]
     end
 
     subgraph Supabase["Supabase（雲端 PostgreSQL）"]
@@ -104,8 +104,8 @@ flowchart TB
 | 全站最後更新時間 | `price_update_metadata` | 每日腳本 | 判斷要不要刷新 |
 | 熱門股清單 | `hot_stocks` | SQL 初始 + Edge Function 新增時加入 | 每日腳本優先更新 |
 | 匯率 | `exchange_rates` | 每日腳本 | 台幣／美金換算 |
-| 你的持股／現金／負債摘要 | `user_portfolio_state` | **App 交易後同步** | 給 22:30 腳本算走勢 |
-| 每日淨資產走勢 | `user_daily_snapshots` | 每日 22:30 腳本 | 首頁走勢圖 |
+| 你的持股／現金／負債摘要 | `user_portfolio_state` | **App 交易後同步** | 給每日快照腳本算走勢 |
+| 每日淨資產走勢 | `user_daily_snapshots` | 每日 00:05 腳本（寫入前一日） | 首頁走勢圖 |
 
 ---
 
@@ -177,7 +177,7 @@ Snapvest 用 Supabase 當「**會變動資料的倉庫**」：
 |------|------------|----------|
 | 交易後同步持股摘要 | [SupabasePortfolioStateService.swift](./Snapvest/Snapvest/Services/SupabasePortfolioStateService.swift) | `user_portfolio_state` |
 
-> 這份摘要給每天 22:30 的 Python 腳本讀，用來算你的淨資產走勢。
+> 這份摘要給每天 00:05 的 Python 腳本讀，用來算你的淨資產走勢（`snapshot_date` = 前一日）。
 
 ### App 讀本機 Bundle（不連網）
 
@@ -203,17 +203,17 @@ Snapvest 用 Supabase 當「**會變動資料的倉庫**」：
 | **週一～五 16:00** | [Daily Price Update](./.github/workflows/daily-price-update.yml) | ① 更新匯率 ② 更新台股 ③ 更新加密 | Supabase |
 | **週六、日 16:00** | 同上 | 只更新加密（Crypto 24/7） | Supabase |
 | **週二～六 07:00** | 同上 | 只更新美股（配合美股收盤後） | Supabase |
-| **每天 22:30** | [Daily Portfolio Snapshot](./.github/workflows/daily-portfolio-snapshot.yml) | 讀你的持股 + 股價 + 匯率 → 算淨資產 | Supabase `user_daily_snapshots` |
+| **每天 00:05** | [Daily Portfolio Snapshot](./.github/workflows/daily-portfolio-snapshot.yml) | 讀持股 + 股價 + 匯率 → 算淨資產，**寫入前一日** `snapshot_date` | Supabase `user_daily_snapshots` |
 
-**22:30 為什麼在股價更新之後？**  
-因為要先有當天的股價／匯率，才能正確算當日淨資產。
+**00:05 為什麼在隔天凌晨？**  
+日終結算：5/26 00:05 執行 → 記錄 **5/25** 的快照，可納入 5/25 晚間交易。台股／加密用前一日 16:00 股價；美股接受 **lag 一個美股交易日**（沿用最近一次 07:00 更新）。
 
 #### 一天時間軸（平日）
 
 ```
 07:00  更新美股股價
 16:00  更新匯率 + 台股 + 加密
-22:30  計算並寫入你的淨資產走勢
+00:05（隔天）結算並寫入「前一日」淨資產走勢
 ```
 
 #### 週末

@@ -1,10 +1,10 @@
-# 台灣時間 22:30 = UTC 14:30（股價／匯率更新後）
+# 台灣時間 00:05 = UTC 前一日 16:05（日終結算：寫入「前一日」snapshot_date）
 # 需在 repo Settings > Secrets 設定 SUPABASE_URL、SUPABASE_SERVICE_ROLE_KEY
 name: Daily Portfolio Snapshot
 
 on:
   schedule:
-    - cron: '30 14 * * *'
+    - cron: '5 16 * * *'
   workflow_dispatch:
 
 concurrency:
@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   snapshot:
-    name: 22:30 投資組合每日快照
+    name: 00:05 投資組合每日快照（結算前一日）
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6

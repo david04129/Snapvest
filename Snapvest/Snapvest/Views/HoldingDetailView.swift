@@ -386,6 +386,14 @@ struct HoldingDetailView: View {
                     .foregroundColor(.primaryText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
+                if let breakdown = accountQuantityBreakdownText {
+                    Text(breakdown)
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                        .lineLimit(3)
+                        .minimumScaleFactor(0.85)
+                        .padding(.top, 2)
+                }
             }
         }
         .padding(16)
@@ -419,40 +427,46 @@ struct HoldingDetailView: View {
     
     // MARK: - 次要指標
     private var secondaryMetricsSection: some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+        VStack(spacing: 10) {
             MetricTile(
                 title: "市值",
-                value: displayedMarketValueText
+                value: displayedMarketValueText,
+                prominence: .featured,
+                accentColor: assetAccentColor
             )
             MetricTile(
                 title: "未實現損益",
                 value: displayedUnrealizedAmountText,
                 valueColor: displayedUnrealizedColor,
                 footnote: displayedUnrealizedPercentText,
-                footnoteColor: displayedUnrealizedColor
+                footnoteColor: displayedUnrealizedColor,
+                prominence: .featured,
+                accentColor: displayedUnrealizedColor
             )
-            MetricTile(
-                title: "總成本",
-                value: displayedTotalCostText
-            )
-            MetricTile(
-                title: "平均成本",
-                value: displayedAverageCostText
-            )
-            MetricTile(
-                title: "總資產佔比",
-                value: "\(totalAssetsRatio.formatted(fractionDigits: 1))%",
-                valueColor: holdingColor
-            )
-            MetricTile(
-                title: "投資組合佔比",
-                value: "\(totalInvestmentsRatio.formatted(fractionDigits: 1))%",
-                valueColor: holdingColor
-            )
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+                MetricTile(
+                    title: "總成本",
+                    value: displayedTotalCostText
+                )
+                MetricTile(
+                    title: "平均成本",
+                    value: displayedAverageCostText
+                )
+                MetricTile(
+                    title: "總資產佔比",
+                    value: "\(totalAssetsRatio.formatted(fractionDigits: 1))%",
+                    valueColor: holdingColor
+                )
+                MetricTile(
+                    title: "投資組合佔比",
+                    value: "\(totalInvestmentsRatio.formatted(fractionDigits: 1))%",
+                    valueColor: holdingColor
+                )
+            }
         }
     }
 
-    // MARK: - 各次買入（表格式）
+    // MARK: - 買入批次（表格式）
     private var fifoLotsSection: some View {
         HoldingFIFOLotsTableSection(
             fifoLotsByAccount: aggregatedHolding.fifoLotsByAccount,
@@ -470,6 +484,24 @@ struct HoldingDetailView: View {
             assetType: aggregatedHolding.assetType,
             includeShareSuffix: true
         )
+    }
+
+    /// 多帳戶持有時，在總股數下方顯示各帳戶分布
+    private var accountQuantityBreakdownText: String? {
+        let groups = aggregatedHolding.fifoLotsByAccount.compactMap { group -> (String, Decimal)? in
+            let quantity = group.lots.reduce(Decimal.zero) { $0 + $1.remainingQuantity }
+            guard quantity > 0 else { return nil }
+            return (group.accountName, quantity)
+        }
+        guard groups.count > 1 else { return nil }
+        return groups.map { name, quantity in
+            let qtyText = formatShareQuantity(
+                quantity,
+                assetType: aggregatedHolding.assetType,
+                includeShareSuffix: true
+            )
+            return "\(name) \(qtyText)"
+        }.joined(separator: " · ")
     }
     
     private func formatShareQuantity(
@@ -582,7 +614,7 @@ struct HoldingDetailView: View {
     }
 }
 
-// MARK: - 各次買入表（僅 FIFO 區塊 UI）
+// MARK: - 買入批次表（FIFO 區塊 UI）
 private struct FIFOLotTableRow: Identifiable {
     let id: String
     let brokerName: String
@@ -596,39 +628,82 @@ struct HoldingFIFOLotsTableSection: View {
     let currentPrice: Decimal?
     var amountDisplay: HoldingDetailView.MetricAmountDisplay = .original
     var usdToTwdRate: Decimal = 32
+
+    @State private var buyDateSort: HoldingsMarketValueSort = .descending
+    @State private var sortByAccountFirst = false
     
-    private var showsBrokerColumn: Bool {
+    private var showsAccountColumn: Bool {
         fifoLotsByAccount.count > 1
     }
     
     private var tableRows: [FIFOLotTableRow] {
-        fifoLotsByAccount.flatMap { group in
-            group.lots
-                .sorted { $0.buyDate > $1.buyDate }
-                .map { lot in
-                    FIFOLotTableRow(
-                        id: lot.id,
-                        brokerName: group.accountName,
-                        lot: lot
-                    )
-                }
+        let rows = fifoLotsByAccount.flatMap { group in
+            group.lots.map { lot in
+                FIFOLotTableRow(
+                    id: lot.id,
+                    brokerName: group.accountName,
+                    lot: lot
+                )
+            }
         }
-        .sorted { $0.lot.buyDate > $1.lot.buyDate }
+        
+        return rows.sorted { lhs, rhs in
+            if sortByAccountFirst, showsAccountColumn {
+                let accountOrder = lhs.brokerName.localizedStandardCompare(rhs.brokerName)
+                if accountOrder != .orderedSame {
+                    return accountOrder == .orderedAscending
+                }
+            }
+            switch buyDateSort {
+            case .descending:
+                return lhs.lot.buyDate > rhs.lot.buyDate
+            case .ascending:
+                return lhs.lot.buyDate < rhs.lot.buyDate
+            }
+        }
     }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("各次買入")
-                    .font(.headline)
-                    .foregroundColor(.primaryText)
-                Text("賣出時依買入先後扣庫存")
-                    .font(.caption)
-                    .foregroundColor(.secondaryText)
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("買入批次")
+                        .font(.headline)
+                        .foregroundColor(.primaryText)
+                    Text("賣出時依買入先後扣庫存")
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                }
+                
+                Spacer(minLength: 8)
+                
+                HStack(spacing: 8) {
+                    AssetsFilterChipButton(
+                        title: "日期",
+                        icon: buyDateSort.iconName,
+                        isActive: true
+                    ) {
+                        withAnimation(ChartMotion.switchSpring) {
+                            buyDateSort.cycle()
+                        }
+                    }
+                    
+                    if showsAccountColumn {
+                        AssetsFilterChipButton(
+                            title: "帳戶",
+                            icon: "building.columns.fill",
+                            isActive: sortByAccountFirst
+                        ) {
+                            withAnimation(ChartMotion.switchSpring) {
+                                sortByAccountFirst.toggle()
+                            }
+                        }
+                    }
+                }
             }
             
             if tableRows.isEmpty {
-                Text("尚無買入明細")
+                Text("尚無買入批次")
                     .font(.subheadline)
                     .foregroundColor(.secondaryText)
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -647,7 +722,7 @@ struct HoldingFIFOLotsTableSection: View {
                             currentPrice: currentPrice,
                             amountDisplay: amountDisplay,
                             usdToTwdRate: usdToTwdRate,
-                            showsBroker: showsBrokerColumn,
+                            showsAccount: showsAccountColumn,
                             isAlternate: index.isMultiple(of: 2)
                         )
                         if index < tableRows.count - 1 {
@@ -661,14 +736,16 @@ struct HoldingFIFOLotsTableSection: View {
                     RoundedRectangle(cornerRadius: 10)
                         .stroke(Color.separator.opacity(0.5), lineWidth: 1)
                 )
+                .animation(ChartMotion.switchSpring, value: buyDateSort)
+                .animation(ChartMotion.switchSpring, value: sortByAccountFirst)
             }
         }
     }
     
     private var tableHeaderRow: some View {
         HStack(spacing: 6) {
-            if showsBrokerColumn {
-                headerCell("券商", alignment: .leading)
+            if showsAccountColumn {
+                headerCell("帳戶", alignment: .leading)
                     .frame(minWidth: 52, maxWidth: 72, alignment: .leading)
             }
             headerCell("買入日", alignment: .leading)
@@ -703,7 +780,7 @@ private struct FIFOLotTableDataRow: View {
     let currentPrice: Decimal?
     let amountDisplay: HoldingDetailView.MetricAmountDisplay
     let usdToTwdRate: Decimal
-    let showsBroker: Bool
+    let showsAccount: Bool
     let isAlternate: Bool
     
     private var useTWDDisplay: Bool {
@@ -753,7 +830,7 @@ private struct FIFOLotTableDataRow: View {
     
     var body: some View {
         HStack(spacing: 6) {
-            if showsBroker {
+            if showsAccount {
                 dataCell(row.brokerName, alignment: .leading, weight: .regular)
                     .frame(minWidth: 52, maxWidth: 72, alignment: .leading)
                     .lineLimit(2)

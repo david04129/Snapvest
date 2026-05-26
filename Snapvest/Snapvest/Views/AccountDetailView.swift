@@ -1118,6 +1118,16 @@ struct AccountHoldingCardRow: View {
         return convertAmount(gainLoss, from: holding.holding.currency)
     }
     
+    private var quantitySubtitle: String {
+        let assetType = holding.holding.assetType
+        let maxFractionDigits = assetType == .crypto ? 8 : 4
+        let formatted = holding.holding.quantity.formattedQuantityInput(maxFractionDigits: maxFractionDigits)
+        if assetType == .crypto {
+            return "持有 \(formatted)"
+        }
+        return "持有 \(formatted) 股"
+    }
+    
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 12) {
@@ -1125,7 +1135,7 @@ struct AccountHoldingCardRow: View {
                     Text(holding.displayName)
                         .font(.headline)
                         .foregroundColor(.primaryText)
-                    Text(holding.holding.assetType.displayName)
+                    Text(quantitySubtitle)
                         .font(.caption)
                         .foregroundColor(.secondaryText)
                 }

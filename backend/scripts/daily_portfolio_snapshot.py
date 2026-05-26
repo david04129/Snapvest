@@ -3,14 +3,21 @@
 每日投資組合快照：讀 user_portfolio_state + asset_price_snapshots + exchange_rates
 → 計算總資產／淨資產 → upsert user_daily_snapshots
 
+排程語意（台灣 00:05）：結算「前一日」淨值（例：5/26 00:05 → snapshot_date=5/25）。
+美股股價沿用最近一次 07:00 更新（accept lag 一個美股交易日）。
+
 用法:
   export SUPABASE_URL=...
   export SUPABASE_SERVICE_ROLE_KEY=...
   python3 backend/scripts/daily_portfolio_snapshot.py
+  python3 backend/scripts/daily_portfolio_snapshot.py --snapshot-date 2026-05-25
+  python3 backend/scripts/daily_portfolio_snapshot.py --snapshot-date today
 """
 from __future__ import annotations
 
-from datetime import datetime
+import argparse
+import re
+from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
@@ -97,6 +104,27 @@ def to_twd(amount: Decimal, currency: str, rates: dict[str, Decimal]) -> Decimal
     return amount
 
 
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def resolve_snapshot_date(explicit: str | None = None) -> str:
+    """預設寫入「台灣時間前一日」，對齊 00:05 日終結算。"""
+    now = datetime.now(TW_TZ)
+    if explicit is None:
+        return (now.date() - timedelta(days=1)).isoformat()
+
+    normalized = explicit.strip().lower()
+    if normalized == "today":
+        return now.date().isoformat()
+    if normalized == "yesterday":
+        return (now.date() - timedelta(days=1)).isoformat()
+    if not _DATE_RE.match(explicit.strip()):
+        raise ValueError(
+            f"無效的 --snapshot-date：{explicit!r}（請用 YYYY-MM-DD、today 或 yesterday）"
+        )
+    return explicit.strip()
+
+
 def compute_snapshot(
     state: dict[str, Any],
     prices: dict[tuple[str, str], dict[str, Any]],
@@ -151,8 +179,20 @@ def compute_snapshot(
 
 
 def main() -> None:
-    snapshot_date = datetime.now(TW_TZ).date().isoformat()
-    print(f"[{datetime.now(TW_TZ).isoformat()}] 開始每日投資組合快照（snapshot_date={snapshot_date}）")
+    parser = argparse.ArgumentParser(description="Snapvest 每日投資組合快照")
+    parser.add_argument(
+        "--snapshot-date",
+        metavar="DATE",
+        help="寫入日期（YYYY-MM-DD）；或 today / yesterday。預設：yesterday（台灣時間）",
+    )
+    args = parser.parse_args()
+
+    snapshot_date = resolve_snapshot_date(args.snapshot_date)
+    now_tw = datetime.now(TW_TZ)
+    print(
+        f"[{now_tw.isoformat()}] 開始每日投資組合快照"
+        f"（snapshot_date={snapshot_date}，executed_on={now_tw.date().isoformat()}）"
+    )
 
     supabase = get_supabase()
     rates = fetch_usd_rates(supabase)
@@ -212,4 +252,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except ValueError as exc:
+        print(f"錯誤：{exc}")
+        raise SystemExit(1) from exc
