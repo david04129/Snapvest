@@ -9,16 +9,27 @@ import SwiftUI
 
 struct HomePerformanceChartSection: View {
     let inputs: PieChartInputs?
+    let pieMode: PieChartDisplayMode
+    @ObservedObject var groupingStore: PieChartGroupingStore
     @Binding var mode: PerformanceDisplayMode
     @State private var contentPhase: CGFloat = 1
     
     private var rows: [HoldingPerformanceRow] {
         guard let inputs else { return [] }
-        let all = HoldingChartMetrics.performanceRows(inputs: inputs)
+        let all = PieChartGroupingModeSupport.performanceRows(
+            inputs: inputs,
+            groups: groupingStore.groups,
+            pieMode: pieMode,
+            isGroupingEnabled: groupingStore.isGroupingEnabled
+        )
         if mode == .gainLoss { return all }
         return all.sorted {
             $0.returnPercentDouble > $1.returnPercentDouble
         }
+    }
+
+    private var isInteractionLocked: Bool {
+        groupingStore.isEditingGroups
     }
     
     private var maxAbsChartValue: Double {
@@ -33,11 +44,13 @@ struct HomePerformanceChartSection: View {
             ChartSegmentedControl(
                 options: PerformanceDisplayMode.allCases,
                 selection: $mode,
-                label: { $0.rawValue }
+                label: { $0.rawValue },
+                isInteractionEnabled: !isInteractionLocked
             )
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
             .onChange(of: mode) { _, _ in
+                guard !isInteractionLocked else { return }
                 withAnimation(ChartMotion.switchQuick) { contentPhase = 0.72 }
                 withAnimation(ChartMotion.switchSpring) { contentPhase = 1 }
             }
@@ -69,6 +82,9 @@ struct HomePerformanceChartSection: View {
         .background(Color.cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .shadow(color: AppColors.shadowMedium, radius: 8, x: 0, y: 2)
+        .allowsHitTesting(!isInteractionLocked)
+        .opacity(isInteractionLocked ? 0.45 : 1)
+        .animation(ChartMotion.switchQuick, value: isInteractionLocked)
     }
     
     private func chartHeader(title: String, subtitle: String) -> some View {

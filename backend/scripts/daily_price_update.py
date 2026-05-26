@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """
 Snapvest 每日股價更新腳本
-- 先更新：使用者持有的股票
-- 再更新：熱門股票
-- 去重，使用 batch API 節省請求
+- 每次股價更新前：備份 hot_stocks（保留 2 日）→ 以 hot_stocks_seed ∪ 全使用者 holdings 覆寫 hot_stocks
+- 僅對 hot_stocks 清單抓價（去重，每檔只查一次）
 - API: 美股+台股 yfinance, 加密貨幣 CoinGecko
 """
 import json
@@ -130,39 +129,167 @@ def get_supabase() -> Client:
 
 
 def _normalize_symbol(asset_type: str, symbol: str) -> str:
-    """加密貨幣統一大寫，避免 doge/DOGE 重複"""
-    return symbol.upper() if asset_type == "crypto" else symbol
+    """加密貨幣、美股統一大寫；台股保留原樣"""
+    if asset_type in ("crypto", "stock_us"):
+        return symbol.upper()
+    return symbol.strip()
+
+
+HOLDINGS_DISPLAY_ORDER_BASE = 500
+
+
+def _merge_symbol_row(
+    symbols_set: set[tuple[str, str]],
+    symbols_list: list[dict],
+    asset_type: str,
+    symbol: str,
+    display_order: int,
+) -> None:
+    sym = _normalize_symbol(asset_type, symbol)
+    if not sym or asset_type not in ("stock_tw", "stock_us", "crypto"):
+        return
+    key = (asset_type, sym)
+    if key in symbols_set:
+        return
+    symbols_set.add(key)
+    symbols_list.append(
+        {"asset_type": asset_type, "symbol": sym, "display_order": display_order}
+    )
+
+
+def collect_seed_symbols(supabase: Client) -> list[dict]:
+    """種子熱門股（hot_stocks_seed，不受每日覆寫影響）"""
+    symbols_set: set[tuple[str, str]] = set()
+    symbols_list: list[dict] = []
+    try:
+        r = supabase.table("hot_stocks_seed").select("asset_type, symbol, display_order").execute()
+        _raise_on_supabase_error(r, "hot_stocks_seed read")
+        for row in r.data or []:
+            _merge_symbol_row(
+                symbols_set,
+                symbols_list,
+                row["asset_type"],
+                row["symbol"],
+                int(row.get("display_order") or 0),
+            )
+    except Exception as e:
+        print(f"取得 hot_stocks_seed 時出錯: {e}")
+    return symbols_list
+
+
+def collect_user_holdings_symbols(supabase: Client) -> list[dict]:
+    """所有 user_portfolio_state.holdings 中的標的"""
+    symbols_set: set[tuple[str, str]] = set()
+    symbols_list: list[dict] = []
+    try:
+        r = supabase.table("user_portfolio_state").select("holdings").execute()
+        _raise_on_supabase_error(r, "user_portfolio_state read")
+        order = HOLDINGS_DISPLAY_ORDER_BASE
+        for row in r.data or []:
+            holdings = row.get("holdings") or []
+            if isinstance(holdings, str):
+                holdings = json.loads(holdings)
+            for h in holdings:
+                if not isinstance(h, dict):
+                    continue
+                asset_type = h.get("asset_type") or h.get("assetType")
+                symbol = h.get("symbol")
+                if not asset_type or not symbol:
+                    continue
+                _merge_symbol_row(symbols_set, symbols_list, asset_type, symbol, order)
+                order += 1
+    except Exception as e:
+        print(f"取得 user_portfolio_state.holdings 時出錯: {e}")
+    return symbols_list
+
+
+def build_hot_stocks_catalog(supabase: Client) -> list[dict]:
+    """種子 ∪ 全使用者持股，去重"""
+    symbols_set: set[tuple[str, str]] = set()
+    catalog: list[dict] = []
+    for row in collect_seed_symbols(supabase):
+        key = (row["asset_type"], row["symbol"])
+        if key not in symbols_set:
+            symbols_set.add(key)
+            catalog.append(row)
+    for row in collect_user_holdings_symbols(supabase):
+        key = (row["asset_type"], row["symbol"])
+        if key not in symbols_set:
+            symbols_set.add(key)
+            catalog.append(row)
+    return catalog
+
+
+def backup_hot_stocks(supabase: Client) -> int:
+    """將目前 hot_stocks 寫入備份表，僅保留最近 2 日"""
+    today = datetime.now(TW_TZ).date()
+    today_str = today.isoformat()
+    keep_from = (today - timedelta(days=1)).isoformat()
+
+    current = supabase.table("hot_stocks").select("asset_type, symbol, display_order").execute()
+    _raise_on_supabase_error(current, "hot_stocks read for backup")
+    rows = current.data or []
+
+    supabase.table("hot_stocks_backup").delete().eq("backup_date", today_str).execute()
+    if rows:
+        backup_rows = [
+            {
+                "backup_date": today_str,
+                "asset_type": row["asset_type"],
+                "symbol": row["symbol"],
+                "display_order": row.get("display_order") or 0,
+            }
+            for row in rows
+        ]
+        for i in range(0, len(backup_rows), 100):
+            chunk = backup_rows[i : i + 100]
+            resp = supabase.table("hot_stocks_backup").upsert(chunk).execute()
+            _raise_on_supabase_error(resp, "hot_stocks_backup upsert")
+
+    prune = supabase.table("hot_stocks_backup").delete().lt("backup_date", keep_from).execute()
+    _raise_on_supabase_error(prune, "hot_stocks_backup prune")
+
+    print(f"  hot_stocks 備份 {len(rows)} 筆（backup_date={today_str}，保留 >= {keep_from}）")
+    return len(rows)
+
+
+def rebuild_hot_stocks(supabase: Client) -> list[dict]:
+    """備份後覆寫 hot_stocks = seed ∪ holdings"""
+    backup_hot_stocks(supabase)
+    catalog = build_hot_stocks_catalog(supabase)
+
+    delete_resp = (
+        supabase.table("hot_stocks")
+        .delete()
+        .in_("asset_type", ["stock_tw", "stock_us", "crypto"])
+        .execute()
+    )
+    _raise_on_supabase_error(delete_resp, "hot_stocks delete")
+
+    if catalog:
+        for i in range(0, len(catalog), 100):
+            chunk = catalog[i : i + 100]
+            insert_resp = supabase.table("hot_stocks").upsert(
+                chunk,
+                on_conflict="asset_type,symbol",
+            ).execute()
+            _raise_on_supabase_error(insert_resp, "hot_stocks upsert")
+
+    print(f"  hot_stocks 已重建：{len(catalog)} 檔（種子 + 使用者持股）")
+    return catalog
 
 
 def get_symbols_to_update(supabase: Client) -> list[dict]:
-    """取得要更新的 symbol 清單：使用者持有 ∪ 熱門，去重，加密貨幣 symbol 統一大寫"""
-    symbols_set = set()
-    symbols_list = []
-
-    # 1. 使用者持有
-    try:
-        r = supabase.table("holdings").select("asset_type, symbol").execute()
-        for row in r.data or []:
-            sym = _normalize_symbol(row["asset_type"], row["symbol"])
-            key = (row["asset_type"], sym)
-            if key not in symbols_set:
-                symbols_set.add(key)
-                symbols_list.append({"asset_type": row["asset_type"], "symbol": sym})
-    except Exception as e:
-        print(f"取得 holdings 時出錯（可能表尚未建立）: {e}")
-
-    # 2. 熱門股票
+    """讀取重建後的 hot_stocks（即今日待更新清單）"""
+    symbols_list: list[dict] = []
     try:
         r = supabase.table("hot_stocks").select("asset_type, symbol").execute()
+        _raise_on_supabase_error(r, "hot_stocks read")
         for row in r.data or []:
             sym = _normalize_symbol(row["asset_type"], row["symbol"])
-            key = (row["asset_type"], sym)
-            if key not in symbols_set:
-                symbols_set.add(key)
-                symbols_list.append({"asset_type": row["asset_type"], "symbol": sym})
+            symbols_list.append({"asset_type": row["asset_type"], "symbol": sym})
     except Exception as e:
         print(f"取得 hot_stocks 時出錯: {e}")
-
     return symbols_list
 
 
@@ -312,6 +439,9 @@ def run_price_update(markets: Optional[Set[str]] = None) -> None:
     print(f"[{datetime.now()}] 開始股價更新（markets={label}）")
     supabase = get_supabase()
 
+    print("重建 hot_stocks 清單（seed ∪ 使用者持股）…")
+    rebuild_hot_stocks(supabase)
+
     symbols = filter_symbols_by_markets(get_symbols_to_update(supabase), markets)
     print(f"共 {len(symbols)} 檔待更新（已去重）")
     if not symbols:
@@ -321,6 +451,8 @@ def run_price_update(markets: Optional[Set[str]] = None) -> None:
     all_prices = {}
     include_stocks = markets is None or "tw" in markets or "us" in markets
     include_crypto = markets is None or "crypto" in markets
+    stock_prices: dict[tuple, float] = {}
+    crypto_prices: dict[tuple, float] = {}
 
     if include_stocks:
         stock_prices = fetch_stock_prices_yahoo(symbols)
@@ -332,12 +464,21 @@ def run_price_update(markets: Optional[Set[str]] = None) -> None:
         all_prices.update(crypto_prices)
         print(f"CoinGecko: 取得 {len(crypto_prices)} 筆")
 
-    # 組裝 upsert 資料
+    # 組裝 upsert 資料（price_source 標記本輪實際寫入來源）
     currency_map = {"stock_tw": "TWD", "stock_us": "USD", "crypto": "USD"}
     rows = []
+    stock_keys = set(stock_prices.keys()) if include_stocks else set()
+    crypto_keys = set(crypto_prices.keys()) if include_crypto else set()
     for (asset_type, symbol), price in all_prices.items():
         if price is None or price <= 0:
             continue
+        key = (asset_type, symbol)
+        if key in crypto_keys:
+            source = "coingecko"
+        elif key in stock_keys:
+            source = "yfinance"
+        else:
+            source = "unknown"
         rows.append({
             "asset_type": asset_type,
             "symbol": symbol,
@@ -347,6 +488,7 @@ def run_price_update(markets: Optional[Set[str]] = None) -> None:
             "current_price_date": datetime.now(TW_TZ).isoformat(),
             "last_updated": datetime.now(TW_TZ).isoformat(),
             "last_successful_update": datetime.now(TW_TZ).isoformat(),
+            "price_source": source,
         })
 
     upsert_prices(supabase, rows)
@@ -369,6 +511,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Snapvest 每日股價／匯率更新")
     parser.add_argument("--exchange-only", action="store_true", help="只更新匯率")
     parser.add_argument(
+        "--rebuild-catalog-only",
+        action="store_true",
+        help="只備份並重建 hot_stocks（不抓外部股價）",
+    )
+    parser.add_argument(
         "--markets",
         metavar="LIST",
         help="只更新指定市場，逗號分隔：tw, us, crypto（不含匯率）",
@@ -379,6 +526,10 @@ if __name__ == "__main__":
         supabase = get_supabase()
         n = update_exchange_rates(supabase)
         print(f"完成：已 upsert {n} 筆匯率")
+    elif args.rebuild_catalog_only:
+        supabase = get_supabase()
+        rebuild_hot_stocks(supabase)
+        print("完成：hot_stocks 已重建")
     elif args.markets:
         run_price_update(markets=parse_markets_arg(args.markets))
     else:

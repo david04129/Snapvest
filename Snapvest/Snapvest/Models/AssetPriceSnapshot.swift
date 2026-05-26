@@ -33,6 +33,9 @@ struct AssetPriceSnapshot: Identifiable, Codable, Equatable {
     var lastUpdated: Date         // 快照最後更新時間（無論成功或失敗）
     var lastSuccessfulUpdate: Date? // 最後一次成功獲取價格的時間
     
+    /// 最後一次成功寫入的價格來源（yfinance / coingecko / yahoo / finmind / finnhub）
+    var priceSource: String?
+    
     nonisolated init(
         assetType: AssetType,
         symbol: String,
@@ -43,7 +46,8 @@ struct AssetPriceSnapshot: Identifiable, Codable, Equatable {
         currentPriceDate: Date? = nil,
         previousPriceDate: Date? = nil,
         lastUpdated: Date = Date(),
-        lastSuccessfulUpdate: Date? = nil
+        lastSuccessfulUpdate: Date? = nil,
+        priceSource: String? = nil
     ) {
         self.assetType = assetType
         self.symbol = symbol
@@ -55,6 +59,13 @@ struct AssetPriceSnapshot: Identifiable, Codable, Equatable {
         self.previousPriceDate = previousPriceDate
         self.lastUpdated = lastUpdated
         self.lastSuccessfulUpdate = lastSuccessfulUpdate
+        self.priceSource = priceSource
+    }
+    
+    /// 本輪排程／同步是否可能為過期價（僅供除錯或進階 UI；需搭配 lastSuccessfulUpdate）
+    var hasPriceSource: Bool {
+        guard let priceSource else { return false }
+        return !priceSource.isEmpty
     }
     
     /// 獲取顯示用的價格（優先使用 currentPrice，如果為 nil 則使用 previousPrice）

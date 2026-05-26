@@ -59,10 +59,29 @@ struct HomeShareRenderConfig {
             return trendPoints.count >= 2
         case .pie:
             guard let pieInputs else { return false }
-            return !PortfolioPieChartBuilder.items(mode: pieMode, inputs: pieInputs).isEmpty
+            let grouped = PieChartGroupingStore.shared.isGroupingEnabled
+            let base = PieChartGroupingModeSupport.effectiveBaseItems(
+                mode: pieMode,
+                inputs: pieInputs,
+                isGroupingEnabled: grouped
+            )
+            let display = PieChartGroupingEngine.applyGroups(
+                baseItems: base,
+                groups: PieChartGroupingStore.shared.groups,
+                mode: pieMode,
+                isGroupingEnabled: grouped
+            )
+            return !display.isEmpty
         case .performance:
             guard let pieInputs else { return false }
-            return !HoldingChartMetrics.performanceRows(inputs: pieInputs).isEmpty
+            let groups = PieChartGroupingStore.shared.groups
+            let rows = PieChartGroupingModeSupport.performanceRows(
+                inputs: pieInputs,
+                groups: groups,
+                pieMode: pieMode,
+                isGroupingEnabled: PieChartGroupingStore.shared.isGroupingEnabled
+            )
+            return !rows.isEmpty
         }
     }
 

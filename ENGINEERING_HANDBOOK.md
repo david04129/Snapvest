@@ -100,9 +100,10 @@ flowchart TB
 
 | 內容 | 資料表 | 誰寫入 | App 用途 |
 |------|--------|--------|----------|
-| 各檔股價 | `asset_price_snapshots` | 每日腳本 + Edge Function | 顯示現價、算損益 |
+| 各檔股價 | `asset_price_snapshots` | 每日腳本 + Edge Function | 顯示現價、算損益；`price_source` 標記來源 |
 | 全站最後更新時間 | `price_update_metadata` | 每日腳本 | 判斷要不要刷新 |
-| 熱門股清單 | `hot_stocks` | SQL 初始 + Edge Function 新增時加入 | 每日腳本優先更新 |
+| 熱門股清單 | `hot_stocks` | 每日由 `hot_stocks_seed` ∪ 全使用者 `user_portfolio_state.holdings` 覆寫；備份 `hot_stocks_backup`（保留 2 日） | 每日腳本抓價清單 |
+| 種子熱門股 | `hot_stocks_seed` | migration 固定 ~30 檔 | 每日併入 hot_stocks，不隨覆寫消失 |
 | 匯率 | `exchange_rates` | 每日腳本 | 台幣／美金換算 |
 | 你的持股／現金／負債摘要 | `user_portfolio_state` | **App 交易後同步** | 給每日快照腳本算走勢 |
 | 每日淨資產走勢 | `user_daily_snapshots` | 每日 00:05 腳本（寫入前一日） | 首頁走勢圖 |
@@ -155,6 +156,8 @@ Snapvest 用 Supabase 當「**會變動資料的倉庫**」：
 | [004_exchange_rates_write_policy.sql](./backend/supabase/migrations/004_exchange_rates_write_policy.sql) | service_role 寫入權限 | 給 GitHub Actions 寫匯率 |
 | [005_user_portfolio_state.sql](./backend/supabase/migrations/005_user_portfolio_state.sql) | `user_portfolio_state` | App 同步持股給後端 |
 | [006_user_daily_snapshots.sql](./backend/supabase/migrations/006_user_daily_snapshots.sql) | `user_daily_snapshots` | 首頁走勢圖資料 |
+| [007_hot_stocks_seed_and_backup.sql](./backend/supabase/migrations/007_hot_stocks_seed_and_backup.sql) | `hot_stocks_seed`、`hot_stocks_backup` | 種子清單與備份 |
+| [008_price_source.sql](./backend/supabase/migrations/008_price_source.sql) | `asset_price_snapshots.price_source` | 標記股價來源 |
 
 **RLS（Row Level Security）白話：** 像門禁——App 的 key 只能進「讀取區」；GitHub Actions 的 service_role key 才能「寫入區」。
 
@@ -255,9 +258,9 @@ Snapvest 有 **兩條抓價路線**：
 **更新哪些股票？**  
 不是全市場每一檔，而是：
 
-- 你在 Supabase 的 `holdings`（若有建表）
-- **∪** `hot_stocks`（熱門股 + 你透過 App 新增時 Edge Function 加進去的）
-- 合併去重後才抓
+- 排程開始時先**備份** `hot_stocks` → 以 **`hot_stocks_seed` ∪ 所有 `user_portfolio_state.holdings`** 覆寫 `hot_stocks`
+- 只對重建後的 `hot_stocks` 抓價（每檔一次，不重複）
+- `fetch-or-create-price` **不**寫入 `hot_stocks`（僅寫 `asset_price_snapshots`）
 
 | 資料 | API | 連結 | 備註 |
 |------|-----|------|------|
@@ -265,6 +268,8 @@ Snapvest 有 **兩條抓價路線**：
 | **美股** | Yahoo Finance（透過 Python `yfinance`） | [yfinance 專案](https://github.com/ranaroussi/yfinance) | 免費；可能遇到 rate limit |
 | **台股** | Yahoo Finance（symbol 格式 `2330.TW`） | 同上 | 免費；可能遇到 rate limit |
 | **加密貨幣** | CoinGecko Simple Price | [CoinGecko API 文件](https://docs.coingecko.com/reference/simple-price) | 免費有頻率限制；需 `crypto_coingecko_map.json` 對照 symbol → id |
+
+寫入 Supabase 時會帶 **`price_source`**（台美股 `yfinance`、加密 `coingecko`）。
 
 **加密 symbol 對照表：** [backend/scripts/data/crypto_coingecko_map.json](./backend/scripts/data/crypto_coingecko_map.json)（由 `build_symbols_crypto.py` 產生）
 
@@ -283,10 +288,9 @@ App 查 `asset_price_snapshots` 發現**沒有這檔的價格**時，會 POST �
 | **美股** | Yahoo Finance Chart API | `https://query1.finance.yahoo.com/v8/finance/chart/{代號}` | 例：`AAPL` |
 | **加密** | CoinGecko Simple Price | [Simple Price API](https://docs.coingecko.com/reference/simple-price) | 可帶 `coingeckoId`；也會搜尋 CoinGecko |
 
-抓到價格後會：
+抓到價格後會寫入 `asset_price_snapshots`（`price_source`：`yahoo` 或 `coingecko`；不加入 `hot_stocks`）
 
-1. 寫入 `asset_price_snapshots`
-2. 加入 `hot_stocks`（之後每日腳本也會更新這檔）
+**`price_source` 常見值：** 排程 `yfinance`／`coingecko`；Edge `yahoo`／`coingecko`；日後排程可為 `finmind`／`finnhub`。本輪抓失敗未 upsert 的列，**`price_source` 與價格皆維持上一輪**。
 
 **部署方式（手動，不經 GitHub Actions）：**
 

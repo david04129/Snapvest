@@ -9,6 +9,7 @@ import SwiftUI
 
 struct ContentView: View {
     @ObservedObject private var themeManager = ThemeManager.shared
+    @ObservedObject private var pieGroupingStore = PieChartGroupingStore.shared
     @EnvironmentObject private var launchSessionState: LaunchSessionState
     @EnvironmentObject private var dataFreshness: DataFreshnessStore
     @State private var selectedTab = 0
@@ -51,7 +52,11 @@ struct ContentView: View {
             }
         }
         .id(themeManager.appearanceRefreshToken)
-        .onChange(of: selectedTab) { previousTab, _ in
+        .onChange(of: selectedTab) { previousTab, newTab in
+            if pieGroupingStore.isEditingGroups, newTab != previousTab {
+                selectedTab = previousTab
+                return
+            }
             NotificationCenter.default.post(
                 name: .tabResigned,
                 object: nil,

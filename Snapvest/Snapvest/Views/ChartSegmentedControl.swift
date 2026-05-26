@@ -12,6 +12,7 @@ struct ChartSegmentedControl<Option: Hashable & Identifiable>: View {
     @Binding var selection: Option
     let label: (Option) -> String
     var fontSize: CGFloat = 13
+    var isInteractionEnabled: Bool = true
     
     @Namespace private var highlightNS
     
@@ -35,7 +36,7 @@ struct ChartSegmentedControl<Option: Hashable & Identifiable>: View {
     private func segmentButton(_ option: Option) -> some View {
         let isSelected = selection.id == option.id
         return Button {
-            guard !isSelected else { return }
+            guard isInteractionEnabled, !isSelected else { return }
             withAnimation(ChartMotion.switchSpring) {
                 selection = option
             }
@@ -59,6 +60,8 @@ struct ChartSegmentedControl<Option: Hashable & Identifiable>: View {
                 .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
+        .disabled(!isInteractionEnabled)
+        .opacity(isInteractionEnabled ? 1 : 0.45)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

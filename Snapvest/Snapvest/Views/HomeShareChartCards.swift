@@ -147,11 +147,38 @@ struct HomePieChartShareCard: View {
 
     private var inputs: PieChartInputs? { config.pieInputs }
 
-    private var currentItems: [PieChartDataItem] {
-        guard let inputs else { return [] }
-        return PortfolioPieChartBuilder.items(mode: config.pieMode, inputs: inputs)
+    private var isGroupingEnabled: Bool {
+        PieChartGroupingStore.shared.isGroupingEnabled
     }
-
+    
+    private var baseItems: [PieChartDataItem] {
+        guard let inputs else { return [] }
+        return PieChartGroupingModeSupport.effectiveBaseItems(
+            mode: config.pieMode,
+            inputs: inputs,
+            isGroupingEnabled: isGroupingEnabled
+        )
+    }
+    
+    private var displayItems: [PieChartDataItem] {
+        PieChartGroupingEngine.applyGroups(
+            baseItems: baseItems,
+            groups: PieChartGroupingStore.shared.groups,
+            mode: config.pieMode,
+            isGroupingEnabled: isGroupingEnabled
+        )
+    }
+    
+    private var legendRows: [PieChartLegendRow] {
+        PieChartGroupingEngine.legendRows(
+            baseItems: baseItems,
+            displayItems: displayItems,
+            groups: PieChartGroupingStore.shared.groups,
+            mode: config.pieMode,
+            isGroupingEnabled: isGroupingEnabled
+        )
+    }
+    
     private var denominator: Decimal {
         guard let inputs else { return config.totalAssets }
         return PortfolioPieChartBuilder.denominator(
@@ -166,7 +193,7 @@ struct HomePieChartShareCard: View {
         VStack(alignment: .leading, spacing: 0) {
             shareCardHeader(title: "圓餅圖", subtitle: config.pieMode.rawValue)
 
-            if currentItems.isEmpty {
+            if displayItems.isEmpty {
                 Text("尚無可顯示的資料")
                     .font(.subheadline)
                     .foregroundColor(.secondaryText)
@@ -174,18 +201,31 @@ struct HomePieChartShareCard: View {
                     .padding(.vertical, 32)
             } else {
                 PortfolioDonutChart(
-                    data: currentItems,
+                    data: displayItems,
                     denominator: denominator,
-                    selectedId: .constant(currentItems.max(by: { $0.value < $1.value })?.id),
-                    displayMode: config.pieMode
+                    selectedId: .constant(displayItems.max(by: { $0.value < $1.value })?.id),
+                    displayMode: config.pieMode,
+                    isGroupingEnabled: PieChartGroupingStore.shared.isGroupingEnabled
                 )
                 .padding(.vertical, 4)
 
-                PortfolioAllocationLegend(
-                    data: currentItems,
+                PortfolioGroupedAllocationLegend(
+                    rows: legendRows,
+                    displayMode: config.pieMode,
                     denominator: denominator,
-                    selectedId: .constant(currentItems.max(by: { $0.value < $1.value })?.id),
-                    mode: config.pieMode
+                    selectedId: .constant(displayItems.max(by: { $0.value < $1.value })?.id),
+                    isGroupingEnabled: PieChartGroupingStore.shared.isGroupingEnabled,
+                    isEditingGroups: false,
+                    selectedMemberIds: .constant([]),
+                    expandedGroupIds: .constant([]),
+                    addToGroupId: .constant(nil),
+                    selectionEditCategory: .constant(nil),
+                    onRenameGroup: { _ in },
+                    onRequestDissolveGroup: { _ in },
+                    onRemoveMember: { _, _ in },
+                    onToggleAddToGroup: { _ in },
+                    onToggleMemberSelection: { _ in },
+                    showsGroupActions: false
                 )
                 .padding(.horizontal, 12)
                 .padding(.bottom, 12)
@@ -203,7 +243,14 @@ struct HomePerformanceChartShareCard: View {
 
     private var rows: [HoldingPerformanceRow] {
         guard let inputs = config.pieInputs else { return [] }
-        let all = HoldingChartMetrics.performanceRows(inputs: inputs)
+        let groups = PieChartGroupingStore.shared.groups
+        let all: [HoldingPerformanceRow]
+        all = PieChartGroupingModeSupport.performanceRows(
+            inputs: inputs,
+            groups: groups,
+            pieMode: config.pieMode,
+            isGroupingEnabled: PieChartGroupingStore.shared.isGroupingEnabled
+        )
         if config.performanceMode == .gainLoss { return all }
         return all.sorted { $0.returnPercentDouble > $1.returnPercentDouble }
     }

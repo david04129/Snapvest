@@ -31,14 +31,12 @@ struct BuyTradeFormView: View {
     @State private var deductFromAccount: Bool = false
     @State private var errorMessage: String?
     @State private var showingSymbolPicker = false
-    @State private var currentPrice: Decimal?
     @State private var accountCashBalance: Decimal = 0
     @State private var userId: String = AppUser.id
     @State private var showingDuplicateAlert = false
     @State private var duplicateAlertMessage = ""
     
     private let dataService: DataServiceProtocol = MockDataService.shared
-    private let priceService = PriceService(dataService: MockDataService.shared)
     
     @Environment(\.dismiss) private var dismiss
     
@@ -244,8 +242,6 @@ struct BuyTradeFormView: View {
                     ? SymbolListService.normalizedCryptoSymbol(symbol)
                     : symbol
                 selectedSymbolName = name
-                currentPrice = nil
-                Task { await loadCurrentPrice() }
             }
         }
         .alert("可能重複的交易", isPresented: $showingDuplicateAlert) {
@@ -403,10 +399,6 @@ struct BuyTradeFormView: View {
                             .font(.caption)
                     }
                     .snapFormFieldTapTarget()
-                    
-                    if let price = currentPrice {
-                        buyInfoRow(label: "目前股價", value: price.formattedTradePrice(currency: priceCurrency))
-                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
@@ -719,28 +711,6 @@ struct BuyTradeFormView: View {
         guard let prefill, selectedSymbol.isEmpty else { return }
         selectedSymbol = prefill.symbol
         selectedSymbolName = prefill.symbolName ?? ""
-        Task { await loadCurrentPrice() }
-    }
-    
-    private func loadCurrentPrice() async {
-        guard !selectedSymbol.isEmpty else { return }
-        do {
-            let coingeckoId = assetType == .crypto
-                ? SymbolListService.coingeckoId(forCryptoSymbol: selectedSymbol)
-                : nil
-            let price = try await priceService.fetchCurrentPrice(
-                assetType: assetType,
-                symbol: selectedSymbol,
-                coingeckoId: coingeckoId
-            )
-            await MainActor.run {
-                currentPrice = price
-            }
-        } catch {
-            await MainActor.run {
-                currentPrice = nil
-            }
-        }
     }
 }
 

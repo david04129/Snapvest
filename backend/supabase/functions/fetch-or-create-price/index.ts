@@ -90,9 +90,11 @@ serve(async (req) => {
 
     // 2. 從外部 API 抓取
     let price: number | null = null
+    let priceSource = "yahoo"
     const currency = assetType === "stock_tw" ? "TWD" : "USD"
 
     if (assetType === "crypto") {
+      priceSource = "coingecko"
       const cgId = await resolveCoinGeckoId(symbol, coingeckoId)
       if (!cgId) {
         return new Response(JSON.stringify({ error: "CoinGecko id not found" }), {
@@ -136,7 +138,7 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "Price not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } })
     }
 
-    // 3. 寫入 DB（並加入 hot_stocks 以便往後每日更新）
+    // 3. 寫入 DB（每日 hot_stocks 由排程依 seed ∪ 全使用者 holdings 重建）
     const now = new Date().toISOString()
     await supabase.from("asset_price_snapshots").upsert({
       asset_type: assetType,
@@ -146,11 +148,10 @@ serve(async (req) => {
       current_price_date: now,
       last_updated: now,
       last_successful_update: now,
+      price_source: priceSource,
     }, { onConflict: "asset_type,symbol" })
 
-    await supabase.from("hot_stocks").upsert({ asset_type: assetType, symbol, display_order: 999 }, { onConflict: "asset_type,symbol", ignoreDuplicates: true })
-
-    return new Response(JSON.stringify({ price, currency, source: "api" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } })
+    return new Response(JSON.stringify({ price, currency, source: priceSource }), { headers: { ...corsHeaders, "Content-Type": "application/json" } })
   } catch (e) {
     return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } })
   }

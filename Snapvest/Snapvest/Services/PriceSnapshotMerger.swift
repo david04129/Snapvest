@@ -106,7 +106,8 @@ enum PriceSnapshotMerger {
             currentPriceDate: candidateDate,
             previousPriceDate: existing.currentPriceDate ?? existing.previousPriceDate,
             lastUpdated: Date(),
-            lastSuccessfulUpdate: Date()
+            lastSuccessfulUpdate: Date(),
+            priceSource: incoming.priceSource ?? existing.priceSource
         )
     }
     
@@ -121,7 +122,8 @@ enum PriceSnapshotMerger {
             currentPriceDate: incoming.currentPriceDate ?? incoming.lastSuccessfulUpdate ?? Date(),
             previousPriceDate: incoming.previousPriceDate,
             lastUpdated: Date(),
-            lastSuccessfulUpdate: Date()
+            lastSuccessfulUpdate: Date(),
+            priceSource: incoming.priceSource
         )
     }
     
@@ -136,7 +138,8 @@ enum PriceSnapshotMerger {
             currentPriceDate: incoming.previousPriceDate ?? incoming.lastUpdated,
             previousPriceDate: nil,
             lastUpdated: Date(),
-            lastSuccessfulUpdate: Date()
+            lastSuccessfulUpdate: Date(),
+            priceSource: incoming.priceSource
         )
     }
 }
