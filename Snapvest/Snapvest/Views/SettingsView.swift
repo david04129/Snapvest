@@ -19,9 +19,7 @@ struct SettingsView: View {
     @State private var isBaseCurrencySheetPresented = false
     #if DEBUG
     @State private var isValidatingSnapshots = false
-    @State private var isSeedingBackfillTest = false
     @State private var snapshotValidationMessage: String?
-    @State private var backfillTestMessage: String?
     #endif
     
     var body: some View {
@@ -51,11 +49,6 @@ struct SettingsView: View {
                     #if DEBUG
                     settingsSection(title: "開發") {
                         snapshotConsistencyRow
-
-                        Divider()
-                            .padding(.leading, 56)
-
-                        backfillTestSeedRow
                     }
                     #endif
                     
@@ -103,17 +96,6 @@ struct SettingsView: View {
                 Button("知道了", role: .cancel) {}
             } message: {
                 Text(snapshotValidationMessage ?? "")
-            }
-            .alert(
-                "補點測試資料",
-                isPresented: Binding(
-                    get: { backfillTestMessage != nil },
-                    set: { if !$0 { backfillTestMessage = nil } }
-                )
-            ) {
-                Button("知道了", role: .cancel) {}
-            } message: {
-                Text(backfillTestMessage ?? "")
             }
             #endif
             .sheet(isPresented: $isBaseCurrencySheetPresented) {
@@ -367,51 +349,6 @@ struct SettingsView: View {
     }
 
     #if DEBUG
-    private var backfillTestSeedRow: some View {
-        Button {
-            Task { await runBackfillTestSeed() }
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "chart.line.uptrend.xyaxis")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.appPrimary)
-                    .frame(width: 30, height: 30)
-                    .background(Color.appPrimary.opacity(0.14))
-                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("建立補點測試資料")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.primaryText)
-
-                    Text("20 檔持股、10 天缺口，並立即執行 backfill")
-                        .font(.caption)
-                        .foregroundColor(.secondaryText)
-                }
-
-                Spacer(minLength: 12)
-
-                if isSeedingBackfillTest {
-                    ProgressView()
-                        .tint(.appPrimary)
-                } else {
-                    Text("執行")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.appPrimary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .background(Color.appPrimary.opacity(0.12))
-                        .clipShape(Capsule())
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 13)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(isSeedingBackfillTest || demoMode.isSwitching)
-    }
-
     private var snapshotConsistencyRow: some View {
         Button {
             Task { await runSnapshotConsistencyValidation() }
@@ -464,15 +401,6 @@ struct SettingsView: View {
         let report = await MockDataService.shared.debugValidateSnapshotConsistency(userId: AppUser.id)
         isValidatingSnapshots = false
         snapshotValidationMessage = report.summary
-    }
-
-    @MainActor
-    private func runBackfillTestSeed() async {
-        guard !isSeedingBackfillTest else { return }
-        isSeedingBackfillTest = true
-        let result = await demoMode.enterBackfillTestMode(userId: AppUser.id)
-        isSeedingBackfillTest = false
-        backfillTestMessage = result.summary
     }
     #endif
     
