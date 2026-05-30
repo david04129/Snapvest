@@ -96,6 +96,12 @@ protocol DataServiceProtocol {
     func fetchHomeDashboardSnapshot(userId: String) async throws -> HomeDashboardSnapshot?
     func saveHomeDashboardSnapshot(_ snapshot: HomeDashboardSnapshot) async throws
     func deleteHomeDashboardSnapshot(userId: String) async throws
+
+    // 本機首頁走勢點
+    func fetchLocalDailyTrendSnapshots(userId: String, startDate: Date?, endDate: Date?) async throws -> [LocalDailyTrendSnapshot]
+    func upsertLocalDailyTrendSnapshot(_ snapshot: LocalDailyTrendSnapshot) async throws
+    func fetchLastDailyTrendBackfillRunDateKey(userId: String) -> String?
+    func updateLastDailyTrendBackfillRunDateKey(userId: String, dateKey: String?)
     
     // 投資組合狀態（同步至後端）
     func syncPortfolioState(_ payload: PortfolioStateSyncPayload) async throws
@@ -139,6 +145,8 @@ class MockDataService: DataServiceProtocol {
     private var userHoldingsSnapshots: [String: UserHoldingsSnapshot] = [:] // userId: UserHoldingsSnapshot
     private var aggregatedHoldingSnapshots: [String: AggregatedHoldingSnapshot] = [:] // "userId_assetType_symbol": AggregatedHoldingSnapshot
     private var homeDashboardSnapshots: [String: HomeDashboardSnapshot] = [:] // userId: HomeDashboardSnapshot
+    private var dailyTrendSnapshots: [String: [String: LocalDailyTrendSnapshot]] = [:] // userId: yyyy-MM-dd snapshot
+    private var lastDailyTrendBackfillRunDateKeys: [String: String] = [:] // userId: yyyy-MM-dd
     private var portfolioStates: [String: PortfolioStateSyncPayload] = [:] // userId: latest state
     private var priceSyncedAtByUserId: [String: Date] = [:]
     private var priceSourceUpdatedAtByUserId: [String: Date] = [:]
@@ -166,6 +174,8 @@ class MockDataService: DataServiceProtocol {
         var userHoldingsSnapshots: [String: UserHoldingsSnapshot]
         var aggregatedHoldingSnapshots: [String: AggregatedHoldingSnapshot]
         var homeDashboardSnapshots: [String: HomeDashboardSnapshot]
+        var dailyTrendSnapshots: [String: [String: LocalDailyTrendSnapshot]]
+        var lastDailyTrendBackfillRunDateKeys: [String: String]
         var portfolioStates: [String: PortfolioStateSyncPayload]
         var priceSyncedAtByUserId: [String: Date]
         var priceSourceUpdatedAtByUserId: [String: Date]
@@ -183,6 +193,7 @@ class MockDataService: DataServiceProtocol {
         }
         pendingStructurePersistWorkItem?.cancel()
         pendingStructurePersistWorkItem = nil
+        let now = Date()
         
         accounts = [seed.userId: seed.accounts]
         transactions = seed.transactionsByAccountId
@@ -195,8 +206,24 @@ class MockDataService: DataServiceProtocol {
         userHoldingsSnapshots = [:]
         aggregatedHoldingSnapshots = [:]
         homeDashboardSnapshots = [:]
+        dailyTrendSnapshots = [
+            seed.userId: Dictionary(
+                uniqueKeysWithValues: seed.trendPoints.map { point in
+                    let snapshot = LocalDailyTrendSnapshot(
+                        userId: seed.userId,
+                        date: point.date,
+                        totalAssets: point.totalAssets,
+                        netWorth: point.netWorth,
+                        unrealizedGainLoss: point.unrealizedGainLoss,
+                        sourceHomeSnapshotUpdatedAt: now,
+                        recordedAt: now
+                    )
+                    return (snapshot.id, snapshot)
+                }
+            )
+        ]
+        lastDailyTrendBackfillRunDateKeys = [:]
         portfolioStates = [:]
-        let now = Date()
         priceSyncedAtByUserId = [seed.userId: now]
         priceSourceUpdatedAtByUserId = [seed.userId: now]
         valuationUpdatedAtByUserId = [seed.userId: now]
@@ -225,6 +252,8 @@ class MockDataService: DataServiceProtocol {
             userHoldingsSnapshots: userHoldingsSnapshots,
             aggregatedHoldingSnapshots: aggregatedHoldingSnapshots,
             homeDashboardSnapshots: homeDashboardSnapshots,
+            dailyTrendSnapshots: dailyTrendSnapshots,
+            lastDailyTrendBackfillRunDateKeys: lastDailyTrendBackfillRunDateKeys,
             portfolioStates: portfolioStates,
             priceSyncedAtByUserId: priceSyncedAtByUserId,
             priceSourceUpdatedAtByUserId: priceSourceUpdatedAtByUserId,
@@ -245,6 +274,8 @@ class MockDataService: DataServiceProtocol {
         userHoldingsSnapshots = store.userHoldingsSnapshots
         aggregatedHoldingSnapshots = store.aggregatedHoldingSnapshots
         homeDashboardSnapshots = store.homeDashboardSnapshots
+        dailyTrendSnapshots = store.dailyTrendSnapshots
+        lastDailyTrendBackfillRunDateKeys = store.lastDailyTrendBackfillRunDateKeys
         portfolioStates = store.portfolioStates
         priceSyncedAtByUserId = store.priceSyncedAtByUserId
         priceSourceUpdatedAtByUserId = store.priceSourceUpdatedAtByUserId
@@ -271,12 +302,19 @@ class MockDataService: DataServiceProtocol {
         priceSourceUpdatedAtByUserId[userId] = saved.valuation.priceSourceUpdatedAt
         valuationUpdatedAtByUserId[userId] = saved.valuation.updatedAt
         structureUpdatedAtByUserId[userId] = saved.structure.updatedAt
+        if let lastBackfillRun = saved.valuation.lastDailyTrendBackfillRunDateKey {
+            lastDailyTrendBackfillRunDateKeys[userId] = lastBackfillRun
+        }
+        if let home = saved.valuation.homeDashboardSnapshot {
+            recordHomeDashboardSnapshotAsTrendPoint(home, shouldPersist: true)
+        }
     }
     
     private func applyValuationStore(_ store: LocalUserValuationStore, userId: String) {
         if let home = store.homeDashboardSnapshot {
             homeDashboardSnapshots[userId] = home
         }
+        dailyTrendSnapshots[userId] = store.dailyTrendSnapshotsByDate
         if let userHoldings = store.userHoldingsSnapshot {
             userHoldingsSnapshots[userId] = userHoldings
         }
@@ -350,6 +388,8 @@ class MockDataService: DataServiceProtocol {
             assetPriceSnapshotsByKey: assetPrices,
             aggregatedHoldingSnapshots: aggregated,
             manualAssetValuationsByAssetId: manualValuations,
+            dailyTrendSnapshotsByDate: dailyTrendSnapshots[userId] ?? [:],
+            lastDailyTrendBackfillRunDateKey: lastDailyTrendBackfillRunDateKeys[userId],
             priceSyncedAt: priceSyncedAtByUserId[userId],
             priceSourceUpdatedAt: priceSourceUpdatedAtByUserId[userId],
             updatedAt: Date()
@@ -685,7 +725,7 @@ class MockDataService: DataServiceProtocol {
         let normalizedAsset = normalizedManualAsset(asset)
         guard var userAssets = manualAssets[asset.userId],
               let index = userAssets.firstIndex(where: { $0.id == asset.id }) else {
-            throw DataServiceError.invalidOperation("找不到要更新的手動資產")
+            throw DataServiceError.invalidOperation("找不到要更新的其他資產")
         }
         userAssets[index] = normalizedAsset
         manualAssets[normalizedAsset.userId] = userAssets
@@ -882,10 +922,52 @@ class MockDataService: DataServiceProtocol {
 
     func saveHomeDashboardSnapshot(_ snapshot: HomeDashboardSnapshot) async throws {
         homeDashboardSnapshots[snapshot.userId] = snapshot
+        recordHomeDashboardSnapshotAsTrendPoint(snapshot, shouldPersist: false)
     }
 
     func deleteHomeDashboardSnapshot(userId: String) async throws {
         homeDashboardSnapshots.removeValue(forKey: userId)
+    }
+
+    func fetchLocalDailyTrendSnapshots(userId: String, startDate: Date?, endDate: Date?) async throws -> [LocalDailyTrendSnapshot] {
+        let calendar = Calendar.current
+        let startDay = startDate.map { calendar.startOfDay(for: $0) }
+        let endDay = endDate.map { calendar.startOfDay(for: $0) }
+
+        return dailyTrendSnapshots[userId, default: [:]]
+            .values
+            .filter { snapshot in
+                if let startDay, snapshot.date < startDay { return false }
+                if let endDay, snapshot.date > endDay { return false }
+                return true
+            }
+            .sorted { $0.date < $1.date }
+    }
+
+    func upsertLocalDailyTrendSnapshot(_ snapshot: LocalDailyTrendSnapshot) async throws {
+        dailyTrendSnapshots[snapshot.userId, default: [:]][snapshot.id] = snapshot
+        persistLocalValuation(for: snapshot.userId)
+    }
+
+    func fetchLastDailyTrendBackfillRunDateKey(userId: String) -> String? {
+        lastDailyTrendBackfillRunDateKeys[userId]
+    }
+
+    func updateLastDailyTrendBackfillRunDateKey(userId: String, dateKey: String?) {
+        if let dateKey {
+            lastDailyTrendBackfillRunDateKeys[userId] = dateKey
+        } else {
+            lastDailyTrendBackfillRunDateKeys.removeValue(forKey: userId)
+        }
+        persistLocalValuation(for: userId)
+    }
+
+    private func recordHomeDashboardSnapshotAsTrendPoint(_ snapshot: HomeDashboardSnapshot, shouldPersist: Bool) {
+        let trendSnapshot = LocalDailyTrendSnapshot(homeSnapshot: snapshot)
+        dailyTrendSnapshots[snapshot.userId, default: [:]][trendSnapshot.id] = trendSnapshot
+        if shouldPersist {
+            persistLocalValuation(for: snapshot.userId)
+        }
     }
 
     #if DEBUG
@@ -1155,11 +1237,8 @@ class MockDataService: DataServiceProtocol {
     #endif
     
     func syncPortfolioState(_ payload: PortfolioStateSyncPayload) async throws {
+        // Privacy: portfolio state stays local. Remote writes are replaced by anonymous tracked symbol sync.
         portfolioStates[payload.userId] = payload
-        guard !isDemoModeRuntimeActive else { return }
-        if SupabaseConfig.isConfigured {
-            try await SupabasePortfolioStateService.sync(payload)
-        }
     }
     
     func fetchLatestPortfolioState(userId: String) async throws -> PortfolioStateSyncPayload? {

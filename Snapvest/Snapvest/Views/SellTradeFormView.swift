@@ -276,7 +276,7 @@ struct SellTradeFormView: View {
                         .buttonStyle(.plain)
                         .foregroundColor(.lossRed)
                         .background(Color.lossRed.opacity(0.10))
-                        .cornerRadius(12)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         
                         Button(action: handleSubmit) {
                             HStack(spacing: 8) {
@@ -288,7 +288,7 @@ struct SellTradeFormView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
                             .background(isValid ? Color.lossRed : AppColors.disabledBackground)
-                            .cornerRadius(12)
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         }
                         .disabled(!isValid)
                     }
@@ -303,14 +303,20 @@ struct SellTradeFormView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                         .background(isValid ? Color.lossRed : AppColors.disabledBackground)
-                        .cornerRadius(12)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
                     .disabled(!isValid)
                 }
             }
             .padding(.horizontal)
             .padding(.vertical, 12)
-            .background(Color.cardBackground)
+            .background(Color.mainBackground)
+            .overlay(
+                Rectangle()
+                    .frame(height: 1)
+                    .foregroundColor(Color.separator.opacity(0.3)),
+                alignment: .top
+            )
         }
         .task {
             await accountsViewModel.loadAccounts(userId: userId)
@@ -429,14 +435,19 @@ struct SellTradeFormView: View {
                 .padding(.horizontal, 20)
             dateSection
         }
-        .background(Color.secondaryBackground)
-        .cornerRadius(16)
+        .background(Color.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.separator.opacity(0.32), lineWidth: 1)
+        }
+        .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 2)
         .padding(.horizontal)
     }
     
     /// 匯入草稿仍保留簡易帳戶列
     private var importAccountSection: some View {
-        FormRow(title: "帳戶", icon: "building.columns.fill", color: market.themeColor) {
+        FormRow(title: "帳戶", icon: "building.columns.fill", color: market.themeColor, showsIcon: false) {
             if let account = selectedAccount {
                 HStack(spacing: 8) {
                     CurrencyCodeChip(currency: account.currency, tint: account.accountType.color, style: .filled)
@@ -452,7 +463,7 @@ struct SellTradeFormView: View {
     }
 
     private var sellAccountPickerSection: some View {
-        FormRow(title: "帳戶", icon: "building.columns.fill", color: market.themeColor) {
+        FormRow(title: "帳戶", icon: "building.columns.fill", color: market.themeColor, showsIcon: false) {
             VStack(alignment: .leading, spacing: 10) {
                 if isAccountLocked {
                     Text("已從此帳戶進入，無法改選其他帳戶")
@@ -605,6 +616,8 @@ struct SellTradeFormView: View {
             VStack(alignment: .leading, spacing: 8) {
                 TextField("0", text: $quantityText)
                     .keyboardType(.decimalPad)
+                    .font(.system(size: 17, weight: .semibold))
+                    .monospacedDigit()
                     .snapFormFieldTapTarget()
                 if market == .crypto {
                     Text("加密貨幣可輸入小數，例如 0.01")
@@ -636,6 +649,8 @@ struct SellTradeFormView: View {
         FormRow(title: "\(priceCurrency.rawValue) 對 \(target) 匯率", icon: "arrow.triangle.2.circlepath", color: market.themeColor) {
             TextField("0", text: $exchangeRateText)
                 .keyboardType(.decimalPad)
+                .font(.system(size: 17, weight: .semibold))
+                .monospacedDigit()
                 .snapFormFieldTapTarget()
         }
     }
@@ -1052,14 +1067,17 @@ private struct FormRow<Content: View>: View {
     let title: String
     let icon: String
     let color: Color
+    var showsIcon: Bool = true
     @ViewBuilder let content: Content
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: 16))
-                    .foregroundColor(color)
+                if showsIcon {
+                    Image(systemName: icon)
+                        .font(.system(size: 16))
+                        .foregroundColor(color)
+                }
                 Text(title)
                     .font(.subheadline)
                     .fontWeight(.semibold)
@@ -1070,7 +1088,7 @@ private struct FormRow<Content: View>: View {
                 content
             }
         }
-        .padding(20)
+        .padding(16)
     }
 }
 
@@ -1084,11 +1102,11 @@ private struct InputContainer<Content: View>: View {
             .frame(minHeight: 44)
             .contentShape(Rectangle())
             .background(Color.secondaryBackground)
-            .cornerRadius(12)
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.secondaryText.opacity(0.2), lineWidth: 1)
-            )
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color.separator.opacity(0.35), lineWidth: 1)
+            }
     }
 }
 

@@ -138,30 +138,49 @@
 
 ### Phase 5: 走勢圖改讀本機 Snapshots
 
-目標：首頁走勢圖不再以 Supabase `user_daily_snapshots` 為主。
+目標：首頁走勢圖只讀手機本機的 daily trend snapshots，不再讀 Supabase `user_daily_snapshots`。
 
 做法：
 
-- 歷史走勢讀 `LocalPortfolioDailySnapshotStore`。
-- 今天點用即時快照覆蓋。
-- App 每次啟動或資料變動時，只更新今天 snapshot。
-- 後端 `user_daily_snapshots` 可短期保留 fallback，穩定後移除依賴。
+- 歷史走勢讀本機 `LocalDailyTrendSnapshot` / `dailyTrendSnapshotsByDate`。
+- `HomeDashboardSnapshot` 是首頁即時總覽來源；每次首頁快照更新後，覆蓋寫入今天的 daily trend snapshot。
+- 首頁走勢圖只負責讀本機 daily trend snapshots，不在畫面層合併 Supabase 或 live snapshot。
+- 不使用 Supabase `user_daily_snapshots` fallback；若未來需要匯入舊走勢，應由使用者主動透過 CSV、備份包或本機重算匯入。
 - 走勢圖數值以使用者主要幣別呈現；必要時保留原幣細節在明細頁。
 
 ### Phase 6: 補齊中間空白日期
 
 目標：使用者幾天沒開 App，走勢圖仍連續，且補出的點持久化在手機。
 
+第一天使用：
+
+- 若本機沒有任何既有 daily trend snapshot，代表使用者第一次使用或走勢資料被清空。
+- 此時只建立今天點；不補昨天、不補中間點，因為 App 沒有可推回前一日的本機帳本狀態。
+- 除非未來支援使用者主動匯入過往走勢點（例如 CSV 或備份包），否則第一天走勢圖從今天開始。
+
 快速補點路徑：
 
 - 檢查本機 daily snapshots 最後一筆日期。
 - 若中間缺日期且沒有本機歷史資料變動：
-  - 使用最後一次快照的持股、現金、負債、手動資產估值狀態。
-  - 拉中間日期公開股價與匯率。
+  - 視為使用者在缺口期間未使用 App，因此持股數量、現金、負債、手動資產估值與成本狀態維持不變。
+  - 唯一需要補的是中間日期的公開股價、加密價格與匯率。
+  - 使用最後一次已知帳本狀態，搭配缺失日期的股價與匯率，算出每天的走勢點。
   - 手動資產沿用最後估值，除非 valuation history 有新的估值。
   - 使用該日匯率換算到使用者主要幣別。
   - 算出每天 snapshot。
   - 寫入手機本機 store。
+
+每天第一次登入：
+
+- 應檢查並補 / 更新昨天的日終走勢點。
+- 原因：使用者昨天即使有開 App，今天點不一定代表昨天 23:59 或收盤後價格。
+- 昨天點應以昨天帳本狀態 + 昨天收盤價 / 參考價格 + 昨天匯率重算後覆蓋本機 daily trend snapshot。
+
+補點資料來源：
+
+- App 本機保存使用者自己的帳本狀態與持股數量。
+- 後端只提供公開市場資料：symbol 的歷史價格與匯率。
+- App 不應把使用者 daily snapshots、持股數量、成本或淨資產送到後端。
 
 區間重算路徑：
 
@@ -182,8 +201,12 @@
 - 停止呼叫 `syncPortfolioState`。
 - 停止寫 `user_portfolio_state`。
 - 停止讀 `user_daily_snapshots` 作為主走勢來源。
-- 新增或調整匿名 `tracked_symbols`。
-- App 新增持股時，只提交 asset type + symbol，不提交 user_id、quantity、cost。
+- 新增或調整匿名 `tracked_symbols` 大池子。
+- App 新增持股時，只提交 asset type + symbol，讓後端知道全站有人需要追蹤這檔公開標的。
+- `tracked_symbols` 是全 App 共用池，不記錄哪個使用者加入，不提交 user_id、device id、account id、quantity、cost、交易日期或帳戶資訊。
+- 一旦大池子加入某檔標的，後端之後每日抓取該標的收盤價或參考價，供所有使用者本機補點使用。
+- 建議欄位只包含非個資資料，例如 `asset_type`、`symbol`、`normalized_symbol`、`first_seen_at`、`last_price_synced_at`、`is_active`。
+- 需避免保留「誰加入此 symbol」的 audit log；極冷門標的仍可能有匿名池的殘餘推測風險，但後端不能知道持有人、數量、成本或淨資產。
 - 後端匯率資料需支援主要幣別換算；可用 TWD 或 USD 作為 pivot，在 App 本機計算交叉匯率。
 
 ### Phase 8: iCloud 備份

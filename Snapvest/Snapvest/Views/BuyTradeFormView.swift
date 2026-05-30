@@ -217,7 +217,7 @@ struct BuyTradeFormView: View {
                         .buttonStyle(.plain)
                         .foregroundColor(.lossRed)
                         .background(Color.lossRed.opacity(0.10))
-                        .cornerRadius(12)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         
                         Button(action: handleSubmit) {
                             HStack(spacing: 8) {
@@ -229,7 +229,7 @@ struct BuyTradeFormView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
                             .background(canSubmit ? Color.profitGreen : AppColors.disabledBackground)
-                            .cornerRadius(12)
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         }
                         .disabled(!canSubmit)
                     }
@@ -244,14 +244,20 @@ struct BuyTradeFormView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 16)
                         .background(canSubmit ? Color.profitGreen : AppColors.disabledBackground)
-                        .cornerRadius(12)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
                     .disabled(!canSubmit)
                 }
             }
             .padding(.horizontal)
             .padding(.vertical, 12)
-            .background(Color.cardBackground)
+            .background(Color.mainBackground)
+            .overlay(
+                Rectangle()
+                    .frame(height: 1)
+                    .foregroundColor(Color.separator.opacity(0.3)),
+                alignment: .top
+            )
         }
         .task {
             await accountsViewModel.loadAccounts(userId: userId)
@@ -382,13 +388,18 @@ struct BuyTradeFormView: View {
             Divider().padding(.horizontal, 20)
             dateSection
         }
-        .background(Color.secondaryBackground)
-        .cornerRadius(16)
+        .background(Color.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.separator.opacity(0.32), lineWidth: 1)
+        }
+        .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 2)
         .padding(.horizontal)
     }
     
     private var accountSection: some View {
-        buyFormRow(title: "帳戶", icon: "building.columns.fill", color: market.themeColor) {
+        buyFormRow(title: "帳戶", icon: "building.columns.fill", color: market.themeColor, showsIcon: false) {
             if isAccountLocked {
                 if let account = selectedAccount {
                     HStack(spacing: 8) {
@@ -518,6 +529,8 @@ struct BuyTradeFormView: View {
             VStack(alignment: .leading, spacing: 4) {
                 TextField("0", text: $quantityText)
                     .keyboardType(.decimalPad)
+                    .font(.system(size: 17, weight: .semibold))
+                    .monospacedDigit()
                     .snapFormFieldTapTarget()
                 if market == .crypto {
                     Text("加密貨幣可輸入小數，例如 0.01")
@@ -544,6 +557,8 @@ struct BuyTradeFormView: View {
         buyFormRow(title: "\(priceCurrency.rawValue) 對 \(target) 匯率", icon: "arrow.triangle.2.circlepath", color: market.themeColor) {
             TextField("0", text: $exchangeRateText)
                 .keyboardType(.decimalPad)
+                .font(.system(size: 17, weight: .semibold))
+                .monospacedDigit()
                 .snapFormFieldTapTarget()
         }
     }
@@ -860,14 +875,17 @@ private struct buyFormRow<Content: View>: View {
     let title: String
     let icon: String
     let color: Color
+    var showsIcon: Bool = true
     @ViewBuilder let content: Content
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: 16))
-                    .foregroundColor(color)
+                if showsIcon {
+                    Image(systemName: icon)
+                        .font(.system(size: 16))
+                        .foregroundColor(color)
+                }
                 Text(title)
                     .font(.subheadline)
                     .fontWeight(.semibold)
@@ -879,13 +897,13 @@ private struct buyFormRow<Content: View>: View {
                 .frame(minHeight: 44)
                 .contentShape(Rectangle())
                 .background(Color.secondaryBackground)
-                .cornerRadius(12)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.secondaryText.opacity(0.2), lineWidth: 1)
-                )
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(Color.separator.opacity(0.35), lineWidth: 1)
+                }
         }
-        .padding(20)
+        .padding(16)
     }
 }
 

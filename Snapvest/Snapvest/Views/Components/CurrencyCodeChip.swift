@@ -78,6 +78,7 @@ struct CurrencyIconBadge: View {
     let currency: Currency
     var tint: Color = .appPrimary
     var showsLabel: Bool = false
+    var labelTitle: String = "帳戶幣別"
 
     var body: some View {
         HStack(spacing: showsLabel ? 8 : 0) {
@@ -110,7 +111,7 @@ struct CurrencyIconBadge: View {
 
             if showsLabel {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("帳戶幣別")
+                    Text(labelTitle)
                         .font(.caption2.weight(.medium))
                         .foregroundColor(.secondaryText)
                     Text(currency.displayName)
@@ -119,7 +120,7 @@ struct CurrencyIconBadge: View {
                 }
             }
         }
-        .accessibilityLabel(Text("帳戶幣別 \(currency.settingsDisplayName)"))
+        .accessibilityLabel(Text("\(labelTitle) \(currency.settingsDisplayName)"))
     }
 }
 

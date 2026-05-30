@@ -16,8 +16,6 @@ final class DemoModeManager: ObservableObject {
     @Published private(set) var isEnabled = false
     @Published private(set) var isSwitching = false
     
-    private var realTrendCacheSnapshot: HomeTrendChartSessionCache.Snapshot?
-    
     private init() {}
     
     func enterDemoMode(userId: String? = nil) async {
@@ -27,12 +25,8 @@ final class DemoModeManager: ObservableObject {
         
         let resolvedUserId = userId ?? AppUser.id
         let seed = DemoSeedData.make(userId: resolvedUserId)
-        if realTrendCacheSnapshot == nil {
-            realTrendCacheSnapshot = HomeTrendChartSessionCache.snapshot()
-        }
         MockDataService.shared.beginDemoMode(seed: seed)
         ExchangeRateSessionCache.clear()
-        HomeTrendChartSessionCache.applyHistorical(userId: resolvedUserId, points: seed.trendPoints, failed: false)
         PieChartGroupingStore.shared.applyDemoDefaults()
         
         await SnapshotRefreshCoordinator.rebuildAndNotify(
@@ -53,12 +47,6 @@ final class DemoModeManager: ObservableObject {
         
         let resolvedUserId = userId ?? AppUser.id
         MockDataService.shared.endDemoMode()
-        if let realTrendCacheSnapshot {
-            HomeTrendChartSessionCache.restore(realTrendCacheSnapshot)
-        } else {
-            HomeTrendChartSessionCache.invalidate()
-        }
-        realTrendCacheSnapshot = nil
         PieChartGroupingStore.shared.reload(for: resolvedUserId)
         isEnabled = false
         NotificationCenter.default.post(name: .snapshotsDidUpdate, object: nil)

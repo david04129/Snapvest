@@ -3,17 +3,17 @@
 
 ALTER TABLE asset_price_snapshots
   ADD COLUMN IF NOT EXISTS current_close_date DATE,
-  ADD COLUMN IF NOT EXISTS current_updated_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS current_updated_at TIMESTAMP,
   ADD COLUMN IF NOT EXISTS previous_close_date DATE,
-  ADD COLUMN IF NOT EXISTS previous_updated_at TIMESTAMPTZ;
+  ADD COLUMN IF NOT EXISTS previous_updated_at TIMESTAMP;
 
 -- 自舊欄位遷移（Asia/Taipei）
 UPDATE asset_price_snapshots
 SET
   current_updated_at = COALESCE(
-    last_successful_update,
-    last_updated,
-    current_price_date
+    last_successful_update AT TIME ZONE 'Asia/Taipei',
+    last_updated AT TIME ZONE 'Asia/Taipei',
+    current_price_date AT TIME ZONE 'Asia/Taipei'
   ),
   current_close_date = COALESCE(
     current_close_date,
@@ -25,7 +25,7 @@ UPDATE asset_price_snapshots
 SET
   previous_updated_at = COALESCE(
     previous_updated_at,
-    previous_price_date
+    previous_price_date AT TIME ZONE 'Asia/Taipei'
   ),
   previous_close_date = COALESCE(
     previous_close_date,

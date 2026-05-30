@@ -56,7 +56,7 @@ enum PortfolioPieChartBuilder {
             ("stock_us", "美股", us),
             ("stock_tw", "台股", tw),
             ("crypto", "加密貨幣", crypto),
-            ("manual_assets", "手動資產", inputs.totalManualAssetsTWD)
+            ("manual_assets", "其他資產", inputs.totalManualAssetsTWD)
         ]
         let investmentItems = investmentSegments.filter { $0.2 > 0 }.map {
             PieChartDataItem(

@@ -6,6 +6,55 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
+
+private enum ManagementSectionID: Hashable, Codable, Identifiable {
+    case account(AccountType)
+    case manualAsset(ManualAssetCategory)
+
+    var id: String { rawIdentifier }
+
+    private var rawIdentifier: String {
+        switch self {
+        case .account(let accountType):
+            return "account:\(accountType.rawValue)"
+        case .manualAsset(let category):
+            return "manualAsset:\(category.rawValue)"
+        }
+    }
+
+    init?(rawIdentifier: String) {
+        let parts = rawIdentifier.split(separator: ":", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return nil }
+        switch parts[0] {
+        case "account":
+            guard let accountType = AccountType(rawValue: parts[1]) else { return nil }
+            self = .account(accountType)
+        case "manualAsset":
+            guard let category = ManualAssetCategory(rawValue: parts[1]) else { return nil }
+            self = .manualAsset(category)
+        default:
+            return nil
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawIdentifier = try container.decode(String.self)
+        guard let value = ManagementSectionID(rawIdentifier: rawIdentifier) else {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Invalid management section id"
+            )
+        }
+        self = value
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawIdentifier)
+    }
+}
 
 struct AccountsView: View {
     @Binding var selectedTab: Int
@@ -13,22 +62,29 @@ struct AccountsView: View {
     @EnvironmentObject private var portfolioViewModel: PortfolioViewModel
     @EnvironmentObject private var assetsViewModel: AssetsViewModel
     @Environment(\.openSettings) private var openSettings
+    @StateObject private var manualAssetsViewModel = ManualAssetsViewModel()
     @State private var showingAddAccount = false
     @State private var showingAddLiability = false
     @State private var userId: String = AppUser.id
     @State private var expandedCategories: Set<AccountType> = Set(AccountType.allCases)
     @State private var accountOrder: [AccountType] = AccountType.allCases
+    @State private var managementSectionOrder: [ManagementSectionID] = []
     @State private var accountOrders: [AccountType: [String]] = [:]
     @State private var navigationStackResetID = UUID()
     @State private var accountsCurrencyDisplay: AssetsCurrencyDisplay = .twd
     @State private var isEditingOrder = false
     @State private var accountPendingDelete: Account?
+    @State private var manualAssetPendingDelete: ManualAsset?
     @State private var showDeleteConfirmation = false
+    @State private var showManualAssetDeleteConfirmation = false
     @State private var deleteConfirmationMessage = ""
     @State private var deleteErrorMessage: String?
+    @State private var expandedManualAssetCategories: Set<ManualAssetCategory> = Set(ManualAssetCategory.allCases)
     @State private var isDeleting = false
     @State private var accountDetailRoute: AccountDetailRoute?
+    @State private var manualAssetDetailRoute: ManualAssetDetailRoute?
     @State private var accountDetailRefreshToken = 0
+    @State private var draggedManagementSection: ManagementSectionID?
     
     var body: some View {
         NavigationStack {
@@ -38,14 +94,14 @@ struct AccountsView: View {
                         currencyDisplay: $accountsCurrencyDisplay,
                         showsEditControl: true,
                         isEditingOrder: isEditingOrder,
-                        isEditDisabled: viewModel.accounts.filter(\.isActiveForListing).isEmpty,
+                        isEditDisabled: orderedVisibleManagementSections.isEmpty,
                         onEditTapped: {
                             toggleOrderEditing()
                         }
                     )
                     
-                    ForEach(accountOrder, id: \.self) { accountType in
-                        accountCategorySection(for: accountType)
+                    ForEach(orderedVisibleManagementSections) { sectionID in
+                        sortableManagementSectionView(for: sectionID)
                     }
                     
                     archivedDebtAccountsSection
@@ -73,6 +129,8 @@ struct AccountsView: View {
                 accountsCurrencyDisplay = .twd
                 loadAccountOrder()
                 reconcileAccountOrders()
+                reconcileManagementSectionOrder()
+                Task { await manualAssetsViewModel.loadAssets(userId: userId) }
             }
             .onChange(of: selectedTab) { _, newTab in
                 if isEditingOrder, newTab != AppTab.accounts.rawValue {
@@ -84,6 +142,10 @@ struct AccountsView: View {
             }
             .onChange(of: viewModel.accounts.map(\.id)) { _, _ in
                 reconcileAccountOrders()
+                reconcileManagementSectionOrder()
+            }
+            .onChange(of: manualAssetsViewModel.assets.map(\.id)) { _, _ in
+                reconcileManagementSectionOrder()
             }
             .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { _ in
                 Task {
@@ -94,12 +156,15 @@ struct AccountsView: View {
                         assetsViewModel: assetsViewModel,
                         rebuildAccountDetailCache: false
                     )
+                    await manualAssetsViewModel.loadAssets(userId: userId)
                     reconcileAccountOrders()
+                    reconcileManagementSectionOrder()
                     accountDetailRefreshToken += 1
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .transactionsDidChange)) { _ in
                 reconcileAccountOrders()
+                reconcileManagementSectionOrder()
                 accountDetailRefreshToken += 1
             }
             .alert("刪除帳戶", isPresented: $showDeleteConfirmation) {
@@ -112,6 +177,20 @@ struct AccountsView: View {
             } message: {
                 Text(deleteConfirmationMessage)
             }
+            .alert("刪除其他資產", isPresented: $showManualAssetDeleteConfirmation) {
+                Button("取消", role: .cancel) {
+                    manualAssetPendingDelete = nil
+                }
+                Button("刪除", role: .destructive) {
+                    guard let asset = manualAssetPendingDelete else { return }
+                    manualAssetPendingDelete = nil
+                    Task { await deleteManualAsset(asset) }
+                }
+            } message: {
+                if let asset = manualAssetPendingDelete {
+                    Text("確定刪除「\(asset.name)」？會一併刪除所有估值紀錄，此操作無法復原。")
+                }
+            }
             .alert("無法刪除", isPresented: Binding(
                 get: { deleteErrorMessage != nil },
                 set: { if !$0 { deleteErrorMessage = nil } }
@@ -122,6 +201,9 @@ struct AccountsView: View {
             }
             .navigationDestination(item: $accountDetailRoute) { route in
                 accountDetailDestination(for: route)
+            }
+            .navigationDestination(item: $manualAssetDetailRoute) { route in
+                manualAssetDetailDestination(for: route)
             }
         }
         .id(navigationStackResetID)
@@ -134,6 +216,11 @@ struct AccountsView: View {
     private func openAccountDetail(_ account: Account) {
         guard !isEditingOrder else { return }
         accountDetailRoute = AccountDetailRoute(accountId: account.id)
+    }
+
+    private func openManualAssetDetail(_ asset: ManualAsset) {
+        guard !isEditingOrder else { return }
+        manualAssetDetailRoute = ManualAssetDetailRoute(assetId: asset.id)
     }
     
     @ViewBuilder
@@ -148,9 +235,71 @@ struct AccountsView: View {
             ContentUnavailableView("找不到帳戶", systemImage: "building.columns")
         }
     }
+
+    @ViewBuilder
+    private func manualAssetDetailDestination(for route: ManualAssetDetailRoute) -> some View {
+        if let asset = manualAssetsViewModel.assets.first(where: { $0.id == route.assetId }) {
+            ManualAssetDetailView(
+                asset: asset,
+                viewModel: manualAssetsViewModel,
+                baseCurrency: portfolioViewModel.viewCurrency,
+                twdPerBaseCurrency: portfolioViewModel.twdPerBaseCurrency,
+                twdRateByCurrency: portfolioViewModel.pieChartInputs?.twdRateByCurrency ?? [.TWD: 1]
+            )
+        } else {
+            ContentUnavailableView("找不到其他資產", systemImage: "square.grid.2x2")
+        }
+    }
     
     @ViewBuilder
-    private func accountCategorySection(for accountType: AccountType) -> some View {
+    private func sortableManagementSectionView(for sectionID: ManagementSectionID) -> some View {
+        if isEditingOrder {
+            managementSectionView(for: sectionID)
+                .opacity(draggedManagementSection == sectionID ? 0.35 : 1)
+                .scaleEffect(draggedManagementSection == sectionID ? 0.985 : 1)
+                .animation(ChartMotion.switchSpring, value: draggedManagementSection)
+                .onDrag {
+                    dragProvider(for: sectionID)
+                } preview: {
+                    managementSectionDragPreview(for: sectionID)
+                }
+                .onDrop(
+                    of: [UTType.text],
+                    delegate: ManagementSectionDropDelegate(
+                        targetSection: sectionID,
+                        sections: orderedVisibleManagementSections,
+                        draggedSection: $draggedManagementSection,
+                        onMove: { source, target in
+                            moveManagementSection(source, before: target)
+                        },
+                        onCommit: saveAccountOrder
+                    )
+                )
+        } else {
+            managementSectionView(for: sectionID)
+        }
+    }
+
+    @ViewBuilder
+    private func managementSectionDragPreview(for sectionID: ManagementSectionID) -> some View {
+        managementSectionView(for: sectionID)
+            .frame(width: 340)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .shadow(color: AppColors.shadowMedium, radius: 12, x: 0, y: 6)
+    }
+
+    @ViewBuilder
+    private func managementSectionView(for sectionID: ManagementSectionID) -> some View {
+        switch sectionID {
+        case .account(let accountType):
+            accountCategorySection(for: accountType, sectionID: sectionID)
+        case .manualAsset(let category):
+            manualAssetCategorySection(for: category, sectionID: sectionID)
+        }
+    }
+
+    @ViewBuilder
+    private func accountCategorySection(for accountType: AccountType, sectionID: ManagementSectionID) -> some View {
         let typeAccounts = viewModel.accounts.activeAccounts(ofType: accountType)
         if typeAccounts.isEmpty { EmptyView() } else {
             let isLoading = viewModel.balancesLoading && !viewModel.balancesLoadedOnce
@@ -216,16 +365,65 @@ struct AccountsView: View {
             )
         }
     }
+
+    @ViewBuilder
+    private func manualAssetCategorySection(for category: ManualAssetCategory, sectionID: ManagementSectionID) -> some View {
+        let groups = Dictionary(grouping: manualAssetsViewModel.assets, by: \.category)
+        let assets = groups[category] ?? []
+        if assets.isEmpty {
+            EmptyView()
+        } else {
+            ManualAssetCategorySection(
+                category: category,
+                assets: assets.sorted { $0.updatedAt > $1.updatedAt },
+                currencyDisplay: accountsCurrencyDisplay,
+                baseCurrency: portfolioViewModel.viewCurrency,
+                twdPerBaseCurrency: portfolioViewModel.twdPerBaseCurrency,
+                twdRateByCurrency: portfolioViewModel.pieChartInputs?.twdRateByCurrency ?? [.TWD: 1],
+                isExpanded: manualAssetExpandedBinding(for: category),
+                isEditingOrder: isEditingOrder,
+                onOpenAsset: openManualAssetDetail,
+                onDeleteAsset: { asset in
+                    presentManualAssetDeleteConfirmation(for: asset)
+                }
+            )
+        }
+    }
+
+    private func presentManualAssetDeleteConfirmation(for asset: ManualAsset) {
+        guard !isDeleting, !isEditingOrder else { return }
+        manualAssetPendingDelete = asset
+        showManualAssetDeleteConfirmation = true
+    }
+
+    private func deleteManualAsset(_ asset: ManualAsset) async {
+        guard !isDeleting else { return }
+        isDeleting = true
+        defer { isDeleting = false }
+        _ = await manualAssetsViewModel.deleteAsset(id: asset.id, userId: userId)
+        if manualAssetDetailRoute?.assetId == asset.id {
+            manualAssetDetailRoute = nil
+        }
+    }
+
+    private func manualAssetExpandedBinding(for category: ManualAssetCategory) -> Binding<Bool> {
+        Binding(
+            get: { expandedManualAssetCategories.contains(category) },
+            set: { isExpanded in
+                if isExpanded {
+                    expandedManualAssetCategories.insert(category)
+                } else {
+                    expandedManualAssetCategories.remove(category)
+                }
+            }
+        )
+    }
     
     // MARK: - 標題欄
     
     private var accountsHeaderBar: some View {
         HStack {
             HStack(spacing: 6) {
-                Image(systemName: "building.columns.fill")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.appPrimary)
-                
                 Text("管理")
                     .font(.headline)
                     .fontWeight(.bold)
@@ -239,13 +437,17 @@ struct AccountsView: View {
                     guard !isEditingOrder else { return }
                     showingAddAccount = true
                 } label: {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 6) {
                         Image(systemName: "plus.circle.fill")
                         Text("新增項目")
                     }
                     .font(.subheadline)
                     .fontWeight(.semibold)
-                    .foregroundColor(.appPrimary)
+                    .foregroundColor(AppColors.actionForeground)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color.appPrimary)
+                    .clipShape(Capsule())
                 }
                 .disabled(isEditingOrder)
                 .opacity(isEditingOrder ? 0.45 : 1)
@@ -294,6 +496,24 @@ struct AccountsView: View {
     }
     
     // MARK: - 拖曳排序輔助函數
+    private var visibleManagementSectionIDs: [ManagementSectionID] {
+        let accountSections = AccountType.allCases
+            .filter { !viewModel.accounts.activeAccounts(ofType: $0).isEmpty }
+            .map(ManagementSectionID.account)
+        let manualAssetGroups = Dictionary(grouping: manualAssetsViewModel.assets, by: \.category)
+        let manualSections = ManualAssetCategory.allCases
+            .filter { manualAssetGroups[$0]?.isEmpty == false }
+            .map(ManagementSectionID.manualAsset)
+        return accountSections + manualSections
+    }
+
+    private var orderedVisibleManagementSections: [ManagementSectionID] {
+        let visible = visibleManagementSectionIDs
+        let orderedExisting = managementSectionOrder.filter { visible.contains($0) }
+        let appended = visible.filter { !orderedExisting.contains($0) }
+        return orderedExisting + appended
+    }
+
     private func getOrderedAccounts(_ accounts: [Account], for accountType: AccountType) -> [Account] {
         let order = accountOrders[accountType] ?? []
         let ordered = accounts.sorted { a, b in
@@ -311,6 +531,23 @@ struct AccountsView: View {
         accountOrders[accountType] = order
         saveAccountOrder()
     }
+
+    private func dragProvider(for sectionID: ManagementSectionID) -> NSItemProvider {
+        draggedManagementSection = sectionID
+        return NSItemProvider(object: sectionID.id as NSString)
+    }
+
+    private func moveManagementSection(_ sectionID: ManagementSectionID, before targetSectionID: ManagementSectionID) {
+        var order = orderedVisibleManagementSections
+        guard let sourceIndex = order.firstIndex(of: sectionID),
+              let targetIndex = order.firstIndex(of: targetSectionID),
+              sourceIndex != targetIndex else { return }
+        let moved = order.remove(at: sourceIndex)
+        order.insert(moved, at: targetIndex)
+        withAnimation(ChartMotion.switchSpring) {
+            managementSectionOrder = order
+        }
+    }
     
     private func reconcileAccountOrders() {
         for accountType in AccountType.allCases {
@@ -323,12 +560,30 @@ struct AccountsView: View {
             accountOrders[accountType] = order
         }
     }
+
+    private func reconcileManagementSectionOrder() {
+        let visible = visibleManagementSectionIDs
+        var order = managementSectionOrder.filter { visible.contains($0) }
+        for sectionID in visible where !order.contains(sectionID) {
+            order.append(sectionID)
+        }
+        managementSectionOrder = order
+    }
     
     private func loadAccountOrder() {
         // 從 UserDefaults 載入排序
         if let data = UserDefaults.standard.data(forKey: "accountOrder_\(userId)"),
            let order = try? JSONDecoder().decode([AccountType].self, from: data) {
             accountOrder = order
+        }
+        let managementKey = "managementSectionOrder_\(userId)"
+        if let data = UserDefaults.standard.data(forKey: managementKey),
+           let order = try? JSONDecoder().decode([ManagementSectionID].self, from: data) {
+            managementSectionOrder = order
+        } else {
+            let migratedAccountOrder = accountOrder.map(ManagementSectionID.account)
+            let manualAssetOrder = ManualAssetCategory.allCases.map(ManagementSectionID.manualAsset)
+            managementSectionOrder = migratedAccountOrder + manualAssetOrder
         }
         
         // 載入每個類別內的帳戶排序
@@ -343,8 +598,15 @@ struct AccountsView: View {
     
     private func saveAccountOrder() {
         // 保存類別排序
+        accountOrder = managementSectionOrder.compactMap {
+            if case .account(let accountType) = $0 { return accountType }
+            return nil
+        }
         if let data = try? JSONEncoder().encode(accountOrder) {
             UserDefaults.standard.set(data, forKey: "accountOrder_\(userId)")
+        }
+        if let data = try? JSONEncoder().encode(managementSectionOrder) {
+            UserDefaults.standard.set(data, forKey: "managementSectionOrder_\(userId)")
         }
         
         // 保存每個類別內的帳戶排序
@@ -368,8 +630,14 @@ struct AccountsView: View {
         let nonEmptyTypes = AccountType.allCases.filter { accountType in
             !viewModel.accounts.activeAccounts(ofType: accountType).isEmpty
         }
+        let manualAssetGroups = Dictionary(grouping: manualAssetsViewModel.assets, by: \.category)
+        let nonEmptyManualCategories = ManualAssetCategory.allCases.filter {
+            manualAssetGroups[$0]?.isEmpty == false
+        }
+        reconcileManagementSectionOrder()
         withAnimation(ChartMotion.switchSpring) {
             expandedCategories.formUnion(nonEmptyTypes)
+            expandedManualAssetCategories.formUnion(nonEmptyManualCategories)
             isEditingOrder = true
         }
     }
@@ -385,6 +653,11 @@ struct AccountsView: View {
 private struct AccountDetailRoute: Identifiable, Hashable {
     let accountId: String
     var id: String { accountId }
+}
+
+private struct ManualAssetDetailRoute: Identifiable, Hashable {
+    let assetId: String
+    var id: String { assetId }
 }
 
 // MARK: - 已封存債務帳戶
@@ -409,8 +682,6 @@ struct ArchivedDebtAccountsSection: View {
                 }
             } label: {
                 HStack {
-                    Image(systemName: "archivebox.fill")
-                        .foregroundColor(.secondaryText)
                     Text("已封存負債")
                         .font(.headline)
                         .foregroundColor(.primaryText)
@@ -467,6 +738,215 @@ struct ArchivedDebtAccountsSection: View {
     }
 }
 
+// MARK: - 其他資產類別
+
+struct ManualAssetCategorySection: View {
+    let category: ManualAssetCategory
+    let assets: [ManualAsset]
+    let currencyDisplay: AssetsCurrencyDisplay
+    let baseCurrency: Currency
+    let twdPerBaseCurrency: Decimal
+    let twdRateByCurrency: [Currency: Decimal]
+    @Binding var isExpanded: Bool
+    let isEditingOrder: Bool
+    let onOpenAsset: (ManualAsset) -> Void
+    let onDeleteAsset: (ManualAsset) -> Void
+
+    private var accentColor: Color { .stockUSColor }
+
+    private var categoryTotalDisplays: [(amount: Decimal, currency: Currency)] {
+        if currencyDisplay == .twd {
+            let totalTWD = assets.reduce(Decimal.zero) { partial, asset in
+                partial + (ManualAssetMetrics.valueTWD(asset: asset, rates: twdRateByCurrency) ?? 0)
+            }
+            let amount = twdPerBaseCurrency > 0 ? totalTWD / twdPerBaseCurrency : totalTWD
+            return [(amount, baseCurrency)]
+        }
+
+        let grouped = assets.reduce(into: [Currency: Decimal]()) { partial, asset in
+            partial[asset.currency, default: 0] += asset.currentValue
+        }
+        return grouped
+            .filter { $0.value != 0 }
+            .sorted { $0.key.rawValue < $1.key.rawValue }
+            .map { (amount: $0.value, currency: $0.key) }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Button {
+                guard !isEditingOrder else { return }
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    isExpanded.toggle()
+                }
+            } label: {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(category.displayName)
+                            .font(.headline)
+                            .foregroundColor(.primaryText)
+                        Text("\(assets.count)項其他資產")
+                            .font(.caption)
+                            .foregroundColor(.secondaryText)
+                    }
+
+                    Spacer()
+
+                    VStack(alignment: .trailing, spacing: 3) {
+                        Text("類別總資產")
+                            .font(.caption)
+                            .foregroundColor(.secondaryText)
+                        ForEach(categoryTotalDisplays, id: \.currency) { display in
+                            CurrencyAmountLabel(
+                                text: display.amount.formatted(currency: display.currency),
+                                currency: display.currency,
+                                font: .snapAmountRow,
+                                weight: .semibold,
+                                color: .primaryText,
+                                chipTint: accentColor
+                            )
+                        }
+                    }
+
+                    if isEditingOrder {
+                        SectionDragHandle()
+                    } else {
+                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                            .foregroundColor(.secondaryText)
+                            .font(.caption)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .padding()
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                List {
+                    ForEach(assets) { asset in
+                        Button {
+                            onOpenAsset(asset)
+                        } label: {
+                            ManualAssetCardView(
+                                asset: asset,
+                                currencyDisplay: currencyDisplay,
+                                baseCurrency: baseCurrency,
+                                twdPerBaseCurrency: twdPerBaseCurrency,
+                                twdRateByCurrency: twdRateByCurrency
+                            )
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.borderless)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) {
+                                onDeleteAsset(asset)
+                            } label: {
+                                SwiftUI.Label("刪除", systemImage: "trash")
+                            }
+                            .tint(.lossRed)
+                        }
+                    }
+                }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .scrollDisabled(true)
+                .frame(minHeight: CGFloat(assets.count) * 88)
+                .padding(.horizontal)
+                .padding(.bottom)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .background(Color.cardBackground)
+        .cornerRadius(16)
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 16)
+                .fill(accentColor)
+                .frame(width: 4)
+        }
+        .shadow(color: AppColors.shadowMedium, radius: 8, x: 0, y: 2)
+    }
+}
+
+struct ManualAssetCardView: View {
+    let asset: ManualAsset
+    let currencyDisplay: AssetsCurrencyDisplay
+    let baseCurrency: Currency
+    let twdPerBaseCurrency: Decimal
+    let twdRateByCurrency: [Currency: Decimal]
+
+    private var accentColor: Color { .stockUSColor }
+
+    private var displayAmount: (amount: Decimal, currency: Currency) {
+        if currencyDisplay == .original {
+            return (asset.currentValue, asset.currency)
+        }
+        let valueTWD = ManualAssetMetrics.valueTWD(asset: asset, rates: twdRateByCurrency) ?? asset.currentValue
+        let amount = twdPerBaseCurrency > 0 ? valueTWD / twdPerBaseCurrency : valueTWD
+        return (amount, baseCurrency)
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                CurrencyTitleLabel(
+                    title: asset.name,
+                    currency: displayAmount.currency,
+                    font: .headline,
+                    weight: .semibold,
+                    color: .primaryText,
+                    chipTint: accentColor,
+                    titleLineLimit: 1
+                )
+
+                HStack(spacing: 6) {
+                    if asset.isIncludedInTotalAssets {
+                        badge("總資產")
+                    }
+                    if asset.isIncludedInInvestments {
+                        badge("投資")
+                    }
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            CurrencyAmountLabel(
+                text: displayAmount.amount.formatted(currency: displayAmount.currency),
+                currency: displayAmount.currency,
+                font: .snapAmountRow,
+                weight: .semibold,
+                color: .primaryText,
+                chipTint: accentColor
+            )
+        }
+        .padding(16)
+        .background(Color.cardBackground)
+        .cornerRadius(16)
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 16)
+                .fill(accentColor)
+                .frame(width: 4)
+        }
+        .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 1)
+    }
+
+    private func badge(_ text: String) -> some View {
+        Text(text)
+            .font(.caption2)
+            .fontWeight(.semibold)
+            .foregroundColor(accentColor)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(accentColor.opacity(0.10))
+            .clipShape(Capsule())
+    }
+}
+
 // MARK: - 帳戶列（無 NavigationLink 箭頭）
 
 private struct AccountListRowButton<RowContent: View>: View {
@@ -492,6 +972,7 @@ private struct AccountListRowButton<RowContent: View>: View {
                 Button(role: .destructive, action: onDelete) {
                     SwiftUI.Label("刪除", systemImage: "trash")
                 }
+                .tint(.lossRed)
             }
         }
     }
@@ -574,6 +1055,45 @@ enum AccountListAmountDisplay {
     }
 }
 
+private struct ManagementSectionDropDelegate: DropDelegate {
+    let targetSection: ManagementSectionID
+    let sections: [ManagementSectionID]
+    @Binding var draggedSection: ManagementSectionID?
+    let onMove: (ManagementSectionID, ManagementSectionID) -> Void
+    let onCommit: () -> Void
+
+    func dropEntered(info: DropInfo) {
+        guard let draggedSection,
+              draggedSection != targetSection,
+              sections.contains(draggedSection),
+              sections.contains(targetSection) else {
+            return
+        }
+        onMove(draggedSection, targetSection)
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggedSection = nil
+        onCommit()
+        return true
+    }
+}
+
+private struct SectionDragHandle: View {
+    var body: some View {
+        Image(systemName: "line.3.horizontal")
+            .font(.system(size: 18, weight: .semibold))
+            .foregroundColor(.secondaryText)
+            .frame(width: 32, height: 44)
+            .contentShape(Rectangle())
+            .accessibilityLabel("拖曳調整大類排序")
+    }
+}
+
 // MARK: - 可收縮/展開的帳戶類別區塊
 struct ExpandableAccountCategorySection: View {
     let accountType: AccountType
@@ -617,15 +1137,6 @@ struct ExpandableAccountCategorySection: View {
                 }
             }) {
                 HStack {
-                    ZStack {
-                        Circle()
-                            .fill(accountType.color.opacity(0.2))
-                            .frame(width: 40, height: 40)
-                        Image(systemName: accountType.icon)
-                            .foregroundColor(accountType.color)
-                            .font(.system(size: 20))
-                    }
-                    
                     VStack(alignment: .leading, spacing: 2) {
                         Text(accountType.displayName)
                             .font(.headline)
@@ -665,9 +1176,13 @@ struct ExpandableAccountCategorySection: View {
                         }
                     }
                     
-                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .foregroundColor(.secondaryText)
-                        .font(.caption)
+                    if isEditingOrder {
+                        SectionDragHandle()
+                    } else {
+                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                            .foregroundColor(.secondaryText)
+                            .font(.caption)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
@@ -747,8 +1262,6 @@ struct AccountCardView: View {
     var body: some View {
         VStack {
             HStack {
-                CurrencyIconBadge(currency: account.currency, tint: account.accountType.color)
-                
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
                         Text(account.name)
@@ -893,17 +1406,6 @@ struct ExpandableDebtAccountSection: View {
                 }
             }) {
                 HStack {
-                    // 圖標（帶背景色）
-                    ZStack {
-                        Circle()
-                            .fill(accountType.color.opacity(0.2))
-                            .frame(width: 40, height: 40)
-                        
-                        Image(systemName: accountType.icon)
-                            .foregroundColor(accountType.color)
-                            .font(.system(size: 20))
-                    }
-                    
                     VStack(alignment: .leading, spacing: 2) {
                         Text(accountType.displayName)
                             .font(.headline)

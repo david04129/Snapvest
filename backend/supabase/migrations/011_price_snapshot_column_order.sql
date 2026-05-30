@@ -16,12 +16,12 @@ CREATE TABLE asset_price_snapshots (
 
   current_price DECIMAL(18, 8),
   current_close_date DATE,
-  current_updated_at TIMESTAMPTZ,
+  current_updated_at TIMESTAMP,
   current_price_source TEXT,
 
   previous_price DECIMAL(18, 8),
   previous_close_date DATE,
-  previous_updated_at TIMESTAMPTZ,
+  previous_updated_at TIMESTAMP,
   previous_price_source TEXT
 );
 

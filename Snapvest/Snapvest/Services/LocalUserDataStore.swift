@@ -49,6 +49,8 @@ struct LocalUserValuationStore: Codable {
     var assetPriceSnapshotsByKey: [String: AssetPriceSnapshot]
     var aggregatedHoldingSnapshots: [AggregatedHoldingSnapshot]
     var manualAssetValuationsByAssetId: [String: [ManualAssetValuation]]
+    var dailyTrendSnapshotsByDate: [String: LocalDailyTrendSnapshot]
+    var lastDailyTrendBackfillRunDateKey: String?
     /// 本機完成對齊 Supabase 股價的時間
     var priceSyncedAt: Date?
     /// 對齊當下讀到的 price_update_metadata.last_updated_at
@@ -62,6 +64,8 @@ struct LocalUserValuationStore: Codable {
         assetPriceSnapshotsByKey: [String: AssetPriceSnapshot] = [:],
         aggregatedHoldingSnapshots: [AggregatedHoldingSnapshot] = [],
         manualAssetValuationsByAssetId: [String: [ManualAssetValuation]] = [:],
+        dailyTrendSnapshotsByDate: [String: LocalDailyTrendSnapshot] = [:],
+        lastDailyTrendBackfillRunDateKey: String? = nil,
         priceSyncedAt: Date? = nil,
         priceSourceUpdatedAt: Date? = nil,
         updatedAt: Date? = nil
@@ -72,6 +76,8 @@ struct LocalUserValuationStore: Codable {
         self.assetPriceSnapshotsByKey = assetPriceSnapshotsByKey
         self.aggregatedHoldingSnapshots = aggregatedHoldingSnapshots
         self.manualAssetValuationsByAssetId = manualAssetValuationsByAssetId
+        self.dailyTrendSnapshotsByDate = dailyTrendSnapshotsByDate
+        self.lastDailyTrendBackfillRunDateKey = lastDailyTrendBackfillRunDateKey
         self.priceSyncedAt = priceSyncedAt
         self.priceSourceUpdatedAt = priceSourceUpdatedAt
         self.updatedAt = updatedAt
@@ -85,16 +91,18 @@ struct LocalUserValuationStore: Codable {
         assetPriceSnapshotsByKey = try container.decodeIfPresent([String: AssetPriceSnapshot].self, forKey: .assetPriceSnapshotsByKey) ?? [:]
         aggregatedHoldingSnapshots = try container.decodeIfPresent([AggregatedHoldingSnapshot].self, forKey: .aggregatedHoldingSnapshots) ?? []
         manualAssetValuationsByAssetId = try container.decodeIfPresent([String: [ManualAssetValuation]].self, forKey: .manualAssetValuationsByAssetId) ?? [:]
+        dailyTrendSnapshotsByDate = try container.decodeIfPresent([String: LocalDailyTrendSnapshot].self, forKey: .dailyTrendSnapshotsByDate) ?? [:]
+        lastDailyTrendBackfillRunDateKey = try container.decodeIfPresent(String.self, forKey: .lastDailyTrendBackfillRunDateKey)
         priceSyncedAt = try container.decodeIfPresent(Date.self, forKey: .priceSyncedAt)
         priceSourceUpdatedAt = try container.decodeIfPresent(Date.self, forKey: .priceSourceUpdatedAt)
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
     }
 }
 
-// MARK: - 根文件（schema v4）
+// MARK: - 根文件（schema v5）
 
 struct LocalUserData: Codable {
-    static let currentSchemaVersion = 4
+    static let currentSchemaVersion = 5
     
     let schemaVersion: Int
     let userId: String

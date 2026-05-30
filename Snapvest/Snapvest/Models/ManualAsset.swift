@@ -110,6 +110,8 @@ struct ManualAsset: Identifiable, Codable, Equatable {
 }
 
 struct ManualAssetValuation: Identifiable, Codable, Equatable {
+    static let creationRecordNote = "建立其他資產"
+
     let id: String
     var userId: String
     var manualAssetId: String

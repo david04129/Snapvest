@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Snapvest 每日股價更新腳本
-- 每次股價更新前：備份 hot_stocks（保留 2 日）→ 以 hot_stocks_seed ∪ 全使用者 holdings 覆寫 hot_stocks
+- 每次股價更新前：備份 hot_stocks（保留 2 日）→ 以 hot_stocks_seed ∪ 匿名 tracked_symbols 覆寫 hot_stocks
 - 僅對 hot_stocks 清單抓價（去重，每檔只查一次）
 - 台股 FinMind、匯率 FinMind 台銀牌告（6 幣→TWD，與台股同輪）；美股 Finnhub；失敗 → 等 60s 重試 → yfinance 補洞
 - 加密 CoinGecko（曆日快照）
@@ -41,6 +41,7 @@ REQUESTS_PER_MINUTE = 58
 MIN_INTERVAL_SEC = 60.0 / REQUESTS_PER_MINUTE
 RETRY_PAUSE_SEC = 60
 HOURLY_LIMIT_FINMIND = 600 if FINMIND_TOKEN else 300
+TRACKED_SYMBOL_FAILURE_DISABLE_THRESHOLD = 5
 CRYPTO_ID_MAP_PATH = Path(__file__).parent / "data" / "crypto_coingecko_map.json"
 YAHOO_TW_SUFFIX = ".TW"  # 台股 Yahoo symbol 格式
 # FinMind 台銀牌告：1 單位外幣 = rate TWD（與台股更新共用 FinMind 配額）
@@ -61,6 +62,10 @@ def tw_now() -> datetime:
 
 def tw_now_iso_seconds() -> str:
     return tw_now().replace(microsecond=0).isoformat()
+
+
+def tw_now_local_seconds() -> str:
+    return tw_now().replace(microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def parse_close_date(value) -> Optional[date]:
@@ -319,34 +324,33 @@ def collect_seed_symbols(supabase: Client) -> list[dict]:
     return symbols_list
 
 
-def collect_user_holdings_symbols(supabase: Client) -> list[dict]:
-    """所有 user_portfolio_state.holdings 中的標的"""
+def collect_tracked_symbols(supabase: Client) -> list[dict]:
+    """匿名 tracked_symbols 大池子中的標的（不含任何 user_id / quantity / cost）"""
     symbols_set: set[tuple[str, str]] = set()
     symbols_list: list[dict] = []
     try:
-        r = supabase.table("user_portfolio_state").select("holdings").execute()
-        _raise_on_supabase_error(r, "user_portfolio_state read")
+        r = (
+            supabase.table("tracked_symbols")
+            .select("asset_type, normalized_symbol, symbol, first_seen_at")
+            .eq("is_active", True)
+            .execute()
+        )
+        _raise_on_supabase_error(r, "tracked_symbols read")
         order = HOLDINGS_DISPLAY_ORDER_BASE
         for row in r.data or []:
-            holdings = row.get("holdings") or []
-            if isinstance(holdings, str):
-                holdings = json.loads(holdings)
-            for h in holdings:
-                if not isinstance(h, dict):
-                    continue
-                asset_type = h.get("asset_type") or h.get("assetType")
-                symbol = h.get("symbol")
-                if not asset_type or not symbol:
-                    continue
-                _merge_symbol_row(symbols_set, symbols_list, asset_type, symbol, order)
-                order += 1
+            asset_type = row.get("asset_type")
+            symbol = row.get("normalized_symbol") or row.get("symbol")
+            if not asset_type or not symbol:
+                continue
+            _merge_symbol_row(symbols_set, symbols_list, asset_type, symbol, order)
+            order += 1
     except Exception as e:
-        print(f"取得 user_portfolio_state.holdings 時出錯: {e}")
+        print(f"取得 tracked_symbols 時出錯: {e}")
     return symbols_list
 
 
 def build_hot_stocks_catalog(supabase: Client) -> list[dict]:
-    """種子 ∪ 全使用者持股，去重"""
+    """種子 ∪ 匿名 tracked_symbols，去重"""
     symbols_set: set[tuple[str, str]] = set()
     catalog: list[dict] = []
     for row in collect_seed_symbols(supabase):
@@ -354,7 +358,7 @@ def build_hot_stocks_catalog(supabase: Client) -> list[dict]:
         if key not in symbols_set:
             symbols_set.add(key)
             catalog.append(row)
-    for row in collect_user_holdings_symbols(supabase):
+    for row in collect_tracked_symbols(supabase):
         key = (row["asset_type"], row["symbol"])
         if key not in symbols_set:
             symbols_set.add(key)
@@ -396,7 +400,7 @@ def backup_hot_stocks(supabase: Client) -> int:
 
 
 def rebuild_hot_stocks(supabase: Client) -> list[dict]:
-    """備份後覆寫 hot_stocks = seed ∪ holdings"""
+    """備份後覆寫 hot_stocks = seed ∪ tracked_symbols"""
     backup_hot_stocks(supabase)
     catalog = build_hot_stocks_catalog(supabase)
 
@@ -417,7 +421,7 @@ def rebuild_hot_stocks(supabase: Client) -> list[dict]:
             ).execute()
             _raise_on_supabase_error(insert_resp, "hot_stocks upsert")
 
-    print(f"  hot_stocks 已重建：{len(catalog)} 檔（種子 + 使用者持股）")
+    print(f"  hot_stocks 已重建：{len(catalog)} 檔（種子 + 匿名追蹤池）")
     return catalog
 
 
@@ -738,6 +742,77 @@ def upsert_prices(supabase: Client, updates: list[dict]):
     ).execute()
 
 
+def mark_tracked_symbols_synced(supabase: Client, updates: list[dict], synced_at: str) -> None:
+    """標記匿名追蹤池中本輪成功同步的 symbol。"""
+    for row in updates:
+        try:
+            supabase.table("tracked_symbols").update(
+                {
+                    "last_price_synced_at": synced_at,
+                    "failure_count": 0,
+                    "last_error": None,
+                    "last_failed_at": None,
+                    "is_active": True,
+                }
+            ).eq("asset_type", row["asset_type"]).eq(
+                "normalized_symbol", row["symbol"]
+            ).execute()
+        except Exception as e:
+            print(f"標記 tracked_symbols {row.get('asset_type')}/{row.get('symbol')} 失敗: {e}")
+        time.sleep(0.02)
+
+
+def mark_tracked_symbols_failed(
+    supabase: Client,
+    attempted_symbols: list[dict],
+    successful_keys: set[tuple[str, str]],
+    failed_at: str,
+) -> None:
+    """記錄本輪有嘗試但未成功寫價的匿名 symbols；連續失敗達門檻後停用。"""
+    for row in attempted_symbols:
+        asset_type = row["asset_type"]
+        symbol = row["symbol"]
+        if (asset_type, symbol) in successful_keys:
+            continue
+
+        try:
+            existing = (
+                supabase.table("tracked_symbols")
+                .select("failure_count")
+                .eq("asset_type", asset_type)
+                .eq("normalized_symbol", symbol)
+                .maybe_single()
+                .execute()
+            )
+            _raise_on_supabase_error(existing, f"tracked_symbols read failure_count {asset_type}/{symbol}")
+            if not existing.data:
+                continue
+
+            next_failure_count = int(existing.data.get("failure_count") or 0) + 1
+            should_disable = next_failure_count >= TRACKED_SYMBOL_FAILURE_DISABLE_THRESHOLD
+            update_row = {
+                "failure_count": next_failure_count,
+                "last_error": "price_update_failed",
+                "last_failed_at": failed_at,
+            }
+            if should_disable:
+                update_row["is_active"] = False
+
+            resp = (
+                supabase.table("tracked_symbols")
+                .update(update_row)
+                .eq("asset_type", asset_type)
+                .eq("normalized_symbol", symbol)
+                .execute()
+            )
+            _raise_on_supabase_error(resp, f"tracked_symbols failure update {asset_type}/{symbol}")
+            if should_disable:
+                print(f"  停用 tracked symbol: {asset_type}/{symbol}（連續失敗 {next_failure_count} 次）")
+        except Exception as e:
+            print(f"記錄 tracked_symbols 失敗狀態 {asset_type}/{symbol} 失敗: {e}")
+        time.sleep(0.02)
+
+
 MARKET_ALIASES = {
     "tw": "stock_tw",
     "us": "stock_us",
@@ -769,7 +844,7 @@ def run_price_update(markets: Optional[Set[str]] = None) -> None:
     print(f"[{tw_now().isoformat()}] 開始股價更新（markets={label}）")
     supabase = get_supabase()
 
-    print("重建 hot_stocks 清單（seed ∪ 使用者持股）…")
+    print("重建 hot_stocks 清單（seed ∪ 匿名 tracked_symbols）…")
     rebuild_hot_stocks(supabase)
 
     symbols = filter_symbols_by_markets(get_symbols_to_update(supabase), markets)
@@ -808,7 +883,7 @@ def run_price_update(markets: Optional[Set[str]] = None) -> None:
             if _is_valid_price(price):
                 quotes[key] = FetchedQuote(float(price), "coingecko", crypto_close)
 
-    updated_at = tw_now_iso_seconds()
+    updated_at = tw_now_local_seconds()
     currency_map = {"stock_tw": "TWD", "stock_us": "USD", "crypto": "USD"}
     rows = []
     for (asset_type, symbol), q in quotes.items():
@@ -822,7 +897,11 @@ def run_price_update(markets: Optional[Set[str]] = None) -> None:
             "current_price_source": q.source,
         })
 
+    attempted_symbols = symbols
+    successful_keys = set(quotes.keys())
     upsert_prices(supabase, rows)
+    mark_tracked_symbols_synced(supabase, rows, updated_at)
+    mark_tracked_symbols_failed(supabase, attempted_symbols, successful_keys, updated_at)
     print(f"已寫入 {len(rows)} 筆至 Supabase（更新時間 {updated_at}）")
     print("更新完成")
 

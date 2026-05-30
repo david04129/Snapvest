@@ -95,10 +95,6 @@ struct AdjustCashBalanceView: View {
             
             CardView {
                 HStack {
-                    Image(systemName: account.accountType.icon)
-                        .font(.system(size: 20))
-                        .foregroundColor(account.accountType.color)
-                    
                     VStack(alignment: .leading, spacing: 4) {
                         Text(account.name)
                             .font(.headline)

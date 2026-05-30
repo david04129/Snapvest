@@ -35,10 +35,12 @@ struct SnapToolbarIconButton: View {
             Image(systemName: icon.systemName)
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundColor(.appPrimary)
-                .frame(minWidth: 44, minHeight: 44)
-                .contentShape(Rectangle())
+                .frame(width: 44, height: 44)
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
+        .frame(width: 44, height: 44)
+        .clipShape(Circle())
         .accessibilityLabel(icon.accessibilityLabel)
     }
 }

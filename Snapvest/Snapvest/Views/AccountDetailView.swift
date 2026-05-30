@@ -68,6 +68,13 @@ struct AccountDetailView: View {
                 regularAccountView
             }
         }
+        .navigationBarBackButtonHidden(true)
+        .enableNavigationSwipeBack()
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                SnapToolbarIconButton(icon: .back) { dismiss() }
+            }
+        }
         .navigationDestination(isPresented: $showTransactionHistory) {
             TransactionHistoryView(account: account)
         }

@@ -21,7 +21,15 @@ private enum SupabaseRESTTimestampParser {
         let withoutFraction = ISO8601DateFormatter()
         withoutFraction.formatOptions = [.withInternetDateTime, .withColonSeparatorInTime]
         withoutFraction.timeZone = TimeZone(identifier: "UTC")
-        return withFraction.date(from: string) ?? withoutFraction.date(from: string)
+        if let parsed = withFraction.date(from: string) ?? withoutFraction.date(from: string) {
+            return parsed
+        }
+
+        let taipeiLocal = DateFormatter()
+        taipeiLocal.locale = Locale(identifier: "en_US_POSIX")
+        taipeiLocal.timeZone = TimeZone(identifier: "Asia/Taipei")
+        taipeiLocal.dateFormat = string.contains("T") ? "yyyy-MM-dd'T'HH:mm:ss" : "yyyy-MM-dd HH:mm:ss"
+        return taipeiLocal.date(from: String(string.prefix(19)))
     }
     
     /// PostgreSQL DATE（yyyy-MM-dd）
@@ -47,7 +55,7 @@ enum SupabaseConfig: Sendable {
         url != nil && !(url ?? "").isEmpty && anonKey != nil && !(anonKey ?? "").isEmpty
     }
     
-    /// Edge Function 可用的 Bearer token（legacy JWT）；publishable key 不可當 JWT 使用
+    /// Edge Function 可用的 Bearer token。Publishable key 不是 JWT，不能放進 Authorization。
     static var edgeFunctionAuthorizationToken: String? {
         if let jwt = anonJwt?.trimmingCharacters(in: .whitespacesAndNewlines), jwt.hasPrefix("eyJ") {
             return jwt

@@ -49,17 +49,17 @@ struct TradeFormCurrencyBadge: View {
     
     var body: some View {
         Text(code)
-            .font(.caption)
-            .fontWeight(.bold)
-            .foregroundColor(.primaryText)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(Color.tertiaryBackground)
-            .cornerRadius(6)
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(Color.separator.opacity(0.45), lineWidth: 1)
-            )
+            .font(.system(size: 10, weight: .bold, design: .rounded))
+            .tracking(0.4)
+            .foregroundColor(.primaryText.opacity(0.72))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .background(Color.primaryText.opacity(0.06))
+            .clipShape(Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(Color.primaryText.opacity(0.12), lineWidth: 1)
+            }
     }
 }
 
@@ -72,6 +72,8 @@ struct TradeFormUnitPriceInput: View {
             TradeFormCurrencyBadge(currency: currency)
             TextField("0", text: $priceText)
                 .keyboardType(.decimalPad)
+                .font(.system(size: 17, weight: .semibold))
+                .monospacedDigit()
                 .snapFormFieldTapTarget()
         }
         .snapFormFieldTapTarget()
@@ -86,14 +88,7 @@ struct TradeFormCompactHeader: View {
     var isEditMode: Bool = false
     
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: market.iconName)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(market.themeColor)
-                .frame(width: 32, height: 32)
-                .background(market.themeColor.opacity(0.12))
-                .clipShape(Circle())
-            
+        HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(isEditMode ? "編輯\(actionTitle)" : actionTitle)
                     .font(.headline)
@@ -104,6 +99,14 @@ struct TradeFormCompactHeader: View {
             }
             
             Spacer(minLength: 0)
+
+            Text(market.title)
+                .font(.caption.weight(.semibold))
+                .foregroundColor(market.themeColor)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
+                .background(market.themeColor.opacity(0.12))
+                .clipShape(Capsule())
         }
         .padding(.horizontal)
         .padding(.top, 4)
@@ -145,9 +148,13 @@ struct TradeFormAmountSummary: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(Color.secondaryBackground)
-        .cornerRadius(10)
+        .padding(14)
+        .background(Color.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.separator.opacity(0.32), lineWidth: 1)
+        }
         .animation(ChartMotion.switchSpring, value: amountText)
     }
 }

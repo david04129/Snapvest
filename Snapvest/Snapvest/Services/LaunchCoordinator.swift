@@ -22,6 +22,10 @@ enum LaunchCoordinator {
         let canUseLocal = LocalLaunchReadiness.canEnterApp(userId: userId)
         
         guard SupabaseConfig.isConfigured else {
+            await LocalDailyTrendBackfillService.runIfNeeded(
+                userId: userId,
+                dataService: resolvedDataService
+            )
             await applyPersistedState(
                 userId: userId,
                 portfolioViewModel: portfolioViewModel,
@@ -65,6 +69,11 @@ enum LaunchCoordinator {
             }
         }
         
+        await LocalDailyTrendBackfillService.runIfNeeded(
+            userId: userId,
+            dataService: resolvedDataService
+        )
+
         await applyPersistedState(
             userId: userId,
             portfolioViewModel: portfolioViewModel,

@@ -30,7 +30,7 @@ function taipeiCloseDateString(d = new Date()): string {
   }).format(d)
 }
 
-function taipeiUpdatedAtISOSeconds(d = new Date()): string {
+function taipeiUpdatedAtSeconds(d = new Date()): string {
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: TAIPEI_TZ,
     year: "numeric",
@@ -42,7 +42,7 @@ function taipeiUpdatedAtISOSeconds(d = new Date()): string {
     hour12: false,
   }).formatToParts(d)
   const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "00"
-  return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}:${get("second")}+08:00`
+  return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}:${get("second")}`
 }
 
 async function fetchYahooChart(yahooSymbol: string): Promise<Response> {
@@ -166,7 +166,7 @@ serve(async (req) => {
 
     // 3. 寫入 DB（零散參考價；收盤日＝台北曆日，非排程 EOD）
     const closeDate = taipeiCloseDateString()
-    const updatedAt = taipeiUpdatedAtISOSeconds()
+    const updatedAt = taipeiUpdatedAtSeconds()
     const { data: prior } = await supabase
       .from("asset_price_snapshots")
       .select("current_price, current_close_date, current_updated_at, current_price_source")

@@ -31,12 +31,7 @@ enum SnapshotRefreshCoordinator {
             if deferRemoteWork, !isDemoMode, (syncPortfolio || updatePriceMetadata) {
                 Task { @MainActor in
                     if syncPortfolio {
-                        await PortfolioStateSync.sync(
-                            userId: userId,
-                            dataService: resolvedDataService,
-                            priceService: resolvedPriceService,
-                            bundle: bundle
-                        )
+                        await TrackedSymbolSync.sync(symbols: bundle.userHoldingsSnapshot.symbols)
                     }
                     if updatePriceMetadata {
                         await SupabasePriceService.recordSuccessfulPriceSync(
@@ -46,12 +41,7 @@ enum SnapshotRefreshCoordinator {
                     }
                 }
             } else if syncPortfolio, !isDemoMode {
-                await PortfolioStateSync.sync(
-                    userId: userId,
-                    dataService: resolvedDataService,
-                    priceService: resolvedPriceService,
-                    bundle: bundle
-                )
+                await TrackedSymbolSync.sync(symbols: bundle.userHoldingsSnapshot.symbols)
             }
             if updatePriceMetadata, !isDemoMode, !deferRemoteWork {
                 await SupabasePriceService.recordSuccessfulPriceSync(

@@ -110,20 +110,15 @@ struct AddAccountView: View {
                     // 選擇帳戶／負債類型
                     VStack(spacing: 0) {
                         // 標題和說明
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(selectedItemKind?.navigationTitle ?? "新增項目")
-                                .font(.title2)
-                                .fontWeight(.bold)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            
-                            Text(selectedItemKind?.selectionDescription ?? "請選擇您想建立的項目。")
-                                .font(.subheadline)
-                                .foregroundColor(.secondaryText)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
+                        AddSheetHeroCard(
+                            title: selectedItemKind?.navigationTitle ?? "新增項目",
+                            subtitle: selectedItemKind?.selectionDescription ?? "請選擇您想建立的項目。",
+                            accentColor: selectedItemKind?.color ?? .appPrimary,
+                            badge: "選擇類型"
+                        )
                         .padding(.horizontal)
-                        .padding(.top)
-                        .padding(.bottom, 8)
+                        .padding(.top, 12)
+                        .padding(.bottom, 10)
                         
                         // 帳戶類型選擇（存款／投資／債務）
                         ScrollView {
@@ -536,7 +531,7 @@ private enum AddItemKind: CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .account: return "新增帳戶"
-        case .manualAsset: return "新增手動資產"
+        case .manualAsset: return "新增其他資產"
         case .liability: return "新增負債"
         }
     }
@@ -559,17 +554,9 @@ private enum AddItemKind: CaseIterable, Identifiable {
         case .account:
             return "請選擇您想建立的帳戶類型。"
         case .manualAsset:
-            return "請輸入手動資產資料。"
+            return "請輸入其他資產資料。"
         case .liability:
             return "請選擇您想建立的負債類型。"
-        }
-    }
-
-    var icon: String {
-        switch self {
-        case .account: return "building.columns.fill"
-        case .manualAsset: return "square.grid.2x2.fill"
-        case .liability: return "creditcard.fill"
         }
     }
 
@@ -582,26 +569,82 @@ private enum AddItemKind: CaseIterable, Identifiable {
     }
 }
 
+private struct AddSheetHeroCard: View {
+    let title: String
+    let subtitle: String
+    let accentColor: Color
+    var badge: String? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 6) {
+                    if let badge {
+                        Text(badge)
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(accentColor)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 5)
+                            .background(accentColor.opacity(0.12))
+                            .clipShape(Capsule())
+                    }
+
+                    Text(title)
+                        .font(.title2)
+                        .fontWeight(.bold)
+                        .foregroundColor(.primaryText)
+                }
+
+                Spacer(minLength: 0)
+            }
+
+            Text(subtitle)
+                .font(.subheadline)
+                .foregroundColor(.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(accentColor)
+                .frame(width: 4)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(Color.separator.opacity(0.32), lineWidth: 1)
+        }
+        .shadow(color: AppColors.shadowMedium, radius: 8, x: 0, y: 2)
+    }
+}
+
+private struct AddSheetFormCard: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .background(Color.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.separator.opacity(0.32), lineWidth: 1)
+            }
+            .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 2)
+            .padding(.horizontal)
+    }
+}
+
+private extension View {
+    func addSheetFormCard() -> some View {
+        modifier(AddSheetFormCard())
+    }
+}
+
 private struct AddItemKindSelectionView: View {
     let onSelect: (AddItemKind) -> Void
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("新增項目")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                Text("選擇要建立的資料類型。手動資產會保存在本機，不同步到後端。")
-                    .font(.subheadline)
-                    .foregroundColor(.secondaryText)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .padding(.horizontal)
-            .padding(.top)
-            .padding(.bottom, 8)
-
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(AddItemKind.allCases) { kind in
@@ -611,6 +654,7 @@ private struct AddItemKindSelectionView: View {
                     }
                 }
                 .padding()
+                .padding(.top, 8)
             }
         }
     }
@@ -623,16 +667,6 @@ private struct AddItemKindSelectionCard: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 16) {
-                ZStack {
-                    Circle()
-                        .fill(kind.color.opacity(0.16))
-                        .frame(width: 50, height: 50)
-
-                    Image(systemName: kind.icon)
-                        .foregroundColor(kind.color)
-                        .font(.system(size: 23, weight: .semibold))
-                }
-
                 VStack(alignment: .leading, spacing: 4) {
                     Text(kind.title)
                         .font(.headline)
@@ -646,19 +680,27 @@ private struct AddItemKindSelectionCard: View {
 
                 Spacer(minLength: 8)
 
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(.secondaryText)
+                Text("選擇")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(kind.color)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(kind.color.opacity(0.12))
+                    .clipShape(Capsule())
             }
             .padding()
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(kind.color.opacity(0.05))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(kind.color.opacity(0.9), lineWidth: 1)
-                    )
-            )
+            .background(Color.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(kind.color)
+                    .frame(width: 4)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(kind.color.opacity(0.28), lineWidth: 1)
+            }
+            .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 2)
         }
         .buttonStyle(.plain)
     }
@@ -809,28 +851,14 @@ struct DebtAccountDetailsFormView: View {
             
             ScrollView {
                 VStack(spacing: 24) {
-                    // 帳戶類型圖標卡片
-                    VStack(spacing: 12) {
-                        Image(systemName: accountType.icon)
-                            .font(.system(size: 48))
-                            .foregroundColor(accountType.color)
-                            .frame(width: 80, height: 80)
-                            .background(accountType.color.opacity(0.1))
-                            .clipShape(Circle())
-                        
-                        Text(accountType.displayName)
-                            .font(.title3)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.primaryText)
-                        
-                        Text(accountType.description)
-                            .font(.subheadline)
-                            .foregroundColor(.secondaryText)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 32)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 32)
+                    AddSheetHeroCard(
+                        title: accountType.displayName,
+                        subtitle: accountType.description,
+                        accentColor: accountType.color,
+                        badge: "新增負債"
+                    )
+                    .padding(.horizontal)
+                    .padding(.top, 8)
                     
                     // 表單卡片
                     VStack(spacing: 0) {
@@ -1275,9 +1303,7 @@ struct DebtAccountDetailsFormView: View {
                         }
                         .padding(20)
                     }
-                    .background(Color.secondaryBackground)
-                    .cornerRadius(16)
-                    .padding(.horizontal)
+                    .addSheetFormCard()
                     
                     Spacer(minLength: 20)
                 }
@@ -1297,7 +1323,7 @@ struct DebtAccountDetailsFormView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
                 .background(isDebtFormValid ? accountType.color : AppColors.disabledBackground)
-                .cornerRadius(12)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
             .disabled(!isDebtFormValid)
             .padding(.horizontal)
@@ -1617,9 +1643,13 @@ private struct CurrencySelectionSheet: View {
     }
 }
 
-// MARK: - 手動資產表單
+// MARK: - 其他資產表單
 
 private struct ManualAssetFormView: View {
+    private enum FieldID: Hashable {
+        case costBasis
+    }
+
     @ObservedObject var viewModel: ManualAssetsViewModel
     let userId: String
     let onCancel: () -> Void
@@ -1636,6 +1666,7 @@ private struct ManualAssetFormView: View {
     @State private var isIncludedInTotalAssets = true
     @State private var isIncludedInInvestments = false
     @State private var localErrorMessage: String?
+    @State private var costBasisErrorMessage: String?
     @State private var showingPurchaseDatePicker = false
 
     private let accentColor = Color.stockUSColor
@@ -1645,18 +1676,20 @@ private struct ManualAssetFormView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            ScrollView {
-                VStack(spacing: 24) {
-                    heroSection
-                    formCard
-                    Spacer(minLength: 20)
+        ScrollViewReader { scrollProxy in
+            VStack(spacing: 0) {
+                ScrollView {
+                    VStack(spacing: 24) {
+                        heroSection
+                        formCard
+                        Spacer(minLength: 20)
+                    }
+                    .padding(.top, 8)
                 }
-                .padding(.top, 8)
-            }
-            .snapFormScrollDismissesKeyboard()
+                .snapFormScrollDismissesKeyboard()
 
-            saveButton
+                saveButton(scrollProxy: scrollProxy)
+            }
         }
         .onAppear {
             currency = BaseCurrencyManager.shared.baseCurrency
@@ -1700,45 +1733,31 @@ private struct ManualAssetFormView: View {
     }
 
     private var heroSection: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "square.grid.2x2.fill")
-                .font(.system(size: 48))
-                .foregroundColor(accentColor)
-                .frame(width: 80, height: 80)
-                .background(accentColor.opacity(0.1))
-                .clipShape(Circle())
-
-            Text("手動資產")
-                .font(.title3)
-                .fontWeight(.semibold)
-                .foregroundColor(.primaryText)
-
-            Text("記錄沒有公開即時價格、但需要納入資產總覽的項目。")
-                .font(.subheadline)
-                .foregroundColor(.secondaryText)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 32)
+        AddSheetHeroCard(
+            title: "其他資產",
+            subtitle: "記錄沒有公開即時價格、但需要納入資產總覽的項目。",
+            accentColor: accentColor,
+            badge: "新增其他資產"
+        )
+        .padding(.horizontal)
     }
 
     private var formCard: some View {
         VStack(spacing: 0) {
-            fieldSection(title: "資產名稱", icon: "tag.fill") {
-                TextField("例如：房地產、基金、保單", text: $name)
-                    .textFieldStyle(CustomTextFieldStyle())
-                    .onChange(of: name) { _, _ in clearErrors() }
-                errorMessageView
-            }
-
-            formDivider
-
             ManualAssetCategoryDropdownField(
                 selectedCategory: $category,
                 tint: accentColor
             )
             .padding(20)
+
+            formDivider
+
+            fieldSection(title: "資產名稱", icon: "tag.fill") {
+                TextField("例如：台北房子、基金、保單", text: $name)
+                    .textFieldStyle(CustomTextFieldStyle())
+                    .onChange(of: name) { _, _ in clearErrors() }
+                errorMessageView
+            }
 
             formDivider
 
@@ -1768,29 +1787,33 @@ private struct ManualAssetFormView: View {
 
             formDivider
 
-            fieldSection(title: "成本", icon: "chart.line.uptrend.xyaxis", trailing: "可選") {
-                AmountKeypadInputView(
-                    text: $costBasis,
-                    currency: currency,
-                    accentColor: accentColor
-                )
-                .onChange(of: costBasis) { oldValue, newValue in
-                    costBasis = sanitizedDecimalText(newValue, fallback: oldValue)
-                    clearErrors()
+            inclusionSection
+
+            if isIncludedInInvestments {
+                formDivider
+
+                fieldSection(title: "成本", icon: "chart.line.uptrend.xyaxis", trailing: "必填") {
+                    AmountKeypadInputView(
+                        text: $costBasis,
+                        currency: currency,
+                        accentColor: accentColor
+                    )
+                    .onChange(of: costBasis) { oldValue, newValue in
+                        costBasis = sanitizedDecimalText(newValue, fallback: oldValue)
+                        clearErrors()
+                    }
+                    costBasisErrorView
+                    Text("納入投資時必填，用於計算損益與報酬率。")
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                        .padding(.leading, 4)
                 }
-                Text("填寫成本後，若納入投資，會顯示在績效圖。")
-                    .font(.caption)
-                    .foregroundColor(.secondaryText)
-                    .padding(.leading, 4)
+                .id(FieldID.costBasis)
             }
 
             formDivider
 
             purchaseDateSection
-
-            formDivider
-
-            inclusionSection
 
             formDivider
 
@@ -1800,9 +1823,7 @@ private struct ManualAssetFormView: View {
                     .textFieldStyle(CustomTextFieldStyle())
             }
         }
-        .background(Color.secondaryBackground)
-        .cornerRadius(16)
-        .padding(.horizontal)
+        .addSheetFormCard()
     }
 
     private func fieldSection<Content: View>(
@@ -1903,9 +1924,9 @@ private struct ManualAssetFormView: View {
         .padding(20)
     }
 
-    private var saveButton: some View {
+    private func saveButton(scrollProxy: ScrollViewProxy) -> some View {
         Button {
-            saveManualAsset()
+            saveManualAsset(scrollProxy: scrollProxy)
         } label: {
             HStack(spacing: 8) {
                 if viewModel.isSaving {
@@ -1915,14 +1936,14 @@ private struct ManualAssetFormView: View {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 18))
                 }
-                Text(viewModel.isSaving ? "建立中..." : "建立手動資產")
+                Text(viewModel.isSaving ? "建立中..." : "建立其他資產")
                     .font(.headline)
             }
             .foregroundColor(AppColors.actionForeground)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 16)
             .background(isSaveDisabled ? AppColors.disabledBackground : accentColor)
-            .cornerRadius(12)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .disabled(isSaveDisabled)
         .padding(.horizontal)
@@ -1950,11 +1971,34 @@ private struct ManualAssetFormView: View {
         }
     }
 
-    private func saveManualAsset() {
+    @ViewBuilder
+    private var costBasisErrorView: some View {
+        if let message = costBasisErrorMessage {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(.caption)
+                    .foregroundColor(.lossRed)
+                Text(message)
+                    .font(.caption)
+                    .foregroundColor(.lossRed)
+            }
+            .padding(.leading, 4)
+            .padding(.top, 4)
+            .transition(.opacity.combined(with: .move(edge: .top)))
+        }
+    }
+
+    private func saveManualAsset(scrollProxy: ScrollViewProxy) {
         clearErrors()
         guard let currentValueDecimal = Decimal(string: currentValue) else {
             localErrorMessage = "請輸入有效的現值"
             return
+        }
+        if isIncludedInInvestments {
+            guard let parsedCost = Decimal(string: costBasis), parsedCost > 0 else {
+                showCostBasisRequired(scrollProxy: scrollProxy)
+                return
+            }
         }
         let costBasisDecimal: Decimal?
         if costBasis.isEmpty {
@@ -1986,8 +2030,16 @@ private struct ManualAssetFormView: View {
         }
     }
 
+    private func showCostBasisRequired(scrollProxy: ScrollViewProxy) {
+        costBasisErrorMessage = "納入投資時，請填寫大於 0 的成本。"
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+            scrollProxy.scrollTo(FieldID.costBasis, anchor: .center)
+        }
+    }
+
     private func clearErrors() {
         localErrorMessage = nil
+        costBasisErrorMessage = nil
         viewModel.errorMessage = nil
     }
 
@@ -2013,25 +2065,15 @@ private struct ManualAssetCategoryDropdownField: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "folder.fill")
-                    .font(.system(size: 16))
-                    .foregroundColor(tint)
-                Text("資產類別")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primaryText)
-            }
+            Text("資產類別")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundColor(.primaryText)
 
             Button {
                 showingCategoryPicker = true
             } label: {
                 HStack(spacing: 10) {
-                    Image(systemName: "square.grid.2x2.fill")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(tint)
-                        .frame(width: 24, height: 24)
-
                     Text(selectedCategory.displayName)
                         .font(.subheadline.weight(.semibold))
                         .foregroundColor(.primaryText)
@@ -2103,11 +2145,6 @@ private struct ManualAssetCategorySelectionSheet: View {
             dismiss()
         } label: {
             HStack(spacing: 12) {
-                Image(systemName: "square.grid.2x2.fill")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(isSelected ? tint : .secondaryText)
-                    .frame(width: 28, height: 28)
-
                 Text(category.displayName)
                     .font(.subheadline.weight(.semibold))
                     .foregroundColor(.primaryText)
@@ -2169,28 +2206,14 @@ struct AccountDetailsFormView: View {
             
             ScrollView {
                 VStack(spacing: 24) {
-                    // 帳戶類型圖標卡片
-                    VStack(spacing: 12) {
-                        Image(systemName: accountType.icon)
-                            .font(.system(size: 48))
-                            .foregroundColor(accountType.color)
-                            .frame(width: 80, height: 80)
-                            .background(accountType.color.opacity(0.1))
-                            .clipShape(Circle())
-                        
-                        Text(accountType.displayName)
-                            .font(.title3)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.primaryText)
-                        
-                        Text(accountType.description)
-                            .font(.subheadline)
-                            .foregroundColor(.secondaryText)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 32)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 32)
+                    AddSheetHeroCard(
+                        title: accountType.displayName,
+                        subtitle: accountType.description,
+                        accentColor: accountType.color,
+                        badge: "新增帳戶"
+                    )
+                    .padding(.horizontal)
+                    .padding(.top, 8)
                     
                     // 表單卡片
                     VStack(spacing: 0) {
@@ -2283,9 +2306,7 @@ struct AccountDetailsFormView: View {
                         }
                         .padding(20)
                     }
-                    .background(Color.secondaryBackground)
-                    .cornerRadius(16)
-                    .padding(.horizontal)
+                    .addSheetFormCard()
                     
                     Spacer(minLength: 20)
                 }
@@ -2305,7 +2326,7 @@ struct AccountDetailsFormView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
                 .background(name.isEmpty ? AppColors.disabledBackground : accountType.color)
-                .cornerRadius(12)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
             .disabled(name.isEmpty)
             .padding(.horizontal)
@@ -2323,18 +2344,6 @@ struct AccountTypeSelectionCard: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 16) {
-                // 圖標
-                ZStack {
-                    Circle()
-                        .fill(accountType.color.opacity(0.2))
-                        .frame(width: 50, height: 50)
-                    
-                    Image(systemName: accountType.icon)
-                        .foregroundColor(accountType.color)
-                        .font(.system(size: 24))
-                }
-                
-                // 資訊
                 VStack(alignment: .leading, spacing: 4) {
                     Text(accountType.displayName)
                         .font(.headline)
@@ -2347,25 +2356,30 @@ struct AccountTypeSelectionCard: View {
                 }
                 
                 Spacer()
-                
-                // 選擇指示器
-                if isSelected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(accountType.color)
-                        .font(.title3)
-                }
+
+                Text(isSelected ? "已選" : "選擇")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(accountType.color)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(accountType.color.opacity(0.12))
+                    .clipShape(Capsule())
             }
             .padding()
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(accountType.color.opacity(isSelected ? 0.15 : 0.05))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(accountType.color, lineWidth: isSelected ? 2 : 1)
-                    )
-            )
+            .background(Color.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(accountType.color)
+                    .frame(width: isSelected ? 5 : 4)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(accountType.color.opacity(isSelected ? 0.55 : 0.28), lineWidth: isSelected ? 1.5 : 1)
+            }
+            .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 2)
         }
-        .buttonStyle(PlainButtonStyle())
+        .buttonStyle(.plain)
     }
 }
 
@@ -2384,11 +2398,6 @@ struct AccountPickerSheet: View {
                         dismiss()
                     }) {
                         HStack {
-                            Image(systemName: account.accountType.icon)
-                                .font(.system(size: 24))
-                                .frame(width: 32, height: 32)
-                                .foregroundColor(account.accountType.color)
-                            
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(account.name)
                                     .font(.headline)
@@ -2450,27 +2459,14 @@ struct OtherDebtAccountDetailsFormView: View {
         VStack(spacing: 0) {
             ScrollView {
                 VStack(spacing: 24) {
-                    VStack(spacing: 12) {
-                        Image(systemName: accountType.icon)
-                            .font(.system(size: 48))
-                            .foregroundColor(accountType.color)
-                            .frame(width: 80, height: 80)
-                            .background(accountType.color.opacity(0.1))
-                            .clipShape(Circle())
-                        
-                        Text(accountType.displayName)
-                            .font(.title3)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.primaryText)
-                        
-                        Text(accountType.description)
-                            .font(.subheadline)
-                            .foregroundColor(.secondaryText)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 32)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 32)
+                    AddSheetHeroCard(
+                        title: accountType.displayName,
+                        subtitle: accountType.description,
+                        accentColor: accountType.color,
+                        badge: "新增負債"
+                    )
+                    .padding(.horizontal)
+                    .padding(.top, 8)
                     
                     VStack(spacing: 0) {
                         VStack(alignment: .leading, spacing: 12) {
@@ -2611,9 +2607,7 @@ struct OtherDebtAccountDetailsFormView: View {
                         }
                         .padding(20)
                     }
-                    .background(Color.secondaryBackground)
-                    .cornerRadius(16)
-                    .padding(.horizontal)
+                    .addSheetFormCard()
                     
                     Spacer(minLength: 20)
                 }
@@ -2632,7 +2626,7 @@ struct OtherDebtAccountDetailsFormView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
                 .background(isFormValid ? accountType.color : AppColors.disabledBackground)
-                .cornerRadius(12)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
             .disabled(!isFormValid)
             .padding(.horizontal)

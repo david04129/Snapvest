@@ -112,6 +112,11 @@ struct ManualAssetFormState: Equatable {
         if let costBasis, costBasis < 0 {
             throw ManualAssetFormValidationError.costBasisCannotBeNegative
         }
+        if isIncludedInInvestments {
+            guard let costBasis, costBasis > 0 else {
+                throw ManualAssetFormValidationError.investmentCostBasisRequired
+            }
+        }
     }
 }
 
@@ -119,7 +124,9 @@ enum ManualAssetFormValidationError: LocalizedError, Equatable {
     case nameRequired
     case currentValueCannotBeNegative
     case costBasisCannotBeNegative
+    case investmentCostBasisRequired
     case assetNotFound
+    case duplicateNameInCategory
 
     var errorDescription: String? {
         switch self {
@@ -129,8 +136,12 @@ enum ManualAssetFormValidationError: LocalizedError, Equatable {
             return "現值不能小於 0"
         case .costBasisCannotBeNegative:
             return "成本不能小於 0"
+        case .investmentCostBasisRequired:
+            return "納入投資時，請填寫大於 0 的成本，才能計算損益與報酬率。"
         case .assetNotFound:
-            return "找不到要更新的手動資產"
+            return "找不到要更新的其他資產"
+        case .duplicateNameInCategory:
+            return "此類別已有相同名稱的其他資產"
         }
     }
 }
@@ -162,7 +173,7 @@ final class ManualAssetsViewModel: ObservableObject {
             assets = try await dataService.fetchManualAssets(userId: userId)
                 .sorted { $0.updatedAt > $1.updatedAt }
         } catch {
-            errorMessage = "載入手動資產失敗：\(error.localizedDescription)"
+            errorMessage = "載入其他資產失敗：\(error.localizedDescription)"
         }
     }
 
@@ -174,7 +185,19 @@ final class ManualAssetsViewModel: ObservableObject {
     ) async -> Bool {
         await saveMutation(userId: userId, showsLoadingOverlay: showsLoadingOverlay) {
             let asset = try formState.makeAsset(userId: userId)
+            try await validateUniqueName(asset)
             try await dataService.createManualAsset(asset)
+            try await dataService.saveManualAssetValuation(
+                ManualAssetValuation(
+                    userId: asset.userId,
+                    manualAssetId: asset.id,
+                    value: asset.currentValue,
+                    currency: asset.currency,
+                    valuationDate: asset.createdAt,
+                    notes: ManualAssetValuation.creationRecordNote,
+                    createdAt: asset.createdAt
+                )
+            )
         }
     }
 
@@ -183,7 +206,8 @@ final class ManualAssetsViewModel: ObservableObject {
         id: String,
         formState: ManualAssetFormState,
         userId: String,
-        showsLoadingOverlay: Bool = true
+        showsLoadingOverlay: Bool = true,
+        syncCreationValuation: Bool = false
     ) async -> Bool {
         await saveMutation(userId: userId, showsLoadingOverlay: showsLoadingOverlay) {
             let existing = assets.first(where: { $0.id == id })
@@ -193,7 +217,12 @@ final class ManualAssetsViewModel: ObservableObject {
                 throw ManualAssetFormValidationError.assetNotFound
             }
             let asset = try formState.makeAsset(userId: userId, existing: assetToUpdate)
+            try await validateUniqueName(asset, excludingAssetId: id)
             try await dataService.updateManualAsset(asset)
+            if syncCreationValuation {
+                try await upsertCreationValuation(for: asset)
+                try await syncCurrentValueFromLatestValuation(asset: asset)
+            }
         }
     }
 
@@ -205,6 +234,74 @@ final class ManualAssetsViewModel: ObservableObject {
     ) async -> Bool {
         await saveMutation(userId: userId, showsLoadingOverlay: showsLoadingOverlay) {
             try await dataService.deleteManualAsset(id)
+        }
+    }
+
+    @discardableResult
+    func updateCurrentValue(
+        asset: ManualAsset,
+        currentValue: Decimal,
+        valuationDate: Date,
+        notes: String?,
+        showsLoadingOverlay: Bool = true
+    ) async -> Bool {
+        await saveMutation(userId: asset.userId, showsLoadingOverlay: showsLoadingOverlay) {
+            var updatedAsset = asset
+            updatedAsset.currentValue = currentValue
+            updatedAsset.currentValueUpdatedAt = valuationDate
+            updatedAsset.updatedAt = Date()
+            try await dataService.updateManualAsset(updatedAsset)
+            try await dataService.saveManualAssetValuation(
+                ManualAssetValuation(
+                    userId: asset.userId,
+                    manualAssetId: asset.id,
+                    value: currentValue,
+                    currency: asset.currency,
+                    valuationDate: valuationDate,
+                    notes: notes
+                )
+            )
+        }
+    }
+
+    @discardableResult
+    func updateManualAssetValuation(
+        asset: ManualAsset,
+        valuation: ManualAssetValuation,
+        value: Decimal,
+        valuationDate: Date,
+        notes: String?,
+        showsLoadingOverlay: Bool = true
+    ) async -> Bool {
+        await saveMutation(userId: asset.userId, showsLoadingOverlay: showsLoadingOverlay) {
+            try await dataService.saveManualAssetValuation(
+                ManualAssetValuation(
+                    id: valuation.id,
+                    userId: valuation.userId,
+                    manualAssetId: valuation.manualAssetId,
+                    value: value,
+                    currency: valuation.currency,
+                    valuationDate: valuationDate,
+                    notes: notes,
+                    createdAt: valuation.createdAt
+                )
+            )
+            try await syncCurrentValueFromLatestValuation(asset: asset)
+        }
+    }
+
+    @discardableResult
+    func deleteManualAssetValuation(
+        asset: ManualAsset,
+        valuation: ManualAssetValuation,
+        showsLoadingOverlay: Bool = true
+    ) async -> Bool {
+        await saveMutation(userId: asset.userId, showsLoadingOverlay: showsLoadingOverlay) {
+            guard valuation.notes != ManualAssetValuation.creationRecordNote else {
+                throw DataServiceError.invalidOperation("建立紀錄不能單獨刪除，請刪除此其他資產。")
+            }
+            try await dataService.deleteManualAssetValuation(valuation.id)
+            try await syncCurrentValueFromLatestValuation(asset: asset)
         }
     }
 
@@ -239,12 +336,76 @@ final class ManualAssetsViewModel: ObservableObject {
             )
             await loadAssets(userId: userId)
             if !refreshed {
-                errorMessage = "手動資產已儲存，但重新整理資產快照失敗"
+                errorMessage = "其他資產已儲存，但重新整理資產快照失敗"
             }
             return refreshed
         } catch {
             errorMessage = error.localizedDescription
             return false
         }
+    }
+
+    private func validateUniqueName(_ asset: ManualAsset, excludingAssetId: String? = nil) async throws {
+        let existingAssets = try await dataService.fetchManualAssets(userId: asset.userId)
+        let normalizedName = asset.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isDuplicate = existingAssets.contains { existing in
+            if let excludingAssetId, existing.id == excludingAssetId {
+                return false
+            }
+            return existing.category == asset.category
+                && existing.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .localizedCaseInsensitiveCompare(normalizedName) == .orderedSame
+        }
+        if isDuplicate {
+            throw ManualAssetFormValidationError.duplicateNameInCategory
+        }
+    }
+
+    private func upsertCreationValuation(for asset: ManualAsset) async throws {
+        let valuations = try await dataService.fetchManualAssetValuations(assetId: asset.id)
+        if let existing = valuations.first(where: { $0.notes == ManualAssetValuation.creationRecordNote }) {
+            try await dataService.saveManualAssetValuation(
+                ManualAssetValuation(
+                    id: existing.id,
+                    userId: existing.userId,
+                    manualAssetId: existing.manualAssetId,
+                    value: asset.currentValue,
+                    currency: asset.currency,
+                    valuationDate: asset.createdAt,
+                    notes: ManualAssetValuation.creationRecordNote,
+                    createdAt: existing.createdAt
+                )
+            )
+        } else {
+            try await dataService.saveManualAssetValuation(
+                ManualAssetValuation(
+                    userId: asset.userId,
+                    manualAssetId: asset.id,
+                    value: asset.currentValue,
+                    currency: asset.currency,
+                    valuationDate: asset.createdAt,
+                    notes: ManualAssetValuation.creationRecordNote,
+                    createdAt: asset.createdAt
+                )
+            )
+        }
+    }
+
+    private func syncCurrentValueFromLatestValuation(asset: ManualAsset) async throws {
+        let latest = try await dataService.fetchManualAssetValuations(assetId: asset.id)
+            .sorted { lhs, rhs in
+                if lhs.valuationDate == rhs.valuationDate {
+                    return lhs.createdAt > rhs.createdAt
+                }
+                return lhs.valuationDate > rhs.valuationDate
+            }
+            .first
+        guard let latest else { return }
+        var updatedAsset = asset
+        updatedAsset.currentValue = latest.value
+        updatedAsset.currency = latest.currency
+        updatedAsset.currentValueUpdatedAt = latest.valuationDate
+        updatedAsset.updatedAt = Date()
+        try await dataService.updateManualAsset(updatedAsset)
     }
 }

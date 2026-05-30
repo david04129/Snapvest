@@ -1,10 +1,7 @@
-# 台灣時間 00:05 = UTC 前一日 16:05（日終結算：寫入「前一日」snapshot_date）
-# 需在 repo Settings > Secrets 設定 SUPABASE_URL、SUPABASE_SERVICE_ROLE_KEY
-name: Daily Portfolio Snapshot
+# 舊版雲端使用者走勢快照。Local-first 後不再排程執行，僅保留手動備查。
+name: Daily Portfolio Snapshot (Manual Legacy)
 
 on:
-  schedule:
-    - cron: '5 16 * * *'
   workflow_dispatch:
 
 concurrency:

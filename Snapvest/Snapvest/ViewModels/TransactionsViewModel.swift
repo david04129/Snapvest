@@ -12,6 +12,8 @@ import Combine
 class TransactionsViewModel: ObservableObject {
     @Published var transactions: [Transaction] = []
     @Published var accounts: [Account] = []
+    @Published var manualAssets: [ManualAsset] = []
+    @Published var manualAssetValuationsByAssetId: [String: [ManualAssetValuation]] = [:]
     @Published var isLoading = false
     @Published var errorMessage: String?
     
@@ -32,6 +34,12 @@ class TransactionsViewModel: ObservableObject {
             allTransactions.sort { $0.transactionDate > $1.transactionDate }
             transactions = allTransactions
             accounts = try await dataService.fetchAccounts(userId: userId)
+            manualAssets = try await dataService.fetchManualAssets(userId: userId)
+            var valuationsByAssetId: [String: [ManualAssetValuation]] = [:]
+            for asset in manualAssets {
+                valuationsByAssetId[asset.id] = try await dataService.fetchManualAssetValuations(assetId: asset.id)
+            }
+            manualAssetValuationsByAssetId = valuationsByAssetId
         } catch {
             errorMessage = "載入交易失敗：\(error.localizedDescription)"
         }
@@ -191,8 +199,15 @@ class TransactionsViewModel: ObservableObject {
                 await importRow(row)
             }
             
-            if imported > 0, let accountId = validRows.compactMap({ $0.transaction?.accountId }).first {
-                await updateSnapshotsIfNeeded(for: accountId)
+            if imported > 0 {
+                let importedTransactions = validRows.compactMap(\.transaction)
+                let affectedAccountIds = Set(importedTransactions.map(\.accountId))
+                await refreshPortfolioSnapshots(
+                    userId: userId,
+                    affectedAccountIds: affectedAccountIds,
+                    affectedSymbols: impactedSymbols(for: importedTransactions),
+                    forceFullRebuild: true
+                )
             }
             await loadTransactions(userId: userId)
             
@@ -803,6 +818,7 @@ class TransactionsViewModel: ObservableObject {
                     dataService: dataService,
                     priceService: PriceService(dataService: dataService)
                 )
+                await TrackedSymbolSync.sync(symbols: affectedSymbols)
                 dataService.persistLocalStore(for: userId)
                 return
             } catch {
@@ -815,7 +831,7 @@ class TransactionsViewModel: ObservableObject {
         await SnapshotRefreshCoordinator.rebuildAndNotify(
             userId: userId,
             dataService: dataService,
-            syncPortfolio: false,
+            syncPortfolio: !affectedSymbols.isEmpty,
             updatePriceMetadata: false,
             deferRemoteWork: true,
             postsUpdateNotification: false

@@ -463,15 +463,6 @@ struct AssetCategorySummaryCard: View {
         }
     }
     
-    private var categoryIcon: String {
-        switch assetType {
-        case .stockTW: return "chart.line.uptrend.xyaxis"
-        case .stockUS: return "dollarsign.circle.fill"
-        case .crypto: return "bitcoinsign.circle.fill"
-        case .cash: return "banknote.fill"
-        }
-    }
-    
     private var usesOriginalAmounts: Bool {
         currencyDisplay == .original
     }
@@ -511,11 +502,6 @@ struct AssetCategorySummaryCard: View {
     var body: some View {
         Button(action: onTap) {
             HStack(alignment: .center, spacing: 12) {
-                Image(systemName: categoryIcon)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(accentColor)
-                    .frame(width: 28)
-                
                 VStack(alignment: .leading, spacing: 4) {
                     CurrencyTitleLabel(
                         title: assetType.displayName,

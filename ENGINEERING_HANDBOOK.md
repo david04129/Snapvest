@@ -50,15 +50,16 @@ flowchart TB
         Code[原始碼 / JSON 清單]
         WF1[Monthly Symbols Update<br/>每月 1 日]
         WF2[Daily Price Update<br/>每天多次]
-        WF3[Daily Portfolio Snapshot<br/>每天 00:05 結算前一日]
+        WF3[Daily Portfolio Snapshot<br/>手動 legacy]
     end
 
     subgraph Supabase["Supabase（雲端 PostgreSQL）"]
         T1[(asset_price_snapshots<br/>股價)]
         T2[(exchange_rates<br/>匯率)]
-        T3[(user_portfolio_state<br/>你的持股摘要)]
-        T4[(user_daily_snapshots<br/>走勢圖)]
+        T3[(tracked_symbols<br/>匿名 symbol 大池子)]
+        T4[(user_daily_snapshots<br/>legacy 走勢)]
         EF[Edge Function<br/>fetch-or-create-price]
+        EF2[Edge Function<br/>track-symbol]
     end
 
     subgraph App["iOS App"]
@@ -74,14 +75,15 @@ flowchart TB
 
     WF2 -->|寫入| T1
     WF2 -->|寫入| T2
-    WF3 -->|讀 T1 T2 T3| T4
+    WF3 -. legacy manual .-> T4
     UI -->|讀| T1
     UI -->|讀| T2
-    UI -->|讀| T4
-    UI -->|同步持股| T3
+    UI -->|匿名追蹤 symbol| EF2
     UI -->|缺價時呼叫| EF
+    EF2 -->|upsert| T3
     EF --> Ext
     EF -->|寫入| T1
+    WF2 -->|讀 tracked_symbols| T3
     WF2 --> Ext
 ```
 
@@ -102,11 +104,10 @@ flowchart TB
 |------|--------|--------|----------|
 | 各檔股價 | `asset_price_snapshots` | 每日腳本 + Edge Function | 顯示現價、算損益；`current_price_source` / `previous_price_source` |
 | 全站最後更新時間 | `price_update_metadata` | 每日腳本 | 判斷要不要刷新 |
-| 熱門股清單 | `hot_stocks` | 每日由 `hot_stocks_seed` ∪ 全使用者 `user_portfolio_state.holdings` 覆寫；備份 `hot_stocks_backup`（保留 2 日） | 每日腳本抓價清單 |
+| 匿名追蹤池 | `tracked_symbols` | App 透過 `track-symbol` 只送 asset type + symbol | 每日腳本抓價來源，不含 user_id / quantity / cost |
+| 熱門股清單 | `hot_stocks` | 每日由 `hot_stocks_seed` ∪ `tracked_symbols` 覆寫；備份 `hot_stocks_backup`（保留 2 日） | 每日腳本抓價清單 |
 | 種子熱門股 | `hot_stocks_seed` | migration 固定 ~30 檔 | 每日併入 hot_stocks，不隨覆寫消失 |
 | 匯率 | `exchange_rates` | 每日腳本 | 台幣／美金換算 |
-| 你的持股／現金／負債摘要 | `user_portfolio_state` | **App 交易後同步** | 給每日快照腳本算走勢 |
-| 每日淨資產走勢 | `user_daily_snapshots` | 每日 00:05 腳本（寫入前一日） | 首頁走勢圖 |
 
 ---
 
@@ -154,14 +155,15 @@ Snapvest 用 Supabase 當「**會變動資料的倉庫**」：
 | [002_rls_policies.sql](./backend/supabase/migrations/002_rls_policies.sql) | RLS 權限 | App 只能讀、不能亂改 |
 | [003_exchange_rates.sql](./backend/supabase/migrations/003_exchange_rates.sql) | `exchange_rates` | 匯率表 |
 | [004_exchange_rates_write_policy.sql](./backend/supabase/migrations/004_exchange_rates_write_policy.sql) | service_role 寫入權限 | 給 GitHub Actions 寫匯率 |
-| [005_user_portfolio_state.sql](./backend/supabase/migrations/005_user_portfolio_state.sql) | `user_portfolio_state` | App 同步持股給後端 |
-| [006_user_daily_snapshots.sql](./backend/supabase/migrations/006_user_daily_snapshots.sql) | `user_daily_snapshots` | 首頁走勢圖資料 |
+| [005_user_portfolio_state.sql](./backend/supabase/migrations/005_user_portfolio_state.sql) | `user_portfolio_state` | Legacy：local-first 後 App 不再寫入 |
+| [006_user_daily_snapshots.sql](./backend/supabase/migrations/006_user_daily_snapshots.sql) | `user_daily_snapshots` | Legacy：首頁走勢圖改讀本機 |
 | [007_hot_stocks_seed_and_backup.sql](./backend/supabase/migrations/007_hot_stocks_seed_and_backup.sql) | `hot_stocks_seed`、`hot_stocks_backup` | 種子清單與備份 |
 | [008_price_source.sql](./backend/supabase/migrations/008_price_source.sql) | `asset_price_snapshots.price_source` | 標記股價來源 |
 | [009_price_snapshot_eod_columns.sql](./backend/supabase/migrations/009_price_snapshot_eod_columns.sql) | 收盤日 + 更新時間欄位 | 取代 `current_price_date` / `last_updated` 等 |
 | [010_price_source_current_previous.sql](./backend/supabase/migrations/010_price_source_current_previous.sql) | `current_price_source`、`previous_price_source` | 取代單一 `price_source` |
 | [011_price_snapshot_column_order.sql](./backend/supabase/migrations/011_price_snapshot_column_order.sql) | 欄位顯示順序 | source 緊接在對應 updated_at 後 |
 | [012_exchange_rates_previous.sql](./backend/supabase/migrations/012_exchange_rates_previous.sql) | `previous_rate`、`previous_updated_at` | 本輪抓不到時沿用上一輪 |
+| [014_tracked_symbols.sql](./backend/supabase/migrations/014_tracked_symbols.sql) | `tracked_symbols` | 匿名全站 symbol 大池子；撤銷 App 對 legacy 使用者快照表權限 |
 
 **`asset_price_snapshots` 欄位順序：** 代號 → 現價 → 收盤日 → 更新時間 → **現價來源** → 上次價 → 上次收盤日 → 上次更新時間 → **上次來源**。
 
@@ -178,15 +180,20 @@ Snapvest 用 Supabase 當「**會變動資料的倉庫**」：
 | 顯示股價 | [SupabasePriceService.swift](./Snapvest/Snapvest/Services/SupabasePriceService.swift) | `asset_price_snapshots` |
 | 缺價時即時抓 | 同上 → 呼叫 Edge Function | 寫入後回傳 |
 | 匯率 | [PriceService.swift](./Snapvest/Snapvest/Services/PriceService.swift) 等 | `exchange_rates` |
-| 首頁走勢圖 | [SupabaseDailySnapshotService.swift](./Snapvest/Snapvest/Services/SupabaseDailySnapshotService.swift) | `user_daily_snapshots` |
+
+### App 從本機讀
+
+| 功能 | Swift 檔案 | 讀哪裡 |
+|------|------------|--------|
+| 首頁走勢圖 | [HomeTrendChartView.swift](./Snapvest/Snapvest/Views/HomeTrendChartView.swift) → `LocalDailyTrendSnapshot` | 本機 JSON `dailyTrendSnapshotsByDate` |
 
 ### App 寫入 Supabase
 
 | 功能 | Swift 檔案 | 寫哪張表 |
 |------|------------|----------|
-| 交易後同步持股摘要 | [SupabasePortfolioStateService.swift](./Snapvest/Snapvest/Services/SupabasePortfolioStateService.swift) | `user_portfolio_state` |
+| 交易後匿名追蹤公開標的 | [SupabaseTrackedSymbolService.swift](./Snapvest/Snapvest/Services/SupabaseTrackedSymbolService.swift) → Edge Function `track-symbol` | `tracked_symbols` |
 
-> 這份摘要給每天 00:05 的 Python 腳本讀，用來算你的淨資產走勢（`snapshot_date` = 前一日）。
+> App 不再寫 `user_portfolio_state` 或雲端 daily snapshots。首頁走勢圖讀手機本機 daily trend snapshots。
 
 ### App 讀本機 Bundle（不連網）
 
@@ -196,8 +203,8 @@ Snapvest 用 Supabase 當「**會變動資料的倉庫**」：
 
 ### 帳戶／交易紀錄（目前狀態）
 
-目前核心交易資料在 [DataService.swift](./Snapvest/Snapvest/Services/DataService.swift) 的 `MockDataService`（**記憶體 Mock**），尚未全面搬到 Supabase。  
-也就是說：**你的買賣紀錄主要還在 App 本機邏輯裡**；只有「持股摘要副本」會同步到 Supabase 供走勢計算。
+目前核心交易資料保存在 App 本機資料層。  
+也就是說：**買賣紀錄、現金、負債、成本與走勢點不進 Supabase**；App 只會匿名提交公開 `asset_type + symbol` 給 `tracked_symbols`，讓後端知道要抓哪些公開市場價格。
 
 ---
 
@@ -212,17 +219,13 @@ Snapvest 用 Supabase 當「**會變動資料的倉庫**」：
 | **週一～五 18:00** | [Daily Price Update](./.github/workflows/daily-price-update.yml) | ① 更新匯率 ② 更新台股 ③ 更新加密 | Supabase |
 | **週六、日 18:00** | 同上 | 只更新加密（Crypto 24/7） | Supabase |
 | **週二～六 07:00** | 同上 | 只更新美股（配合美股收盤後） | Supabase |
-| **每天 00:05** | [Daily Portfolio Snapshot](./.github/workflows/daily-portfolio-snapshot.yml) | 讀持股 + 股價 + 匯率 → 算淨資產，**寫入前一日** `snapshot_date` | Supabase `user_daily_snapshots` |
-
-**00:05 為什麼在隔天凌晨？**  
-日終結算：5/26 00:05 執行 → 記錄 **5/25** 的快照，可納入 5/25 晚間交易。台股／加密用前一日 18:00 股價；美股接受 **lag 一個美股交易日**（沿用最近一次 07:00 更新）。
 
 #### 一天時間軸（平日）
 
 ```
 07:00  更新美股股價
 18:00  更新匯率 + 台股 + 加密
-00:05（隔天）結算並寫入「前一日」淨資產走勢
+App 啟動時用本機帳本 + 公開價格補齊缺失走勢點
 ```
 
 #### 週末
@@ -264,7 +267,7 @@ Snapvest 有 **兩條抓價路線**：
 **更新哪些股票？**  
 不是全市場每一檔，而是：
 
-- 排程開始時先**備份** `hot_stocks` → 以 **`hot_stocks_seed` ∪ 所有 `user_portfolio_state.holdings`** 覆寫 `hot_stocks`
+- 排程開始時先**備份** `hot_stocks` → 以 **`hot_stocks_seed` ∪ 匿名 `tracked_symbols`** 覆寫 `hot_stocks`
 - 只對重建後的 `hot_stocks` 抓價（每檔一次，不重複）
 - `fetch-or-create-price` **不**寫入 `hot_stocks`（僅寫 `asset_price_snapshots`）
 
@@ -419,7 +422,7 @@ Snapvest/
 
 | Secret | 用途 | 哪個 Workflow 需要 |
 |--------|------|-------------------|
-| `SUPABASE_URL` | Supabase 專案網址 | Daily Price、Daily Portfolio Snapshot |
+| `SUPABASE_URL` | Supabase 專案網址 | Daily Price、Edge Functions、Legacy Manual Snapshot |
 | `SUPABASE_SERVICE_ROLE_KEY` | 後端寫入權限（**不可放 App**） | 同上 |
 
 文件：[GitHub Encrypted secrets](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions)
@@ -477,11 +480,11 @@ Monthly Symbols Update 跑完後，若 JSON 有變，機器人會自動 `git com
 | 想做什麼 | 怎麼做 |
 |----------|--------|
 | 手動更新股價／匯率 | [Actions → Daily Price Update → Run workflow](https://github.com/david04129/Snapvest/actions/workflows/daily-price-update.yml) |
-| 手動算走勢 | [Actions → Daily Portfolio Snapshot → Run workflow](https://github.com/david04129/Snapvest/actions/workflows/daily-portfolio-snapshot.yml) |
+| 手動算 legacy 雲端走勢 | [Actions → Daily Portfolio Snapshot → Run workflow](https://github.com/david04129/Snapvest/actions/workflows/daily-portfolio-snapshot.yml) |
 | 手動更新 symbols | [Actions → Monthly Symbols Update → Run workflow](https://github.com/david04129/Snapvest/actions/workflows/monthly-symbols-update.yml) |
 | 本機測股價腳本 | `cd backend/scripts && export SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... && python daily_price_update.py` |
 | 本機建 symbols | `cd scripts && ./build_all.sh` |
-| 部署 Edge Function | `cd backend && supabase functions deploy fetch-or-create-price` |
+| 部署 Edge Function | `cd backend && supabase functions deploy fetch-or-create-price && supabase functions deploy track-symbol` |
 | 在 Supabase 看股價表 | Dashboard → **Table Editor** → `asset_price_snapshots` |
 | 看 GitHub 上的 symbols JSON | [Resources/Symbols/](https://github.com/david04129/Snapvest/tree/main/Snapvest/Snapvest/Resources/Symbols) |
 

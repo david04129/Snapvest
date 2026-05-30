@@ -134,6 +134,68 @@ struct HomeDashboardSnapshot: Identifiable, Codable, Equatable {
     }
 }
 
+// MARK: - 本機首頁走勢點
+
+struct LocalDailyTrendSnapshot: Identifiable, Codable, Equatable {
+    let id: String
+    let userId: String
+    let date: Date
+    /// 目前沿用 HomeDashboardSnapshot 的 TWD pivot 值；畫面顯示主要幣別時再換算。
+    let currency: Currency
+    let totalAssets: Decimal
+    let netWorth: Decimal
+    let unrealizedGainLoss: Decimal
+    let sourceHomeSnapshotUpdatedAt: Date
+    let recordedAt: Date
+
+    init(
+        userId: String,
+        date: Date,
+        currency: Currency = .TWD,
+        totalAssets: Decimal,
+        netWorth: Decimal,
+        unrealizedGainLoss: Decimal,
+        sourceHomeSnapshotUpdatedAt: Date,
+        recordedAt: Date = Date()
+    ) {
+        let normalizedDate = Calendar.current.startOfDay(for: date)
+        self.userId = userId
+        self.date = normalizedDate
+        self.id = Self.dateKey(for: normalizedDate)
+        self.currency = currency
+        self.totalAssets = totalAssets
+        self.netWorth = netWorth
+        self.unrealizedGainLoss = unrealizedGainLoss
+        self.sourceHomeSnapshotUpdatedAt = sourceHomeSnapshotUpdatedAt
+        self.recordedAt = recordedAt
+    }
+
+    init(homeSnapshot snapshot: HomeDashboardSnapshot, date: Date = Date(), recordedAt: Date = Date()) {
+        self.init(
+            userId: snapshot.userId,
+            date: date,
+            totalAssets: snapshot.totalAssets,
+            netWorth: snapshot.netWorth,
+            unrealizedGainLoss: snapshot.totalInvestments - snapshot.totalInvestmentsCost,
+            sourceHomeSnapshotUpdatedAt: snapshot.lastUpdated,
+            recordedAt: recordedAt
+        )
+    }
+
+    static func dateKey(for date: Date) -> String {
+        dayFormatter.string(from: Calendar.current.startOfDay(for: date))
+    }
+
+    private static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+}
+
 /// 快照詳細資料
 struct SnapshotData: Codable {
     var accounts: [String: AccountSnapshot]?

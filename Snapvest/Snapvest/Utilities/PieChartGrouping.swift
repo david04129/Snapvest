@@ -43,13 +43,18 @@ enum PieChartGroupingDisplayMode: String, Codable {
 enum PieChartGroupEditCategory: String, CaseIterable {
     case cash = "現金類"
     case investment = "投資類"
+    case otherAssets = "其他資產"
 
     var sectionTitle: String { rawValue }
 
     func contains(itemId: String) -> Bool {
         switch self {
         case .cash: return PieChartGroupingEngine.isCashItemId(itemId)
-        case .investment: return !PieChartGroupingEngine.isCashItemId(itemId)
+        case .investment:
+            return !PieChartGroupingEngine.isCashItemId(itemId)
+                && !PieChartGroupingEngine.isManualAssetItemId(itemId)
+        case .otherAssets:
+            return PieChartGroupingEngine.isManualAssetItemId(itemId)
         }
     }
 }
@@ -69,6 +74,7 @@ enum PieChartGroupableItem {
 
     static func editCategory(forItemId itemId: String) -> PieChartGroupEditCategory? {
         if PieChartGroupingEngine.isCashItemId(itemId) { return .cash }
+        if PieChartGroupingEngine.isManualAssetItemId(itemId) { return .otherAssets }
         if categoryIds.contains(itemId) { return nil }
         return .investment
     }
@@ -135,6 +141,10 @@ enum PieChartGroupingEngine {
 
     static func isCashItemId(_ itemId: String) -> Bool {
         itemId.hasSuffix("_cash")
+    }
+
+    static func isManualAssetItemId(_ itemId: String) -> Bool {
+        itemId == "manual_assets" || itemId.hasPrefix("manual_asset_")
     }
 
     static func isItemInAnyGroup(_ itemId: String, groups: [PieChartItemGroup]) -> Bool {
@@ -266,7 +276,9 @@ enum PieChartGroupingEngine {
 
     static func legendSectionCategory(forItemId itemId: String, mode: PieChartDisplayMode) -> PieChartGroupEditCategory? {
         guard usesLegendCategorySections(mode: mode) else { return nil }
-        return isCashItemId(itemId) ? .cash : .investment
+        if isCashItemId(itemId) { return .cash }
+        if isManualAssetItemId(itemId) { return .otherAssets }
+        return .investment
     }
 
     static func legendRows(
@@ -308,6 +320,7 @@ enum PieChartGroupingEngine {
 
         var cashGroups: [(row: PieChartLegendRow, value: Decimal)] = []
         var invGroups: [(row: PieChartLegendRow, value: Decimal)] = []
+        var otherGroups: [(row: PieChartLegendRow, value: Decimal)] = []
 
         for group in groups {
             let members = group.memberItemIds.compactMap { itemById[$0] }
@@ -324,13 +337,18 @@ enum PieChartGroupingEngine {
             switch PieChartGroupableItem.editCategory(for: group) {
             case .cash:
                 cashGroups.append((row, display.marketValue))
-            case .investment, .none:
+            case .investment:
+                invGroups.append((row, display.marketValue))
+            case .otherAssets:
+                otherGroups.append((row, display.marketValue))
+            case .none:
                 invGroups.append((row, display.marketValue))
             }
         }
 
         var cashSingles: [PieChartLegendRow] = []
         var invSingles: [PieChartLegendRow] = []
+        var otherSingles: [PieChartLegendRow] = []
         let singles = baseItems
             .filter { !consumed.contains($0.id) && !groupedDisplayIds.contains($0.id) }
             .sorted { $0.marketValue > $1.marketValue }
@@ -342,17 +360,22 @@ enum PieChartGroupingEngine {
             )
             switch legendSectionCategory(forItemId: item.id, mode: mode) {
             case .cash: cashSingles.append(row)
-            case .investment, .none: invSingles.append(row)
+            case .investment: invSingles.append(row)
+            case .otherAssets: otherSingles.append(row)
+            case .none: invSingles.append(row)
             }
         }
 
         cashGroups.sort { $0.value > $1.value }
         invGroups.sort { $0.value > $1.value }
+        otherGroups.sort { $0.value > $1.value }
 
         return cashGroups.map(\.row)
             + cashSingles
             + invGroups.map(\.row)
             + invSingles
+            + otherGroups.map(\.row)
+            + otherSingles
     }
 
     private static func groupedLegendRowsPortfolio(
@@ -408,9 +431,12 @@ enum PieChartGroupingEngine {
                 .filter { isCashItemId($0.id) }
                 .sorted { $0.marketValue > $1.marketValue }
             let investment = baseItems
-                .filter { !isCashItemId($0.id) }
+                .filter { !isCashItemId($0.id) && !isManualAssetItemId($0.id) }
                 .sorted { $0.marketValue > $1.marketValue }
-            ordered = cash + investment
+            let otherAssets = baseItems
+                .filter { isManualAssetItemId($0.id) }
+                .sorted { $0.marketValue > $1.marketValue }
+            ordered = cash + investment + otherAssets
         }
         return ordered.map {
             .single($0, groupable: PieChartGroupableItem.isGroupable(itemId: $0.id, mode: mode))

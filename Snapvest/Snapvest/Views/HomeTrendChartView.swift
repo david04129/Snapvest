@@ -29,6 +29,18 @@ struct TrendChartPoint: Identifiable, Equatable {
     }
 }
 
+extension TrendChartPoint {
+    init(localSnapshot snapshot: LocalDailyTrendSnapshot) {
+        self.init(
+            id: snapshot.id,
+            date: snapshot.date,
+            totalAssets: snapshot.totalAssets,
+            netWorth: snapshot.netWorth,
+            unrealizedGainLoss: snapshot.unrealizedGainLoss
+        )
+    }
+}
+
 enum TrendMetricMode: String, CaseIterable, Identifiable {
     case netWorth = "淨資產"
     case totalAssets = "總資產"
@@ -49,46 +61,6 @@ struct TrendChartIntervalChange {
     var changePercent: Decimal {
         guard startValue != 0 else { return 0 }
         return (changeAmount / abs(startValue)) * 100
-    }
-}
-
-// MARK: - 歷史雲端 + 當日即時合併
-
-enum TrendChartPointMerger {
-    private static let dayFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }()
-
-    /// 過去日期用雲端快照；今天一律以本機 HomeDashboardSnapshot 覆蓋（與首頁卡片同源）。
-    static func merged(
-        historicalPoints: [TrendChartPoint],
-        liveSnapshot: HomeDashboardSnapshot?,
-        now: Date = Date()
-    ) -> [TrendChartPoint] {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: now)
-        var points = historicalPoints.filter { !calendar.isDate($0.date, inSameDayAs: today) }
-
-        guard let snapshot = liveSnapshot else {
-            return points.sorted { $0.date < $1.date }
-        }
-
-        let unrealized = snapshot.totalInvestments - snapshot.totalInvestmentsCost
-        points.append(
-            TrendChartPoint(
-                id: dayFormatter.string(from: today),
-                date: today,
-                totalAssets: snapshot.totalAssets,
-                netWorth: snapshot.netWorth,
-                unrealizedGainLoss: unrealized
-            )
-        )
-        return points.sorted { $0.date < $1.date }
     }
 }
 
@@ -119,6 +91,7 @@ struct HomeTrendChartSection: View {
     var currency: Currency = .TWD
     
     @EnvironmentObject private var portfolioViewModel: PortfolioViewModel
+    private let dataService: DataServiceProtocol = MockDataService.shared
     @Binding var metricMode: TrendMetricMode
     @Binding var timeRange: DateRangePreset
     @Binding var trendPoints: [TrendChartPoint]
@@ -130,7 +103,7 @@ struct HomeTrendChartSection: View {
     @State private var loadFailed = false
     
     private var shouldShowLoading: Bool {
-        isLoading && !HomeTrendChartSessionCache.isLoaded(for: userId)
+        isLoading && trendPoints.isEmpty
     }
     
     @State private var selectedPoint: TrendChartPoint?
@@ -203,7 +176,7 @@ struct HomeTrendChartSection: View {
                 ProgressView()
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 32)
-            } else if filteredPoints.count < 2 {
+            } else if filteredPoints.isEmpty {
                 emptyState
             } else {
                 trendChart
@@ -216,7 +189,7 @@ struct HomeTrendChartSection: View {
             
             DateRangePresetPicker(selection: $timeRange)
                 .padding(.horizontal, 12)
-                .padding(.top, filteredPoints.count < 2 ? 8 : 4)
+                .padding(.top, filteredPoints.isEmpty ? 8 : 4)
                 .padding(.bottom, timeRange == .custom ? 0 : 14)
                 .onChange(of: timeRange) { _, newRange in
                     if newRange != .custom {
@@ -255,21 +228,13 @@ struct HomeTrendChartSection: View {
             )
         }
         .onAppear {
-            applyCachedTrendPointsIfAvailable()
-            if !HomeTrendChartSessionCache.isLoaded(for: userId) {
-                refreshMergedTrendPoints()
-            }
             resetSelectionToLatest()
         }
         .task(id: userId) {
-            if HomeTrendChartSessionCache.isLoaded(for: userId) {
-                applyCachedTrendPointsIfAvailable()
-                return
-            }
-            await loadHistoricalTrendPoints()
+            await loadLocalTrendPoints()
         }
         .onChange(of: portfolioViewModel.homeSnapshot) { _, _ in
-            refreshMergedTrendPoints()
+            Task { await loadLocalTrendPoints() }
         }
         .onChange(of: filteredPoints.count) { _, _ in resetSelectionToLatest() }
         .animation(ChartMotion.switchSpring, value: timeRange == .custom)
@@ -382,7 +347,7 @@ struct HomeTrendChartSection: View {
             NSDecimalNumber(decimal: chartDisplayValue(for: $0)).doubleValue
         }
         guard let minV = values.min(), let maxV = values.max() else { return 0...1 }
-        let padding = max((maxV - minV) * 0.08, maxV * 0.02)
+        let padding = max((maxV - minV) * 0.08, abs(maxV) * 0.02, 1)
         return (minV - padding)...(maxV + padding)
     }
     
@@ -399,55 +364,24 @@ struct HomeTrendChartSection: View {
         return "尚無足夠資料顯示走勢"
     }
     
-    private func refreshMergedTrendPoints() {
-        let historical = HomeTrendChartSessionCache.isLoaded(for: userId)
-            ? HomeTrendChartSessionCache.historicalPoints
-            : []
-        trendPoints = TrendChartPointMerger.merged(
-            historicalPoints: historical,
-            liveSnapshot: portfolioViewModel.homeSnapshot
-        )
-    }
-    
-    private func applyCachedTrendPointsIfAvailable() {
-        guard HomeTrendChartSessionCache.isLoaded(for: userId) else { return }
-        loadFailed = HomeTrendChartSessionCache.loadFailed
-        refreshMergedTrendPoints()
-        isLoading = false
-    }
-    
-    private func loadHistoricalTrendPoints() async {
-        guard !HomeTrendChartSessionCache.isLoaded(for: userId) else {
-            applyCachedTrendPointsIfAvailable()
-            return
-        }
-        
+    private func loadLocalTrendPoints() async {
         isLoading = true
         loadFailed = false
         defer { isLoading = false }
-        
-        guard SupabaseConfig.isConfigured else {
-            HomeTrendChartSessionCache.applyHistorical(userId: userId, points: [], failed: false)
-            refreshMergedTrendPoints()
-            return
-        }
-        
+
         do {
             let start = Calendar.current.date(byAdding: .day, value: -400, to: Date())
-            let fetched = try await SupabaseDailySnapshotService.fetchTrendPoints(
+            let snapshots = try await dataService.fetchLocalDailyTrendSnapshots(
                 userId: userId,
                 startDate: start,
                 endDate: Date()
             )
-            HomeTrendChartSessionCache.applyHistorical(userId: userId, points: fetched, failed: false)
+            trendPoints = snapshots.map(TrendChartPoint.init(localSnapshot:))
             loadFailed = false
-            refreshMergedTrendPoints()
         } catch {
-            HomeTrendChartSessionCache.applyHistorical(userId: userId, points: [], failed: true)
             loadFailed = true
-            refreshMergedTrendPoints()
             #if DEBUG
-            print("[HomeTrendChart] load failed: \(error.localizedDescription)")
+            print("[HomeTrendChart] local load failed: \(error.localizedDescription)")
             #endif
         }
     }

@@ -14,6 +14,7 @@ struct TransactionsView: View {
     @EnvironmentObject private var assetsViewModel: AssetsViewModel
     @Environment(\.openSettings) private var openSettings
     @StateObject private var viewModel = TransactionsViewModel()
+    @StateObject private var manualAssetsViewModel = ManualAssetsViewModel()
     @State private var showingEditTransaction: Transaction?
     @State private var showingEditLiability = false
     @State private var editingLiability: Liability?
@@ -31,9 +32,12 @@ struct TransactionsView: View {
     @State private var showingDeleteError = false
     @State private var deleteErrorMessage: String? = nil
     @State private var transactionPendingDelete: Transaction?
+    @State private var manualAssetRecordPendingDelete: ManualAssetActivityRecord?
     @State private var showingDeleteConfirmation = false
+    @State private var showingManualAssetDeleteConfirmation = false
     @State private var buyTradeEditItem: BuyTradeEditItem?
     @State private var sellTradeEditItem: SellTradeEditItem?
+    @State private var editingManualAssetRecord: ManualAssetActivityRecord?
     
     // 帳戶篩選（多選）
     @State private var selectedAccountIds: Set<String> = []
@@ -76,21 +80,69 @@ struct TransactionsView: View {
     
     // MARK: - View Components
     
-    private struct TransactionDayGroup: Identifiable {
+    private enum ActivityItem: Identifiable {
+        case transaction(Transaction)
+        case manualAsset(ManualAssetActivityRecord)
+
+        var id: String {
+            switch self {
+            case .transaction(let transaction):
+                return "transaction-\(transaction.id)"
+            case .manualAsset(let record):
+                return "manual-asset-\(record.id)"
+            }
+        }
+
+        var date: Date {
+            switch self {
+            case .transaction(let transaction):
+                return transaction.transactionDate
+            case .manualAsset(let record):
+                return record.date
+            }
+        }
+    }
+
+    private struct ActivityDayGroup: Identifiable {
         let day: Date
-        let transactions: [Transaction]
+        let items: [ActivityItem]
         var id: Date { day }
     }
+
+    private struct ManualAssetActivityRecord: Identifiable {
+        enum Kind {
+            case creation
+            case valuation
+        }
+
+        let id: String
+        let kind: Kind
+        let asset: ManualAsset
+        let value: Decimal
+        let currency: Currency
+        let date: Date
+        let notes: String?
+        let valuation: ManualAssetValuation?
+
+        var title: String {
+            switch kind {
+            case .creation:
+                return "建立其他資產"
+            case .valuation:
+                return "更新其他資產現值"
+            }
+        }
+    }
     
-    private var transactionDayGroups: [TransactionDayGroup] {
+    private var activityDayGroups: [ActivityDayGroup] {
         let calendar = Calendar.current
-        let grouped = Dictionary(grouping: filteredTransactions) {
-            calendar.startOfDay(for: $0.transactionDate)
+        let grouped = Dictionary(grouping: filteredActivityItems) {
+            calendar.startOfDay(for: $0.date)
         }
         return grouped.keys.sorted(by: >).map { day in
-            TransactionDayGroup(
+            ActivityDayGroup(
                 day: day,
-                transactions: grouped[day]!.sorted { $0.transactionDate > $1.transactionDate }
+                items: grouped[day]!.sorted { $0.date > $1.date }
             )
         }
     }
@@ -102,17 +154,17 @@ struct TransactionsView: View {
     private var filterStatusText: String {
         if viewModel.isLoading { return "載入中…" }
         if !hasActiveFilters {
-            return "共 \(filteredTransactions.count) 筆"
+            return "共 \(filteredActivityItems.count) 筆"
         }
         var parts: [String] = []
         if isTimeFilterEnabled { parts.append(timeFilterStatusLabel) }
         if !selectedAccountIds.isEmpty { parts.append("已選 \(selectedAccountIds.count) 帳戶") }
-        parts.append("共 \(filteredTransactions.count) 筆")
+        parts.append("共 \(filteredActivityItems.count) 筆")
         return parts.joined(separator: " · ")
     }
     
     private var filterListRefreshToken: String {
-        "\(timePreset.rawValue)_\(filterStartDate.timeIntervalSince1970)_\(filterEndDate.timeIntervalSince1970)_\(selectedAccountIds.hashValue)_\(filteredTransactions.count)"
+        "\(timePreset.rawValue)_\(filterStartDate.timeIntervalSince1970)_\(filterEndDate.timeIntervalSince1970)_\(selectedAccountIds.hashValue)_\(filteredActivityItems.count)"
     }
     
     private var timeFilterStatusLabel: String {
@@ -237,7 +289,7 @@ struct TransactionsView: View {
     private var transactionsListSection: some View {
         if viewModel.isLoading {
             loadingView
-        } else if filteredTransactions.isEmpty {
+        } else if filteredActivityItems.isEmpty {
             emptyStateView
         } else {
             transactionsListView
@@ -259,7 +311,7 @@ struct TransactionsView: View {
             Image(systemName: "list.bullet.clipboard")
                 .font(.system(size: 50))
                 .foregroundColor(.secondaryText)
-            Text("尚無交易紀錄")
+            Text("尚無紀錄")
                 .font(.headline)
                 .foregroundColor(.secondaryText)
         }
@@ -268,10 +320,10 @@ struct TransactionsView: View {
     
     private var transactionsListView: some View {
         List {
-            ForEach(transactionDayGroups) { group in
+            ForEach(activityDayGroups) { group in
                 Section {
-                    ForEach(group.transactions) { transaction in
-                        transactionListRow(for: transaction)
+                    ForEach(group.items) { item in
+                        activityListRow(for: item)
                             .listRowSeparator(.hidden)
                             .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
                             .listRowBackground(Color.clear)
@@ -279,7 +331,7 @@ struct TransactionsView: View {
                 } header: {
                     TransactionDateSectionHeader(
                         date: group.day,
-                        count: group.transactions.count
+                        count: group.items.count
                     )
                 }
             }
@@ -293,6 +345,16 @@ struct TransactionsView: View {
         }
     }
     
+    @ViewBuilder
+    private func activityListRow(for item: ActivityItem) -> some View {
+        switch item {
+        case .transaction(let transaction):
+            transactionListRow(for: transaction)
+        case .manualAsset(let record):
+            manualAssetActivityRow(for: record)
+        }
+    }
+
     @ViewBuilder
     private func transactionListRow(for transaction: Transaction) -> some View {
         let accountDisplay = getAccountDisplay(for: transaction)
@@ -310,7 +372,147 @@ struct TransactionsView: View {
             }
         )
     }
+
+    private func manualAssetActivityRow(for record: ManualAssetActivityRecord) -> some View {
+        let accentColor = Color.stockUSColor
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    CurrencyTitleLabel(
+                        title: record.title,
+                        currency: record.currency,
+                        font: .subheadline,
+                        weight: .semibold,
+                        color: .primaryText,
+                        chipTint: accentColor
+                    )
+
+                    Text("\(record.asset.name) · \(record.asset.category.displayName)")
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                        .lineLimit(2)
+                }
+
+                Spacer(minLength: 8)
+
+                VStack(alignment: .trailing, spacing: 4) {
+                    CurrencyAmountLabel(
+                        text: record.value.formatted(currency: record.currency),
+                        currency: record.currency,
+                        font: .system(size: 17, weight: .bold),
+                        weight: .bold,
+                        color: .primaryText,
+                        chipTint: accentColor
+                    )
+
+                    Text(record.date, style: .date)
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                }
+            }
+
+            if let notes = record.notes?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !notes.isEmpty {
+                Divider()
+                Text(notes)
+                    .font(.caption)
+                    .foregroundColor(.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.cardBackground)
+        .cornerRadius(12)
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(accentColor)
+                .frame(width: 4)
+        }
+        .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 2)
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button {
+                manualAssetRecordPendingDelete = record
+                showingManualAssetDeleteConfirmation = true
+            } label: {
+                VStack(spacing: 4) {
+                    Image(systemName: "trash.fill")
+                        .font(.system(size: 18, weight: .medium))
+                    Text("刪除")
+                        .font(.system(size: 10, weight: .medium))
+                }
+                .foregroundColor(AppColors.actionForeground)
+            }
+            .tint(AppColors.actionDestructiveBackground)
+
+            Button {
+                editingManualAssetRecord = record
+            } label: {
+                VStack(spacing: 4) {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 18, weight: .medium))
+                    Text("編輯")
+                        .font(.system(size: 10, weight: .medium))
+                }
+                .foregroundColor(AppColors.actionForeground)
+            }
+            .tint(AppColors.actionEditBackground)
+        }
+    }
     
+    private var filteredActivityItems: [ActivityItem] {
+        guard !viewModel.isLoading else { return [] }
+
+        let dateRange = calculateDateRange()
+        var items = filteredTransactions.map(ActivityItem.transaction)
+
+        if selectedAccountIds.isEmpty {
+            items += manualAssetActivityRecords.map(ActivityItem.manualAsset)
+        }
+
+        if let range = dateRange {
+            items = items.filter { item in
+                item.date >= range.start && item.date <= range.end
+            }
+        }
+
+        return items.sorted { $0.date > $1.date }
+    }
+
+    private var manualAssetActivityRecords: [ManualAssetActivityRecord] {
+        viewModel.manualAssets.flatMap { asset in
+            let valuations = viewModel.manualAssetValuationsByAssetId[asset.id] ?? []
+            let creationValuation = valuations.first {
+                $0.notes == ManualAssetValuation.creationRecordNote
+            }
+            let creationRecord = ManualAssetActivityRecord(
+                id: "create-\(asset.id)",
+                kind: .creation,
+                asset: asset,
+                value: creationValuation?.value ?? asset.currentValue,
+                currency: creationValuation?.currency ?? asset.currency,
+                date: creationValuation?.valuationDate ?? asset.createdAt,
+                notes: nil,
+                valuation: creationValuation
+            )
+            let updateRecords = valuations
+                .filter { $0.notes != ManualAssetValuation.creationRecordNote }
+                .map { valuation in
+                    ManualAssetActivityRecord(
+                        id: valuation.id,
+                        kind: .valuation,
+                        asset: asset,
+                        value: valuation.value,
+                        currency: valuation.currency,
+                        date: valuation.valuationDate,
+                        notes: valuation.notes,
+                        valuation: valuation
+                    )
+                }
+            return [creationRecord] + updateRecords
+        }
+    }
+
     var filteredTransactions: [Transaction] {
         // 如果正在載入，返回空數組
         guard !viewModel.isLoading else {
@@ -433,6 +635,7 @@ struct TransactionsView: View {
                         assetsViewModel: assetsViewModel,
                         rebuildAccountDetailCache: false
                     )
+                    await viewModel.loadTransactions(userId: userId)
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .transactionsDidChange)) { _ in
@@ -500,6 +703,9 @@ struct TransactionsView: View {
             .sheet(item: $sellTradeEditItem) { item in
                 editSellTradeSheet(item: item)
             }
+            .sheet(item: $editingManualAssetRecord) { record in
+                editManualAssetRecordSheet(record: record)
+            }
             .alert("刪除這筆紀錄？", isPresented: $showingDeleteConfirmation) {
                 Button("取消", role: .cancel) {
                     transactionPendingDelete = nil
@@ -513,6 +719,18 @@ struct TransactionsView: View {
                 if let transaction = transactionPendingDelete {
                     Text(transaction.deleteConfirmationMessage)
                 }
+            }
+            .alert(manualAssetDeleteAlertTitle, isPresented: $showingManualAssetDeleteConfirmation) {
+                Button("取消", role: .cancel) {
+                    manualAssetRecordPendingDelete = nil
+                }
+                Button("刪除", role: .destructive) {
+                    guard let record = manualAssetRecordPendingDelete else { return }
+                    manualAssetRecordPendingDelete = nil
+                    Task { await performDeleteManualAssetRecord(record) }
+                }
+            } message: {
+                Text(manualAssetDeleteAlertMessage)
             }
         }
         .id(navigationStackResetID)
@@ -532,8 +750,11 @@ struct TransactionsView: View {
         activeTimeFilterDateField = nil
         buyTradeEditItem = nil
         sellTradeEditItem = nil
+        editingManualAssetRecord = nil
         transactionPendingDelete = nil
+        manualAssetRecordPendingDelete = nil
         showingDeleteConfirmation = false
+        showingManualAssetDeleteConfirmation = false
         showingDeleteError = false
     }
     
@@ -585,6 +806,78 @@ struct TransactionsView: View {
         .snapFormSheetChrome()
         .background(Color.mainBackground)
         .presentationBackground(Color.mainBackground)
+    }
+
+    @ViewBuilder
+    private func editManualAssetRecordSheet(record: ManualAssetActivityRecord) -> some View {
+        switch record.kind {
+        case .creation:
+            ManualAssetEditSheet(
+                asset: record.asset,
+                viewModel: manualAssetsViewModel,
+                mode: .full,
+                syncCreationValuation: true
+            ) { _ in
+                editingManualAssetRecord = nil
+                Task { await viewModel.loadTransactions(userId: userId) }
+            }
+        case .valuation:
+            if let valuation = record.valuation {
+                ManualAssetUpdateValueView(
+                    asset: record.asset,
+                    viewModel: manualAssetsViewModel,
+                    editingValuation: valuation
+                ) { _ in
+                    editingManualAssetRecord = nil
+                    Task { await viewModel.loadTransactions(userId: userId) }
+                }
+            } else {
+                ContentUnavailableView("找不到估值紀錄", systemImage: "square.grid.2x2")
+            }
+        }
+    }
+
+    private var manualAssetDeleteAlertTitle: String {
+        switch manualAssetRecordPendingDelete?.kind {
+        case .creation:
+            return "刪除其他資產？"
+        case .valuation:
+            return "刪除現值紀錄？"
+        case .none:
+            return "刪除紀錄？"
+        }
+    }
+
+    private var manualAssetDeleteAlertMessage: String {
+        guard let record = manualAssetRecordPendingDelete else { return "" }
+        switch record.kind {
+        case .creation:
+            return "會刪除「\(record.asset.name)」與所有估值紀錄，此操作無法復原。"
+        case .valuation:
+            return "會刪除「\(record.asset.name)」這筆更新現值紀錄。若它是最新紀錄，目前現值會回到前一筆估值。"
+        }
+    }
+
+    private func performDeleteManualAssetRecord(_ record: ManualAssetActivityRecord) async {
+        let succeeded: Bool
+        switch record.kind {
+        case .creation:
+            succeeded = await manualAssetsViewModel.deleteAsset(id: record.asset.id, userId: record.asset.userId)
+        case .valuation:
+            guard let valuation = record.valuation else { return }
+            succeeded = await manualAssetsViewModel.deleteManualAssetValuation(
+                asset: record.asset,
+                valuation: valuation
+            )
+        }
+        if succeeded {
+            await viewModel.loadTransactions(userId: userId)
+        } else if let error = manualAssetsViewModel.errorMessage {
+            await MainActor.run {
+                deleteErrorMessage = error
+                showingDeleteError = true
+            }
+        }
     }
     
     private func performDelete(_ transaction: Transaction) async {

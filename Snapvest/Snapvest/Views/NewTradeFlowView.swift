@@ -235,7 +235,7 @@ struct NewTradeFlowView: View {
             }
             .padding(.horizontal)
             .padding(.top)
-            .padding(.bottom, 8)
+            .padding(.bottom, 12)
             
             ScrollView {
                 VStack(spacing: 12) {
@@ -256,16 +256,14 @@ struct NewTradeFlowView: View {
     private func tradeActionStep(for market: TradeMarket) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Image(systemName: market.iconName)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(market.themeColor)
-                    .frame(width: 32, height: 32)
-                    .background(market.themeColor.opacity(0.12))
-                    .clipShape(Circle())
-                
                 Text(market.title)
-                    .font(.headline)
-                    .foregroundColor(.primaryText)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(market.themeColor)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(market.themeColor.opacity(0.15))
+                    .clipShape(Capsule())
                 
                 Spacer(minLength: 0)
             }
@@ -273,15 +271,17 @@ struct NewTradeFlowView: View {
             .padding(.top, 8)
             .padding(.bottom, 4)
             
-            CardView(padding: 8, cornerRadius: 12) {
-                Picker("", selection: $selectedAction) {
-                    ForEach(TradeAction.allCases) { action in
-                        Label(action.title, systemImage: action.iconName)
-                            .tag(action)
-                    }
+            HStack(spacing: 8) {
+                ForEach(TradeAction.allCases) { action in
+                    tradeActionPill(action)
                 }
-                .pickerStyle(.segmented)
-                .font(.subheadline)
+            }
+            .padding(6)
+            .background(Color.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.separator.opacity(0.35), lineWidth: 1)
             }
             .padding(.horizontal)
             .padding(.bottom, 8)
@@ -308,6 +308,29 @@ struct NewTradeFlowView: View {
         }
         .background(Color.mainBackground)
     }
+
+    private func tradeActionPill(_ action: TradeAction) -> some View {
+        let isSelected = selectedAction == action
+        let color: Color = action == .buy ? .profitGreen : .lossRed
+        return Button {
+            withAnimation(ChartMotion.switchSpring) {
+                selectedAction = action
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: action.iconName)
+                    .font(.system(size: 12, weight: .bold))
+                Text(action.title)
+                    .font(.subheadline.weight(.semibold))
+            }
+            .foregroundColor(isSelected ? AppColors.actionForeground : .primaryText)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(isSelected ? color : Color.clear)
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
 }
 
 // MARK: - 市場選擇卡片
@@ -317,17 +340,7 @@ struct TradeMarketSelectionCard: View {
     
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 16) {
-                ZStack {
-                    Circle()
-                        .fill(market.themeColor.opacity(0.2))
-                        .frame(width: 50, height: 50)
-                    
-                    Image(systemName: market.iconName)
-                        .foregroundColor(market.themeColor)
-                        .font(.system(size: 24))
-                }
-                
+            HStack(spacing: 14) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(market.title)
                         .font(.headline)
@@ -341,20 +354,29 @@ struct TradeMarketSelectionCard: View {
                 
                 Spacer()
                 
-                Image(systemName: "chevron.right")
-                    .foregroundColor(.secondaryText)
+                Text("選擇")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(market.themeColor)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(market.themeColor.opacity(0.12))
+                    .clipShape(Capsule())
             }
             .padding()
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(market.themeColor.opacity(0.05))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(market.themeColor.opacity(0.4), lineWidth: 1)
-                    )
-            )
+            .background(Color.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(market.themeColor)
+                    .frame(width: 4)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(market.themeColor.opacity(0.28), lineWidth: 1)
+            }
+            .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 2)
         }
-        .buttonStyle(PlainButtonStyle())
+        .buttonStyle(.plain)
     }
 }
 
