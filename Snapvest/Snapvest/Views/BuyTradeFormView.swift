@@ -85,7 +85,7 @@ struct BuyTradeFormView: View {
             case .stockTW:
                 return account.accountType == .twdSecurities
             case .stockUS:
-                return account.accountType == .twdSecurities || account.accountType == .usdAccount
+                return account.accountType == .usdAccount
             case .crypto:
                 return account.accountType == .cryptoWallet
             }
@@ -97,7 +97,8 @@ struct BuyTradeFormView: View {
     }
     
     private var needsExchangeRate: Bool {
-        market == .stockUS && selectedAccount?.accountType == .twdSecurities
+        guard let account = selectedAccount else { return false }
+        return priceCurrency != account.currency
     }
     
     private var quantityValue: Decimal? {
@@ -112,7 +113,6 @@ struct BuyTradeFormView: View {
         Decimal(string: exchangeRateText)
     }
     
-    /// 儲存用匯率：僅複委托美股帶入，改為美金戶時為 nil
     private var exchangeRateForSave: Decimal? {
         guard needsExchangeRate else { return nil }
         return exchangeRateValue
@@ -546,7 +546,8 @@ struct BuyTradeFormView: View {
     
     @ViewBuilder
     private var exchangeRateSection: some View {
-        buyFormRow(title: "美金對台匯率", icon: "arrow.triangle.2.circlepath", color: market.themeColor) {
+        let target = selectedAccount?.currency.rawValue ?? ""
+        buyFormRow(title: "\(priceCurrency.rawValue) 對 \(target) 匯率", icon: "arrow.triangle.2.circlepath", color: market.themeColor) {
             TextField("0", text: $exchangeRateText)
                 .keyboardType(.decimalPad)
                 .snapFormFieldTapTarget()
@@ -730,7 +731,7 @@ struct BuyTradeFormView: View {
         transactionDate = transaction.transactionDate
         deductFromAccount = transaction.deductFromAccount ?? false
         if needsExchangeRate, let rate = transaction.exchangeRate {
-            exchangeRateText = rate.formatted(fractionDigits: 2)
+            exchangeRateText = formattedExchangeRate(rate)
         } else {
             exchangeRateText = ""
         }
@@ -752,7 +753,8 @@ struct BuyTradeFormView: View {
         
         if needsExchangeRate,
            (exchangeRateValue == nil || (exchangeRateValue ?? 0) <= 0) {
-            errorMessage = "複委托買入美股請填寫美金對台匯率"
+            let target = selectedAccount?.currency.rawValue ?? ""
+            errorMessage = "請填寫 \(priceCurrency.rawValue) 對 \(target) 匯率"
             return
         }
         
@@ -803,22 +805,18 @@ struct BuyTradeFormView: View {
     }
     
     private func loadExchangeRate() {
-        guard needsExchangeRate else { return }
+        guard needsExchangeRate, let account = selectedAccount else { return }
         Task {
             do {
-                if let data = try await dataService.fetchExchangeRate(from: .USD, to: .TWD, date: nil) {
+                if let data = try await dataService.fetchExchangeRate(from: priceCurrency, to: account.currency, date: nil) {
                     await MainActor.run {
                         if exchangeRateText.isEmpty {
-                            exchangeRateText = data.rate.formatted(fractionDigits: 2)
+                            exchangeRateText = formattedExchangeRate(data.rate)
                         }
                     }
                 }
             } catch {
-                await MainActor.run {
-                    if exchangeRateText.isEmpty {
-                        exchangeRateText = "32.00"
-                    }
-                }
+                // 保持空白，讓使用者手動輸入，避免使用假的匯率。
             }
         }
     }
@@ -855,6 +853,10 @@ struct BuyTradeFormView: View {
         guard let prefill, selectedSymbol.isEmpty else { return }
         selectedSymbol = prefill.symbol
         selectedSymbolName = prefill.symbolName ?? ""
+    }
+
+    private func formattedExchangeRate(_ rate: Decimal) -> String {
+        rate.formatted(fractionDigits: rate < 1 ? 4 : 2)
     }
 }
 

@@ -13,6 +13,7 @@ struct AddAccountView: View {
     @StateObject private var transactionsViewModel = TransactionsViewModel()
     
     @State private var selectedAccountType: AccountType?
+    @State private var selectedCurrency: Currency = .TWD
     @State private var showingAccountDetails = false
     @State private var name: String = ""
     @State private var initialBalance: String = ""
@@ -42,9 +43,20 @@ struct AddAccountView: View {
         startDate = Date()
         otherDebtAmount = ""
         otherDebtNotes = ""
+        selectedCurrency = preferredDefaultCurrency(for: selectedAccountType)
         duplicateNameError = nil
     }
     
+    private func preferredDefaultCurrency(for accountType: AccountType?) -> Currency {
+        guard let accountType else { return .TWD }
+        switch accountType {
+        case .debt, .otherDebt:
+            return BaseCurrencyManager.shared.baseCurrency
+        default:
+            return accountType.defaultCurrency
+        }
+    }
+
     // 檢查帳戶名稱是否重複（同一類型）
     private func isDuplicateName(_ name: String, accountType: AccountType) -> Bool {
         return viewModel.accounts.contains { account in
@@ -99,6 +111,7 @@ struct AddAccountView: View {
                                             ) {
                                                 resetForm()
                                                 selectedAccountType = accountType
+                                                selectedCurrency = preferredDefaultCurrency(for: accountType)
                                                 withAnimation {
                                                     showingAccountDetails = true
                                                 }
@@ -122,6 +135,7 @@ struct AddAccountView: View {
                             monthlyPayment: $monthlyPayment,
                             repaymentDay: $repaymentDay,
                             startDate: $startDate,
+                            selectedCurrency: $selectedCurrency,
                             accountsViewModel: viewModel,
                             duplicateNameError: $duplicateNameError,
                             onCancel: {
@@ -140,6 +154,7 @@ struct AddAccountView: View {
                             amount: $otherDebtAmount,
                             notes: $otherDebtNotes,
                             startDate: $startDate,
+                            selectedCurrency: $selectedCurrency,
                             duplicateNameError: $duplicateNameError,
                             onCancel: {
                                 resetForm()
@@ -156,6 +171,7 @@ struct AddAccountView: View {
                             accountType: selectedAccountType!,
                             name: $name,
                             initialBalance: $initialBalance,
+                            selectedCurrency: $selectedCurrency,
                             duplicateNameError: $duplicateNameError,
                             onCancel: {
                                 resetForm() // 重置表單
@@ -214,7 +230,8 @@ struct AddAccountView: View {
         let account = Account(
             userId: userId,
             name: name,
-            accountType: accountType
+            accountType: accountType,
+            currency: selectedCurrency
         )
         
         Task {
@@ -264,7 +281,8 @@ struct AddAccountView: View {
             let account = Account(
                 userId: userId,
                 name: name.trimmingCharacters(in: .whitespaces),
-                accountType: .otherDebt
+                accountType: .otherDebt,
+                currency: selectedCurrency
             )
             await viewModel.createAccount(account)
             
@@ -323,7 +341,8 @@ struct AddAccountView: View {
             let account = Account(
                 userId: userId,
                 name: name,
-                accountType: .debt
+                accountType: .debt,
+                currency: selectedCurrency
             )
             await viewModel.createAccount(account)
             
@@ -366,7 +385,7 @@ struct AddAccountView: View {
                 interestRate: rate,
                 monthlyPayment: monthlyPayment,
                 remainingBalance: calculatedRemainingBalance,
-                currency: .TWD,
+                currency: selectedCurrency,
                 startDate: startDate,  // 直接使用用戶選擇的開始日期
                 totalPeriods: periods,
                 paidPeriods: paidPeriodsValue,
@@ -381,7 +400,7 @@ struct AddAccountView: View {
             let transactionAmount = calculatedRemainingBalance > 0 ? calculatedRemainingBalance : principalValue
             var transactionNotes = "新增債務：\(name)"
             if paidPeriodsValue > 0 {
-                transactionNotes += "（已還 \(paidPeriodsValue) 期，剩餘本金 \(transactionAmount.formatted(currency: .TWD))）"
+                transactionNotes += "（已還 \(paidPeriodsValue) 期，剩餘本金 \(transactionAmount.formatted(currency: selectedCurrency))）"
             }
             
             let liabilityTransaction = Transaction(
@@ -391,7 +410,7 @@ struct AddAccountView: View {
                 symbol: "CASH",
                 quantity: transactionAmount,
                 price: 1,
-                currency: .TWD,
+                currency: selectedCurrency,
                 fee: 0,
                 notes: transactionNotes,
                 transactionDate: startDate  // 直接使用用戶選擇的開始日期（新增債務的日期）
@@ -483,6 +502,7 @@ struct DebtAccountDetailsFormView: View {
     @Binding var monthlyPayment: Decimal
     @Binding var repaymentDay: String
     @Binding var startDate: Date  // 開始日期
+    @Binding var selectedCurrency: Currency
     @ObservedObject var accountsViewModel: AccountsViewModel
     @Binding var duplicateNameError: String?
     let onCancel: () -> Void
@@ -528,7 +548,7 @@ struct DebtAccountDetailsFormView: View {
             interestRate: rate,
             monthlyPayment: monthlyPayment,
             remainingBalance: remainingBalance,
-            currency: .TWD,
+            currency: selectedCurrency,
             startDate: Date(),
             totalPeriods: periods,
             paidPeriods: paid
@@ -678,6 +698,21 @@ struct DebtAccountDetailsFormView: View {
                         Divider()
                             .padding(.horizontal, 20)
                         
+                        if accountType.allowsCurrencySelection {
+                            CurrencyDropdownField(
+                                title: "貸款幣別",
+                                icon: "dollarsign.arrow.circlepath",
+                                color: accountType.color,
+                                options: accountType.selectableCurrencies,
+                                selectedCurrency: $selectedCurrency,
+                                helperText: "預設使用主要幣別，也可以改成其他借款幣別。"
+                            )
+                            .padding(20)
+
+                            Divider()
+                                .padding(.horizontal, 20)
+                        }
+
                         // 貸款總額
                         VStack(alignment: .leading, spacing: 12) {
                             HStack(spacing: 8) {
@@ -688,7 +723,7 @@ struct DebtAccountDetailsFormView: View {
                                     .font(.subheadline)
                                     .fontWeight(.semibold)
                                     .foregroundColor(.primaryText)
-                                Text("(TWD)")
+                                Text("(\(selectedCurrency.rawValue))")
                                     .font(.caption)
                                     .foregroundColor(.secondaryText)
                             }
@@ -876,7 +911,7 @@ struct DebtAccountDetailsFormView: View {
                             }
                             
                             HStack {
-                                Text(monthlyPayment.formatted(currency: .TWD))
+                                Text(monthlyPayment.formatted(currency: selectedCurrency))
                                     .font(.headline)
                                     .foregroundColor(.primaryText)
                                 
@@ -928,7 +963,7 @@ struct DebtAccountDetailsFormView: View {
                                             .font(.subheadline)
                                             .foregroundColor(.primaryText)
                                         Spacer()
-                                        Text(calculatedRemainingBalance.formatted(currency: .TWD))
+                                        Text(calculatedRemainingBalance.formatted(currency: selectedCurrency))
                                             .font(.headline)
                                             .foregroundColor(.lossRed)
                                     }
@@ -954,7 +989,7 @@ struct DebtAccountDetailsFormView: View {
                                             .font(.subheadline)
                                             .foregroundColor(.primaryText)
                                         Spacer()
-                                        Text(remainingInterest.formatted(currency: .TWD))
+                                        Text(remainingInterest.formatted(currency: selectedCurrency))
                                             .font(.headline)
                                             .foregroundColor(.secondaryText)
                                     }
@@ -968,7 +1003,7 @@ struct DebtAccountDetailsFormView: View {
                                             .fontWeight(.semibold)
                                             .foregroundColor(.primaryText)
                                         Spacer()
-                                        Text(remainingTotalAmount.formatted(currency: .TWD))
+                                        Text(remainingTotalAmount.formatted(currency: selectedCurrency))
                                             .font(.headline)
                                             .fontWeight(.bold)
                                             .foregroundColor(.lossRed)
@@ -1233,11 +1268,189 @@ struct DebtAccountDetailsFormView: View {
     }
 }
 
+// MARK: - 幣別下拉選單
+
+private struct CurrencyDropdownField: View {
+    let title: String
+    let icon: String
+    let color: Color
+    let options: [Currency]
+    @Binding var selectedCurrency: Currency
+    var helperText: String?
+    @State private var showingCurrencyPicker = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 16))
+                    .foregroundColor(color)
+                Text(title)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primaryText)
+            }
+
+            Button {
+                showingCurrencyPicker = true
+            } label: {
+                HStack(spacing: 10) {
+                    CurrencyCodeChip(currency: selectedCurrency, tint: color)
+
+                    Text(selectedCurrency.displayName)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.primaryText)
+
+                    Spacer()
+
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(.secondaryText)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                .frame(minHeight: 44)
+                .background(Color.secondaryBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.secondaryText.opacity(0.2), lineWidth: 1)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .sheet(isPresented: $showingCurrencyPicker) {
+                CurrencySelectionSheet(
+                    title: title,
+                    options: options,
+                    selectedCurrency: $selectedCurrency,
+                    tint: color
+                )
+                .snapFormSheetChrome()
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+            }
+
+            if let helperText {
+                Text(helperText)
+                    .font(.caption)
+                    .foregroundColor(.secondaryText)
+                    .padding(.leading, 4)
+            }
+        }
+    }
+}
+
+private struct CurrencySelectionSheet: View {
+    let title: String
+    let options: [Currency]
+    @Binding var selectedCurrency: Currency
+    let tint: Color
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    selectedSummary
+
+                    VStack(spacing: 10) {
+                        ForEach(options, id: \.self) { currency in
+                            currencyRow(currency)
+                        }
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .padding(.bottom, 28)
+            }
+            .background(Color.mainBackground)
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                        .foregroundColor(.appPrimary)
+                }
+            }
+        }
+        .background(Color.mainBackground)
+    }
+
+    private var selectedSummary: some View {
+        HStack(spacing: 12) {
+            CurrencyIconBadge(currency: selectedCurrency, tint: tint)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("目前選擇")
+                    .font(.caption)
+                    .foregroundColor(.secondaryText)
+                Text(selectedCurrency.settingsDisplayName)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.primaryText)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .background(Color.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(tint.opacity(0.22), lineWidth: 1)
+        }
+    }
+
+    private func currencyRow(_ currency: Currency) -> some View {
+        let isSelected = selectedCurrency == currency
+        return Button {
+            selectedCurrency = currency
+            dismiss()
+        } label: {
+            HStack(spacing: 12) {
+                CurrencyIconBadge(currency: currency, tint: isSelected ? tint : .secondaryText)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(currency.displayName)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.primaryText)
+                    Text(currency.rawValue)
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                }
+
+                Spacer(minLength: 0)
+
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(tint)
+                } else {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.secondaryText.opacity(0.7))
+                }
+            }
+            .padding(14)
+            .background(isSelected ? tint.opacity(0.10) : Color.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(isSelected ? tint.opacity(0.36) : Color.separator.opacity(0.35), lineWidth: 1)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 // MARK: - 帳戶詳情表單
 struct AccountDetailsFormView: View {
     let accountType: AccountType
     @Binding var name: String
     @Binding var initialBalance: String
+    @Binding var selectedCurrency: Currency
     @Binding var duplicateNameError: String?
     let onCancel: () -> Void
     let onSave: () -> Void
@@ -1246,11 +1459,11 @@ struct AccountDetailsFormView: View {
     private var namePlaceholder: String {
         switch accountType {
         case .twdDeposit:
-            return "例如：台灣銀行"
+            return "例如：生活帳戶"
         case .twdSecurities:
             return "例如：元大證券"
         case .usdAccount:
-            return "例如：IB盈透證券"
+            return "例如：美股證券戶"
         case .cryptoWallet:
             return "例如：Binance"
         case .debt:
@@ -1326,6 +1539,21 @@ struct AccountDetailsFormView: View {
                         Divider()
                             .padding(.horizontal, 20)
                         
+                        if accountType.allowsCurrencySelection {
+                            CurrencyDropdownField(
+                                title: "帳戶幣別",
+                                icon: "dollarsign.arrow.circlepath",
+                                color: accountType.color,
+                                options: accountType.selectableCurrencies,
+                                selectedCurrency: $selectedCurrency,
+                                helperText: "原幣仍依標的決定；帳戶幣別用於現金餘額與折算顯示。"
+                            )
+                            .padding(20)
+
+                            Divider()
+                                .padding(.horizontal, 20)
+                        }
+
                         // 初始餘額
                         VStack(alignment: .leading, spacing: 12) {
                             HStack(spacing: 8) {
@@ -1336,25 +1564,25 @@ struct AccountDetailsFormView: View {
                                     .font(.subheadline)
                                     .fontWeight(.semibold)
                                     .foregroundColor(.primaryText)
-                                Text("(\(accountType.defaultCurrency.rawValue))")
+                                Text("(\(selectedCurrency.rawValue))")
                                     .font(.caption)
                                     .foregroundColor(.secondaryText)
                             }
                             
-                            TextField("0", text: $initialBalance)
-                                .keyboardType(.decimalPad)
-                                .textFieldStyle(CustomTextFieldStyle())
-                                .onChange(of: initialBalance) { oldValue, newValue in
-                                    // 過濾無效字符，只允許數字和小數點
-                                    let filtered = newValue.filter { $0.isNumber || $0 == "." }
-                                    if filtered != newValue {
-                                        initialBalance = filtered
-                                    }
-                                    // 防止負數
-                                    if let value = Decimal(string: filtered), value < 0 {
-                                        initialBalance = oldValue
-                                    }
+                            AmountKeypadInputView(
+                                text: $initialBalance,
+                                currency: selectedCurrency,
+                                accentColor: accountType.color
+                            )
+                            .onChange(of: initialBalance) { oldValue, newValue in
+                                let filtered = newValue.filter { $0.isNumber || $0 == "." }
+                                if filtered != newValue {
+                                    initialBalance = filtered
                                 }
+                                if let value = Decimal(string: filtered), value < 0 {
+                                    initialBalance = oldValue
+                                }
+                            }
                             
                             Text("可選：設定帳戶的初始餘額")
                                 .font(.caption)
@@ -1511,6 +1739,7 @@ struct OtherDebtAccountDetailsFormView: View {
     @Binding var amount: String
     @Binding var notes: String
     @Binding var startDate: Date
+    @Binding var selectedCurrency: Currency
     @Binding var duplicateNameError: String?
     let onCancel: () -> Void
     let onSave: () -> Void
@@ -1585,6 +1814,20 @@ struct OtherDebtAccountDetailsFormView: View {
                         
                         Divider().padding(.horizontal, 20)
                         
+                        if accountType.allowsCurrencySelection {
+                            CurrencyDropdownField(
+                                title: "債務幣別",
+                                icon: "dollarsign.arrow.circlepath",
+                                color: accountType.color,
+                                options: accountType.selectableCurrencies,
+                                selectedCurrency: $selectedCurrency,
+                                helperText: "預設使用主要幣別，也可以改成其他借款幣別。"
+                            )
+                            .padding(20)
+
+                            Divider().padding(.horizontal, 20)
+                        }
+
                         VStack(alignment: .leading, spacing: 12) {
                             HStack(spacing: 8) {
                                 Image(systemName: "dollarsign.circle.fill")
@@ -1594,7 +1837,7 @@ struct OtherDebtAccountDetailsFormView: View {
                                     .font(.subheadline)
                                     .fontWeight(.semibold)
                                     .foregroundColor(.primaryText)
-                                Text("(TWD)")
+                                Text("(\(selectedCurrency.rawValue))")
                                     .font(.caption)
                                     .foregroundColor(.secondaryText)
                             }

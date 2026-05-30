@@ -12,6 +12,8 @@ struct HomePerformanceChartSection: View {
     let pieMode: PieChartDisplayMode
     @ObservedObject var groupingStore: PieChartGroupingStore
     @Binding var mode: PerformanceDisplayMode
+    let currency: Currency
+    let twdPerBaseCurrency: Decimal
     @State private var contentPhase: CGFloat = 1
     
     private var rows: [HoldingPerformanceRow] {
@@ -67,7 +69,9 @@ struct HomePerformanceChartSection: View {
                         PerformanceTornadoRow(
                             row: row,
                             mode: mode,
-                            maxAbsValue: maxAbsChartValue
+                            maxAbsValue: maxAbsChartValue,
+                            currency: currency,
+                            twdPerBaseCurrency: twdPerBaseCurrency
                         )
                         .transition(.opacity.combined(with: .move(edge: .top)))
                     }
@@ -98,6 +102,9 @@ struct HomePerformanceChartSection: View {
             Text(subtitle)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundColor(AppColors.appPrimary)
+            if mode == .gainLoss {
+                CurrencyCodeChip(currency: currency, tint: AppColors.appPrimary)
+            }
             Spacer()
         }
         .padding(.horizontal, 16)
@@ -107,7 +114,9 @@ struct HomePerformanceChartSection: View {
     
     private func chartValue(for row: HoldingPerformanceRow) -> Double {
         switch mode {
-        case .gainLoss: return row.gainLossDouble
+        case .gainLoss:
+            let baseDivisor: Decimal = currency == .TWD ? 1 : (twdPerBaseCurrency > 0 ? twdPerBaseCurrency : 1)
+            return NSDecimalNumber(decimal: row.unrealizedGainLossTWD / baseDivisor).doubleValue
         case .returnRate: return row.returnPercentDouble
         }
     }
@@ -118,16 +127,27 @@ private struct PerformanceTornadoRow: View {
     let row: HoldingPerformanceRow
     let mode: PerformanceDisplayMode
     let maxAbsValue: Double
+    let currency: Currency
+    let twdPerBaseCurrency: Decimal
     
     @Environment(\.homeAmountsHidden) private var hideHomeAmounts
     
     private var value: Double {
         switch mode {
-        case .gainLoss: return row.gainLossDouble
+        case .gainLoss:
+            return NSDecimalNumber(decimal: displayGainLoss).doubleValue
         case .returnRate: return row.returnPercentDouble
         }
     }
     
+    private var displayGainLoss: Decimal {
+        guard currency != .TWD,
+              twdPerBaseCurrency > 0 else {
+            return row.unrealizedGainLossTWD
+        }
+        return row.unrealizedGainLossTWD / twdPerBaseCurrency
+    }
+
     private var isPositive: Bool { value >= 0 }
     
     private var normalizedWidth: CGFloat {
@@ -142,7 +162,8 @@ private struct PerformanceTornadoRow: View {
                 return HomeAmountPrivacyFormat.masked
             }
             let prefix = row.unrealizedGainLossTWD >= 0 ? "+" : ""
-            return prefix + row.unrealizedGainLossTWD.formatted(currency: .TWD, fractionDigits: 0)
+            let digits = currency == .TWD ? 0 : 2
+            return prefix + displayGainLoss.formatted(currency: currency, fractionDigits: digits, showSymbol: false)
         case .returnRate:
             let sign = row.returnPercent >= 0 ? "+" : ""
             let n = NSDecimalNumber(decimal: row.returnPercent).doubleValue

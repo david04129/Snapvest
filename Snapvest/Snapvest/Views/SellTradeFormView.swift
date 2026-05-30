@@ -69,7 +69,7 @@ struct SellTradeFormView: View {
             case .stockTW:
                 return account.accountType == .twdSecurities
             case .stockUS:
-                return account.accountType == .twdSecurities || account.accountType == .usdAccount
+                return account.accountType == .usdAccount
             case .crypto:
                 return account.accountType == .cryptoWallet
             }
@@ -159,7 +159,8 @@ struct SellTradeFormView: View {
     }
     
     private var needsExchangeRate: Bool {
-        market == .stockUS && selectedAccount?.accountType == .twdSecurities
+        guard let account = selectedAccount else { return false }
+        return priceCurrency != account.currency
     }
     
     private var availableQuantity: Decimal {
@@ -636,7 +637,8 @@ struct SellTradeFormView: View {
     
     @ViewBuilder
     private var exchangeRateSection: some View {
-        FormRow(title: "美金對台匯率", icon: "arrow.triangle.2.circlepath", color: market.themeColor) {
+        let target = selectedAccount?.currency.rawValue ?? ""
+        FormRow(title: "\(priceCurrency.rawValue) 對 \(target) 匯率", icon: "arrow.triangle.2.circlepath", color: market.themeColor) {
             TextField("0", text: $exchangeRateText)
                 .keyboardType(.decimalPad)
                 .snapFormFieldTapTarget()
@@ -849,7 +851,7 @@ struct SellTradeFormView: View {
         priceText = transaction.price.formattedQuantityInput(maxFractionDigits: 4)
         transactionDate = transaction.transactionDate
         if needsExchangeRate, let rate = transaction.exchangeRate {
-            exchangeRateText = rate.formatted(fractionDigits: 2)
+            exchangeRateText = formattedExchangeRate(rate)
         } else {
             exchangeRateText = ""
         }
@@ -921,7 +923,8 @@ struct SellTradeFormView: View {
         if isImportDraftMode {
             if needsExchangeRate {
                 guard let exchangeRateValue = exchangeRateValue, exchangeRateValue > 0 else {
-                    errorMessage = "請輸入美金對台匯率"
+                    let target = selectedAccount?.currency.rawValue ?? ""
+                    errorMessage = "請輸入 \(priceCurrency.rawValue) 對 \(target) 匯率"
                     return
                 }
             }
@@ -948,7 +951,8 @@ struct SellTradeFormView: View {
         
         if needsExchangeRate {
             guard let exchangeRateValue = exchangeRateValue, exchangeRateValue > 0 else {
-                errorMessage = "請輸入美金對台匯率"
+                let target = selectedAccount?.currency.rawValue ?? ""
+                errorMessage = "請輸入 \(priceCurrency.rawValue) 對 \(target) 匯率"
                 return
             }
         }
@@ -959,22 +963,18 @@ struct SellTradeFormView: View {
     }
     
     private func loadExchangeRate() {
-        guard needsExchangeRate else { return }
+        guard needsExchangeRate, let account = selectedAccount else { return }
         Task {
             do {
-                if let data = try await dataService.fetchExchangeRate(from: .USD, to: .TWD, date: nil) {
+                if let data = try await dataService.fetchExchangeRate(from: priceCurrency, to: account.currency, date: nil) {
                     await MainActor.run {
                         if exchangeRateText.isEmpty {
-                            exchangeRateText = data.rate.formatted(fractionDigits: 2)
+                            exchangeRateText = formattedExchangeRate(data.rate)
                         }
                     }
                 }
             } catch {
-                await MainActor.run {
-                    if exchangeRateText.isEmpty {
-                        exchangeRateText = "32.00"
-                    }
-                }
+                // 保持空白，讓使用者手動輸入，避免使用假的匯率。
             }
         }
     }
@@ -1034,6 +1034,10 @@ struct SellTradeFormView: View {
         case .cash:
             return holding.symbol.uppercased()
         }
+    }
+
+    private func formattedExchangeRate(_ rate: Decimal) -> String {
+        rate.formatted(fractionDigits: rate < 1 ? 4 : 2)
     }
 }
 

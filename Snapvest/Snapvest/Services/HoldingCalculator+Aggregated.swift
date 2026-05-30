@@ -74,12 +74,17 @@ extension HoldingCalculator {
                     // 新建
                     let priceKey = "\(holdingItem.assetType.rawValue)_\(holdingItem.symbol)"
                     let priceSnapshot = priceSnapshotMap[priceKey]
+                    let displayName = SymbolListService.displayName(
+                        assetType: holdingItem.assetType,
+                        symbol: holdingItem.symbol,
+                        storedName: priceSnapshot?.name ?? holdingItem.name
+                    )
                     
                     let aggregated = AggregatedHoldingSnapshot(
                         userId: userId,
                         assetType: holdingItem.assetType,
                         symbol: holdingItem.symbol,
-                        name: priceSnapshot?.name ?? holdingItem.name,
+                        name: displayName,
                         currency: priceSnapshot?.currency ?? holdingItem.currency,
                         totalQuantity: holdingItem.quantity,
                         weightedAverageCost: holdingItem.averageCost,
@@ -140,6 +145,8 @@ extension HoldingCalculator {
         
         var totalQuantity: Decimal = 0
         var totalCost: Decimal = 0
+        var storedName: String?
+        var holdingCurrency: Currency?
         var sourceAccountIds: [String] = []
         var lastTransactionDate: Date?
         
@@ -151,6 +158,12 @@ extension HoldingCalculator {
             if let holdingItem = holdings.first(where: { $0.assetType == assetType && $0.symbol == symbol }) {
                 totalQuantity += holdingItem.quantity
                 totalCost += holdingItem.totalCost
+                if storedName == nil {
+                    storedName = holdingItem.name
+                }
+                if holdingCurrency == nil {
+                    holdingCurrency = holdingItem.currency
+                }
                 
                 if !sourceAccountIds.contains(accountSnapshot.accountId) {
                     sourceAccountIds.append(accountSnapshot.accountId)
@@ -186,8 +199,12 @@ extension HoldingCalculator {
             userId: userId,
             assetType: assetType,
             symbol: symbol,
-            name: assetPriceSnapshot?.name,
-            currency: assetPriceSnapshot?.currency ?? .TWD, // 預設 TWD，實際上應該從持股推斷
+            name: SymbolListService.displayName(
+                assetType: assetType,
+                symbol: symbol,
+                storedName: assetPriceSnapshot?.name ?? storedName
+            ),
+            currency: assetPriceSnapshot?.currency ?? holdingCurrency ?? assetType.quoteCurrency,
             totalQuantity: totalQuantity,
             weightedAverageCost: weightedAverageCost,
             totalCost: totalCost,

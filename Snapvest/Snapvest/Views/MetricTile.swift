@@ -15,6 +15,7 @@ enum MetricTileProminence {
 struct MetricTile: View {
     let title: String
     let value: String
+    var currency: Currency? = nil
     var valueColor: Color = .primaryText
     var footnote: String? = nil
     var footnoteColor: Color = .secondaryText
@@ -39,19 +40,42 @@ struct MetricTile: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: isFeatured ? 10 : 8) {
-            Text(title)
-                .font(.subheadline)
-                .fontWeight(.medium)
-                .foregroundColor(.secondaryText)
-                .lineLimit(titleLineLimit)
-                .minimumScaleFactor(0.85)
-                .fixedSize(horizontal: false, vertical: true)
+            if let currency {
+                CurrencyTitleLabel(
+                    title: title,
+                    currency: currency,
+                    font: .subheadline,
+                    weight: .medium,
+                    color: .secondaryText,
+                    chipTint: accentColor ?? .appPrimary,
+                    titleLineLimit: titleLineLimit
+                )
+            } else {
+                Text(title)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(.secondaryText)
+                    .lineLimit(titleLineLimit)
+                    .minimumScaleFactor(0.85)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             
-            Text(value)
-                .font(valueFont)
-                .foregroundColor(valueColor)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+            if let currency {
+                CurrencyAmountLabel(
+                    text: value,
+                    currency: currency,
+                    font: valueFont,
+                    weight: .bold,
+                    color: valueColor,
+                    chipTint: accentColor ?? .appPrimary
+                )
+            } else {
+                Text(value)
+                    .font(valueFont)
+                    .foregroundColor(valueColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
             
             if let footnote, !footnote.isEmpty {
                 Text(footnote)

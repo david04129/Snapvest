@@ -23,7 +23,7 @@ struct PieChartDataItem: Identifiable {
         self.marketValue = marketValue
         self.color = color
     }
-    
+
     var value: Double {
         NSDecimalNumber(decimal: marketValue).doubleValue
     }
@@ -52,14 +52,12 @@ enum PortfolioPieChartBuilder {
             case .cash: break
             }
         }
-        let segments: [(String, String, Decimal)] = [
-            ("twd_cash", "台幣", inputs.twdCash),
-            ("usd_cash", "美金", inputs.usdCash * rate),
+        let investmentSegments: [(String, String, Decimal)] = [
             ("stock_us", "美股", us),
             ("stock_tw", "台股", tw),
-            ("crypto", "加密貨幣", crypto),
+            ("crypto", "加密貨幣", crypto)
         ]
-        return segments.filter { $0.2 > 0 }.map {
+        let investmentItems = investmentSegments.filter { $0.2 > 0 }.map {
             PieChartDataItem(
                 symbol: $0.0,
                 name: $0.1,
@@ -67,8 +65,9 @@ enum PortfolioPieChartBuilder {
                 color: HoldingChartMetrics.chartColor(forItemId: $0.0, inputs: inputs)
             )
         }
+        return cashItems(inputs: inputs) + investmentItems
     }
-    
+
     /// 投資組合：各檔持股（不含現金）
     static func portfolioItems(inputs: PieChartInputs) -> [PieChartDataItem] {
         holdingItems(inputs: inputs, includeCash: false)
@@ -80,11 +79,15 @@ enum PortfolioPieChartBuilder {
     }
     
     static func denominator(mode: PieChartDisplayMode, inputs: PieChartInputs, totalAssets: Decimal, totalInvestments: Decimal) -> Decimal {
+        let itemSum = sumOfItems(mode: mode, inputs: inputs)
+        if itemSum > 0 {
+            return itemSum
+        }
         switch mode {
         case .totalAssets, .allDetails:
-            return totalAssets > 0 ? totalAssets : sumOfItems(mode: mode, inputs: inputs)
+            return totalAssets
         case .portfolio:
-            return totalInvestments > 0 ? totalInvestments : sumOfItems(mode: mode, inputs: inputs)
+            return totalInvestments
         }
     }
     
@@ -103,25 +106,35 @@ enum PortfolioPieChartBuilder {
         items(mode: mode, inputs: inputs).reduce(0) { $0 + $1.marketValue }
     }
     
+    private static func cashItems(inputs: PieChartInputs) -> [PieChartDataItem] {
+        Currency.baseCurrencyOptions.compactMap { currency in
+            guard let amount = inputs.cashByCurrency[currency],
+                  amount > 0,
+                  let marketValue = inputs.cashValueInTWD(currency: currency, amount: amount),
+                  marketValue > 0 else {
+                return nil
+            }
+            let itemId = PieChartGroupingEngine.cashItemId(for: currency)
+            return PieChartDataItem(
+                symbol: itemId,
+                name: cashDisplayName(for: currency),
+                marketValue: marketValue,
+                color: HoldingChartMetrics.chartColor(forItemId: itemId, inputs: inputs)
+            )
+        }
+    }
+    private static func cashDisplayName(for currency: Currency) -> String {
+        switch currency {
+        case .TWD: return "台幣"
+        case .USD: return "美金"
+        default: return currency.displayName
+        }
+    }
     private static func holdingItems(inputs: PieChartInputs, includeCash: Bool) -> [PieChartDataItem] {
         let rate = inputs.usdToTwdRate
         var result: [PieChartDataItem] = []
         if includeCash {
-            if inputs.twdCash > 0 {
-                result.append(PieChartDataItem(
-                    symbol: "twd_cash", name: "台幣",
-                    marketValue: inputs.twdCash,
-                    color: HoldingChartMetrics.chartColor(forItemId: "twd_cash", inputs: inputs)
-                ))
-            }
-            let usdTWD = inputs.usdCash * rate
-            if usdTWD > 0 {
-                result.append(PieChartDataItem(
-                    symbol: "usd_cash", name: "美金",
-                    marketValue: usdTWD,
-                    color: HoldingChartMetrics.chartColor(forItemId: "usd_cash", inputs: inputs)
-                ))
-            }
+            result.append(contentsOf: cashItems(inputs: inputs))
         }
         let priceMap = HoldingChartMetrics.priceMap(from: inputs.assetPriceSnapshots)
         var stockRows: [(AggregatedHoldingSnapshot, Decimal)] = []
@@ -134,8 +147,15 @@ enum PortfolioPieChartBuilder {
         for row in stockRows {
             let h = row.0
             let displayName: String
-            if h.assetType == .stockTW, let n = h.name, !n.isEmpty { displayName = n }
-            else { displayName = h.symbol }
+            if h.assetType == .stockTW {
+                displayName = SymbolListService.displayName(
+                    assetType: h.assetType,
+                    symbol: h.symbol,
+                    storedName: h.name
+                )
+            } else {
+                displayName = h.symbol
+            }
             let itemId = "\(h.assetType.rawValue)_\(h.symbol)"
             result.append(PieChartDataItem(
                 symbol: itemId,
@@ -153,6 +173,8 @@ struct HomePieChartSection: View {
     let inputs: PieChartInputs?
     let totalAssets: Decimal
     let totalInvestments: Decimal
+    let currency: Currency
+    let twdPerBaseCurrency: Decimal
     
     @Binding var mode: PieChartDisplayMode
     @ObservedObject var groupingStore: PieChartGroupingStore
@@ -278,6 +300,8 @@ struct HomePieChartSection: View {
                         denominator: denominator,
                         selectedId: $selectedId,
                         displayMode: mode,
+                        displayCurrency: currency,
+                        twdPerDisplayCurrency: twdPerBaseCurrency,
                         isGroupingEnabled: isGroupingEnabled,
                         allowsSelection: !isGroupingTransitioning && !isEditingGroups
                     )
@@ -294,6 +318,8 @@ struct HomePieChartSection: View {
                         rows: legendRows,
                         displayMode: mode,
                         denominator: denominator,
+                        displayCurrency: currency,
+                        twdPerDisplayCurrency: twdPerBaseCurrency,
                         selectedId: $selectedId,
                         isGroupingEnabled: isGroupingEnabled,
                         isEditingGroups: isEditingGroups,
@@ -698,6 +724,7 @@ struct HomePieChartSection: View {
                 Text(mode.rawValue)
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(AppColors.appPrimary)
+                CurrencyCodeChip(currency: currency)
             }
             Spacer(minLength: 8)
             if supportsGrouping {
@@ -727,6 +754,8 @@ struct PortfolioDonutChart: View {
     let denominator: Decimal
     @Binding var selectedId: String?
     var displayMode: PieChartDisplayMode = .totalAssets
+    var displayCurrency: Currency = .TWD
+    var twdPerDisplayCurrency: Decimal = 1
     var isGroupingEnabled: Bool = false
     var allowsSelection: Bool = true
     @Environment(\.homeAmountsHidden) private var hideHomeAmounts
@@ -750,6 +779,18 @@ struct PortfolioDonutChart: View {
         guard let selectedId else { return nil }
         return data.first(where: { $0.id == selectedId })
     }
+
+    private var displayCurrencyDivisor: Decimal {
+        guard displayCurrency != .TWD,
+              twdPerDisplayCurrency > 0 else {
+            return 1
+        }
+        return twdPerDisplayCurrency
+    }
+
+    private func displayAmount(fromTWD amount: Decimal) -> Decimal {
+        amount / displayCurrencyDivisor
+    }
     
     var body: some View {
         ZStack {
@@ -769,10 +810,17 @@ struct PortfolioDonutChart: View {
                         .lineLimit(2)
                         .minimumScaleFactor(0.75)
                     if !hideHomeAmounts {
-                        Text(selected.marketValue.formatted(currency: .TWD, fractionDigits: 0))
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundColor(.primaryText)
-                            .monospacedDigit()
+                        CurrencyAmountLabel(
+                            text: displayAmount(fromTWD: selected.marketValue).formatted(
+                                currency: displayCurrency,
+                                fractionDigits: displayCurrency == .TWD ? 0 : 2
+                            ),
+                            currency: displayCurrency,
+                            font: .system(size: 16),
+                            weight: .bold,
+                            color: .primaryText
+                        )
+                        .monospacedDigit()
                     }
                     Text(percentageText(for: selected))
                         .font(.system(size: hideHomeAmounts ? 17 : 13, weight: .semibold))
@@ -882,6 +930,8 @@ struct PortfolioGroupedAllocationLegend: View {
     let rows: [PieChartLegendRow]
     let displayMode: PieChartDisplayMode
     let denominator: Decimal
+    var displayCurrency: Currency = .TWD
+    var twdPerDisplayCurrency: Decimal = 1
     @Binding var selectedId: String?
     let isGroupingEnabled: Bool
     let isEditingGroups: Bool
@@ -901,6 +951,18 @@ struct PortfolioGroupedAllocationLegend: View {
     
     private var totalDouble: Double {
         max(NSDecimalNumber(decimal: denominator).doubleValue, 0.001)
+    }
+
+    private var displayCurrencyDivisor: Decimal {
+        guard displayCurrency != .TWD,
+              twdPerDisplayCurrency > 0 else {
+            return 1
+        }
+        return twdPerDisplayCurrency
+    }
+
+    private func displayAmount(fromTWD amount: Decimal) -> Decimal {
+        amount / displayCurrencyDivisor
     }
     
     private struct FlatLegendRow: Identifiable {
@@ -1387,14 +1449,24 @@ struct PortfolioGroupedAllocationLegend: View {
     
     @ViewBuilder
     private func valueColumn(pct: Double, marketValue: Decimal) -> some View {
+        let displayAmount = displayAmount(fromTWD: marketValue)
+        let fractionDigits = displayCurrency == .TWD ? 0 : 2
         VStack(alignment: .trailing, spacing: 2) {
             Text(String(format: "%.2f%%", pct))
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundColor(.primaryText)
             if !hideHomeAmounts {
-                Text(marketValue.formatted(currency: .TWD, fractionDigits: 0))
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondaryText)
+                CurrencyAmountLabel(
+                    text: displayAmount.formatted(
+                        currency: displayCurrency,
+                        fractionDigits: fractionDigits
+                    ),
+                    currency: displayCurrency,
+                    font: .system(size: 12),
+                    weight: .regular,
+                    color: .secondaryText
+                )
+                .frame(maxWidth: 120, alignment: .trailing)
             }
         }
     }

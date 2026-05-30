@@ -37,7 +37,7 @@ extension AccountType {
     /// 此帳戶類型可選的交易市場（單一市場時略過市場選擇步驟）
     var tradeMarketChoices: [TradeMarket] {
         switch self {
-        case .twdSecurities: return [.stockTW, .stockUS]
+        case .twdSecurities: return [.stockTW]
         case .usdAccount: return [.stockUS]
         case .cryptoWallet: return [.crypto]
         default: return []

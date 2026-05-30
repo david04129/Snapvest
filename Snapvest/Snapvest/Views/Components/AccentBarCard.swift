@@ -9,6 +9,7 @@ import SwiftUI
 
 struct AccentBarCard<Content: View>: View {
     var title: String? = nil
+    var titleCurrency: Currency? = nil
     let accentColor: Color
     var cornerRadius: CGFloat = 16
     @ViewBuilder var content: () -> Content
@@ -16,9 +17,21 @@ struct AccentBarCard<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let title {
-                Text(title)
-                    .font(.headline)
-                    .foregroundColor(.primaryText)
+                if let titleCurrency {
+                    CurrencyTitleLabel(
+                        title: title,
+                        currency: titleCurrency,
+                        font: .headline,
+                        weight: .bold,
+                        color: .primaryText,
+                        chipTint: accentColor,
+                        titleLineLimit: 1
+                    )
+                } else {
+                    Text(title)
+                        .font(.headline)
+                        .foregroundColor(.primaryText)
+                }
             }
             content()
         }

@@ -16,6 +16,7 @@ struct AssetsView: View {
     @State private var userId: String = AppUser.id
     @State private var selectedSort: SortOption = .totalAssets
     @State private var selectedHolding: HoldingNavigationItem?
+    @State private var navigationStackResetID = UUID()
     @State private var holdingsSelectedCategories: Set<AssetType> = []
     @State private var holdingsRatioType: HoldingRatioType = HoldingRatioPreference.get()
     @State private var holdingsCurrencyDisplay: AssetsCurrencyDisplay = .twd
@@ -60,6 +61,8 @@ struct AssetsView: View {
                                 totalAssets: viewModel.totalAssets,
                                 totalInvestments: viewModel.totalInvestments,
                                 usdToTwdRate: viewModel.usdToTwdRate,
+                                baseCurrency: portfolioViewModel.viewCurrency,
+                                twdPerBaseCurrency: portfolioViewModel.twdPerBaseCurrency,
                                 ratioType: holdingsRatioType,
                                 currencyDisplay: holdingsCurrencyDisplay,
                                 selectedCategories: holdingsSelectedCategories,
@@ -86,6 +89,8 @@ struct AssetsView: View {
                                 totalAssets: viewModel.totalAssets,
                                 totalInvestments: viewModel.totalInvestments,
                                 usdToTwdRate: viewModel.usdToTwdRate,
+                                baseCurrency: portfolioViewModel.viewCurrency,
+                                twdPerBaseCurrency: portfolioViewModel.twdPerBaseCurrency,
                                 ratioType: holdingsRatioType,
                                 currencyDisplay: holdingsCurrencyDisplay,
                                 selectedCategories: $holdingsSelectedCategories,
@@ -107,28 +112,41 @@ struct AssetsView: View {
             .refreshable {
                 await SnapshotRefreshCoordinator.rebuildAndNotify(userId: userId)
             }
+            .onAppear {
+                holdingsCurrencyDisplay = .twd
+            }
             .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { _ in
                 Task {
                     await LaunchCoordinator.applyPersistedState(
                         userId: userId,
                         portfolioViewModel: portfolioViewModel,
                         accountsViewModel: accountsViewModel,
-                        assetsViewModel: viewModel
+                        assetsViewModel: viewModel,
+                        rebuildAccountDetailCache: false
                     )
                     refreshSelectedHoldingIfNeeded()
                 }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .transactionsDidChange)) { _ in
+                refreshSelectedHoldingIfNeeded()
             }
             .navigationDestination(item: $selectedHolding) { item in
                 HoldingDetailView(
                     aggregatedHolding: item.aggregatedHolding,
                     assetPriceSnapshot: item.assetPriceSnapshot,
                     totalAssets: item.totalAssets,
-                    totalInvestments: item.totalInvestments
+                    totalInvestments: item.totalInvestments,
+                    initialUsdToTwdRate: viewModel.usdToTwdRate,
+                    initialTwdPerBaseCurrency: portfolioViewModel.twdPerBaseCurrency
                 )
+                .id(item)
             }
         }
+        .id(navigationStackResetID)
         .resetNavigationWhenTabReappears(selectedTab: $selectedTab, resignedTab: .assets) {
+            holdingsCurrencyDisplay = .twd
             selectedHolding = nil
+            navigationStackResetID = UUID()
         }
     }
     
@@ -184,6 +202,8 @@ struct AllHoldingsSection: View {
     let totalAssets: Decimal
     let totalInvestments: Decimal
     let usdToTwdRate: Decimal
+    let baseCurrency: Currency
+    let twdPerBaseCurrency: Decimal
     let ratioType: HoldingRatioType
     let currencyDisplay: AssetsCurrencyDisplay
     @Binding var selectedCategories: Set<AssetType>
@@ -281,9 +301,11 @@ struct AllHoldingsSection: View {
             let displayName: String
             switch holding.assetType {
             case .stockTW:
-                displayName = (holding.name.flatMap { $0.isEmpty ? nil : $0 })
-                    ?? SymbolListService.twDisplayName(for: holding.symbol)
-                    ?? holding.symbol
+                displayName = SymbolListService.displayName(
+                    assetType: holding.assetType,
+                    symbol: holding.symbol,
+                    storedName: holding.name
+                )
             case .crypto:
                 displayName = SymbolListService.cryptoDisplayName(for: holding.symbol, storedName: holding.name)
             case .stockUS:
@@ -301,7 +323,7 @@ struct AllHoldingsSection: View {
                 unrealizedGainLossPercent: unrealizedGainLossPercent,
                 ratio: ratio,
                 currentPrice: currentPrice,
-                currency: holding.currency
+                currency: holding.assetType.quoteCurrency
             ))
         }
         
@@ -395,6 +417,8 @@ struct AllHoldingsSection: View {
                         AllHoldingCard(
                             item: item,
                             ratioType: ratioType,
+                            baseCurrency: baseCurrency,
+                            twdPerBaseCurrency: twdPerBaseCurrency,
                             showOriginalCurrency: showOriginalCurrency,
                             onTap: {
                                 onHoldingTap(item.aggregatedHolding)
@@ -453,6 +477,8 @@ struct AllHoldingItem: Identifiable {
 struct AllHoldingCard: View {
     let item: AllHoldingItem
     let ratioType: HoldingRatioType
+    let baseCurrency: Currency
+    let twdPerBaseCurrency: Decimal
     let showOriginalCurrency: Bool // false = 台幣, true = 原幣
     let onTap: () -> Void
     
@@ -488,9 +514,15 @@ struct AllHoldingCard: View {
                 
                 // 持股信息（只顯示名稱）
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(item.displayName)
-                        .font(.headline)
-                        .foregroundColor(.primaryText)
+                    CurrencyTitleLabel(
+                        title: item.displayName,
+                        currency: showOriginalCurrency ? item.currency : baseCurrency,
+                        font: .headline,
+                        weight: .semibold,
+                        color: .primaryText,
+                        chipTint: holdingColor,
+                        titleLineLimit: 1
+                    )
                 }
                 
                 Spacer()
@@ -501,13 +533,24 @@ struct AllHoldingCard: View {
                     if showOriginalCurrency {
                         // 顯示原幣市值
                         let originalMarketValue = item.aggregatedHolding.totalQuantity * item.currentPrice
-                        Text(originalMarketValue.formatted(currency: item.currency))
-                            .font(.snapAmountRow)
-                            .foregroundColor(.primaryText)
+                        CurrencyAmountLabel(
+                            text: originalMarketValue.formatted(currency: item.currency),
+                            currency: item.currency,
+                            font: .snapAmountRow,
+                            weight: .semibold,
+                            color: .primaryText,
+                            chipTint: holdingColor
+                        )
                     } else {
-                        Text(item.marketValue.formatted(currency: .TWD))
-                            .font(.snapAmountRow)
-                            .foregroundColor(.primaryText)
+                        let displayValue = twdPerBaseCurrency > 0 ? item.marketValue / twdPerBaseCurrency : item.marketValue
+                        CurrencyAmountLabel(
+                            text: displayValue.formatted(currency: baseCurrency),
+                            currency: baseCurrency,
+                            font: .snapAmountRow,
+                            weight: .semibold,
+                            color: .primaryText,
+                            chipTint: holdingColor
+                        )
                     }
                     
                     HStack(spacing: 4) {
@@ -519,12 +562,13 @@ struct AllHoldingCard: View {
                             let originalMarketValue = item.aggregatedHolding.totalQuantity * item.currentPrice
                             let originalGainLoss = originalMarketValue - originalCost
                             let originalGainLossPercent: Decimal = originalCost > 0 ? (originalGainLoss / originalCost) * 100 : 0
-                            Text(originalGainLoss.formatted(currency: item.currency))
+                            Text(originalGainLoss.formatted(currency: item.currency, showSymbol: false))
                                 .font(.caption)
                             Text("(\(originalGainLossPercent.formatted(fractionDigits: 1))%)")
                                 .font(.caption)
                         } else {
-                            Text(item.unrealizedGainLoss.formatted(currency: .TWD))
+                            let displayGainLoss = twdPerBaseCurrency > 0 ? item.unrealizedGainLoss / twdPerBaseCurrency : item.unrealizedGainLoss
+                            Text(displayGainLoss.formatted(currency: baseCurrency, showSymbol: false))
                                 .font(.caption)
                             Text("(\(item.unrealizedGainLossPercent.formatted(fractionDigits: 1))%)")
                                 .font(.caption)

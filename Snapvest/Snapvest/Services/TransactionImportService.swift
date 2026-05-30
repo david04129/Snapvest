@@ -119,7 +119,7 @@ enum TransactionImportService {
         case .usdAccount:
             return [.stockUS]
         case .twdSecurities:
-            return [.stockTW, .stockUS]
+            return [.stockTW]
         case .cryptoWallet:
             return [.crypto]
         default:
@@ -134,16 +134,18 @@ enum TransactionImportService {
         case .usdAccount:
             switch assetType {
             case .stockTW:
-                return "此為美金證券戶，不可匯入台股（請改在台幣證券戶匯入）"
+                return "此為美股證券帳戶，不可匯入台股（請改在台股證券匯入）"
             case .crypto:
-                return "此為美金證券戶，不可匯入加密貨幣"
+                return "此為美股證券帳戶，不可匯入加密貨幣"
             default:
                 return "此帳戶不支援 asset_type「\(assetType.rawValue)」"
             }
         case .twdSecurities:
             switch assetType {
+            case .stockUS:
+                return "此為台股證券帳戶，不可匯入美股（請改在美股證券匯入）"
             case .crypto:
-                return "此為台幣證券戶，不可匯入加密貨幣"
+                return "此為台股證券帳戶，不可匯入加密貨幣"
             default:
                 return "此帳戶不支援 asset_type「\(assetType.rawValue)」"
             }
@@ -562,7 +564,7 @@ enum TransactionImportService {
         switch account.accountType {
         case .usdAccount:
             if assetType == .stockTW || looksLikeTW {
-                return "代號「\(sym)」為台股格式，請在台幣證券戶匯入"
+                return "代號「\(sym)」為台股格式，請在台股證券匯入"
             }
         case .twdSecurities:
             if assetType == .stockUS, looksLikeTW {

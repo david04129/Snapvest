@@ -15,6 +15,16 @@ enum AccountDetailPresentationStore {
         holdingsByAccountId = map
     }
 
+    static func replace(_ holdings: [HoldingSnapshot], for accountId: String) {
+        holdingsByAccountId[accountId] = holdings
+    }
+
+    static func remove(accountIds: Set<String>) {
+        for accountId in accountIds {
+            holdingsByAccountId.removeValue(forKey: accountId)
+        }
+    }
+
     static func holdings(for accountId: String) -> [HoldingSnapshot]? {
         holdingsByAccountId[accountId]
     }

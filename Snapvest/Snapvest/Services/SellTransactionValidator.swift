@@ -9,12 +9,21 @@ import Foundation
 
 enum SellTransactionValidator {
     static func resolvedExchangeRate(account: Account, assetType: AssetType, exchangeRate: Decimal?) -> Decimal? {
-        guard assetType == .stockUS, account.accountType == .twdSecurities else { return nil }
+        guard requiresExchangeRate(account: account, assetType: assetType) else { return nil }
         return exchangeRate
     }
 
     static func requiresExchangeRate(account: Account, assetType: AssetType) -> Bool {
-        assetType == .stockUS && account.accountType == .twdSecurities
+        transactionCurrency(for: assetType) != account.currency
+    }
+
+    static func transactionCurrency(for assetType: AssetType) -> Currency {
+        switch assetType {
+        case .stockTW, .cash:
+            return .TWD
+        case .stockUS, .crypto:
+            return .USD
+        }
     }
 
     static func validate(
@@ -27,7 +36,7 @@ enum SellTransactionValidator {
     ) -> String? {
         if requiresExchangeRate(account: account, assetType: assetType) {
             guard let rate = exchangeRate, rate > 0 else {
-                return "複委托賣出美股請填寫美金對台匯率"
+                return "請填寫 \(transactionCurrency(for: assetType).rawValue) 對 \(account.currency.rawValue) 匯率"
             }
         }
 

@@ -22,6 +22,15 @@ enum AssetType: String, Codable, CaseIterable {
         case .cash: return "現金"
         }
     }
+
+    var quoteCurrency: Currency {
+        switch self {
+        case .stockTW, .cash:
+            return .TWD
+        case .stockUS, .crypto:
+            return .USD
+        }
+    }
 }
 
 /// 貨幣類型

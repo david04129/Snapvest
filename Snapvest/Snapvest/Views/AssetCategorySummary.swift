@@ -88,10 +88,46 @@ struct AssetsFilterChipButton: View {
     var icon: String? = nil
     let isActive: Bool
     let action: () -> Void
-    
+
     var body: some View {
         Button(action: action) {
             AssetsFilterChipLabel(title: title, icon: icon, isActive: isActive)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct CurrencyDisplayChipButton: View {
+    let currencyDisplay: AssetsCurrencyDisplay
+    let baseCurrency: Currency
+    let icon: String
+    let isActive: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .semibold))
+                    .contentTransition(.symbolEffect(.replace))
+                if currencyDisplay == .twd {
+                    CurrencyCodeChip(currency: baseCurrency, tint: .appPrimary)
+                } else {
+                    Text(currencyDisplay.label)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                }
+            }
+            .foregroundColor(isActive ? .appPrimary : .secondaryText)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(isActive ? Color.appPrimary.opacity(0.12) : Color.secondaryBackground)
+            .cornerRadius(8)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(isActive ? Color.appPrimary.opacity(0.35) : Color.separator.opacity(0.35), lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -166,9 +202,11 @@ struct TransactionImportToolbarChip: View {
 // MARK: - 頂部控制列
 
 struct AssetsDisplayControlsBar: View {
+    @ObservedObject private var baseCurrency = BaseCurrencyManager.shared
+
     @Binding var ratioType: HoldingRatioType
     @Binding var currencyDisplay: AssetsCurrencyDisplay
-    
+
     private var ratioIcon: String {
         ratioType == .totalAssets ? "chart.pie.fill" : "chart.bar.fill"
     }
@@ -177,6 +215,10 @@ struct AssetsDisplayControlsBar: View {
         currencyDisplay == .twd ? "dollarsign.circle.fill" : "arrow.triangle.2.circlepath"
     }
     
+    private var currencyTitle: String {
+        currencyDisplay == .twd ? baseCurrency.baseCurrency.rawValue : currencyDisplay.label
+    }
+
     var body: some View {
         HStack {
             Spacer(minLength: 0)
@@ -194,8 +236,9 @@ struct AssetsDisplayControlsBar: View {
                 }
                 .animation(ChartMotion.switchSpring, value: ratioType)
                 
-                AssetsFilterChipButton(
-                    title: currencyDisplay.label,
+                CurrencyDisplayChipButton(
+                    currencyDisplay: currencyDisplay,
+                    baseCurrency: baseCurrency.baseCurrency,
                     icon: currencyIcon,
                     isActive: true
                 ) {
@@ -212,6 +255,8 @@ struct AssetsDisplayControlsBar: View {
 // MARK: - 帳戶分頁：幣別切換（與資產分頁 chip 同款）
 
 struct AccountsCurrencyControlsBar: View {
+    @ObservedObject private var baseCurrency = BaseCurrencyManager.shared
+
     @Binding var currencyDisplay: AssetsCurrencyDisplay
     var showsEditControl: Bool = false
     var isEditingOrder: Bool = false
@@ -222,6 +267,10 @@ struct AccountsCurrencyControlsBar: View {
         currencyDisplay == .twd ? "dollarsign.circle.fill" : "arrow.triangle.2.circlepath"
     }
     
+    private var currencyTitle: String {
+        currencyDisplay == .twd ? baseCurrency.baseCurrency.rawValue : currencyDisplay.label
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
@@ -239,8 +288,9 @@ struct AccountsCurrencyControlsBar: View {
                 
                 Spacer(minLength: 0)
                 
-                AssetsFilterChipButton(
-                    title: currencyDisplay.label,
+                CurrencyDisplayChipButton(
+                    currencyDisplay: currencyDisplay,
+                    baseCurrency: baseCurrency.baseCurrency,
                     icon: currencyIcon,
                     isActive: true
                 ) {
@@ -356,6 +406,8 @@ struct AssetCategorySummariesSection: View {
     let totalAssets: Decimal
     let totalInvestments: Decimal
     let usdToTwdRate: Decimal
+    let baseCurrency: Currency
+    let twdPerBaseCurrency: Decimal
     let ratioType: HoldingRatioType
     let currencyDisplay: AssetsCurrencyDisplay
     let selectedCategories: Set<AssetType>
@@ -379,6 +431,8 @@ struct AssetCategorySummariesSection: View {
                     assetType: assetType,
                     metrics: metrics,
                     ratioType: ratioType,
+                    baseCurrency: baseCurrency,
+                    twdPerBaseCurrency: twdPerBaseCurrency,
                     currencyDisplay: currencyDisplay,
                     isSelected: selectedCategories.contains(assetType),
                     onTap: { onCategoryTap(assetType) }
@@ -394,6 +448,8 @@ struct AssetCategorySummaryCard: View {
     let assetType: AssetType
     let metrics: AssetCategorySummaryMetrics
     let ratioType: HoldingRatioType
+    let baseCurrency: Currency
+    let twdPerBaseCurrency: Decimal
     let currencyDisplay: AssetsCurrencyDisplay
     let isSelected: Bool
     let onTap: () -> Void
@@ -417,19 +473,21 @@ struct AssetCategorySummaryCard: View {
     }
     
     private var usesOriginalAmounts: Bool {
-        currencyDisplay == .original && assetType != .stockTW
+        currencyDisplay == .original
     }
     
     private var displayCurrency: Currency {
-        usesOriginalAmounts ? .USD : .TWD
+        usesOriginalAmounts ? assetType.quoteCurrency : baseCurrency
     }
     
     private var displayMarketValue: Decimal {
-        usesOriginalAmounts ? metrics.marketValueOriginal : metrics.marketValueTWD
+        guard !usesOriginalAmounts else { return metrics.marketValueOriginal }
+        return twdPerBaseCurrency > 0 ? metrics.marketValueTWD / twdPerBaseCurrency : metrics.marketValueTWD
     }
     
     private var displayUnrealized: Decimal {
-        usesOriginalAmounts ? metrics.unrealizedGainLossOriginal : metrics.unrealizedGainLossTWD
+        guard !usesOriginalAmounts else { return metrics.unrealizedGainLossOriginal }
+        return twdPerBaseCurrency > 0 ? metrics.unrealizedGainLossTWD / twdPerBaseCurrency : metrics.unrealizedGainLossTWD
     }
     
     private var displayUnrealizedPercent: Decimal {
@@ -447,7 +505,7 @@ struct AssetCategorySummaryCard: View {
     }
     
     private var marketValueFractionDigits: Int {
-        usesOriginalAmounts ? 2 : 0
+        usesOriginalAmounts || baseCurrency != .TWD ? 2 : 0
     }
     
     var body: some View {
@@ -459,9 +517,15 @@ struct AssetCategorySummaryCard: View {
                     .frame(width: 28)
                 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(assetType.displayName)
-                        .font(.headline)
-                        .foregroundColor(.primaryText)
+                    CurrencyTitleLabel(
+                        title: assetType.displayName,
+                        currency: displayCurrency,
+                        font: .headline,
+                        weight: .semibold,
+                        color: .primaryText,
+                        chipTint: accentColor,
+                        titleLineLimit: 1
+                    )
                     Text(countLabel)
                         .font(.caption)
                         .foregroundColor(.secondaryText)
@@ -470,19 +534,21 @@ struct AssetCategorySummaryCard: View {
                 Spacer(minLength: 8)
                 
                 VStack(alignment: .trailing, spacing: 4) {
-                    Text(displayMarketValue.formatted(currency: displayCurrency, fractionDigits: marketValueFractionDigits))
-                        .font(.snapAmountRow)
-                        .foregroundColor(.primaryText)
-                        .contentTransition(.numericText())
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
+                    CurrencyAmountLabel(
+                        text: displayMarketValue.formatted(currency: displayCurrency, fractionDigits: marketValueFractionDigits),
+                        currency: displayCurrency,
+                        font: .snapAmountRow,
+                        weight: .semibold,
+                        color: .primaryText,
+                        chipTint: accentColor
+                    )
                     
                     HStack(spacing: 4) {
                         if metrics.holdingCount > 0 {
                             Image(systemName: displayUnrealized >= 0 ? "arrow.up" : "arrow.down")
                                 .font(.caption2.weight(.bold))
                         }
-                        Text(displayUnrealized.formatted(currency: displayCurrency, fractionDigits: marketValueFractionDigits))
+                        Text(displayUnrealized.formatted(currency: displayCurrency, fractionDigits: marketValueFractionDigits, showSymbol: false))
                         Text("(\(displayUnrealizedPercent.formatted(fractionDigits: 1))%)")
                     }
                     .font(.caption)

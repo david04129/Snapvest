@@ -31,6 +31,10 @@ enum HomeAmountPrivacyFormat {
         hidden ? masked : amount.formatted(currency: currency)
     }
 
+    static func currencyNumber(_ amount: Decimal, currency: Currency, hidden: Bool) -> String {
+        hidden ? masked : amount.formatted(currency: currency, showSymbol: false)
+    }
+
     static func tradePrice(_ amount: Decimal, currency: Currency, hidden: Bool) -> String {
         hidden ? masked : amount.formattedTradePrice(currency: currency)
     }

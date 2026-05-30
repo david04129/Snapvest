@@ -16,6 +16,7 @@ private struct DebtRepaymentSheetItem: Identifiable {
 
 struct AccountDetailView: View {
     let account: Account
+    let refreshToken: Int
     @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel: AccountDetailViewModel
     @EnvironmentObject private var accountsViewModel: AccountsViewModel
@@ -39,10 +40,12 @@ struct AccountDetailView: View {
     @State private var showingOtherDebtRepayment = false
     @State private var showingTransactionImport = false
     @State private var showingNewTradeFlow = false
+    @State private var twdPerAccountCurrency: Decimal = 1
     @StateObject private var importTransactionsViewModel = TransactionsViewModel()
     
-    init(account: Account, prefilledBalance: AccountBalanceDisplay? = nil) {
+    init(account: Account, prefilledBalance: AccountBalanceDisplay? = nil, refreshToken: Int = 0) {
         self.account = account
+        self.refreshToken = refreshToken
         _displayAccountName = State(initialValue: account.name)
         let vm = AccountDetailViewModel()
         if let prefilledBalance {
@@ -73,22 +76,28 @@ struct AccountDetailView: View {
                 aggregatedHolding: item.aggregatedHolding,
                 assetPriceSnapshot: item.assetPriceSnapshot,
                 totalAssets: item.totalAssets,
-                totalInvestments: item.totalInvestments
+                totalInvestments: item.totalInvestments,
+                initialUsdToTwdRate: viewModel.exchangeRate,
+                initialTwdPerBaseCurrency: portfolioViewModel.twdPerBaseCurrency
             )
         }
         .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { _ in
             Task {
-                if account.accountType == .debt {
-                    await loadDebtAccountData()
-                } else if account.accountType == .otherDebt {
-                    await loadOtherDebtAccountData()
-                } else {
-                    await viewModel.refresh(accountId: account.id, account: account)
-                }
-                if let updated = accountsViewModel.accounts.first(where: { $0.id == account.id }) {
-                    displayAccountName = updated.name
-                }
-                refreshSelectedHoldingIfNeeded()
+                await refreshAfterPortfolioMutation(appliesPersistedState: false)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .transactionsDidChange)) { notification in
+            if let affectedAccountIds = notification.userInfo?[PortfolioMutationUserInfoKey.affectedAccountIds] as? [String],
+               !affectedAccountIds.contains(account.id) {
+                return
+            }
+            Task {
+                await refreshAfterPortfolioMutation(appliesPersistedState: false)
+            }
+        }
+        .onChange(of: refreshToken) { _, _ in
+            Task {
+                await refreshAfterPortfolioMutation(appliesPersistedState: false)
             }
         }
         .sheet(isPresented: $showingRenameSheet) {
@@ -133,7 +142,7 @@ struct AccountDetailView: View {
     private var regularAccountView: some View {
         ScrollView {
             VStack(spacing: 16) {
-                if account.currency == .USD {
+                if account.currency != portfolioViewModel.viewCurrency {
                     HStack {
                         Spacer(minLength: 0)
                         AccountsCurrencyControlsBar(currencyDisplay: accountCurrencyDisplayBinding)
@@ -196,6 +205,8 @@ struct AccountDetailView: View {
         }
         .task {
             await viewModel.loadFromPersisted(accountId: account.id, account: account)
+            await loadAccountCurrencyRateIfNeeded()
+            viewModel.displayCurrency = portfolioViewModel.viewCurrency
             if account.accountType.supportsTransactionImport {
                 await importTransactionsViewModel.loadTransactions(userId: account.userId)
             }
@@ -252,6 +263,45 @@ struct AccountDetailView: View {
             selectedHolding = nil
         }
     }
+
+    @MainActor
+    private func refreshAfterPortfolioMutation(appliesPersistedState: Bool) async {
+        let perfFlow = "accountDetailRefresh \(account.id) appliesPersisted=\(appliesPersistedState)"
+        let perfStart = DebugPerformanceLog.now()
+        var perfLast = perfStart
+        DebugPerformanceLog.start(perfFlow)
+
+        if appliesPersistedState {
+            await LaunchCoordinator.applyPersistedState(
+                userId: account.userId,
+                portfolioViewModel: portfolioViewModel,
+                accountsViewModel: accountsViewModel,
+                assetsViewModel: assetsViewModel,
+                rebuildAccountDetailCache: false
+            )
+            DebugPerformanceLog.lap("apply persisted", flow: perfFlow, start: perfStart, last: &perfLast)
+        }
+
+        if account.accountType == .debt {
+            await loadDebtAccountData()
+            DebugPerformanceLog.lap("load debt data", flow: perfFlow, start: perfStart, last: &perfLast)
+        } else if account.accountType == .otherDebt {
+            await loadOtherDebtAccountData()
+            DebugPerformanceLog.lap("load other debt data", flow: perfFlow, start: perfStart, last: &perfLast)
+        } else {
+            await viewModel.refresh(accountId: account.id, account: account)
+            DebugPerformanceLog.lap("viewModel refresh", flow: perfFlow, start: perfStart, last: &perfLast)
+            viewModel.displayCurrency = portfolioViewModel.viewCurrency
+            await loadAccountCurrencyRateIfNeeded()
+            DebugPerformanceLog.lap("load account currency rate", flow: perfFlow, start: perfStart, last: &perfLast)
+        }
+        if let updated = accountsViewModel.accounts.first(where: { $0.id == account.id }) {
+            displayAccountName = updated.name
+        }
+        refreshSelectedHoldingIfNeeded()
+        DebugPerformanceLog.lap("refresh selected holding", flow: perfFlow, start: perfStart, last: &perfLast)
+        DebugPerformanceLog.end(perfFlow, start: perfStart)
+    }
     
     @ViewBuilder
     private var accountHoldingsSection: some View {
@@ -263,6 +313,7 @@ struct AccountDetailView: View {
                     holdings: viewModel.holdings,
                     displayCurrency: viewModel.displayCurrency,
                     exchangeRate: viewModel.exchangeRate,
+                    twdPerDisplayCurrency: displayCurrencyTWDValue,
                     onHoldingTap: { holding in
                         navigateToHoldingDetail(holding)
                     }
@@ -274,17 +325,11 @@ struct AccountDetailView: View {
     // MARK: - 一般帳戶：顯示用計算
     
     private var accountDisplayCashBalance: Decimal {
-        if account.currency == .USD && viewModel.displayCurrency == .TWD {
-            return viewModel.cashBalance * viewModel.exchangeRate
-        }
-        return viewModel.cashBalance
+        convertAccountAmount(viewModel.cashBalance, to: viewModel.displayCurrency)
     }
     
     private var accountDisplayHoldingsValue: Decimal {
-        if account.currency == .USD && viewModel.displayCurrency == .TWD {
-            return viewModel.holdingsValue * viewModel.exchangeRate
-        }
-        return viewModel.holdingsValue
+        convertAccountAmount(viewModel.holdingsValue, to: viewModel.displayCurrency)
     }
     
     private var accountTotalValue: Decimal {
@@ -302,14 +347,67 @@ struct AccountDetailView: View {
     private var accountCurrencyDisplayBinding: Binding<AssetsCurrencyDisplay> {
         Binding(
             get: {
-                viewModel.displayCurrency == .TWD ? .twd : .original
+                viewModel.displayCurrency == portfolioViewModel.viewCurrency ? .twd : .original
             },
             set: { newValue in
                 withAnimation(ChartMotion.switchSpring) {
-                    viewModel.displayCurrency = newValue == .twd ? .TWD : account.currency
+                    viewModel.displayCurrency = newValue == .twd ? portfolioViewModel.viewCurrency : account.currency
                 }
             }
         )
+    }
+
+    private var displayCurrencyTWDValue: Decimal {
+        if viewModel.displayCurrency == .TWD { return 1 }
+        if viewModel.displayCurrency == account.currency { return twdPerAccountCurrency }
+        if viewModel.displayCurrency == portfolioViewModel.viewCurrency { return portfolioViewModel.twdPerBaseCurrency }
+        if viewModel.displayCurrency == .USD { return viewModel.exchangeRate }
+        return 1
+    }
+
+    private func convertAccountAmount(_ amount: Decimal, to targetCurrency: Currency) -> Decimal {
+        guard account.currency != targetCurrency else { return amount }
+        let twdAmount: Decimal
+        if account.currency == .TWD {
+            twdAmount = amount
+        } else if account.currency == .USD, viewModel.exchangeRate > 0 {
+            twdAmount = amount * viewModel.exchangeRate
+        } else if twdPerAccountCurrency > 0 {
+            twdAmount = amount * twdPerAccountCurrency
+        } else {
+            return amount
+        }
+
+        if targetCurrency == .TWD { return twdAmount }
+        if targetCurrency == portfolioViewModel.viewCurrency,
+           portfolioViewModel.twdPerBaseCurrency > 0 {
+            return twdAmount / portfolioViewModel.twdPerBaseCurrency
+        }
+        if targetCurrency == .USD, viewModel.exchangeRate > 0 {
+            return twdAmount / viewModel.exchangeRate
+        }
+        return amount
+    }
+
+    @MainActor
+    private func loadAccountCurrencyRateIfNeeded() async {
+        if account.currency == .TWD {
+            twdPerAccountCurrency = 1
+            return
+        }
+        if account.currency == .USD, viewModel.exchangeRate > 0 {
+            twdPerAccountCurrency = viewModel.exchangeRate
+            return
+        }
+        if account.currency == portfolioViewModel.viewCurrency,
+           portfolioViewModel.twdPerBaseCurrency > 0 {
+            twdPerAccountCurrency = portfolioViewModel.twdPerBaseCurrency
+            return
+        }
+        if let rate = try? await MockDataService.shared.fetchExchangeRate(from: account.currency, to: .TWD, date: nil)?.rate,
+           rate > 0 {
+            twdPerAccountCurrency = rate
+        }
     }
     
     private var accountHeroCard: some View {
@@ -330,14 +428,30 @@ struct AccountDetailView: View {
             }
             
             VStack(alignment: .leading, spacing: 4) {
-                Text(accountHeroPrimaryLabel)
-                    .font(.caption)
-                    .foregroundColor(.secondaryText)
-                Text(accountHeroPrimaryAmount.formatted(currency: viewModel.displayCurrency))
-                    .font(.snapAmountHero)
-                    .foregroundColor(.primaryText)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                CurrencyIconBadge(
+                    currency: account.currency,
+                    tint: account.accountType.color,
+                    showsLabel: true
+                )
+                .padding(.bottom, 4)
+
+                CurrencyTitleLabel(
+                    title: accountHeroPrimaryLabel,
+                    currency: viewModel.displayCurrency,
+                    font: .caption,
+                    weight: .regular,
+                    color: .secondaryText,
+                    chipTint: account.accountType.color,
+                    titleLineLimit: 1
+                )
+                CurrencyAmountLabel(
+                    text: accountHeroPrimaryAmount.formatted(currency: viewModel.displayCurrency),
+                    currency: viewModel.displayCurrency,
+                    font: .snapAmountHero,
+                    weight: .bold,
+                    color: .primaryText,
+                    chipTint: account.accountType.color
+                )
             }
             
         }
@@ -358,7 +472,8 @@ struct AccountDetailView: View {
         if account.accountType == .twdDeposit {
             MetricTile(
                 title: "現金餘額",
-                value: accountDisplayCashBalance.formatted(currency: viewModel.displayCurrency)
+                value: accountDisplayCashBalance.formatted(currency: viewModel.displayCurrency),
+                currency: viewModel.displayCurrency
             )
         } else {
             LazyVGrid(
@@ -370,11 +485,13 @@ struct AccountDetailView: View {
             ) {
                 MetricTile(
                     title: "現金餘額",
-                    value: accountDisplayCashBalance.formatted(currency: viewModel.displayCurrency)
+                    value: accountDisplayCashBalance.formatted(currency: viewModel.displayCurrency),
+                    currency: viewModel.displayCurrency
                 )
                 MetricTile(
                     title: "持股市值",
-                    value: accountDisplayHoldingsValue.formatted(currency: viewModel.displayCurrency)
+                    value: accountDisplayHoldingsValue.formatted(currency: viewModel.displayCurrency),
+                    currency: viewModel.displayCurrency
                 )
             }
         }
@@ -565,11 +682,13 @@ struct AccountDetailView: View {
             MetricTile(
                 title: "剩餘本金",
                 value: liability.remainingBalance.formatted(currency: liability.currency),
+                currency: liability.currency,
                 valueColor: .lossRed
             )
             MetricTile(
                 title: "已還款（含息）",
                 value: paidAmount.formatted(currency: liability.currency),
+                currency: liability.currency,
                 valueColor: .profitGreen
             )
         }
@@ -823,11 +942,13 @@ struct AccountDetailView: View {
             MetricTile(
                 title: "目前欠款",
                 value: otherDebtRemaining.formatted(currency: liveOtherDebtAccount.currency),
+                currency: liveOtherDebtAccount.currency,
                 valueColor: .lossRed
             )
             MetricTile(
                 title: "已還總額",
                 value: otherDebtRepaid.formatted(currency: liveOtherDebtAccount.currency),
+                currency: liveOtherDebtAccount.currency,
                 valueColor: .profitGreen
             )
         }
@@ -1000,16 +1121,32 @@ struct AccountHoldingsTableSection: View {
     let holdings: [HoldingSnapshot]
     let displayCurrency: Currency
     let exchangeRate: Decimal
+    let twdPerDisplayCurrency: Decimal
     let onHoldingTap: (HoldingSnapshot) -> Void
     
     @State private var marketValueSort: HoldingsMarketValueSort = .descending
     
     private func displayMarketValue(for holding: HoldingSnapshot) -> Decimal? {
         guard let marketValue = holding.marketValue else { return nil }
-        if holding.holding.currency == .USD && displayCurrency == .TWD {
-            return marketValue * exchangeRate
+        return convertAmount(marketValue, from: holding.holding.currency)
+    }
+
+    private func convertAmount(_ amount: Decimal, from sourceCurrency: Currency) -> Decimal {
+        guard sourceCurrency != displayCurrency else { return amount }
+        let twdAmount: Decimal
+        if sourceCurrency == .TWD {
+            twdAmount = amount
+        } else if sourceCurrency == .USD, exchangeRate > 0 {
+            twdAmount = amount * exchangeRate
+        } else {
+            return amount
         }
-        return marketValue
+
+        guard displayCurrency != .TWD,
+              twdPerDisplayCurrency > 0 else {
+            return twdAmount
+        }
+        return twdAmount / twdPerDisplayCurrency
     }
     
     private func symbolSortKey(_ holding: HoldingSnapshot) -> String {
@@ -1076,6 +1213,7 @@ struct AccountHoldingsTableSection: View {
                         holding: holding,
                         displayCurrency: displayCurrency,
                         exchangeRate: exchangeRate,
+                        twdPerDisplayCurrency: twdPerDisplayCurrency,
                         onTap: { onHoldingTap(holding) }
                     )
                 }
@@ -1090,6 +1228,7 @@ struct AccountHoldingCardRow: View {
     let holding: HoldingSnapshot
     let displayCurrency: Currency
     let exchangeRate: Decimal
+    let twdPerDisplayCurrency: Decimal
     let onTap: () -> Void
     
     private var assetAccentColor: Color {
@@ -1101,11 +1240,22 @@ struct AccountHoldingCardRow: View {
         }
     }
     
-    private func convertAmount(_ amount: Decimal, from: Currency) -> Decimal {
-        if from == .USD && displayCurrency == .TWD {
-            return amount * exchangeRate
+    private func convertAmount(_ amount: Decimal, from sourceCurrency: Currency) -> Decimal {
+        guard sourceCurrency != displayCurrency else { return amount }
+        let twdAmount: Decimal
+        if sourceCurrency == .TWD {
+            twdAmount = amount
+        } else if sourceCurrency == .USD && exchangeRate > 0 {
+            twdAmount = amount * exchangeRate
+        } else {
+            return amount
         }
-        return amount
+
+        guard displayCurrency != .TWD,
+              twdPerDisplayCurrency > 0 else {
+            return twdAmount
+        }
+        return twdAmount / twdPerDisplayCurrency
     }
     
     private var displayMarketValue: Decimal? {
@@ -1132,9 +1282,15 @@ struct AccountHoldingCardRow: View {
         Button(action: onTap) {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(holding.displayName)
-                        .font(.headline)
-                        .foregroundColor(.primaryText)
+                    CurrencyTitleLabel(
+                        title: holding.displayName,
+                        currency: displayCurrency,
+                        font: .headline,
+                        weight: .semibold,
+                        color: .primaryText,
+                        chipTint: assetAccentColor,
+                        titleLineLimit: 1
+                    )
                     Text(quantitySubtitle)
                         .font(.caption)
                         .foregroundColor(.secondaryText)
@@ -1144,11 +1300,14 @@ struct AccountHoldingCardRow: View {
                 
                 VStack(alignment: .trailing, spacing: 4) {
                     if let displayValue = displayMarketValue {
-                        Text(displayValue.formatted(currency: displayCurrency))
-                            .font(.snapAmountRow)
-                            .foregroundColor(.primaryText)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
+                        CurrencyAmountLabel(
+                            text: displayValue.formatted(currency: displayCurrency),
+                            currency: displayCurrency,
+                            font: .snapAmountRow,
+                            weight: .semibold,
+                            color: .primaryText,
+                            chipTint: assetAccentColor
+                        )
                     } else {
                         Text("—")
                             .font(.snapAmountRow)
@@ -1160,7 +1319,7 @@ struct AccountHoldingCardRow: View {
                         HStack(spacing: 4) {
                             Image(systemName: displayGainLoss >= 0 ? "arrow.up" : "arrow.down")
                                 .font(.caption2)
-                            Text(displayGainLoss.formatted(currency: displayCurrency))
+                            Text(displayGainLoss.formatted(currency: displayCurrency, showSymbol: false))
                             Text("(\(percent.formatted(fractionDigits: 1))%)")
                         }
                         .font(.caption)
@@ -1193,20 +1352,43 @@ struct AccountHoldingCardRow: View {
 struct InfoRowWithoutIcon: View {
     let label: String
     let value: String
+    var currency: Currency? = nil
     var valueColor: Color = .primaryText  // 默認為主要文字顏色
     
     var body: some View {
         HStack {
-            Text(label)
-                .font(.subheadline)
-                .foregroundColor(.secondaryText)
+            if let currency {
+                CurrencyTitleLabel(
+                    title: label,
+                    currency: currency,
+                    font: .subheadline,
+                    weight: .regular,
+                    color: .secondaryText,
+                    chipTint: valueColor
+                )
+            } else {
+                Text(label)
+                    .font(.subheadline)
+                    .foregroundColor(.secondaryText)
+            }
             
             Spacer()
             
-            Text(value)
-                .font(.subheadline)
-                .fontWeight(.semibold)
-                .foregroundColor(valueColor)
+            if let currency {
+                CurrencyAmountLabel(
+                    text: value,
+                    currency: currency,
+                    font: .subheadline,
+                    weight: .semibold,
+                    color: valueColor,
+                    chipTint: valueColor
+                )
+            } else {
+                Text(value)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(valueColor)
+            }
         }
     }
 }
@@ -1348,14 +1530,16 @@ struct DetailsCard: View {
                         // 第一部分：原始資訊
                         InfoRowWithoutIcon(
                             label: "原始貸款金額",
-                            value: liability.principal.formatted(currency: liability.currency)
+                            value: liability.principal.formatted(currency: liability.currency),
+                            currency: liability.currency
                         )
                         
                         Divider()
                         
                         InfoRowWithoutIcon(
                             label: "總還款金額（含利息）",
-                            value: liability.totalAmount.formatted(currency: liability.currency)
+                            value: liability.totalAmount.formatted(currency: liability.currency),
+                            currency: liability.currency
                         )
                         
                         Divider()
@@ -1363,14 +1547,16 @@ struct DetailsCard: View {
                         // 新增：已還款本金（在總還款金額下面）
                         InfoRowWithoutIcon(
                             label: "已還款本金",
-                            value: liability.totalPaidPrincipal.formatted(currency: liability.currency)
+                            value: liability.totalPaidPrincipal.formatted(currency: liability.currency),
+                            currency: liability.currency
                         )
                         
                         Divider()
                         
                         InfoRowWithoutIcon(
                             label: "總利息",
-                            value: liability.totalInterest.formatted(currency: liability.currency)
+                            value: liability.totalInterest.formatted(currency: liability.currency),
+                            currency: liability.currency
                         )
                         
                         Divider()
@@ -1378,7 +1564,8 @@ struct DetailsCard: View {
                         // 新增：已支出利息（在總利息下面）
                         InfoRowWithoutIcon(
                             label: "已支出利息",
-                            value: liability.totalPaidInterest.formatted(currency: liability.currency)
+                            value: liability.totalPaidInterest.formatted(currency: liability.currency),
+                            currency: liability.currency
                         )
                         
                         // 如果有提前還款，顯示節省利息（在已支出利息下面）
@@ -1388,6 +1575,7 @@ struct DetailsCard: View {
                             InfoRowWithoutIcon(
                                 label: "節省利息",
                                 value: liability.totalSavedInterest.formatted(currency: liability.currency),
+                                currency: liability.currency,
                                 valueColor: .profitGreen
                             )
                         }
@@ -1403,7 +1591,8 @@ struct DetailsCard: View {
                         
                         InfoRowWithoutIcon(
                             label: "每月應繳金額",
-                            value: liability.monthlyPayment.formatted(currency: liability.currency)
+                            value: liability.monthlyPayment.formatted(currency: liability.currency),
+                            currency: liability.currency
                         )
                         
                         Divider()

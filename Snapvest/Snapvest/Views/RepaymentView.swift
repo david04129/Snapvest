@@ -122,7 +122,7 @@ struct RepaymentView: View {
                         
                     Text(repaymentType == .prepayment
                          ? "提前償還部分本金，保持月還款額不變，縮短還款期限。"
-                         : "記錄本期還款，可選擇是否從台幣帳戶扣款。")
+                         : "記錄本期還款，可選擇是否從同幣別帳戶扣款。")
                             .font(.subheadline)
                             .foregroundColor(.secondaryText)
                     }
@@ -138,7 +138,7 @@ struct RepaymentView: View {
     private var deductFromAccountSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Toggle(isOn: $deductFromTWDAccount) {
-                Text("從台幣帳戶扣款")
+                Text("從同幣別帳戶扣款")
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.primaryText)
@@ -168,7 +168,7 @@ struct RepaymentView: View {
                                         .foregroundColor(.secondaryText)
                                 }
                             } else {
-                                Text("選擇台幣存款或證券戶")
+                                Text("選擇 \(liability.currency.rawValue) 帳戶")
                                     .font(.headline)
                                     .foregroundColor(.secondaryText)
                             }
@@ -235,7 +235,7 @@ struct RepaymentView: View {
                 Image(systemName: "dollarsign.circle.fill")
                     .font(.system(size: 16))
                     .foregroundColor(themeColor)
-                Text("還款金額 (TWD)")
+                Text("還款金額 (\(liability.currency.rawValue))")
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.primaryText)
@@ -560,7 +560,8 @@ struct RepaymentView: View {
     // MARK: - Computed Properties
     private var availableSourceAccounts: [Account] {
         accountsViewModel.accounts.filter { account in
-            account.accountType == .twdDeposit || account.accountType == .twdSecurities
+            guard account.currency == liability.currency else { return false }
+            return account.accountType == .twdDeposit || account.accountType == .twdSecurities
         }
     }
     
@@ -950,8 +951,8 @@ struct RepaymentView: View {
             if !noteText.isEmpty {
                 transactionNotes += " - \(noteText)"
             }
-            let principalNote = "本金償還 \(principalAmount.formatted(currency: .TWD))"
-            let interestNote = "利息償還 \(interestAmount.formatted(currency: .TWD))"
+            let principalNote = "本金償還 \(principalAmount.formatted(currency: liability.currency))"
+            let interestNote = "利息償還 \(interestAmount.formatted(currency: liability.currency))"
             transactionNotes += " - \(principalNote), \(interestNote)"
             
             // ===== 計算節省利息（如果是提前還款） =====
@@ -1056,7 +1057,7 @@ struct RepaymentView: View {
                     symbol: "REPAY",
                     quantity: repaymentQuantity,
                     price: 1,
-                    currency: .TWD,
+                    currency: liability.currency,
                     fee: 0,
                     notes: transactionNotes,
                     transactionDate: transactionDate,
@@ -1079,7 +1080,7 @@ struct RepaymentView: View {
                     symbol: "REPAY",
                     quantity: repaymentQuantity,
                     price: 1,
-                    currency: .TWD,
+                    currency: liability.currency,
                     fee: 0,
                     notes: transactionNotes,
                     transactionDate: transactionDate,
@@ -1106,7 +1107,7 @@ struct RepaymentView: View {
                         symbol: "CASH",
                         quantity: deductAmount,
                         price: 1,
-                        currency: .TWD,
+                        currency: deductAccount.currency,
                         fee: 0,
                         notes: withdrawNotes,
                         transactionDate: transactionDate

@@ -28,6 +28,7 @@ struct AccountsView: View {
     @State private var deleteErrorMessage: String?
     @State private var isDeleting = false
     @State private var accountDetailRoute: AccountDetailRoute?
+    @State private var accountDetailRefreshToken = 0
     
     var body: some View {
         NavigationStack {
@@ -69,6 +70,7 @@ struct AccountsView: View {
                 AddAccountView(viewModel: viewModel)
             }
             .onAppear {
+                accountsCurrencyDisplay = .twd
                 loadAccountOrder()
                 reconcileAccountOrders()
             }
@@ -78,15 +80,7 @@ struct AccountsView: View {
                     return
                 }
                 guard newTab == AppTab.accounts.rawValue else { return }
-                Task {
-                    await LaunchCoordinator.applyPersistedState(
-                        userId: userId,
-                        portfolioViewModel: portfolioViewModel,
-                        accountsViewModel: viewModel,
-                        assetsViewModel: assetsViewModel
-                    )
-                    reconcileAccountOrders()
-                }
+                accountsCurrencyDisplay = .twd
             }
             .onChange(of: viewModel.accounts.map(\.id)) { _, _ in
                 reconcileAccountOrders()
@@ -97,10 +91,16 @@ struct AccountsView: View {
                         userId: userId,
                         portfolioViewModel: portfolioViewModel,
                         accountsViewModel: viewModel,
-                        assetsViewModel: assetsViewModel
+                        assetsViewModel: assetsViewModel,
+                        rebuildAccountDetailCache: false
                     )
                     reconcileAccountOrders()
+                    accountDetailRefreshToken += 1
                 }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .transactionsDidChange)) { _ in
+                reconcileAccountOrders()
+                accountDetailRefreshToken += 1
             }
             .alert("刪除帳戶", isPresented: $showDeleteConfirmation) {
                 Button("取消", role: .cancel) {
@@ -126,6 +126,7 @@ struct AccountsView: View {
         }
         .id(navigationStackResetID)
         .resetNavigationWhenTabReappears(selectedTab: $selectedTab, resignedTab: .accounts) {
+            accountsCurrencyDisplay = .twd
             navigationStackResetID = UUID()
         }
     }
@@ -140,7 +141,8 @@ struct AccountsView: View {
         if let account = viewModel.accounts.first(where: { $0.id == route.accountId }) {
             AccountDetailView(
                 account: account,
-                prefilledBalance: viewModel.balancesByAccountId[account.id]
+                prefilledBalance: viewModel.balancesByAccountId[account.id],
+                refreshToken: accountDetailRefreshToken
             )
         } else {
             ContentUnavailableView("找不到帳戶", systemImage: "building.columns")
@@ -163,6 +165,8 @@ struct AccountsView: View {
                 accounts: ordered,
                 categoryTotalTWD: categoryTotal,
                 currencyDisplay: accountsCurrencyDisplay,
+                baseCurrency: portfolioViewModel.viewCurrency,
+                twdPerBaseCurrency: portfolioViewModel.twdPerBaseCurrency,
                 isCategoryLoading: isLoading,
                 balancesByAccountId: viewModel.balancesByAccountId,
                 isBalanceLoading: isLoading,
@@ -202,6 +206,8 @@ struct AccountsView: View {
                 accounts: archived,
                 balancesByAccountId: viewModel.balancesByAccountId,
                 currencyDisplay: accountsCurrencyDisplay,
+                baseCurrency: portfolioViewModel.viewCurrency,
+                twdPerBaseCurrency: portfolioViewModel.twdPerBaseCurrency,
                 isEditingOrder: isEditingOrder,
                 onRequestDelete: { account in
                     presentDeleteConfirmation(for: account)
@@ -387,6 +393,8 @@ struct ArchivedDebtAccountsSection: View {
     let accounts: [Account]
     let balancesByAccountId: [String: AccountBalanceDisplay]
     let currencyDisplay: AssetsCurrencyDisplay
+    let baseCurrency: Currency
+    let twdPerBaseCurrency: Decimal
     let isEditingOrder: Bool
     let onRequestDelete: (Account) -> Void
     let onOpenAccount: (Account) -> Void
@@ -441,6 +449,8 @@ struct ArchivedDebtAccountsSection: View {
                                 account: account,
                                 balance: balancesByAccountId[account.id],
                                 currencyDisplay: currencyDisplay,
+                                baseCurrency: baseCurrency,
+                                twdPerBaseCurrency: twdPerBaseCurrency,
                                 isBalanceLoading: false,
                                 showsArchivedBadge: true
                             )
@@ -490,52 +500,74 @@ private struct AccountListRowButton<RowContent: View>: View {
 // MARK: - 帳戶列表顯示用（台幣 / 原幣）
 
 enum AccountListAmountDisplay {
-    static func categoryTotal(
+    static func categoryTotals(
         accountType: AccountType,
         accounts: [Account],
         categoryTotalTWD: Decimal,
         balancesByAccountId: [String: AccountBalanceDisplay],
-        currencyDisplay: AssetsCurrencyDisplay
-    ) -> (amount: Decimal, currency: Currency) {
-        if accountType == .debt || accountType == .otherDebt {
-            return (categoryTotalTWD, .TWD)
-        }
-        
+        currencyDisplay: AssetsCurrencyDisplay,
+        baseCurrency: Currency,
+        twdPerBaseCurrency: Decimal
+    ) -> [(amount: Decimal, currency: Currency)] {
+        let baseAmount = twdPerBaseCurrency > 0 ? categoryTotalTWD / twdPerBaseCurrency : categoryTotalTWD
+
         if currencyDisplay == .twd {
-            return (categoryTotalTWD, .TWD)
+            return [(baseAmount, baseCurrency)]
         }
-        
-        let nativeCurrency = accountType.defaultCurrency
-        let sum = accounts.reduce(Decimal.zero) { partial, account in
-            guard let balance = balancesByAccountId[account.id] else { return partial }
+
+        let grouped = accounts.reduce(into: [Currency: Decimal]()) { partial, account in
+            guard let balance = balancesByAccountId[account.id] else { return }
+            let amount: Decimal
             switch account.accountType {
             case .twdDeposit:
-                return partial + balance.cashBalance
+                amount = balance.cashBalance
             case .debt, .otherDebt:
-                return partial + balance.remainingBalance
+                amount = balance.remainingBalance
             default:
-                return partial + balance.totalAssets
+                amount = balance.totalAssets
             }
+            partial[account.currency, default: 0] += amount
         }
-        return (sum, nativeCurrency)
+        return grouped
+            .filter { $0.value != 0 }
+            .sorted { lhs, rhs in
+                if lhs.key == baseCurrency { return true }
+                if rhs.key == baseCurrency { return false }
+                return lhs.key.rawValue < rhs.key.rawValue
+            }
+            .map { (amount: $0.value, currency: $0.key) }
     }
     
     static func cardAmount(
         account: Account,
         balance: AccountBalanceDisplay,
-        currencyDisplay: AssetsCurrencyDisplay
+        currencyDisplay: AssetsCurrencyDisplay,
+        baseCurrency: Currency,
+        twdPerBaseCurrency: Decimal
     ) -> (amount: Decimal, currency: Currency) {
         switch account.accountType {
         case .debt, .otherDebt:
+            if currencyDisplay == .twd {
+                let nativeAmount = balance.remainingBalance
+                let twdAmount = account.currency == .TWD ? nativeAmount : (balance.twdEquivalent ?? nativeAmount)
+                let baseAmount = twdPerBaseCurrency > 0 ? twdAmount / twdPerBaseCurrency : twdAmount
+                return (-baseAmount, baseCurrency)
+            }
             return (-balance.remainingBalance, account.currency)
         case .twdDeposit:
+            if currencyDisplay == .twd {
+                let nativeAmount = balance.cashBalance
+                let twdAmount = account.currency == .TWD ? nativeAmount : (balance.twdEquivalent ?? nativeAmount)
+                let baseAmount = twdPerBaseCurrency > 0 ? twdAmount / twdPerBaseCurrency : twdAmount
+                return (baseAmount, baseCurrency)
+            }
             return (balance.cashBalance, account.currency)
         default:
             if currencyDisplay == .twd {
-                if let twdEquivalent = balance.twdEquivalent {
-                    return (twdEquivalent, .TWD)
-                }
-                return (balance.totalAssets, account.currency)
+                let nativeAmount = balance.totalAssets
+                let twdAmount = account.currency == .TWD ? nativeAmount : (balance.twdEquivalent ?? nativeAmount)
+                let baseAmount = twdPerBaseCurrency > 0 ? twdAmount / twdPerBaseCurrency : twdAmount
+                return (baseAmount, baseCurrency)
             }
             return (balance.totalAssets, account.currency)
         }
@@ -548,6 +580,8 @@ struct ExpandableAccountCategorySection: View {
     let accounts: [Account]
     let categoryTotalTWD: Decimal
     let currencyDisplay: AssetsCurrencyDisplay
+    let baseCurrency: Currency
+    let twdPerBaseCurrency: Decimal
     let isCategoryLoading: Bool
     let balancesByAccountId: [String: AccountBalanceDisplay]
     let isBalanceLoading: Bool
@@ -557,22 +591,23 @@ struct ExpandableAccountCategorySection: View {
     let onRequestDelete: (Account) -> Void
     let onOpenAccount: (Account) -> Void
     
-    private var categoryTotalText: String {
-        if isCategoryLoading { return "—" }
-        let display = AccountListAmountDisplay.categoryTotal(
+    private var categoryTotalDisplays: [(amount: Decimal, currency: Currency)] {
+        guard !isCategoryLoading else { return [] }
+        return AccountListAmountDisplay.categoryTotals(
             accountType: accountType,
             accounts: accounts,
             categoryTotalTWD: categoryTotalTWD,
             balancesByAccountId: balancesByAccountId,
-            currencyDisplay: currencyDisplay
+            currencyDisplay: currencyDisplay,
+            baseCurrency: baseCurrency,
+            twdPerBaseCurrency: twdPerBaseCurrency
         )
-        return display.amount.formatted(currency: display.currency)
     }
     
     private var categoryAmountColor: Color {
         accountType == .debt || accountType == .otherDebt ? .lossRed : .primaryText
     }
-    
+
     var body: some View {
         VStack(spacing: 0) {
             Button(action: {
@@ -602,13 +637,32 @@ struct ExpandableAccountCategorySection: View {
                     
                     Spacer()
                     
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text(accountType == .debt || accountType == .otherDebt ? "類別總債務" : "類別總資產")
-                            .font(.caption)
-                            .foregroundColor(.secondaryText)
-                        Text(categoryTotalText)
-                            .font(.snapAmountRow)
-                            .foregroundColor(categoryAmountColor)
+                    VStack(alignment: .trailing, spacing: 3) {
+                        if !categoryTotalDisplays.isEmpty {
+                            Text(accountType == .debt || accountType == .otherDebt ? "類別總債務" : "類別總資產")
+                                .font(.caption)
+                                .foregroundColor(.secondaryText)
+                            ForEach(categoryTotalDisplays, id: \.currency) { display in
+                                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                    CurrencyAmountLabel(
+                                        text: display.amount.formatted(currency: display.currency),
+                                        currency: display.currency,
+                                        font: .snapAmountRow,
+                                        weight: .semibold,
+                                        color: categoryAmountColor,
+                                        chipTint: accountType.color
+                                    )
+                                    CurrencyCodeChip(currency: display.currency)
+                                }
+                            }
+                        } else {
+                            Text(accountType == .debt || accountType == .otherDebt ? "類別總債務" : "類別總資產")
+                                .font(.caption)
+                                .foregroundColor(.secondaryText)
+                            Text("—")
+                                .font(.snapAmountRow)
+                                .foregroundColor(.secondaryText)
+                        }
                     }
                     
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
@@ -634,6 +688,8 @@ struct ExpandableAccountCategorySection: View {
                                 account: account,
                                 balance: balancesByAccountId[account.id],
                                 currencyDisplay: currencyDisplay,
+                                baseCurrency: baseCurrency,
+                                twdPerBaseCurrency: twdPerBaseCurrency,
                                 isBalanceLoading: isBalanceLoading
                             )
                         }
@@ -669,6 +725,8 @@ struct AccountCardView: View {
     let account: Account
     let balance: AccountBalanceDisplay?
     let currencyDisplay: AssetsCurrencyDisplay
+    let baseCurrency: Currency
+    let twdPerBaseCurrency: Decimal
     let isBalanceLoading: Bool
     var showsArchivedBadge: Bool = false
     
@@ -676,12 +734,20 @@ struct AccountCardView: View {
         isBalanceLoading && balance == nil
     }
     
+    private var displayCurrencyForChip: Currency? {
+        guard !showLoadingPlaceholder, let balance else { return nil }
+        return AccountListAmountDisplay.cardAmount(
+            account: account,
+            balance: balance,
+            currencyDisplay: currencyDisplay,
+            baseCurrency: baseCurrency,
+            twdPerBaseCurrency: twdPerBaseCurrency
+        ).currency
+    }
     var body: some View {
         VStack {
             HStack {
-                Image(systemName: account.accountType.icon)
-                    .foregroundColor(account.accountType.color)
-                    .font(.title3)
+                CurrencyIconBadge(currency: account.currency, tint: account.accountType.color)
                 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
@@ -699,25 +765,27 @@ struct AccountCardView: View {
                                 .clipShape(Capsule())
                         }
                     }
-                    Text(accountSubtitle)
-                        .font(.caption)
-                        .foregroundColor(.secondaryText)
+                    if let currency = displayCurrencyForChip {
+                        CurrencyTitleLabel(
+                            title: accountSubtitle,
+                            currency: currency,
+                            font: .caption,
+                            weight: .regular,
+                            color: .secondaryText,
+                            chipTint: account.accountType.color,
+                            titleLineLimit: 1
+                        )
+                    } else {
+                        Text(accountSubtitle)
+                            .font(.caption)
+                            .foregroundColor(.secondaryText)
+                    }
                 }
                 
                 Spacer()
                 
                 VStack(alignment: .trailing, spacing: 4) {
                     amountPrimaryText
-                    if !showLoadingPlaceholder, let balance {
-                        let display = AccountListAmountDisplay.cardAmount(
-                            account: account,
-                            balance: balance,
-                            currencyDisplay: currencyDisplay
-                        )
-                        Text(display.currency.rawValue)
-                            .font(.caption)
-                            .foregroundColor(.secondaryText)
-                    }
                 }
             }
         }
@@ -754,29 +822,50 @@ struct AccountCardView: View {
             let display = AccountListAmountDisplay.cardAmount(
                 account: account,
                 balance: balance,
-                currencyDisplay: currencyDisplay
+                currencyDisplay: currencyDisplay,
+                baseCurrency: baseCurrency,
+                twdPerBaseCurrency: twdPerBaseCurrency
             )
-            Text(display.amount.formatted(currency: display.currency))
-                .font(.snapAmountRow)
-                .foregroundColor(.lossRed)
+            CurrencyAmountLabel(
+                text: display.amount.formatted(currency: display.currency),
+                currency: display.currency,
+                font: .snapAmountRow,
+                weight: .semibold,
+                color: .lossRed,
+                chipTint: account.accountType.color
+            )
         } else if account.accountType == .twdDeposit, let balance {
             let display = AccountListAmountDisplay.cardAmount(
                 account: account,
                 balance: balance,
-                currencyDisplay: currencyDisplay
+                currencyDisplay: currencyDisplay,
+                baseCurrency: baseCurrency,
+                twdPerBaseCurrency: twdPerBaseCurrency
             )
-            Text(display.amount.formatted(currency: display.currency))
-                .font(.snapAmountRow)
-                .foregroundColor(.primaryText)
+            CurrencyAmountLabel(
+                text: display.amount.formatted(currency: display.currency),
+                currency: display.currency,
+                font: .snapAmountRow,
+                weight: .semibold,
+                color: .primaryText,
+                chipTint: account.accountType.color
+            )
         } else if let balance {
             let display = AccountListAmountDisplay.cardAmount(
                 account: account,
                 balance: balance,
-                currencyDisplay: currencyDisplay
+                currencyDisplay: currencyDisplay,
+                baseCurrency: baseCurrency,
+                twdPerBaseCurrency: twdPerBaseCurrency
             )
-            Text(display.amount.formatted(currency: display.currency))
-                .font(.snapAmountRow)
-                .foregroundColor(.primaryText)
+            CurrencyAmountLabel(
+                text: display.amount.formatted(currency: display.currency),
+                currency: display.currency,
+                font: .snapAmountRow,
+                weight: .semibold,
+                color: .primaryText,
+                chipTint: account.accountType.color
+            )
         } else {
             Text("—")
                 .font(.snapAmountRow)
@@ -832,9 +921,14 @@ struct ExpandableDebtAccountSection: View {
                             .font(.caption)
                             .foregroundColor(.secondaryText)
                         
-                        Text((-totalDebt).formatted(currency: .TWD))
-                            .font(.snapAmountRow)
-                            .foregroundColor(.lossRed)
+                        CurrencyAmountLabel(
+                            text: (-totalDebt).formatted(currency: .TWD),
+                            currency: .TWD,
+                            font: .snapAmountRow,
+                            weight: .bold,
+                            color: .lossRed,
+                            chipTint: .lossRed
+                        )
                     }
                     
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
@@ -892,13 +986,14 @@ struct DebtCardView: View {
             
             VStack(alignment: .trailing, spacing: 4) {
                 let negativeBalance = -liability.remainingBalance
-                Text(negativeBalance.formatted(currency: liability.currency))
-                    .font(.snapAmountRow)
-                    .foregroundColor(.lossRed)
-                
-                Text(liability.currency.rawValue)
-                    .font(.caption)
-                    .foregroundColor(.secondaryText)
+                CurrencyAmountLabel(
+                    text: negativeBalance.formatted(currency: liability.currency),
+                    currency: liability.currency,
+                    font: .snapAmountRow,
+                    weight: .bold,
+                    color: .lossRed,
+                    chipTint: .lossRed
+                )
             }
         }
         .padding(16)

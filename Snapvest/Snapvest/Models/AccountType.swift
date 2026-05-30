@@ -10,7 +10,7 @@ import SwiftUI
 
 /// 新增帳戶／列表用的大分類
 enum AccountCategory: String, CaseIterable, Identifiable {
-    case deposit = "存款帳戶"
+    case deposit = "現金帳戶"
     case investment = "投資帳戶"
     case liability = "債務帳戶"
     
@@ -44,10 +44,10 @@ enum AccountType: String, Codable, CaseIterable {
     
     var displayName: String {
         switch self {
-        case .twdDeposit: return "台幣存款戶"
-        case .twdSecurities: return "台幣證券戶（複委托）"
-        case .usdAccount: return "美金證券戶"
-        case .cryptoWallet: return "加密貨幣戶"
+        case .twdDeposit: return "現金帳戶"
+        case .twdSecurities: return "台股證券"
+        case .usdAccount: return "美股證券"
+        case .cryptoWallet: return "加密貨幣錢包"
         case .debt: return "分期貸款戶"
         case .otherDebt: return "其他負債戶"
         }
@@ -55,10 +55,10 @@ enum AccountType: String, Codable, CaseIterable {
     
     var description: String {
         switch self {
-        case .twdDeposit: return "台幣現金存提，不記錄股票持倉。"
-        case .twdSecurities: return "以台幣交割，買賣台股及券商內海外標的。"
-        case .usdAccount: return "美金現金與海外標的（美股等）買賣。"
-        case .cryptoWallet: return "以美金計價的加密資產買賣與持倉。"
+        case .twdDeposit: return "可選幣別的現金存提與日常資金。"
+        case .twdSecurities: return "買賣台股、台股 ETF 與台股債券 ETF，可依帳戶選擇常用幣別。"
+        case .usdAccount: return "買賣美股與美股 ETF，可依帳戶選擇常用幣別。"
+        case .cryptoWallet: return "追蹤加密貨幣持倉，可依錢包選擇常用幣別。"
         case .debt: return "房貸、信貸等：本金、期數、利率與每月還款。"
         case .otherDebt: return "欠朋友、卡費等：只記欠款金額與備註。"
         }
@@ -111,6 +111,21 @@ enum AccountType: String, Codable, CaseIterable {
         }
     }
     
+    var selectableCurrencies: [Currency] {
+        switch self {
+        case .twdDeposit:
+            return Currency.baseCurrencyOptions
+        case .twdSecurities, .usdAccount, .cryptoWallet:
+            return [.USD, .TWD, .AUD, .JPY, .EUR, .HKD, .CNY]
+        case .debt, .otherDebt:
+            return Currency.baseCurrencyOptions
+        }
+    }
+
+    var allowsCurrencySelection: Bool {
+        selectableCurrencies.count > 1
+    }
+
     /// 是否支援 CSV 匯入交易（證券戶與加密貨幣戶）
     var supportsTransactionImport: Bool {
         self == .twdSecurities || self == .usdAccount || self == .cryptoWallet

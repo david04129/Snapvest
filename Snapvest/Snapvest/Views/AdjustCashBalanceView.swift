@@ -128,17 +128,13 @@ struct AdjustCashBalanceView: View {
                     .foregroundColor(.primaryText)
             }
             
-            CardView {
-                HStack(spacing: 8) {
-                    TradeFormCurrencyBadge(currency: account.currency)
-                    TextField("0", text: $newBalanceText)
-                        .keyboardType(.decimalPad)
-                        .font(.headline)
-                        .snapFormFieldTapTarget()
-                        .onChange(of: newBalanceText) { oldValue, newValue in
-                            handleBalanceChange(oldValue: oldValue, newValue: newValue)
-                        }
-                }
+            AmountKeypadInputView(
+                text: $newBalanceText,
+                currency: account.currency,
+                accentColor: themeColor
+            )
+            .onChange(of: newBalanceText) { oldValue, newValue in
+                handleBalanceChange(oldValue: oldValue, newValue: newValue)
             }
             
             adjustmentResultCard
@@ -365,19 +361,7 @@ struct AdjustCashBalanceView: View {
     }
 
     private func formattedBalanceInput(_ value: Decimal) -> String {
-        let number = NSDecimalNumber(decimal: value)
-        let rounded = number.rounding(accordingToBehavior: NSDecimalNumberHandler(
-            roundingMode: .plain,
-            scale: 0,
-            raiseOnExactness: false,
-            raiseOnOverflow: false,
-            raiseOnUnderflow: false,
-            raiseOnDivideByZero: false
-        ))
-        if number == rounded {
-            return value.formatted(fractionDigits: 0)
-        }
-        return value.formatted(fractionDigits: 2)
+        value.formattedQuantityInput(maxFractionDigits: 2)
     }
     
     private func saveAdjustment() {

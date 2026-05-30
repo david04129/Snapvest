@@ -85,8 +85,15 @@ enum LaunchCoordinator {
         portfolioViewModel: PortfolioViewModel,
         accountsViewModel: AccountsViewModel,
         assetsViewModel: AssetsViewModel,
-        dataService: DataServiceProtocol? = nil
+        dataService: DataServiceProtocol? = nil,
+        rebuildAccountDetailCache: Bool = true,
+        accountDetailCacheAccountIds: Set<String>? = nil
     ) async {
+        let perfFlow = "applyPersistedState detailCache=\(rebuildAccountDetailCache)"
+        let perfStart = DebugPerformanceLog.now()
+        var perfLast = perfStart
+        DebugPerformanceLog.start(perfFlow)
+
         let resolvedDataService = dataService ?? MockDataService.shared
         let usdToTwdRate: Decimal
         if let exchangeRate = try? await resolvedDataService.fetchExchangeRate(from: .USD, to: .TWD, date: nil),
@@ -96,21 +103,61 @@ enum LaunchCoordinator {
         } else {
             usdToTwdRate = ExchangeRateSessionCache.usdToTwd ?? 0
         }
+        DebugPerformanceLog.lap("load exchange rate", flow: perfFlow, start: perfStart, last: &perfLast)
 
         await portfolioViewModel.prepareFromPersisted(userId: userId, usdToTwdRate: usdToTwdRate)
-        await accountsViewModel.applyFromPersisted(
-            userId: userId,
-            usdToTwdRate: usdToTwdRate,
-            liabilities: portfolioViewModel.liabilities
-        )
+        DebugPerformanceLog.lap("portfolio prepare", flow: perfFlow, start: perfStart, last: &perfLast)
+        if let accountDetailCacheAccountIds, !accountDetailCacheAccountIds.isEmpty {
+            await accountsViewModel.applyChangedAccountsFromPersisted(
+                userId: userId,
+                affectedAccountIds: accountDetailCacheAccountIds,
+                usdToTwdRate: usdToTwdRate,
+                liabilities: portfolioViewModel.liabilities
+            )
+            DebugPerformanceLog.lap("accounts partial apply", flow: perfFlow, start: perfStart, last: &perfLast)
+        } else {
+            await accountsViewModel.applyFromPersisted(
+                userId: userId,
+                usdToTwdRate: usdToTwdRate,
+                liabilities: portfolioViewModel.liabilities
+            )
+            DebugPerformanceLog.lap("accounts apply", flow: perfFlow, start: perfStart, last: &perfLast)
+        }
         await assetsViewModel.applyFromPersisted(userId: userId, usdToTwdRate: usdToTwdRate)
+        DebugPerformanceLog.lap("assets apply", flow: perfFlow, start: perfStart, last: &perfLast)
+
+        guard rebuildAccountDetailCache else {
+            DebugPerformanceLog.end(perfFlow, start: perfStart)
+            return
+        }
 
         let accounts = (try? await resolvedDataService.fetchAccounts(userId: userId)) ?? []
-        let holdingsMap = await AccountDetailHoldingsBuilder.buildAll(
-            accounts: accounts,
-            dataService: resolvedDataService
-        )
-        AccountDetailPresentationStore.replaceAll(holdingsMap)
+        DebugPerformanceLog.lap("fetch accounts for detail cache", flow: perfFlow, start: perfStart, last: &perfLast)
+        if let accountDetailCacheAccountIds {
+            AccountDetailPresentationStore.remove(accountIds: accountDetailCacheAccountIds)
+            for account in accounts where accountDetailCacheAccountIds.contains(account.id) {
+                guard !account.accountType.isLiabilityAccount,
+                      !account.isArchived,
+                      let snapshot = try? await resolvedDataService.fetchAccountSnapshot(accountId: account.id) else {
+                    continue
+                }
+                let holdings = await AccountDetailHoldingsBuilder.build(
+                    from: snapshot,
+                    accountId: account.id,
+                    dataService: resolvedDataService
+                )
+                AccountDetailPresentationStore.replace(holdings, for: account.id)
+            }
+            DebugPerformanceLog.lap("partial detail cache", flow: perfFlow, start: perfStart, last: &perfLast)
+        } else {
+            let holdingsMap = await AccountDetailHoldingsBuilder.buildAll(
+                accounts: accounts,
+                dataService: resolvedDataService
+            )
+            AccountDetailPresentationStore.replaceAll(holdingsMap)
+            DebugPerformanceLog.lap("full detail cache", flow: perfFlow, start: perfStart, last: &perfLast)
+        }
+        DebugPerformanceLog.end(perfFlow, start: perfStart)
     }
 
     @MainActor

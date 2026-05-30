@@ -50,14 +50,15 @@ class AccountDetailViewModel: ObservableObject {
     }
     
     /// 從本機估值 B 套用帳戶明細（不重算交易、不逐檔拉 Supabase）
-    func loadFromPersisted(accountId: String, account: Account) async {
+    func loadFromPersisted(accountId: String, account: Account, preferCache: Bool = true) async {
         errorMessage = nil
         
         if let cachedRate = ExchangeRateSessionCache.usdToTwd {
             exchangeRate = cachedRate
         }
         
-        if let cached = AccountDetailPresentationStore.holdings(for: accountId), !cached.isEmpty {
+        if preferCache,
+           let cached = AccountDetailPresentationStore.holdings(for: accountId), !cached.isEmpty {
             if let snapshot = try? await dataService.fetchAccountSnapshot(accountId: accountId) {
                 cashBalance = snapshot.cashBalance
             }
@@ -76,13 +77,13 @@ class AccountDetailViewModel: ObservableObject {
     }
     
     func refresh(accountId: String, account: Account) async {
-        await loadFromPersisted(accountId: accountId, account: account)
+        await loadFromPersisted(accountId: accountId, account: account, preferCache: false)
     }
     
     /// 相容舊呼叫端（sheet／表單完成後刷新）
     func refresh(accountId: String) async {
         guard let account = try? await fetchAccount(accountId: accountId) else { return }
-        await loadFromPersisted(accountId: accountId, account: account)
+        await loadFromPersisted(accountId: accountId, account: account, preferCache: false)
     }
     
     func loadAccountData(accountId: String) async {

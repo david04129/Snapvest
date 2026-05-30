@@ -68,6 +68,10 @@ enum HoldingChartMetrics {
         if let slot = categoryChartColorSlot[itemId] {
             return AppColors.holdingChartColor(at: slot)
         }
+        if PieChartGroupingEngine.isCashItemId(itemId),
+           let index = dynamicCashItemIds(inputs: inputs).firstIndex(of: itemId) {
+            return AppColors.holdingChartColor(at: index)
+        }
         if UserDefaults.standard.data(forKey: itemId) != nil,
            let holding = holding(matchingItemId: itemId, inputs: inputs) {
             return HoldingColorPreferences.getColor(for: holding.symbol, assetType: holding.assetType)
@@ -80,11 +84,23 @@ enum HoldingChartMetrics {
     private static let categoryChartColorSlot: [String: Int] = [
         "twd_cash": 0,
         "usd_cash": 4,
+        "aud_cash": 5,
+        "jpy_cash": 6,
+        "eur_cash": 7,
+        "hkd_cash": 8,
+        "cny_cash": 9,
         "stock_us": 1,
         "stock_tw": 2,
         "crypto": 3
     ]
     
+    private static func dynamicCashItemIds(inputs: PieChartInputs) -> [String] {
+        Currency.baseCurrencyOptions.compactMap { currency in
+            guard (inputs.cashByCurrency[currency] ?? 0) > 0 else { return nil }
+            return PieChartGroupingEngine.cashItemId(for: currency)
+        }
+    }
+
     private static func stableHoldingItemIds(inputs: PieChartInputs) -> [String] {
         inputs.aggregatedHoldings
             .filter { $0.assetType != .cash }
@@ -113,8 +129,15 @@ enum HoldingChartMetrics {
             let gainLoss = marketValueTWD - costTWD
             let pct: Decimal = costTWD > 0 ? (gainLoss / costTWD) * 100 : 0
             let displayName: String
-            if h.assetType == .stockTW, let n = h.name, !n.isEmpty { displayName = n }
-            else { displayName = h.symbol }
+            if h.assetType == .stockTW {
+                displayName = SymbolListService.displayName(
+                    assetType: h.assetType,
+                    symbol: h.symbol,
+                    storedName: h.name
+                )
+            } else {
+                displayName = h.symbol
+            }
             rows.append(HoldingPerformanceRow(
                 id: "\(h.assetType.rawValue)_\(h.symbol)",
                 displayName: displayName,

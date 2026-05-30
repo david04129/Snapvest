@@ -39,7 +39,8 @@ struct OtherDebtRepaymentView: View {
     
     private var availableSourceAccounts: [Account] {
         accountsViewModel.accounts.filter { account in
-            account.accountType == .twdDeposit || account.accountType == .twdSecurities
+            guard account.currency == debtAccount.currency else { return false }
+            return account.accountType == .twdDeposit || account.accountType == .twdSecurities
         }
     }
     
@@ -138,7 +139,7 @@ struct OtherDebtRepaymentView: View {
                     Text("其他債務還款")
                         .font(.title2)
                         .fontWeight(.bold)
-                    Text("記錄還款以減少欠款，可選擇是否從台幣帳戶扣款。")
+                    Text("記錄還款以減少欠款，可選擇是否從同幣別帳戶扣款。")
                         .font(.subheadline)
                         .foregroundColor(.secondaryText)
                 }
@@ -153,7 +154,7 @@ struct OtherDebtRepaymentView: View {
     private var deductFromAccountSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Toggle(isOn: $deductFromTWDAccount) {
-                Text("從台幣帳戶扣款")
+                Text("從同幣別帳戶扣款")
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.primaryText)
@@ -180,7 +181,7 @@ struct OtherDebtRepaymentView: View {
                                         .foregroundColor(.secondaryText)
                                 }
                             } else {
-                                Text("選擇台幣存款或證券戶")
+                                Text("選擇 \(debtAccount.currency.rawValue) 帳戶")
                                     .font(.headline)
                                     .foregroundColor(.secondaryText)
                             }
@@ -237,7 +238,7 @@ struct OtherDebtRepaymentView: View {
                 Image(systemName: "dollarsign.circle.fill")
                     .font(.system(size: 16))
                     .foregroundColor(themeColor)
-                Text("還款金額 (TWD)")
+                Text("還款金額 (\(debtAccount.currency.rawValue))")
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.primaryText)
@@ -426,7 +427,7 @@ struct OtherDebtRepaymentView: View {
                 symbol: "REPAY",
                 quantity: amountValue,
                 price: 1,
-                currency: .TWD,
+                currency: debtAccount.currency,
                 notes: transactionNotes,
                 transactionDate: transactionDate,
                 beforeRepaymentBalance: beforeBalance,
@@ -448,7 +449,7 @@ struct OtherDebtRepaymentView: View {
                     symbol: "CASH",
                     quantity: amountValue,
                     price: 1,
-                    currency: .TWD,
+                    currency: source.currency,
                     notes: withdrawNotes,
                     transactionDate: transactionDate
                 )

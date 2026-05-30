@@ -11,10 +11,12 @@ struct SettingsView: View {
     @ObservedObject private var theme = ThemeManager.shared
     @ObservedObject private var privacyLock = PrivacyLockManager.shared
     @ObservedObject private var demoMode = DemoModeManager.shared
+    @ObservedObject private var baseCurrency = BaseCurrencyManager.shared
     @Environment(\.dismiss) private var dismiss
     
     @State private var comingSoonFeature: SettingsComingSoonFeature?
     @State private var privacyLockSettingsMessage: String?
+    @State private var isBaseCurrencySheetPresented = false
     
     var body: some View {
         NavigationStack {
@@ -24,11 +26,16 @@ struct SettingsView: View {
                     
                     settingsSection(title: "顯示") {
                         themeModeRow
-                        
+
                         Divider()
                             .padding(.leading, 56)
-                        
+
                         marketColorConventionRow
+
+                        Divider()
+                            .padding(.leading, 56)
+
+                        baseCurrencyRow
                     }
                     
                     settingsSection(title: "體驗") {
@@ -67,6 +74,15 @@ struct SettingsView: View {
                 Button("知道了", role: .cancel) {}
             } message: {
                 Text(privacyLockSettingsMessage ?? "")
+            }
+            .sheet(isPresented: $isBaseCurrencySheetPresented) {
+                BaseCurrencyPickerSheet(
+                    selectedCurrency: baseCurrency.baseCurrency,
+                    onSelect: { currency in
+                        baseCurrency.setBaseCurrency(currency)
+                        isBaseCurrencySheetPresented = false
+                    }
+                )
             }
         }
     }
@@ -204,6 +220,21 @@ struct SettingsView: View {
         }
     }
     
+    private var baseCurrencyRow: some View {
+        Button {
+            isBaseCurrencySheetPresented = true
+        } label: {
+            settingsRowContent(
+                icon: "dollarsign.circle.fill",
+                iconColor: .appPrimary,
+                title: "主要幣別",
+                value: baseCurrency.baseCurrency.settingsDisplayName,
+                showsChevron: true
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
     private var privacyLockRow: some View {
         Button {
             Task { await togglePrivacyLock() }
@@ -420,7 +451,7 @@ private struct SettingsPillOption: View {
     let isSelected: Bool
     let selectedColor: Color
     let action: () -> Void
-    
+
     var body: some View {
         Button(action: action) {
             Text(title)
@@ -457,5 +488,58 @@ private struct SettingsSwitchIndicator: View {
                 RoundedRectangle(cornerRadius: 15, style: .continuous)
                     .stroke(Color.separator.opacity(isOn ? 0 : 0.5), lineWidth: 1)
             }
+    }
+}
+
+private struct BaseCurrencyPickerSheet: View {
+    let selectedCurrency: Currency
+    let onSelect: (Currency) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(Currency.baseCurrencyOptions, id: \.self) { currency in
+                        Button {
+                            onSelect(currency)
+                        } label: {
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(currency.displayName)
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundColor(.primaryText)
+                                    Text(currency.rawValue)
+                                        .font(.caption)
+                                        .foregroundColor(.secondaryText)
+                                }
+
+                                Spacer()
+
+                                if selectedCurrency == currency {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundColor(.appPrimary)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                } header: {
+                    Text("選擇總覽與折算金額使用的幣別")
+                } footer: {
+                    Text("原幣仍會保留；首頁、帳戶總額與資產總覽會逐步改用主要幣別顯示。")
+                }
+            }
+            .navigationTitle("主要幣別")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                        .foregroundColor(.appPrimary)
+                }
+            }
+        }
     }
 }

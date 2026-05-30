@@ -14,7 +14,9 @@ struct HoldingDetailView: View {
     let totalInvestments: Decimal
     
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var baseCurrencyManager = BaseCurrencyManager.shared
     @State private var usdToTwdRate: Decimal = ExchangeRateSessionCache.usdToTwd ?? 0
+    @State private var twdPerBaseCurrency: Decimal = 1
     @State private var activeTradeSheet: HoldingTradeSheet?
     @State private var metricAmountDisplay: MetricAmountDisplay
     
@@ -22,30 +24,38 @@ struct HoldingDetailView: View {
         case twd
         case original
     }
-    
+
     init(
         aggregatedHolding: AggregatedHoldingSnapshot,
         assetPriceSnapshot: AssetPriceSnapshot?,
         totalAssets: Decimal,
-        totalInvestments: Decimal
+        totalInvestments: Decimal,
+        initialUsdToTwdRate: Decimal? = nil,
+        initialTwdPerBaseCurrency: Decimal? = nil
     ) {
         self.aggregatedHolding = aggregatedHolding
         self.assetPriceSnapshot = assetPriceSnapshot
         self.totalAssets = totalAssets
         self.totalInvestments = totalInvestments
-        _metricAmountDisplay = State(
-            initialValue: Self.defaultAmountDisplay(for: aggregatedHolding.assetType)
-        )
+        let resolvedUsdToTwdRate = initialUsdToTwdRate ?? ExchangeRateSessionCache.usdToTwd ?? 0
+        _usdToTwdRate = State(initialValue: resolvedUsdToTwdRate)
+        _twdPerBaseCurrency = State(initialValue: Self.initialTwdPerBaseCurrency(
+            baseCurrency: BaseCurrencyManager.shared.baseCurrency,
+            initialRate: initialTwdPerBaseCurrency,
+            usdToTwdRate: resolvedUsdToTwdRate
+        ))
+        _metricAmountDisplay = State(initialValue: .twd)
     }
-    
-    /// 美股、加密貨幣預設原幣（美金）；台股等預設台幣
-    private static func defaultAmountDisplay(for assetType: AssetType) -> MetricAmountDisplay {
-        switch assetType {
-        case .stockUS, .crypto:
-            return .original
-        default:
-            return .twd
-        }
+
+    private static func initialTwdPerBaseCurrency(
+        baseCurrency: Currency,
+        initialRate: Decimal?,
+        usdToTwdRate: Decimal
+    ) -> Decimal {
+        if let initialRate, initialRate > 0 { return initialRate }
+        if baseCurrency == .TWD { return 1 }
+        if baseCurrency == .USD, usdToTwdRate > 0 { return usdToTwdRate }
+        return 1
     }
     
     private enum HoldingTradeSheet: Identifiable {
@@ -125,14 +135,27 @@ struct HoldingDetailView: View {
         return aggregatedHolding.weightedAverageCost
     }
     
+    private var selectedDisplayCurrency: Currency {
+        metricAmountDisplay == .twd ? baseCurrencyManager.baseCurrency : aggregatedHolding.currency
+    }
+
+    private func amountInSelectedCurrency(fromTWD amount: Decimal) -> Decimal {
+        guard selectedDisplayCurrency != .TWD,
+              twdPerBaseCurrency > 0 else {
+            return amount
+        }
+        return amount / twdPerBaseCurrency
+    }
+
     // 顯示名稱
     var displayName: String {
         switch aggregatedHolding.assetType {
         case .stockTW:
-            if let name = aggregatedHolding.name, !name.isEmpty {
-                return name
-            }
-            return aggregatedHolding.symbol
+            return SymbolListService.displayName(
+                assetType: aggregatedHolding.assetType,
+                symbol: aggregatedHolding.symbol,
+                storedName: aggregatedHolding.name
+            )
         case .stockUS:
             return aggregatedHolding.symbol.uppercased()
         case .crypto:
@@ -156,36 +179,19 @@ struct HoldingDetailView: View {
     }
     
     var displayedPriceCurrency: Currency {
-        switch metricAmountDisplay {
-        case .twd: return .TWD
-        case .original: return aggregatedHolding.currency
-        }
+        aggregatedHolding.currency
     }
     
     var displayedCurrentPrice: Decimal? {
-        guard let price = currentPrice else { return nil }
-        switch metricAmountDisplay {
-        case .original:
-            return price
-        case .twd:
-            if aggregatedHolding.currency == .TWD { return price }
-            if aggregatedHolding.currency == .USD { return price * usdToTwdRate }
-            return price
-        }
+        currentPrice
+    }
+
+    private var currentPriceFractionDigits: Int {
+        aggregatedHolding.assetType == .crypto ? 4 : 2
     }
     
     private var displayedDailyPriceChange: (amount: Decimal, percent: Decimal)? {
-        guard let daily = dailyPriceChange else { return nil }
-        switch metricAmountDisplay {
-        case .original:
-            return daily
-        case .twd:
-            if aggregatedHolding.currency == .TWD { return daily }
-            if aggregatedHolding.currency == .USD {
-                return (daily.amount * usdToTwdRate, daily.percent)
-            }
-            return daily
-        }
+        dailyPriceChange
     }
     
     private var canToggleCurrency: Bool {
@@ -194,7 +200,7 @@ struct HoldingDetailView: View {
     
     /// 美股／加密：原幣單價 × 即時匯率後以台幣顯示（僅格式化，不影響計算）
     private var showsForeignUnitPriceInTWD: Bool {
-        metricAmountDisplay == .twd && aggregatedHolding.currency != .TWD
+        false
     }
     
     private var holdingsCurrencyDisplayBinding: Binding<AssetsCurrencyDisplay> {
@@ -211,7 +217,10 @@ struct HoldingDetailView: View {
     private var displayedMarketValueText: String {
         switch metricAmountDisplay {
         case .twd:
-            return marketValue.formatted(currency: .TWD, fractionDigits: 0)
+            return amountInSelectedCurrency(fromTWD: marketValue).formatted(
+                currency: selectedDisplayCurrency,
+                fractionDigits: selectedDisplayCurrency == .TWD ? 0 : 2
+            )
         case .original:
             return marketValueInOriginalCurrency.formatted(currency: aggregatedHolding.currency, fractionDigits: 2)
         }
@@ -220,7 +229,10 @@ struct HoldingDetailView: View {
     private var displayedTotalCostText: String {
         switch metricAmountDisplay {
         case .twd:
-            return totalCostTWD.formatted(currency: .TWD, fractionDigits: 0)
+            return amountInSelectedCurrency(fromTWD: totalCostTWD).formatted(
+                currency: selectedDisplayCurrency,
+                fractionDigits: selectedDisplayCurrency == .TWD ? 0 : 2
+            )
         case .original:
             return aggregatedHolding.totalCost.formatted(currency: aggregatedHolding.currency, fractionDigits: 2)
         }
@@ -229,10 +241,7 @@ struct HoldingDetailView: View {
     private var displayedAverageCostText: String {
         switch metricAmountDisplay {
         case .twd:
-            return averageCostTWD.formattedDisplayUnitPrice(
-                currency: .TWD,
-                convertedFromForeignToTWD: showsForeignUnitPriceInTWD
-            )
+            return amountInSelectedCurrency(fromTWD: averageCostTWD).formattedTradePrice(currency: selectedDisplayCurrency)
         case .original:
             return aggregatedHolding.weightedAverageCost.formattedTradePrice(currency: aggregatedHolding.currency)
         }
@@ -241,7 +250,10 @@ struct HoldingDetailView: View {
     private var displayedUnrealizedAmountText: String {
         switch metricAmountDisplay {
         case .twd:
-            return unrealizedGainLoss.formatted(currency: .TWD, fractionDigits: 0)
+            return amountInSelectedCurrency(fromTWD: unrealizedGainLoss).formatted(
+                currency: selectedDisplayCurrency,
+                fractionDigits: selectedDisplayCurrency == .TWD ? 0 : 2
+            )
         case .original:
             return unrealizedGainLossOriginal.formatted(currency: aggregatedHolding.currency, fractionDigits: 2)
         }
@@ -327,16 +339,58 @@ struct HoldingDetailView: View {
         }
         .task {
             if let cached = ExchangeRateSessionCache.usdToTwd, cached > 0 {
-                usdToTwdRate = cached
+                updateUsdToTwdRateIfNeeded(cached)
             } else if usdToTwdRate <= 0 {
-                usdToTwdRate = (try? await MockDataService.shared.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate) ?? 0
+                updateUsdToTwdRateIfNeeded(
+                    (try? await MockDataService.shared.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate) ?? 0
+                )
             }
+            await loadBaseCurrencyRate()
+        }
+        .onChange(of: baseCurrencyManager.baseCurrency) { _, _ in
+            Task { await loadBaseCurrencyRate() }
         }
         .sheet(item: $activeTradeSheet) { sheet in
             holdingTradeSheetContent(for: sheet)
         }
     }
     
+    @MainActor
+    private func loadBaseCurrencyRate() async {
+        let currency = baseCurrencyManager.baseCurrency
+        guard currency != .TWD else {
+            updateTwdPerBaseCurrencyIfNeeded(1)
+            return
+        }
+        if currency == .USD, usdToTwdRate > 0 {
+            updateTwdPerBaseCurrencyIfNeeded(usdToTwdRate)
+            return
+        }
+        updateTwdPerBaseCurrencyIfNeeded(
+            (try? await MockDataService.shared.fetchExchangeRate(from: currency, to: .TWD, date: nil)?.rate) ?? 1
+        )
+    }
+
+    @MainActor
+    private func updateUsdToTwdRateIfNeeded(_ newValue: Decimal) {
+        guard newValue > 0, newValue != usdToTwdRate else { return }
+        var transaction = SwiftUI.Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            usdToTwdRate = newValue
+        }
+    }
+
+    @MainActor
+    private func updateTwdPerBaseCurrencyIfNeeded(_ newValue: Decimal) {
+        guard newValue > 0, newValue != twdPerBaseCurrency else { return }
+        var transaction = SwiftUI.Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            twdPerBaseCurrency = newValue
+        }
+    }
+
 // MARK: - 方向 A：英雄摘要卡
     private var heroSummaryCard: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -408,19 +462,31 @@ struct HoldingDetailView: View {
                 .frame(minHeight: 48)
             
             VStack(alignment: .leading, spacing: 6) {
-                Text("每股現價")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.secondaryText)
+                CurrencyTitleLabel(
+                    title: "每股現價",
+                    currency: displayedPriceCurrency,
+                    font: .caption,
+                    weight: .semibold,
+                    color: .secondaryText,
+                    chipTint: assetAccentColor,
+                    titleLineLimit: 1
+                )
                 
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Group {
                         if let price = displayedCurrentPrice {
-                            Text(price.formattedDisplayUnitPrice(
+                            CurrencyAmountLabel(
+                                text: price.formatted(
+                                    currency: displayedPriceCurrency,
+                                    fractionDigits: currentPriceFractionDigits,
+                                    showSymbol: false
+                                ),
                                 currency: displayedPriceCurrency,
-                                convertedFromForeignToTWD: showsForeignUnitPriceInTWD
-                            ))
-                                .foregroundColor(.primaryText)
+                                font: .snapStockPriceHero,
+                                weight: .bold,
+                                color: .primaryText,
+                                chipTint: assetAccentColor
+                            )
                         } else {
                             Text("--")
                                 .foregroundColor(.secondaryText)
@@ -474,12 +540,14 @@ struct HoldingDetailView: View {
             MetricTile(
                 title: "市值",
                 value: displayedMarketValueText,
+                currency: selectedDisplayCurrency,
                 prominence: .featured,
                 accentColor: assetAccentColor
             )
             MetricTile(
                 title: "未實現損益",
                 value: displayedUnrealizedAmountText,
+                currency: selectedDisplayCurrency,
                 valueColor: displayedUnrealizedColor,
                 footnote: displayedUnrealizedPercentText,
                 footnoteColor: displayedUnrealizedColor,
@@ -489,11 +557,13 @@ struct HoldingDetailView: View {
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
                 MetricTile(
                     title: "總成本",
-                    value: displayedTotalCostText
+                    value: displayedTotalCostText,
+                    currency: selectedDisplayCurrency
                 )
                 MetricTile(
                     title: "平均成本",
-                    value: displayedAverageCostText
+                    value: displayedAverageCostText,
+                    currency: selectedDisplayCurrency
                 )
                 MetricTile(
                     title: "總資產佔比",
@@ -517,7 +587,9 @@ struct HoldingDetailView: View {
             currency: aggregatedHolding.currency,
             currentPrice: currentPrice,
             amountDisplay: metricAmountDisplay,
-            usdToTwdRate: usdToTwdRate
+            usdToTwdRate: usdToTwdRate,
+            baseCurrency: selectedDisplayCurrency,
+            twdPerBaseCurrency: twdPerBaseCurrency
         )
     }
     
@@ -671,12 +743,18 @@ struct HoldingFIFOLotsTableSection: View {
     let currentPrice: Decimal?
     var amountDisplay: HoldingDetailView.MetricAmountDisplay = .original
     var usdToTwdRate: Decimal = 0
+    var baseCurrency: Currency = .TWD
+    var twdPerBaseCurrency: Decimal = 1
 
     @State private var buyDateSort: HoldingsMarketValueSort = .descending
     @State private var sortByAccountFirst = false
     
     private var showsAccountColumn: Bool {
         fifoLotsByAccount.count > 1
+    }
+
+    private var sectionDisplayCurrency: Currency {
+        amountDisplay == .twd ? baseCurrency : currency
     }
     
     private var tableRows: [FIFOLotTableRow] {
@@ -710,9 +788,12 @@ struct HoldingFIFOLotsTableSection: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("買入批次")
-                        .font(.headline)
-                        .foregroundColor(.primaryText)
+                    HStack(spacing: 6) {
+                        Text("買入批次")
+                            .font(.headline)
+                            .foregroundColor(.primaryText)
+                        CurrencyCodeChip(currency: sectionDisplayCurrency, tint: .appPrimary)
+                    }
                     Text("賣出時依買入先後扣庫存")
                         .font(.caption)
                         .foregroundColor(.secondaryText)
@@ -765,6 +846,8 @@ struct HoldingFIFOLotsTableSection: View {
                             currentPrice: currentPrice,
                             amountDisplay: amountDisplay,
                             usdToTwdRate: usdToTwdRate,
+                            baseCurrency: baseCurrency,
+                            twdPerBaseCurrency: twdPerBaseCurrency,
                             showsAccount: showsAccountColumn,
                             isAlternate: index.isMultiple(of: 2)
                         )
@@ -823,30 +906,46 @@ private struct FIFOLotTableDataRow: View {
     let currentPrice: Decimal?
     let amountDisplay: HoldingDetailView.MetricAmountDisplay
     let usdToTwdRate: Decimal
+    let baseCurrency: Currency
+    let twdPerBaseCurrency: Decimal
     let showsAccount: Bool
     let isAlternate: Bool
     
-    private var useTWDDisplay: Bool {
-        amountDisplay == .twd && currency != .TWD
+    private var useBaseDisplay: Bool {
+        amountDisplay == .twd && displayCurrency != currency
     }
     
     private var displayCurrency: Currency {
-        useTWDDisplay ? .TWD : currency
+        amountDisplay == .twd ? baseCurrency : currency
+    }
+
+    private func convertedFromOriginalCurrency(_ amount: Decimal) -> Decimal {
+        guard useBaseDisplay else { return amount }
+        let twdAmount: Decimal
+        switch currency {
+        case .TWD:
+            twdAmount = amount
+        case .USD:
+            twdAmount = usdToTwdRate > 0 ? amount * usdToTwdRate : amount
+        default:
+            twdAmount = currency == baseCurrency && twdPerBaseCurrency > 0
+                ? amount * twdPerBaseCurrency
+                : amount
+        }
+        guard displayCurrency != .TWD,
+              twdPerBaseCurrency > 0 else {
+            return twdAmount
+        }
+        return twdAmount / twdPerBaseCurrency
     }
     
     private var displayPrice: Decimal? {
         guard let price = currentPrice else { return nil }
-        if useTWDDisplay, currency == .USD {
-            return price * usdToTwdRate
-        }
-        return price
+        return convertedFromOriginalCurrency(price)
     }
     
     private var displayCostPerUnit: Decimal {
-        if useTWDDisplay, currency == .USD {
-            return row.lot.costPerUnit * usdToTwdRate
-        }
-        return row.lot.costPerUnit
+        convertedFromOriginalCurrency(row.lot.costPerUnit)
     }
     
     private var marketValue: Decimal {
@@ -883,10 +982,7 @@ private struct FIFOLotTableDataRow: View {
             dataCell(formatLotQuantity(row.lot.remainingQuantity), alignment: .trailing, weight: .semibold)
                 .frame(minWidth: 44, maxWidth: .infinity, alignment: .trailing)
             dataCell(
-                displayCostPerUnit.formattedDisplayUnitPrice(
-                    currency: displayCurrency,
-                    convertedFromForeignToTWD: useTWDDisplay
-                ),
+                displayCostPerUnit.formatted(currency: displayCurrency, fractionDigits: 4, showSymbol: false),
                 alignment: .trailing,
                 weight: .regular
             )
@@ -904,7 +1000,7 @@ private struct FIFOLotTableDataRow: View {
             Text(unrealizedGainLoss.formatted(
                 currency: displayCurrency,
                 fractionDigits: 0,
-                showSymbol: displayCurrency != .TWD
+                showSymbol: false
             ))
                 .font(.caption)
                 .fontWeight(.semibold)

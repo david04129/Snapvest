@@ -28,15 +28,31 @@ class PortfolioViewModel: ObservableObject {
     
     @Published var baseCurrency: Currency = .TWD
     @Published var viewCurrency: Currency = .TWD
+    @Published var twdPerBaseCurrency: Decimal = 1
     
     @Published var cashByCurrency: [Currency: Decimal] = [:]
     
     private let dataService: DataServiceProtocol
     private var cancellables = Set<AnyCancellable>()
     private(set) var hasLoadedOnce = false
+    private var lastHomeSnapshot: HomeDashboardSnapshot?
+    private var lastUsdToTwdRate: Decimal?
     
     init(dataService: DataServiceProtocol? = nil) {
         self.dataService = dataService ?? MockDataService.shared
+        baseCurrency = BaseCurrencyManager.shared.baseCurrency
+        viewCurrency = BaseCurrencyManager.shared.baseCurrency
+
+        BaseCurrencyManager.shared.$baseCurrency
+            .dropFirst()
+            .sink { [weak self] currency in
+                Task { @MainActor in
+                    self?.baseCurrency = currency
+                    self?.viewCurrency = currency
+                    await self?.reapplyHomeSnapshotForCurrentBaseCurrency()
+                }
+            }
+            .store(in: &cancellables)
     }
     
     /// Splash／快照更新後：從本機 B 灌入首頁狀態（不重算、不寫磁碟）
@@ -48,7 +64,14 @@ class PortfolioViewModel: ObservableObject {
             accounts = try await dataService.fetchAccounts(userId: userId)
             liabilities = try await loadLiabilities(userId: userId)
             homeSnapshot = try await dataService.fetchHomeDashboardSnapshot(userId: userId)
-            applyHomeSnapshot(homeSnapshot, usdToTwdRate: usdToTwdRate)
+            lastHomeSnapshot = homeSnapshot
+            lastUsdToTwdRate = usdToTwdRate
+            let twdPerBaseCurrency = await loadTwdPerBaseCurrency()
+            applyHomeSnapshot(
+                homeSnapshot,
+                usdToTwdRate: usdToTwdRate,
+                twdPerBaseCurrency: twdPerBaseCurrency
+            )
             await refreshPieChartDataFromPersisted(userId: userId, usdToTwdRate: usdToTwdRate)
         } catch {
             errorMessage = "載入資料失敗：\(error.localizedDescription)"
@@ -65,6 +88,9 @@ class PortfolioViewModel: ObservableObject {
             dataService: dataService,
             usdToTwdRate: usdToTwdRate
         )
+        if let pieChartInputs {
+            cashByCurrency = pieChartInputs.cashByCurrency
+        }
         todayPLSummary = TodayPLCalculator.calculate(from: pieChartInputs)
     }
     
@@ -85,35 +111,63 @@ class PortfolioViewModel: ObservableObject {
             let accountLiabilities = try await dataService.fetchLiabilities(accountId: account.id)
             allLiabilities.append(contentsOf: accountLiabilities)
         }
-        
+
         return allLiabilities
     }
 
-    private func applyHomeSnapshot(_ snapshot: HomeDashboardSnapshot?, usdToTwdRate: Decimal? = nil) {
+    private func applyHomeSnapshot(
+        _ snapshot: HomeDashboardSnapshot?,
+        usdToTwdRate: Decimal? = nil,
+        twdPerBaseCurrency: Decimal = 1
+    ) {
         guard let snapshot else {
             return
         }
         
-        totalAssets = snapshot.totalAssets
-        totalLiabilities = snapshot.totalLiabilities
-        totalCash = snapshot.totalCash
-        totalInvestments = snapshot.totalAssets - snapshot.totalCash
-        unrealizedGainLoss = snapshot.totalAssets - snapshot.totalCash - snapshot.totalInvestmentsCost
+        let baseDivisor = twdPerBaseCurrency > 0 ? twdPerBaseCurrency : 1
+        baseCurrency = BaseCurrencyManager.shared.baseCurrency
+        viewCurrency = baseCurrency
+        self.twdPerBaseCurrency = baseDivisor
+
+        totalAssets = snapshot.totalAssets / baseDivisor
+        totalLiabilities = snapshot.totalLiabilities / baseDivisor
+        totalCash = snapshot.totalCash / baseDivisor
+        totalInvestments = (snapshot.totalAssets - snapshot.totalCash) / baseDivisor
+        unrealizedGainLoss = (snapshot.totalAssets - snapshot.totalCash - snapshot.totalInvestmentsCost) / baseDivisor
         realizedGainLossTWD = snapshot.realizedGainLossTWD
         realizedGainLossUSD = snapshot.realizedGainLossUSD
         cashByCurrency = [
             .TWD: snapshot.twdCash,
             .USD: snapshot.usdCash
         ]
+        if let pieChartInputs {
+            cashByCurrency = pieChartInputs.cashByCurrency
+        }
 
         if let usdToTwdRate {
-            realizedGainLoss = realizedGainLossTWD + (realizedGainLossUSD * usdToTwdRate)
+            realizedGainLoss = (realizedGainLossTWD + (realizedGainLossUSD * usdToTwdRate)) / baseDivisor
         } else {
-            realizedGainLoss = realizedGainLossTWD
+            realizedGainLoss = realizedGainLossTWD / baseDivisor
             Task {
                 let rate = (try? await dataService.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate) ?? 0
-                realizedGainLoss = realizedGainLossTWD + (realizedGainLossUSD * rate)
+                realizedGainLoss = (realizedGainLossTWD + (realizedGainLossUSD * rate)) / baseDivisor
             }
         }
+    }
+
+    private func reapplyHomeSnapshotForCurrentBaseCurrency() async {
+        guard let lastHomeSnapshot else { return }
+        let twdPerBaseCurrency = await loadTwdPerBaseCurrency()
+        applyHomeSnapshot(
+            lastHomeSnapshot,
+            usdToTwdRate: lastUsdToTwdRate,
+            twdPerBaseCurrency: twdPerBaseCurrency
+        )
+    }
+
+    private func loadTwdPerBaseCurrency() async -> Decimal {
+        let currency = BaseCurrencyManager.shared.baseCurrency
+        guard currency != .TWD else { return 1 }
+        return (try? await dataService.fetchExchangeRate(from: currency, to: .TWD, date: nil)?.rate) ?? 1
     }
 }

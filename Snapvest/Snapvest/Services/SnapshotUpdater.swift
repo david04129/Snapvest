@@ -78,6 +78,13 @@ enum SnapshotUpdater {
 
         let liabilities = try await loadLiabilities(userId: userId, dataService: dataService, accounts: accounts)
         let usdToTwdRate = (try? await dataService.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate) ?? 0
+        let twdRateTable = await loadTwdRateTable(
+            accounts: accounts,
+            accountSnapshots: accountSnapshots,
+            liabilities: liabilities,
+            usdToTwdRate: usdToTwdRate,
+            dataService: dataService
+        )
         let homeSnapshot = buildHomeDashboardSnapshot(
             userId: userId,
             accounts: accounts,
@@ -85,7 +92,8 @@ enum SnapshotUpdater {
             accountSnapshots: accountSnapshots,
             assetPriceSnapshots: assetPriceSnapshots,
             liabilities: liabilities,
-            usdToTwdRate: usdToTwdRate
+            usdToTwdRate: usdToTwdRate,
+            twdRateTable: twdRateTable
         )
         try await dataService.saveHomeDashboardSnapshot(homeSnapshot)
         
@@ -93,6 +101,164 @@ enum SnapshotUpdater {
             accountSnapshots: accountSnapshots,
             assetPriceSnapshots: assetPriceSnapshots,
             aggregatedHoldings: aggregated,
+            userHoldingsSnapshot: userHoldingsSnapshot
+        )
+    }
+
+    static func updateSnapshotsIncrementally(
+        userId: String,
+        affectedAccountIds: Set<String>,
+        affectedSymbols: [SymbolInfo],
+        realizedGainLossDeltaByCurrency: [Currency: Decimal] = [:],
+        dataService: DataServiceProtocol,
+        priceService: PriceServiceProtocol
+    ) async throws -> SnapshotBundle {
+        let perfFlow = "incrementalSnapshot accounts=\(affectedAccountIds.count) symbols=\(affectedSymbols.count)"
+        let perfStart = DebugPerformanceLog.now()
+        var perfLast = perfStart
+        DebugPerformanceLog.start(perfFlow)
+
+        let accounts = try await dataService.fetchAccounts(userId: userId)
+        DebugPerformanceLog.lap("fetch accounts", flow: perfFlow, start: perfStart, last: &perfLast)
+        guard let existingHomeSnapshot = try await dataService.fetchHomeDashboardSnapshot(userId: userId) else {
+            DebugPerformanceLog.lap("missing home snapshot fallback", flow: perfFlow, start: perfStart, last: &perfLast)
+            return try await rebuildSnapshots(
+                userId: userId,
+                dataService: dataService,
+                priceService: priceService
+            )
+        }
+
+        var snapshotsByAccountId: [String: AccountSnapshot] = [:]
+        for account in accounts {
+            if affectedAccountIds.contains(account.id) {
+                let accountTransactions = try await dataService.fetchTransactions(accountId: account.id)
+                DebugPerformanceLog.lap("fetch affected account transactions", flow: perfFlow, start: perfStart, last: &perfLast)
+                let snapshot = calculateAccountSnapshot(
+                    account: account,
+                    accountTransactions: accountTransactions,
+                    accounts: accounts
+                )
+                DebugPerformanceLog.lap("calculate account snapshot", flow: perfFlow, start: perfStart, last: &perfLast)
+                try await dataService.saveAccountSnapshot(snapshot)
+                DebugPerformanceLog.lap("save account snapshot", flow: perfFlow, start: perfStart, last: &perfLast)
+                snapshotsByAccountId[account.id] = snapshot
+            } else if let snapshot = try await dataService.fetchAccountSnapshot(accountId: account.id) {
+                snapshotsByAccountId[account.id] = snapshot
+            } else {
+                // Missing persisted snapshots means the cache is incomplete; fall back to the safe path.
+                DebugPerformanceLog.lap("missing account snapshot fallback", flow: perfFlow, start: perfStart, last: &perfLast)
+                return try await rebuildSnapshots(
+                    userId: userId,
+                    dataService: dataService,
+                    priceService: priceService
+                )
+            }
+        }
+
+        let accountSnapshots = accounts.compactMap { snapshotsByAccountId[$0.id] }
+        let symbolInfos = buildSymbolInfos(from: accountSnapshots)
+        DebugPerformanceLog.lap("build symbol list", flow: perfFlow, start: perfStart, last: &perfLast)
+        let userHoldingsSnapshot = UserHoldingsSnapshot(
+            userId: userId,
+            symbols: symbolInfos,
+            lastUpdated: Date()
+        )
+        try await dataService.saveUserHoldingsSnapshot(userHoldingsSnapshot)
+        DebugPerformanceLog.lap("save user holdings snapshot", flow: perfFlow, start: perfStart, last: &perfLast)
+
+        let holdingsMap = holdingsBySymbol(from: accountSnapshots)
+        let updatedPriceSnapshots = try await loadOrFetchAssetPriceSnapshots(
+            symbols: affectedSymbols,
+            dataService: dataService,
+            priceService: priceService,
+            holdingsBySymbol: holdingsMap
+        )
+        DebugPerformanceLog.lap("load/fetch affected prices", flow: perfFlow, start: perfStart, last: &perfLast)
+        for snapshot in updatedPriceSnapshots {
+            try await dataService.saveAssetPriceSnapshot(snapshot)
+        }
+        DebugPerformanceLog.lap("save affected prices", flow: perfFlow, start: perfStart, last: &perfLast)
+
+        let assetPriceSnapshots = try await dataService.fetchAssetPriceSnapshots(symbols: symbolInfos)
+        DebugPerformanceLog.lap("fetch all needed prices", flow: perfFlow, start: perfStart, last: &perfLast)
+        var priceMap: [String: AssetPriceSnapshot] = [:]
+        for snapshot in assetPriceSnapshots {
+            priceMap["\(snapshot.assetType.rawValue)_\(snapshot.symbol)"] = snapshot
+        }
+
+        var aggregatedHoldings: [AggregatedHoldingSnapshot] = []
+        for symbolInfo in affectedSymbols {
+            let accountIdsWithSymbol = Set(
+                accountSnapshots.compactMap { snapshot -> String? in
+                    guard snapshot.holdings?.contains(where: {
+                        $0.assetType == symbolInfo.assetType && $0.symbol == symbolInfo.symbol
+                    }) == true else {
+                        return nil
+                    }
+                    return snapshot.accountId
+                }
+            )
+            var transactions: [Transaction] = []
+            for accountId in accountIdsWithSymbol {
+                let accountTransactions = try await dataService.fetchTransactions(accountId: accountId)
+                transactions.append(contentsOf: accountTransactions.filter {
+                    $0.assetType == symbolInfo.assetType && $0.symbol == symbolInfo.symbol
+                })
+            }
+
+            if let aggregated = HoldingCalculator.calculateAggregatedHolding(
+                userId: userId,
+                assetType: symbolInfo.assetType,
+                symbol: symbolInfo.symbol,
+                accountSnapshots: accountSnapshots,
+                accounts: accounts,
+                transactions: transactions,
+                assetPriceSnapshot: priceMap["\(symbolInfo.assetType.rawValue)_\(symbolInfo.symbol)"]
+            ) {
+                try await dataService.saveAggregatedHoldingSnapshot(aggregated)
+                aggregatedHoldings.append(aggregated)
+            } else {
+                try await dataService.deleteAggregatedHoldingSnapshot(
+                    userId: userId,
+                    assetType: symbolInfo.assetType,
+                    symbol: symbolInfo.symbol
+                )
+            }
+        }
+        DebugPerformanceLog.lap("update aggregated holdings", flow: perfFlow, start: perfStart, last: &perfLast)
+
+        let liabilities = try await loadLiabilities(userId: userId, dataService: dataService, accounts: accounts)
+        DebugPerformanceLog.lap("load liabilities", flow: perfFlow, start: perfStart, last: &perfLast)
+        let usdToTwdRate = (try? await dataService.fetchExchangeRate(from: .USD, to: .TWD, date: nil)?.rate) ?? 0
+        DebugPerformanceLog.lap("load USD/TWD", flow: perfFlow, start: perfStart, last: &perfLast)
+        let twdRateTable = await loadTwdRateTable(
+            accounts: accounts,
+            accountSnapshots: accountSnapshots,
+            liabilities: liabilities,
+            usdToTwdRate: usdToTwdRate,
+            dataService: dataService
+        )
+        DebugPerformanceLog.lap("load rate table", flow: perfFlow, start: perfStart, last: &perfLast)
+        let homeSnapshot = buildHomeDashboardSnapshotFromExistingTotals(
+            userId: userId,
+            accounts: accounts,
+            accountSnapshots: accountSnapshots,
+            assetPriceSnapshots: assetPriceSnapshots,
+            existingHomeSnapshot: existingHomeSnapshot,
+            realizedGainLossDeltaByCurrency: realizedGainLossDeltaByCurrency,
+            usdToTwdRate: usdToTwdRate,
+            twdRateTable: twdRateTable
+        )
+        DebugPerformanceLog.lap("build home snapshot", flow: perfFlow, start: perfStart, last: &perfLast)
+        try await dataService.saveHomeDashboardSnapshot(homeSnapshot)
+        DebugPerformanceLog.lap("save home snapshot", flow: perfFlow, start: perfStart, last: &perfLast)
+        DebugPerformanceLog.end(perfFlow, start: perfStart)
+
+        return SnapshotBundle(
+            accountSnapshots: accountSnapshots,
+            assetPriceSnapshots: assetPriceSnapshots,
+            aggregatedHoldings: aggregatedHoldings,
             userHoldingsSnapshot: userHoldingsSnapshot
         )
     }
@@ -108,43 +274,55 @@ enum SnapshotUpdater {
                 transaction.accountId == account.id
             }
             
-            let cashBalance = CashCalculator.calculateCash(
-                accountId: account.id,
-                transactions: accountTransactions,
-                accounts: accounts
-            )
-            
-            let holdings = HoldingCalculator.calculateHoldings(from: accountTransactions)
-            let holdingItems = holdings.map { holding -> HoldingSnapshotItem in
-                HoldingSnapshotItem(
-                    id: holding.id,
-                    assetType: holding.assetType,
-                    symbol: holding.symbol,
-                    name: holding.name,
-                    quantity: holding.quantity,
-                    averageCost: holding.averageCost,
-                    currency: holding.currency,
-                    lastUpdated: holding.lastUpdated
+            snapshots.append(
+                calculateAccountSnapshot(
+                    account: account,
+                    accountTransactions: accountTransactions,
+                    accounts: accounts
                 )
-            }
-            
-            let lastTransactionDate = accountTransactions
-                .max(by: { $0.transactionDate < $1.transactionDate })?
-                .transactionDate
-            
-            let snapshot = AccountSnapshot(
-                accountId: account.id,
-                cashBalance: cashBalance,
-                holdings: holdingItems.isEmpty ? nil : holdingItems,
-                lastUpdated: Date(),
-                lastTransactionDate: lastTransactionDate,
-                version: 1
             )
-            
-            snapshots.append(snapshot)
         }
         
         return snapshots
+    }
+
+    private static func calculateAccountSnapshot(
+        account: Account,
+        accountTransactions: [Transaction],
+        accounts: [Account]
+    ) -> AccountSnapshot {
+        let cashBalance = CashCalculator.calculateCash(
+            accountId: account.id,
+            transactions: accountTransactions,
+            accounts: accounts
+        )
+
+        let holdings = HoldingCalculator.calculateHoldings(from: accountTransactions)
+        let holdingItems = holdings.map { holding -> HoldingSnapshotItem in
+            HoldingSnapshotItem(
+                id: holding.id,
+                assetType: holding.assetType,
+                symbol: holding.symbol,
+                name: holding.name,
+                quantity: holding.quantity,
+                averageCost: holding.averageCost,
+                currency: holding.currency,
+                lastUpdated: holding.lastUpdated
+            )
+        }
+
+        let lastTransactionDate = accountTransactions
+            .max(by: { $0.transactionDate < $1.transactionDate })?
+            .transactionDate
+
+        return AccountSnapshot(
+            accountId: account.id,
+            cashBalance: cashBalance,
+            holdings: holdingItems.isEmpty ? nil : holdingItems,
+            lastUpdated: Date(),
+            lastTransactionDate: lastTransactionDate,
+            version: 1
+        )
     }
     
     private static func buildSymbolInfos(from accountSnapshots: [AccountSnapshot]) -> [SymbolInfo] {
@@ -228,11 +406,16 @@ enum SnapshotUpdater {
             guard let currentPrice else { continue }
             
             let holdingInfo = holdingsBySymbol[key]
+            let displayName = SymbolListService.displayName(
+                assetType: symbolInfo.assetType,
+                symbol: symbolInfo.symbol,
+                storedName: holdingInfo?.name
+            )
             let now = Date()
             let rawSnapshot = AssetPriceSnapshot(
                 assetType: symbolInfo.assetType,
                 symbol: symbolInfo.symbol,
-                name: holdingInfo?.name,
+                name: displayName,
                 currency: holdingInfo?.currency ?? (symbolInfo.assetType == .stockTW ? .TWD : .USD),
                 currentPrice: currentPrice,
                 previousPrice: nil,
@@ -265,6 +448,33 @@ enum SnapshotUpdater {
         return allLiabilities
     }
 
+    private static func loadTwdRateTable(
+        accounts: [Account],
+        accountSnapshots: [AccountSnapshot],
+        liabilities: [Liability],
+        usdToTwdRate: Decimal,
+        dataService: DataServiceProtocol
+    ) async -> CurrencyRateTable {
+        var currencies = Set(accounts.map(\.currency))
+        currencies.formUnion(liabilities.map(\.currency))
+        for snapshot in accountSnapshots {
+            snapshot.holdings?.forEach { currencies.insert($0.currency) }
+        }
+
+        var rates: [Currency: Decimal] = [.TWD: 1]
+        if usdToTwdRate > 0 {
+            rates[.USD] = usdToTwdRate
+        }
+
+        for currency in currencies where currency != .TWD && rates[currency] == nil {
+            if let rate = try? await dataService.fetchExchangeRate(from: currency, to: .TWD, date: nil)?.rate,
+               rate > 0 {
+                rates[currency] = rate
+            }
+        }
+        return CurrencyRateTable(twdPerCurrency: rates)
+    }
+
     private static func buildHomeDashboardSnapshot(
         userId: String,
         accounts: [Account],
@@ -272,7 +482,8 @@ enum SnapshotUpdater {
         accountSnapshots: [AccountSnapshot],
         assetPriceSnapshots: [AssetPriceSnapshot],
         liabilities: [Liability],
-        usdToTwdRate: Decimal
+        usdToTwdRate: Decimal,
+        twdRateTable: CurrencyRateTable
     ) -> HomeDashboardSnapshot {
         var priceMap: [String: AssetPriceSnapshot] = [:]
         for snapshot in assetPriceSnapshots {
@@ -294,22 +505,19 @@ enum SnapshotUpdater {
                 let price = priceMap[key]?.displayPrice
                 let marketValue = (price ?? 0) * holding.quantity
                 let cost = holding.averageCost * holding.quantity
-                totalInvestmentsTWD += amountInTWD(marketValue, currency: holding.currency, usdToTwdRate: usdToTwdRate)
+                totalInvestmentsTWD += amountInTWD(marketValue, currency: holding.currency, usdToTwdRate: usdToTwdRate, twdRateTable: twdRateTable)
                 totalUnrealizedGainLossTWD += amountInTWD(
                     marketValue - cost,
                     currency: holding.currency,
-                    usdToTwdRate: usdToTwdRate
+                    usdToTwdRate: usdToTwdRate,
+                    twdRateTable: twdRateTable
                 )
             }
         }
         
         var totalCashTWD: Decimal = 0
         for (currency, amount) in cashByCurrency {
-            if currency == .USD {
-                totalCashTWD += amount * usdToTwdRate
-            } else {
-                totalCashTWD += amount
-            }
+            totalCashTWD += amountInTWD(amount, currency: currency, usdToTwdRate: usdToTwdRate, twdRateTable: twdRateTable)
         }
         
         var totalLiabilitiesTWD: Decimal = 0
@@ -317,7 +525,8 @@ enum SnapshotUpdater {
             accounts: accounts,
             liabilities: liabilities,
             transactions: transactions,
-            usdToTwdRate: usdToTwdRate
+            usdToTwdRate: usdToTwdRate,
+            twdRateTable: twdRateTable
         )
         
         let realizedByCurrency = HoldingCalculator.calculateRealizedGainLossByCurrency(from: transactions)
@@ -343,15 +552,98 @@ enum SnapshotUpdater {
         )
     }
 
+    private static func buildHomeDashboardSnapshotFromExistingTotals(
+        userId: String,
+        accounts: [Account],
+        accountSnapshots: [AccountSnapshot],
+        assetPriceSnapshots: [AssetPriceSnapshot],
+        existingHomeSnapshot: HomeDashboardSnapshot,
+        realizedGainLossDeltaByCurrency: [Currency: Decimal],
+        usdToTwdRate: Decimal,
+        twdRateTable: CurrencyRateTable
+    ) -> HomeDashboardSnapshot {
+        var priceMap: [String: AssetPriceSnapshot] = [:]
+        for snapshot in assetPriceSnapshots {
+            priceMap["\(snapshot.assetType.rawValue)_\(snapshot.symbol)"] = snapshot
+        }
+
+        var totalInvestmentsTWD: Decimal = 0
+        var totalUnrealizedGainLossTWD: Decimal = 0
+        var cashByCurrency: [Currency: Decimal] = [:]
+
+        for account in accounts where !account.accountType.isLiabilityAccount {
+            guard let snapshot = accountSnapshots.first(where: { $0.accountId == account.id }) else { continue }
+            cashByCurrency[account.currency, default: 0] += snapshot.cashBalance
+
+            guard let holdings = snapshot.holdings else { continue }
+            for holding in holdings {
+                let key = "\(holding.assetType.rawValue)_\(holding.symbol)"
+                let price = priceMap[key]?.displayPrice
+                let marketValue = (price ?? 0) * holding.quantity
+                let cost = holding.averageCost * holding.quantity
+                totalInvestmentsTWD += amountInTWD(
+                    marketValue,
+                    currency: holding.currency,
+                    usdToTwdRate: usdToTwdRate,
+                    twdRateTable: twdRateTable
+                )
+                totalUnrealizedGainLossTWD += amountInTWD(
+                    marketValue - cost,
+                    currency: holding.currency,
+                    usdToTwdRate: usdToTwdRate,
+                    twdRateTable: twdRateTable
+                )
+            }
+        }
+
+        var totalCashTWD: Decimal = 0
+        for (currency, amount) in cashByCurrency {
+            totalCashTWD += amountInTWD(
+                amount,
+                currency: currency,
+                usdToTwdRate: usdToTwdRate,
+                twdRateTable: twdRateTable
+            )
+        }
+
+        let totalAssets = totalInvestmentsTWD + totalCashTWD
+        let netWorth = totalAssets - existingHomeSnapshot.totalLiabilities
+        let totalInvestmentsCost = totalInvestmentsTWD - totalUnrealizedGainLossTWD
+
+        return HomeDashboardSnapshot(
+            userId: userId,
+            netWorth: netWorth,
+            totalLiabilities: existingHomeSnapshot.totalLiabilities,
+            totalAssets: totalAssets,
+            totalInvestmentsCost: totalInvestmentsCost,
+            totalCash: totalCashTWD,
+            twdCash: cashByCurrency[.TWD] ?? 0,
+            usdCash: cashByCurrency[.USD] ?? 0,
+            realizedGainLossTWD: existingHomeSnapshot.realizedGainLossTWD + (realizedGainLossDeltaByCurrency[.TWD] ?? 0),
+            realizedGainLossUSD: existingHomeSnapshot.realizedGainLossUSD + (realizedGainLossDeltaByCurrency[.USD] ?? 0),
+            lastUpdated: Date()
+        )
+    }
+
     /// 持股市值／損益依 `holding.currency` 換算為 TWD（與帳戶 Tab、後端 daily_portfolio_snapshot 一致）
-    private static func amountInTWD(_ amount: Decimal, currency: Currency, usdToTwdRate: Decimal) -> Decimal {
+    private static func amountInTWD(
+        _ amount: Decimal,
+        currency: Currency,
+        usdToTwdRate: Decimal,
+        twdRateTable: CurrencyRateTable
+    ) -> Decimal {
         switch currency {
         case .TWD:
             return amount
         case .USD:
+            guard usdToTwdRate > 0 else {
+                guard let rate = twdRateTable.rate(from: currency, to: .TWD) else { return amount }
+                return amount * rate
+            }
             return amount * usdToTwdRate
         default:
-            return amount
+            guard let rate = twdRateTable.rate(from: currency, to: .TWD) else { return amount }
+            return amount * rate
         }
     }
 }

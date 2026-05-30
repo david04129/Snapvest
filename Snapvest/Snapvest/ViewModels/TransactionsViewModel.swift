@@ -60,37 +60,73 @@ class TransactionsViewModel: ObservableObject {
         allowDuplicate: Bool = false,
         skipPriceValidation: Bool = false
     ) async {
+        let perfFlow = "createTransaction \(transaction.type.rawValue) \(transaction.symbol)"
+        let perfStart = DebugPerformanceLog.now()
+        var perfLast = perfStart
+        DebugPerformanceLog.start(perfFlow)
+
         if !skipPriceValidation,
            let priceError = await SymbolPriceValidator.validatePriceAvailable(
             assetType: transaction.assetType,
             symbol: transaction.symbol,
             transactionType: transaction.type
         ) {
+            DebugPerformanceLog.lap("price validation failed", flow: perfFlow, start: perfStart, last: &perfLast)
             errorMessage = priceError
             return
         }
+        DebugPerformanceLog.lap("price validation", flow: perfFlow, start: perfStart, last: &perfLast)
         
         if !allowDuplicate,
            let duplicate = await findDuplicateMatch(for: transaction) {
+            DebugPerformanceLog.lap("duplicate check failed", flow: perfFlow, start: perfStart, last: &perfLast)
             errorMessage = TransactionDuplicateChecker.alertMessage(
                 for: transaction,
                 existing: duplicate
             )
             return
         }
+        DebugPerformanceLog.lap("duplicate check", flow: perfFlow, start: perfStart, last: &perfLast)
         
         do {
             try await dataService.createTransaction(transaction)
+            DebugPerformanceLog.lap("write transaction", flow: perfFlow, start: perfStart, last: &perfLast)
+            let userId = await resolveUserId(for: transaction.accountId) ?? accounts.first?.userId ?? AppUser.id
+            DebugPerformanceLog.lap("resolve user", flow: perfFlow, start: perfStart, last: &perfLast)
             if !isBatchImporting {
-                await updateSnapshotsIfNeeded(for: transaction.accountId)
-                await updateHoldings(accountId: transaction.accountId)
+                let affectedAccountIds: Set<String> = [transaction.accountId]
+                let affectedSymbols = impactedSymbols(for: [transaction])
+                let forceFullRebuild = await requiresFullSnapshotRebuild(
+                    changedTransactions: [transaction],
+                    affectedAccountIds: affectedAccountIds,
+                    affectedSymbols: affectedSymbols
+                )
+                DebugPerformanceLog.lap(
+                    "impact analysis fullRebuild=\(forceFullRebuild)",
+                    flow: perfFlow,
+                    start: perfStart,
+                    last: &perfLast
+                )
+                await refreshPortfolioSnapshots(
+                    userId: userId,
+                    affectedAccountIds: affectedAccountIds,
+                    affectedSymbols: affectedSymbols,
+                    realizedGainLossDeltaByCurrency: realizedGainLossDeltaByCurrency(newTransaction: transaction),
+                    forceFullRebuild: forceFullRebuild
+                )
+                DebugPerformanceLog.lap("snapshot refresh", flow: perfFlow, start: perfStart, last: &perfLast)
+                Task { await updateHoldings(accountId: transaction.accountId) }
             }
             if !isBatchImporting {
-                await loadTransactions(userId: accounts.first?.userId ?? "")
-                notifyTransactionsDidChange()
+                await loadTransactions(userId: userId)
+                DebugPerformanceLog.lap("load transactions", flow: perfFlow, start: perfStart, last: &perfLast)
+                notifyTransactionsDidChange(affectedAccountIds: [transaction.accountId], showsLoadingOverlay: true)
+                DebugPerformanceLog.lap("notify UI", flow: perfFlow, start: perfStart, last: &perfLast)
             }
+            DebugPerformanceLog.end(perfFlow, start: perfStart)
         } catch {
             errorMessage = "建立交易失敗：\(error.localizedDescription)"
+            DebugPerformanceLog.end("\(perfFlow) failed", start: perfStart)
         }
     }
     
@@ -417,31 +453,68 @@ class TransactionsViewModel: ObservableObject {
     }
     
     func updateTransaction(_ transaction: Transaction, previousAccountId: String? = nil, allowDuplicate: Bool = false) async {
+        let perfFlow = "updateTransaction \(transaction.type.rawValue) \(transaction.symbol)"
+        let perfStart = DebugPerformanceLog.now()
+        var perfLast = perfStart
+        DebugPerformanceLog.start(perfFlow)
+
+        let previousTransaction = transactions.first { $0.id == transaction.id }
+
         if !allowDuplicate,
            let duplicate = await findDuplicateMatch(
             for: transaction,
             excludingTransactionId: transaction.id
            ) {
+            DebugPerformanceLog.lap("duplicate check failed", flow: perfFlow, start: perfStart, last: &perfLast)
             errorMessage = TransactionDuplicateChecker.alertMessage(
                 for: transaction,
                 existing: duplicate
             )
             return
         }
+        DebugPerformanceLog.lap("duplicate check", flow: perfFlow, start: perfStart, last: &perfLast)
         
         do {
             try await dataService.updateTransaction(transaction)
-            await updateSnapshotsIfNeeded(for: transaction.accountId)
-            await updateHoldings(accountId: transaction.accountId)
-            if let previousAccountId, previousAccountId != transaction.accountId {
-                await updateSnapshotsIfNeeded(for: previousAccountId)
-                await updateHoldings(accountId: previousAccountId)
-            }
+            DebugPerformanceLog.lap("write transaction", flow: perfFlow, start: perfStart, last: &perfLast)
+            let affectedAccountIds = Set([transaction.accountId, previousAccountId, previousTransaction?.accountId].compactMap { $0 })
+            let affectedSymbols = impactedSymbols(for: [transaction, previousTransaction].compactMap { $0 })
+            let forceFullRebuild = await requiresFullSnapshotRebuild(
+                changedTransactions: [transaction, previousTransaction].compactMap { $0 },
+                affectedAccountIds: affectedAccountIds,
+                affectedSymbols: affectedSymbols
+            )
+            DebugPerformanceLog.lap(
+                "impact analysis fullRebuild=\(forceFullRebuild)",
+                flow: perfFlow,
+                start: perfStart,
+                last: &perfLast
+            )
             let userId = await resolveUserId(for: transaction.accountId) ?? AppUser.id
+            DebugPerformanceLog.lap("resolve user", flow: perfFlow, start: perfStart, last: &perfLast)
+            await refreshPortfolioSnapshots(
+                userId: userId,
+                affectedAccountIds: affectedAccountIds,
+                affectedSymbols: affectedSymbols,
+                realizedGainLossDeltaByCurrency: realizedGainLossDeltaByCurrency(
+                    newTransaction: transaction,
+                    previousTransaction: previousTransaction
+                ),
+                forceFullRebuild: forceFullRebuild
+            )
+            DebugPerformanceLog.lap("snapshot refresh", flow: perfFlow, start: perfStart, last: &perfLast)
+            Task { await updateHoldings(accountId: transaction.accountId) }
+            if let previousAccountId, previousAccountId != transaction.accountId {
+                Task { await updateHoldings(accountId: previousAccountId) }
+            }
             await loadTransactions(userId: userId)
-            notifyTransactionsDidChange()
+            DebugPerformanceLog.lap("load transactions", flow: perfFlow, start: perfStart, last: &perfLast)
+            notifyTransactionsDidChange(affectedAccountIds: affectedAccountIds, showsLoadingOverlay: true)
+            DebugPerformanceLog.lap("notify UI", flow: perfFlow, start: perfStart, last: &perfLast)
+            DebugPerformanceLog.end(perfFlow, start: perfStart)
         } catch {
             errorMessage = "更新交易失敗：\(error.localizedDescription)"
+            DebugPerformanceLog.end("\(perfFlow) failed", start: perfStart)
         }
     }
     
@@ -629,6 +702,8 @@ class TransactionsViewModel: ObservableObject {
             }
             
             let userId = accounts.first?.userId ?? AppUser.id
+            let affectedAccountIds: Set<String> = [transaction.accountId]
+            let affectedSymbols = impactedSymbols(for: [transaction])
             
             if transaction.type == .repayment {
                 let allAccounts = try await dataService.fetchAccounts(userId: userId)
@@ -687,7 +762,7 @@ class TransactionsViewModel: ObservableObject {
                 }
                 
                 try await dataService.deleteTransaction(transactionId)
-                await updateHoldings(accountId: transaction.accountId)
+                Task { await updateHoldings(accountId: transaction.accountId) }
             }
             else if transaction.type == .liability {
                 let allAccounts = try await dataService.fetchAccounts(userId: userId)
@@ -709,19 +784,30 @@ class TransactionsViewModel: ObservableObject {
                         try await dataService.deleteAccount(debtAccountId)
                     default:
                         try await dataService.deleteTransaction(transactionId)
-                        await updateHoldings(accountId: transaction.accountId)
+                        Task { await updateHoldings(accountId: transaction.accountId) }
                     }
                 } else {
                     try await dataService.deleteTransaction(transactionId)
                 }
             } else {
                 try await dataService.deleteTransaction(transactionId)
-                await updateHoldings(accountId: transaction.accountId)
+                Task { await updateHoldings(accountId: transaction.accountId) }
             }
             
             await loadTransactions(userId: userId)
-            await refreshPortfolioSnapshots(userId: userId)
-            notifyTransactionsDidChange()
+            let forceFullRebuild = await requiresFullSnapshotRebuild(
+                changedTransactions: [transaction],
+                affectedAccountIds: affectedAccountIds,
+                affectedSymbols: affectedSymbols
+            )
+            await refreshPortfolioSnapshots(
+                userId: userId,
+                affectedAccountIds: affectedAccountIds,
+                affectedSymbols: affectedSymbols,
+                realizedGainLossDeltaByCurrency: realizedGainLossDeltaByCurrency(deletedTransaction: transaction),
+                forceFullRebuild: forceFullRebuild
+            )
+            notifyTransactionsDidChange(affectedAccountIds: affectedAccountIds, showsLoadingOverlay: true)
             // 清除錯誤訊息（如果刪除成功）
             await MainActor.run {
                 errorMessage = nil
@@ -735,11 +821,51 @@ class TransactionsViewModel: ObservableObject {
         }
     }
 
-    private func refreshPortfolioSnapshots(userId: String) async {
+    private func refreshPortfolioSnapshots(
+        userId: String,
+        affectedAccountIds: Set<String>? = nil,
+        affectedSymbols: [SymbolInfo] = [],
+        realizedGainLossDeltaByCurrency: [Currency: Decimal] = [:],
+        forceFullRebuild: Bool = false
+    ) async {
+        let perfFlow = "snapshotRefresh \(forceFullRebuild ? "full" : "incremental") accounts=\(affectedAccountIds?.count ?? 0) symbols=\(affectedSymbols.count)"
+        let perfStart = DebugPerformanceLog.now()
+        var perfLast = perfStart
+        DebugPerformanceLog.start(perfFlow)
+
+        if let affectedAccountIds, !forceFullRebuild {
+            do {
+                _ = try await SnapshotUpdater.updateSnapshotsIncrementally(
+                    userId: userId,
+                    affectedAccountIds: affectedAccountIds,
+                    affectedSymbols: affectedSymbols,
+                    realizedGainLossDeltaByCurrency: realizedGainLossDeltaByCurrency,
+                    dataService: dataService,
+                    priceService: PriceService(dataService: dataService)
+                )
+                DebugPerformanceLog.lap("incremental updater", flow: perfFlow, start: perfStart, last: &perfLast)
+                dataService.persistLocalStore(for: userId)
+                DebugPerformanceLog.lap("persist local store", flow: perfFlow, start: perfStart, last: &perfLast)
+                DebugPerformanceLog.end(perfFlow, start: perfStart)
+                return
+            } catch {
+                #if DEBUG
+                print("[TransactionsViewModel] incremental snapshot failed: \(error.localizedDescription)")
+                #endif
+                DebugPerformanceLog.lap("incremental failed, fallback full", flow: perfFlow, start: perfStart, last: &perfLast)
+            }
+        }
+
         await SnapshotRefreshCoordinator.rebuildAndNotify(
             userId: userId,
-            dataService: dataService
+            dataService: dataService,
+            syncPortfolio: false,
+            updatePriceMetadata: false,
+            deferRemoteWork: true,
+            postsUpdateNotification: false
         )
+        DebugPerformanceLog.lap("full rebuild", flow: perfFlow, start: perfStart, last: &perfLast)
+        DebugPerformanceLog.end(perfFlow, start: perfStart)
     }
     
     private func updateSnapshotsIfNeeded(for accountId: String) async {
@@ -747,8 +873,91 @@ class TransactionsViewModel: ObservableObject {
         await refreshPortfolioSnapshots(userId: userId)
     }
 
-    private func notifyTransactionsDidChange() {
-        NotificationCenter.default.post(name: .transactionsDidChange, object: nil)
+    private func impactedSymbols(for transactions: [Transaction]) -> [SymbolInfo] {
+        var symbols: [SymbolInfo] = []
+        for transaction in transactions {
+            guard transaction.type == .buy || transaction.type == .sell else { continue }
+            let symbol = normalizedSnapshotSymbol(assetType: transaction.assetType, symbol: transaction.symbol)
+            guard !symbol.isEmpty else { continue }
+            let symbolInfo = SymbolInfo(assetType: transaction.assetType, symbol: symbol)
+            if !symbols.contains(symbolInfo) {
+                symbols.append(symbolInfo)
+            }
+        }
+        return symbols
+    }
+
+    private func requiresFullSnapshotRebuild(
+        changedTransactions: [Transaction],
+        affectedAccountIds: Set<String>,
+        affectedSymbols: [SymbolInfo]
+    ) async -> Bool {
+        if changedTransactions.contains(where: { transaction in
+            transaction.type == .liability || transaction.type == .repayment
+        }) {
+            return true
+        }
+        guard !affectedSymbols.isEmpty else { return false }
+        let changedTransactionIds = Set(changedTransactions.map(\.id))
+
+        for accountId in affectedAccountIds {
+            guard let accountTransactions = try? await dataService.fetchTransactions(accountId: accountId) else {
+                return true
+            }
+            for symbolInfo in affectedSymbols {
+                if accountTransactions.contains(where: { transaction in
+                    transaction.type == .sell &&
+                    !changedTransactionIds.contains(transaction.id) &&
+                    transaction.assetType == symbolInfo.assetType &&
+                    normalizedSnapshotSymbol(assetType: transaction.assetType, symbol: transaction.symbol) == symbolInfo.symbol
+                }) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    private func normalizedSnapshotSymbol(assetType: AssetType, symbol: String) -> String {
+        let trimmed = symbol.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch assetType {
+        case .crypto:
+            return SymbolListService.normalizedCryptoSymbol(trimmed)
+        default:
+            return trimmed
+        }
+    }
+
+    private func realizedGainLossDeltaByCurrency(
+        newTransaction: Transaction? = nil,
+        previousTransaction: Transaction? = nil,
+        deletedTransaction: Transaction? = nil
+    ) -> [Currency: Decimal] {
+        var deltas: [Currency: Decimal] = [:]
+        if let previousTransaction, previousTransaction.type == .sell {
+            deltas[previousTransaction.currency, default: 0] -= previousTransaction.realizedGainLoss ?? 0
+        }
+        if let deletedTransaction, deletedTransaction.type == .sell {
+            deltas[deletedTransaction.currency, default: 0] -= deletedTransaction.realizedGainLoss ?? 0
+        }
+        if let newTransaction, newTransaction.type == .sell {
+            deltas[newTransaction.currency, default: 0] += newTransaction.realizedGainLoss ?? 0
+        }
+        return deltas
+    }
+
+    private func notifyTransactionsDidChange(
+        affectedAccountIds: Set<String> = [],
+        showsLoadingOverlay: Bool = false
+    ) {
+        NotificationCenter.default.post(
+            name: .transactionsDidChange,
+            object: nil,
+            userInfo: [
+                PortfolioMutationUserInfoKey.affectedAccountIds: Array(affectedAccountIds),
+                PortfolioMutationUserInfoKey.showsLoadingOverlay: showsLoadingOverlay
+            ]
+        )
     }
 
     private func resolveMaxSellQuantity(

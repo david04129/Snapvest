@@ -129,10 +129,12 @@ enum PieChartGroupingModeSupport {
 }
 
 enum PieChartGroupingEngine {
-    static let cashItemIds = ["twd_cash", "usd_cash"]
+    static func cashItemId(for currency: Currency) -> String {
+        "\(currency.rawValue.lowercased())_cash"
+    }
 
     static func isCashItemId(_ itemId: String) -> Bool {
-        cashItemIds.contains(itemId)
+        itemId.hasSuffix("_cash")
     }
 
     static func isItemInAnyGroup(_ itemId: String, groups: [PieChartItemGroup]) -> Bool {
@@ -224,11 +226,13 @@ enum PieChartGroupingEngine {
         var result: [PieChartDataItem] = []
 
         if PieChartGroupingModeSupport.prependsCashInGroupedChart(mode: mode) {
-            for cashId in cashItemIds {
-                guard let item = itemById[cashId],
-                      !isItemInAnyGroup(cashId, groups: groups) else { continue }
+            let cashItems = baseItems
+                .filter { isCashItemId($0.id) }
+                .sorted { $0.marketValue > $1.marketValue }
+            for item in cashItems {
+                guard !isItemInAnyGroup(item.id, groups: groups) else { continue }
                 result.append(item)
-                consumed.insert(cashId)
+                consumed.insert(item.id)
             }
         }
 

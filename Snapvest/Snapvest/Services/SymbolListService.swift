@@ -93,12 +93,12 @@ struct SymbolListService {
     private static var cryptoCoingeckoIdBySymbol: [String: String]?
 
     /// 台股代號 → 簡稱（symbols_tw.json）
-    static func twDisplayName(for symbol: String) -> String? {
+    nonisolated static func twDisplayName(for symbol: String) -> String? {
         TWSymbolNameLookup.displayName(for: symbol)
     }
 
     /// 加密貨幣代號統一為大寫（BTC、ETH），與後端抓價一致
-    static func normalizedCryptoSymbol(_ symbol: String) -> String {
+    nonisolated static func normalizedCryptoSymbol(_ symbol: String) -> String {
         symbol.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
     }
 
@@ -108,9 +108,34 @@ struct SymbolListService {
     }
 
     /// 加密貨幣 UI 顯示：僅大寫代號（BTC、ETH）
-    static func cryptoDisplayName(for symbol: String, storedName: String? = nil) -> String {
+    nonisolated static func cryptoDisplayName(for symbol: String, storedName: String? = nil) -> String {
         _ = storedName
         return normalizedCryptoSymbol(symbol)
+    }
+
+    nonisolated static func displayName(
+        assetType: AssetType,
+        symbol: String,
+        storedName: String? = nil
+    ) -> String {
+        let trimmedSymbol = symbol.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedName = storedName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let usableName = trimmedName.flatMap { name -> String? in
+            guard !name.isEmpty, name != trimmedSymbol else { return nil }
+            return name
+        }
+        switch assetType {
+        case .stockTW:
+            return twDisplayName(for: trimmedSymbol)
+                ?? usableName
+                ?? trimmedSymbol
+        case .crypto:
+            return cryptoDisplayName(for: trimmedSymbol, storedName: trimmedName)
+        case .stockUS:
+            return trimmedSymbol.uppercased()
+        case .cash:
+            return usableName ?? trimmedSymbol
+        }
     }
 
     /// 標題下方是否另顯示代號（台股：名稱與代號不同時才顯示；美股／加密只顯示代號，不重複）

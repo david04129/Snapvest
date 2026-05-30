@@ -980,15 +980,14 @@ struct TransactionImportView: View {
         switch account.accountType {
         case .twdSecurities:
             accountHint = """
-            Account: Taiwan securities (台股 + 複委託同一帳戶).
-            asset_type: stock_tw (台股代號) or stock_us (複委託美股代號大寫).
-            台股 price=TWD/股; 複委託 price=USD/股. currency 留空.
+            Account: Taiwan securities ONLY.
+            asset_type: stock_tw only. Do NOT include US stocks or crypto rows.
+            台股 price=TWD/股. currency 留空.
             """
             examples = """
             \(csvHeader)
-            2025-06-17,buy,stock_us,VOO,1.35879,551.96,,0,,,
-            2025-07-07,sell,stock_us,AMD,30,136.3,,0,,,
             2025-01-10,buy,stock_tw,0050,100,150.5,,20,,,
+            2025-02-18,sell,stock_tw,2330,10,880,,20,,,
             """
         case .usdAccount:
             accountHint = "Account: US stocks ONLY (asset_type=stock_us). Do NOT use stock_tw or Taiwan numeric symbols."
@@ -1034,7 +1033,7 @@ struct TransactionImportView: View {
         let example: String
         switch account.accountType {
         case .twdSecurities:
-            accountHint = "asset_type: stock_tw or stock_us. 台股 price=TWD; 複委託 price=USD."
+            accountHint = "asset_type=stock_tw only. 台股 price=TWD."
             example = "\(csvHeader)\n\(today),buy,stock_tw,0050,100,150.5,,0,,,"
         case .usdAccount:
             accountHint = "asset_type=stock_us, price=USD per share."

@@ -9,12 +9,22 @@ import SwiftUI
 
 struct UsdTwdRateCaptionView: View {
     var preferredRate: Decimal?
+    var displayCurrency: Currency = .TWD
+    var twdPerDisplayCurrency: Decimal = 1
     var alignment: HorizontalAlignment = .leading
     
-    private var resolvedRate: Decimal {
+    private var resolvedUsdToTwdRate: Decimal {
         if let preferredRate, preferredRate > 0 { return preferredRate }
         if let cached = ExchangeRateSessionCache.usdToTwd, cached > 0 { return cached }
         return 0
+    }
+
+    private var displayRate: Decimal {
+        if displayCurrency == .USD { return 1 }
+        guard resolvedUsdToTwdRate > 0 else { return 0 }
+        if displayCurrency == .TWD { return resolvedUsdToTwdRate }
+        guard twdPerDisplayCurrency > 0 else { return 0 }
+        return resolvedUsdToTwdRate / twdPerDisplayCurrency
     }
     
     private var resolvedUpdatedAt: Date? {
@@ -22,9 +32,9 @@ struct UsdTwdRateCaptionView: View {
     }
     
     var body: some View {
-        if resolvedRate > 0 {
+        if displayRate > 0 {
             HStack(spacing: 6) {
-                Text("1 USD = \(resolvedRate.formatted(fractionDigits: 2)) TWD")
+                Text("1 USD = \(displayRate.formatted(fractionDigits: 4)) \(displayCurrency.rawValue)")
                 if let resolvedUpdatedAt {
                     Text("·")
                     Text("更新 \(DataFreshnessFormatter.label(for: resolvedUpdatedAt))")

@@ -20,7 +20,7 @@ struct TrendChartPoint: Identifiable, Equatable {
     func displayValue(for mode: TrendMetricMode) -> Decimal {
         mode == .totalAssets ? totalAssets : netWorth
     }
-    
+
     /// 未實現損益報酬率（相對於總資產扣除未實現損益的近似成本）
     var unrealizedReturnPercent: Decimal {
         let costBasis = totalAssets - unrealizedGainLoss
@@ -160,6 +160,15 @@ struct HomeTrendChartSection: View {
         selectedPoint ?? filteredPoints.last
     }
     
+    private var baseDivisor: Decimal {
+        guard currency != .TWD, portfolioViewModel.twdPerBaseCurrency > 0 else { return 1 }
+        return portfolioViewModel.twdPerBaseCurrency
+    }
+
+    private func chartDisplayValue(for point: TrendChartPoint) -> Decimal {
+        point.displayValue(for: metricMode) / baseDivisor
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             chartTitleHeader
@@ -181,6 +190,7 @@ struct HomeTrendChartSection: View {
                     rangeStartPoint: startPoint,
                     metricMode: metricMode,
                     currency: currency,
+                    twdPerBaseCurrency: baseDivisor,
                     isSelected: selectedPoint != nil,
                     hideAmounts: hideHomeAmounts
                 )
@@ -276,6 +286,7 @@ struct HomeTrendChartSection: View {
             Text(metricMode.rawValue)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundColor(AppColors.appPrimary)
+            CurrencyCodeChip(currency: currency, tint: AppColors.appPrimary)
             Spacer()
         }
         .padding(.horizontal, 16)
@@ -285,7 +296,7 @@ struct HomeTrendChartSection: View {
     private var trendChart: some View {
         Chart {
             ForEach(filteredPoints) { point in
-                let value = point.displayValue(for: metricMode)
+                let value = chartDisplayValue(for: point)
                 AreaMark(
                     x: .value("日期", point.date),
                     y: .value("金額", value)
@@ -309,7 +320,7 @@ struct HomeTrendChartSection: View {
             }
             
             if let selected = selectedPoint ?? filteredPoints.last {
-                let selectedValue = selected.displayValue(for: metricMode)
+                let selectedValue = chartDisplayValue(for: selected)
                 RuleMark(x: .value("選取", selected.date))
                     .foregroundStyle(Color.secondaryText.opacity(0.45))
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
@@ -368,7 +379,7 @@ struct HomeTrendChartSection: View {
     
     private var yAxisDomain: ClosedRange<Double> {
         let values = filteredPoints.map {
-            NSDecimalNumber(decimal: $0.displayValue(for: metricMode)).doubleValue
+            NSDecimalNumber(decimal: chartDisplayValue(for: $0)).doubleValue
         }
         guard let minV = values.min(), let maxV = values.max() else { return 0...1 }
         let padding = max((maxV - minV) * 0.08, maxV * 0.02)
@@ -502,19 +513,27 @@ struct TrendChartValueInfo: View {
     let rangeStartPoint: TrendChartPoint
     let metricMode: TrendMetricMode
     let currency: Currency
+    let twdPerBaseCurrency: Decimal
     let isSelected: Bool
     var hideAmounts: Bool = false
 
-    private var intervalChange: TrendChartIntervalChange {
-        TrendChartIntervalChange(
-            startPoint: rangeStartPoint,
-            endPoint: endPoint,
-            metricMode: metricMode
-        )
+    private var baseDivisor: Decimal {
+        guard currency != .TWD, twdPerBaseCurrency > 0 else { return 1 }
+        return twdPerBaseCurrency
     }
 
     private var displayValue: Decimal {
-        endPoint.displayValue(for: metricMode)
+        endPoint.displayValue(for: metricMode) / baseDivisor
+    }
+
+    private var changeAmount: Decimal {
+        displayValue - (rangeStartPoint.displayValue(for: metricMode) / baseDivisor)
+    }
+
+    private var changePercent: Decimal {
+        let startValue = rangeStartPoint.displayValue(for: metricMode) / baseDivisor
+        guard startValue != 0 else { return 0 }
+        return (changeAmount / abs(startValue)) * 100
     }
 
     private var valueColor: Color {
@@ -526,21 +545,23 @@ struct TrendChartValueInfo: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(
-                hideAmounts
+            CurrencyAmountLabel(
+                text: hideAmounts
                     ? HomeAmountPrivacyFormat.masked
-                    : displayValue.formatted(currency: currency)
+                    : displayValue.formatted(currency: currency),
+                currency: currency,
+                font: .system(size: 28, weight: .bold, design: .rounded),
+                weight: .bold,
+                color: valueColor
             )
-                .font(.system(size: 28, weight: .bold, design: .rounded))
-                .foregroundColor(valueColor)
                 .contentTransition(.numericText())
                 .animation(ChartMotion.switchSpring, value: displayValue)
 
             Text(intervalChangeText)
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(Color.marketColor(for: intervalChange.changeAmount))
+                .foregroundColor(Color.marketColor(for: changeAmount))
                 .contentTransition(.numericText())
-                .animation(ChartMotion.switchSpring, value: intervalChange.changeAmount)
+                .animation(ChartMotion.switchSpring, value: changeAmount)
 
             Text(formatDate(endPoint.date))
                 .font(.system(size: 13, weight: .semibold))
@@ -550,12 +571,12 @@ struct TrendChartValueInfo: View {
     }
 
     private var intervalChangeText: String {
-        let percent = formatPercent(intervalChange.changePercent)
+        let percent = formatPercent(changePercent)
         if hideAmounts {
             return percent
         }
-        let prefix = intervalChange.changeAmount >= 0 ? "+" : ""
-        let amount = prefix + intervalChange.changeAmount.formatted(currency: currency)
+        let prefix = changeAmount >= 0 ? "+" : ""
+        let amount = prefix + changeAmount.formatted(currency: currency, showSymbol: false)
         return "\(amount) (\(percent))"
     }
 

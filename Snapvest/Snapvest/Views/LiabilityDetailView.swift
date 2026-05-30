@@ -132,11 +132,13 @@ struct LiabilityDetailView: View {
             MetricTile(
                 title: "剩餘本金",
                 value: currentLiability.remainingBalance.formatted(currency: currentLiability.currency),
+                currency: currentLiability.currency,
                 valueColor: .lossRed
             )
             MetricTile(
                 title: "每月應繳",
-                value: currentLiability.monthlyPayment.formatted(currency: currentLiability.currency)
+                value: currentLiability.monthlyPayment.formatted(currency: currentLiability.currency),
+                currency: currentLiability.currency
             )
         }
     }

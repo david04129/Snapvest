@@ -27,6 +27,7 @@ struct HomeShareRenderConfig {
     let hideAmounts: Bool
     let isDarkMode: Bool
     let currency: Currency
+    let twdPerBaseCurrency: Decimal
     let generatedAt: Date
 
     let includeTrend: Bool

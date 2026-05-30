@@ -74,6 +74,37 @@ class AccountsViewModel: ObservableObject {
     func refreshBalances(userId: String, preloadedLiabilities: [Liability] = []) async {
         await applyFromPersisted(userId: userId, liabilities: preloadedLiabilities)
     }
+
+    func applyChangedAccountsFromPersisted(
+        userId: String,
+        affectedAccountIds: Set<String>,
+        usdToTwdRate: Decimal,
+        liabilities: [Liability] = []
+    ) async {
+        if accounts.isEmpty {
+            await loadAccounts(userId: userId)
+        }
+
+        for account in accounts where affectedAccountIds.contains(account.id) {
+            guard !account.isArchived else {
+                balancesByAccountId.removeValue(forKey: account.id)
+                continue
+            }
+            let balance = await AccountsSnapshotDisplayBuilder.buildAccount(
+                account: account,
+                accounts: accounts,
+                userId: userId,
+                dataService: dataService,
+                usdToTwdRate: usdToTwdRate,
+                liabilities: liabilities
+            )
+            balancesByAccountId[account.id] = balance
+        }
+
+        recalculateCategoryTotalsFromCachedBalances()
+        balancesLoading = false
+        balancesLoadedOnce = true
+    }
     
     func createAccount(_ account: Account) async {
         do {
@@ -86,6 +117,28 @@ class AccountsViewModel: ObservableObject {
         } catch {
             errorMessage = "建立帳戶失敗：\(error.localizedDescription)"
         }
+    }
+
+    private func recalculateCategoryTotalsFromCachedBalances() {
+        var totals: [AccountType: Decimal] = [:]
+        var debtTotal: Decimal = 0
+        var otherDebtTotal: Decimal = 0
+
+        for account in accounts where !account.isArchived {
+            guard let balance = balancesByAccountId[account.id] else { continue }
+            switch account.accountType {
+            case .debt:
+                debtTotal += balance.twdEquivalent ?? balance.remainingBalance
+            case .otherDebt:
+                otherDebtTotal += balance.twdEquivalent ?? balance.remainingBalance
+            default:
+                totals[account.accountType, default: 0] += balance.twdEquivalent ?? balance.totalAssets
+            }
+        }
+
+        categoryTotalsTWD = totals
+        debtCategoryTotalBalance = debtTotal
+        otherDebtCategoryTotalBalance = otherDebtTotal
     }
     
     /// 永久刪除帳戶與其交易、持股快照、負債資料；成功回傳 nil。

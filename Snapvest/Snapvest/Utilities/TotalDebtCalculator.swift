@@ -9,14 +9,24 @@ import Foundation
 
 enum TotalDebtCalculator {
     
-    static func convertToTWD(_ amount: Decimal, currency: Currency, usdToTwdRate: Decimal) -> Decimal {
+    static func convertToTWD(
+        _ amount: Decimal,
+        currency: Currency,
+        usdToTwdRate: Decimal,
+        twdRateTable: CurrencyRateTable = CurrencyRateTable()
+    ) -> Decimal {
         switch currency {
         case .TWD:
             return amount
         case .USD:
+            guard usdToTwdRate > 0 else {
+                guard let rate = twdRateTable.rate(from: currency, to: .TWD) else { return amount }
+                return amount * rate
+            }
             return amount * usdToTwdRate
         default:
-            return amount
+            guard let rate = twdRateTable.rate(from: currency, to: .TWD) else { return amount }
+            return amount * rate
         }
     }
     
@@ -25,7 +35,8 @@ enum TotalDebtCalculator {
         accounts: [Account],
         liabilities: [Liability],
         transactions: [Transaction],
-        usdToTwdRate: Decimal
+        usdToTwdRate: Decimal,
+        twdRateTable: CurrencyRateTable = CurrencyRateTable()
     ) -> Decimal {
         var total: Decimal = 0
         
@@ -36,7 +47,8 @@ enum TotalDebtCalculator {
             total += convertToTWD(
                 liability.remainingBalance,
                 currency: liability.currency,
-                usdToTwdRate: usdToTwdRate
+                usdToTwdRate: usdToTwdRate,
+                twdRateTable: twdRateTable
             )
         }
         
@@ -49,7 +61,8 @@ enum TotalDebtCalculator {
             total += convertToTWD(
                 remaining,
                 currency: account.currency,
-                usdToTwdRate: usdToTwdRate
+                usdToTwdRate: usdToTwdRate,
+                twdRateTable: twdRateTable
             )
         }
         
@@ -60,7 +73,8 @@ enum TotalDebtCalculator {
     static func otherDebtCategoryTotalTWD(
         accounts: [Account],
         transactions: [Transaction],
-        usdToTwdRate: Decimal
+        usdToTwdRate: Decimal,
+        twdRateTable: CurrencyRateTable = CurrencyRateTable()
     ) -> Decimal {
         accounts
             .filter { $0.accountType == .otherDebt && !$0.isArchived }
@@ -73,7 +87,8 @@ enum TotalDebtCalculator {
                 return partial + convertToTWD(
                     remaining,
                     currency: account.currency,
-                    usdToTwdRate: usdToTwdRate
+                    usdToTwdRate: usdToTwdRate,
+                    twdRateTable: twdRateTable
                 )
             }
     }

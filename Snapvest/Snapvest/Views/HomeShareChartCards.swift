@@ -36,6 +36,7 @@ struct HomeTrendChartShareCard: View {
                     rangeStartPoint: startPoint,
                     metricMode: config.trendMetricMode,
                     currency: config.currency,
+                    twdPerBaseCurrency: config.twdPerBaseCurrency,
                     isSelected: false,
                     hideAmounts: hideHomeAmounts
                 )
@@ -57,7 +58,7 @@ struct HomeTrendChartShareCard: View {
     private var trendChart: some View {
         Chart {
             ForEach(filteredPoints) { point in
-                let value = point.displayValue(for: config.trendMetricMode)
+                let value = displayValue(for: point)
                 AreaMark(
                     x: .value("日期", point.date),
                     y: .value("金額", value)
@@ -81,7 +82,7 @@ struct HomeTrendChartShareCard: View {
             }
 
             if let selected = displayPoint {
-                let selectedValue = selected.displayValue(for: config.trendMetricMode)
+                let selectedValue = displayValue(for: selected)
                 PointMark(
                     x: .value("日期", selected.date),
                     y: .value("金額", selectedValue)
@@ -113,6 +114,15 @@ struct HomeTrendChartShareCard: View {
             }
         }
         .chartYScale(domain: yAxisDomain)
+    }
+
+    private var baseDivisor: Decimal {
+        guard config.currency != .TWD, config.twdPerBaseCurrency > 0 else { return 1 }
+        return config.twdPerBaseCurrency
+    }
+
+    private func displayValue(for point: TrendChartPoint) -> Decimal {
+        point.displayValue(for: config.trendMetricMode) / baseDivisor
     }
 
     private var yAxisDomain: ClosedRange<Double> {
@@ -191,7 +201,7 @@ struct HomePieChartShareCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            shareCardHeader(title: "圓餅圖", subtitle: config.pieMode.rawValue)
+            shareCardHeader(title: "圓餅圖", subtitle: config.pieMode.rawValue, currency: config.currency)
 
             if displayItems.isEmpty {
                 Text("尚無可顯示的資料")
@@ -214,6 +224,8 @@ struct HomePieChartShareCard: View {
                         rows: legendRows,
                         displayMode: config.pieMode,
                         denominator: denominator,
+                        displayCurrency: config.currency,
+                        twdPerDisplayCurrency: config.twdPerBaseCurrency,
                         selectedId: .constant(nil),
                         isGroupingEnabled: config.pieIsGroupingEnabled,
                         isEditingGroups: false,
@@ -421,7 +433,11 @@ struct HomePerformanceChartShareCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            shareCardHeader(title: "績效圖", subtitle: config.performanceMode.rawValue)
+            shareCardHeader(
+                title: "績效圖",
+                subtitle: config.performanceMode.rawValue,
+                currency: config.performanceMode == .gainLoss ? config.currency : nil
+            )
 
             if rows.isEmpty {
                 Text("尚無可顯示的持股績效")
@@ -435,7 +451,9 @@ struct HomePerformanceChartShareCard: View {
                         HomeSharePerformanceRow(
                             row: row,
                             mode: config.performanceMode,
-                            maxAbsValue: maxAbsChartValue
+                            maxAbsValue: maxAbsChartValue,
+                            currency: config.currency,
+                            twdPerBaseCurrency: config.twdPerBaseCurrency
                         )
                     }
                 }
@@ -449,7 +467,9 @@ struct HomePerformanceChartShareCard: View {
 
     private func chartValue(for row: HoldingPerformanceRow) -> Double {
         switch config.performanceMode {
-        case .gainLoss: return row.gainLossDouble
+        case .gainLoss:
+            let baseDivisor: Decimal = config.currency == .TWD ? 1 : (config.twdPerBaseCurrency > 0 ? config.twdPerBaseCurrency : 1)
+            return NSDecimalNumber(decimal: row.unrealizedGainLossTWD / baseDivisor).doubleValue
         case .returnRate: return row.returnPercentDouble
         }
     }
@@ -457,7 +477,7 @@ struct HomePerformanceChartShareCard: View {
 
 // MARK: - 共用
 
-private func shareCardHeader(title: String, subtitle: String) -> some View {
+private func shareCardHeader(title: String, subtitle: String, currency: Currency? = nil) -> some View {
     HStack(alignment: .firstTextBaseline) {
         Text(title)
             .font(.system(size: 17, weight: .bold))
@@ -468,6 +488,9 @@ private func shareCardHeader(title: String, subtitle: String) -> some View {
         Text(subtitle)
             .font(.system(size: 15, weight: .semibold))
             .foregroundColor(AppColors.appPrimary)
+        if let currency {
+            CurrencyCodeChip(currency: currency, tint: AppColors.appPrimary)
+        }
         Spacer()
     }
     .padding(.horizontal, 16)
@@ -479,14 +502,25 @@ private struct HomeSharePerformanceRow: View {
     let row: HoldingPerformanceRow
     let mode: PerformanceDisplayMode
     let maxAbsValue: Double
+    let currency: Currency
+    let twdPerBaseCurrency: Decimal
 
     @Environment(\.homeAmountsHidden) private var hideHomeAmounts
 
     private var value: Double {
         switch mode {
-        case .gainLoss: return row.gainLossDouble
+        case .gainLoss:
+            return NSDecimalNumber(decimal: displayGainLoss).doubleValue
         case .returnRate: return row.returnPercentDouble
         }
+    }
+
+    private var displayGainLoss: Decimal {
+        guard currency != .TWD,
+              twdPerBaseCurrency > 0 else {
+            return row.unrealizedGainLossTWD
+        }
+        return row.unrealizedGainLossTWD / twdPerBaseCurrency
     }
 
     private var isPositive: Bool { value >= 0 }
@@ -501,7 +535,8 @@ private struct HomeSharePerformanceRow: View {
         case .gainLoss:
             if hideHomeAmounts { return HomeAmountPrivacyFormat.masked }
             let prefix = row.unrealizedGainLossTWD >= 0 ? "+" : ""
-            return prefix + row.unrealizedGainLossTWD.formatted(currency: .TWD, fractionDigits: 0)
+            let digits = currency == .TWD ? 0 : 2
+            return prefix + displayGainLoss.formatted(currency: currency, fractionDigits: digits, showSymbol: false)
         case .returnRate:
             let sign = row.returnPercent >= 0 ? "+" : ""
             let n = NSDecimalNumber(decimal: row.returnPercent).doubleValue

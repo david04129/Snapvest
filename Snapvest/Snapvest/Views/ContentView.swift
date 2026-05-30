@@ -23,6 +23,8 @@ struct ContentView: View {
     @State private var isRevertingTabForPrivacy = false
     @State private var isSettingsPresented = false
     @State private var showsExitDemoModeAlert = false
+    @State private var isPortfolioMutationRefreshing = false
+    @State private var portfolioMutationRefreshDepth = 0
     
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -77,6 +79,49 @@ struct ContentView: View {
                 }
                     .padding(.trailing, 14)
                     .padding(.bottom, 58)
+            }
+        }
+        .overlay {
+            if isPortfolioMutationRefreshing {
+                PortfolioMutationLoadingOverlay()
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.18), value: isPortfolioMutationRefreshing)
+        .onReceive(NotificationCenter.default.publisher(for: .portfolioMutationRefreshBegan)) { _ in
+            beginPortfolioMutationRefresh()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .portfolioMutationRefreshEnded)) { _ in
+            finishPortfolioMutationRefresh()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .transactionsDidChange)) { notification in
+            let shouldShowOverlay = notification.userInfo?[PortfolioMutationUserInfoKey.showsLoadingOverlay] as? Bool == true
+            let affectedAccountIds = notification.userInfo?[PortfolioMutationUserInfoKey.affectedAccountIds] as? [String]
+            let affectedAccountIdSet = affectedAccountIds.map { Set($0) }
+            if shouldShowOverlay {
+                beginPortfolioMutationRefresh()
+            }
+            Task {
+                let perfFlow = "transactionsDidChange UI apply overlay=\(shouldShowOverlay)"
+                let perfStart = DebugPerformanceLog.now()
+                var perfLast = perfStart
+                DebugPerformanceLog.start(perfFlow)
+                await LaunchCoordinator.applyPersistedState(
+                    userId: AppUser.id,
+                    portfolioViewModel: portfolioViewModel,
+                    accountsViewModel: accountsViewModel,
+                    assetsViewModel: assetsViewModel,
+                    dataService: MockDataService.shared,
+                    accountDetailCacheAccountIds: affectedAccountIdSet
+                )
+                DebugPerformanceLog.lap("apply persisted state", flow: perfFlow, start: perfStart, last: &perfLast)
+                await MainActor.run {
+                    if shouldShowOverlay {
+                        finishPortfolioMutationRefresh()
+                    }
+                }
+                DebugPerformanceLog.lap("finish overlay", flow: perfFlow, start: perfStart, last: &perfLast)
+                DebugPerformanceLog.end(perfFlow, start: perfStart)
             }
         }
         .onChange(of: selectedTab) { previousTab, newTab in
@@ -150,6 +195,18 @@ struct ContentView: View {
             SettingsView()
         }
     }
+
+    private func beginPortfolioMutationRefresh() {
+        portfolioMutationRefreshDepth += 1
+        isPortfolioMutationRefreshing = true
+    }
+
+    private func finishPortfolioMutationRefresh() {
+        portfolioMutationRefreshDepth = max(0, portfolioMutationRefreshDepth - 1)
+        if portfolioMutationRefreshDepth == 0 {
+            isPortfolioMutationRefreshing = false
+        }
+    }
 }
 
 private struct DemoModeFloatingBadge: View {
@@ -172,6 +229,31 @@ private struct DemoModeFloatingBadge: View {
             .shadow(color: AppColors.shadowLow, radius: 4, x: 0, y: 2)
         }
         .buttonStyle(.plain)
+    }
+}
+
+private struct PortfolioMutationLoadingOverlay: View {
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.18)
+                .ignoresSafeArea()
+
+            VStack(spacing: 12) {
+                ProgressView()
+                    .tint(.appPrimary)
+                Text("正在更新資料…")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.primaryText)
+                Text("交易完成後會自動顯示最新結果")
+                    .font(.caption)
+                    .foregroundColor(.secondaryText)
+            }
+            .padding(.horizontal, 22)
+            .padding(.vertical, 18)
+            .background(Color.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .shadow(color: AppColors.shadowMedium, radius: 12, x: 0, y: 4)
+        }
     }
 }
 

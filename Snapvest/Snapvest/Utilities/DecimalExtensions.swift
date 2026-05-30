@@ -24,13 +24,21 @@ extension Decimal {
         
         let formatter = NumberFormatter()
         let number = NSDecimalNumber(decimal: self)
-        formatter.numberStyle = .currency
+        formatter.numberStyle = showSymbol ? .currency : .decimal
         formatter.currencyCode = currency.rawValue
-        formatter.currencySymbol = currency == .USD ? "$" : currency.symbol
-        let digits = fractionDigits ?? 2
-        formatter.minimumFractionDigits = digits
-        formatter.maximumFractionDigits = digits
-        return formatter.string(from: number) ?? "$0.00"
+        if showSymbol {
+            formatter.currencySymbol = currency == .USD ? "$" : currency.symbol
+        }
+        formatter.usesGroupingSeparator = true
+        formatter.locale = Locale(identifier: "zh_TW")
+        if let fractionDigits {
+            formatter.minimumFractionDigits = fractionDigits
+            formatter.maximumFractionDigits = fractionDigits
+        } else {
+            formatter.minimumFractionDigits = 0
+            formatter.maximumFractionDigits = 2
+        }
+        return formatter.string(from: number) ?? (showSymbol ? "$0.00" : "0.00")
     }
     
     /// 股價／成交價：保留有效小數、截斷不四捨五入、去掉尾端 0

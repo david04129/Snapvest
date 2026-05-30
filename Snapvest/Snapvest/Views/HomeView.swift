@@ -71,6 +71,8 @@ struct HomeView: View {
                             inputs: viewModel.pieChartInputs,
                             totalAssets: viewModel.totalAssets,
                             totalInvestments: viewModel.totalInvestments,
+                            currency: viewModel.viewCurrency,
+                            twdPerBaseCurrency: viewModel.twdPerBaseCurrency,
                             mode: $pieChartMode,
                             groupingStore: pieGroupingStore
                         )
@@ -79,7 +81,9 @@ struct HomeView: View {
                             inputs: viewModel.pieChartInputs,
                             pieMode: pieChartMode,
                             groupingStore: pieGroupingStore,
-                            mode: $performanceMode
+                            mode: $performanceMode,
+                            currency: viewModel.viewCurrency,
+                            twdPerBaseCurrency: viewModel.twdPerBaseCurrency
                         )
                     }
                     
@@ -103,7 +107,8 @@ struct HomeView: View {
                         userId: userId,
                         portfolioViewModel: viewModel,
                         accountsViewModel: accountsViewModel,
-                        assetsViewModel: assetsViewModel
+                        assetsViewModel: assetsViewModel,
+                        rebuildAccountDetailCache: false
                     )
                 }
             }
@@ -121,7 +126,8 @@ struct HomeView: View {
                 totalAssets: viewModel.totalAssets,
                 totalInvestments: viewModel.totalInvestments,
                 performanceMode: performanceMode,
-                currency: viewModel.viewCurrency
+                currency: viewModel.viewCurrency,
+                twdPerBaseCurrency: viewModel.twdPerBaseCurrency
             )
         }
         .id(navigationStackResetID)
@@ -129,7 +135,7 @@ struct HomeView: View {
             navigationStackResetID = UUID()
         }
     }
-    
+
     private func customHeaderBar(icon: String, title: String) -> some View {
         HStack {
             // 左側：ICON + 標題
@@ -206,6 +212,7 @@ private struct HomeExpandableCardHeader<Content: View>: View {
 private struct HomeCardDetailRow: View {
     let label: String
     let value: String
+    var currency: Currency? = nil
     var valueColor: Color = .primaryText
     var emphasized: Bool = false
 
@@ -215,10 +222,20 @@ private struct HomeCardDetailRow: View {
                 .font(.subheadline)
                 .foregroundColor(.secondaryText)
             Spacer(minLength: 8)
-            Text(value)
-                .font(.subheadline)
-                .fontWeight(emphasized ? .bold : .semibold)
-                .foregroundColor(valueColor)
+            if let currency {
+                CurrencyAmountLabel(
+                    text: value,
+                    currency: currency,
+                    font: .subheadline,
+                    weight: emphasized ? .bold : .semibold,
+                    color: valueColor
+                )
+            } else {
+                Text(value)
+                    .font(.subheadline)
+                    .fontWeight(emphasized ? .bold : .semibold)
+                    .foregroundColor(valueColor)
+            }
         }
     }
 }
@@ -227,6 +244,7 @@ private struct HomeCardCurrencyDetailRow: View {
     let dotColor: Color
     let label: String
     let value: String
+    let currency: Currency
     var footnote: String? = nil
 
     var body: some View {
@@ -235,16 +253,21 @@ private struct HomeCardCurrencyDetailRow: View {
                 Circle()
                     .fill(dotColor)
                     .frame(width: 8, height: 8)
+                CurrencyCodeChip(currency: currency, tint: dotColor)
                 Text(label)
                     .font(.subheadline)
                     .foregroundColor(.secondaryText)
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 2) {
-                Text(value)
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primaryText)
+                CurrencyAmountLabel(
+                    text: value,
+                    currency: currency,
+                    font: .subheadline,
+                    weight: .semibold,
+                    color: .primaryText,
+                    chipTint: dotColor
+                )
                 if let footnote {
                     Text(footnote)
                         .font(.caption2)
@@ -264,7 +287,7 @@ struct NetWorthCardView: View {
     var netWorth: Decimal {
         viewModel.totalAssets - viewModel.totalLiabilities
     }
-    
+
     var netWorthRatio: Decimal {
         guard viewModel.totalAssets > 0 else { return 0 }
         return (netWorth / viewModel.totalAssets) * 100
@@ -274,9 +297,9 @@ struct NetWorthCardView: View {
         guard viewModel.totalAssets > 0 else { return 0 }
         return (viewModel.totalLiabilities / viewModel.totalAssets) * 100
     }
-    
+
     var body: some View {
-        AccentBarCard(title: "淨資產", accentColor: .appPrimary) {
+        AccentBarCard(title: "淨資產", titleCurrency: viewModel.viewCurrency, accentColor: .appPrimary) {
             VStack(spacing: 16) {
                 HomeExpandableCardHeader(isExpanded: $isExpanded) {
                     ZStack {
@@ -299,9 +322,13 @@ struct NetWorthCardView: View {
                             .foregroundColor(.appPrimary)
                     }
                     
-                    Text(HomeAmountPrivacyFormat.currency(netWorth, currency: viewModel.viewCurrency, hidden: hideHomeAmounts))
-                        .font(.snapAmountHero)
-                        .foregroundColor(.primaryText)
+                    CurrencyAmountLabel(
+                        text: HomeAmountPrivacyFormat.currency(netWorth, currency: viewModel.viewCurrency, hidden: hideHomeAmounts),
+                        currency: viewModel.viewCurrency,
+                        font: .snapAmountHero,
+                        weight: .bold,
+                        color: .primaryText
+                    )
                 }
                 
                 if isExpanded {
@@ -312,7 +339,8 @@ struct NetWorthCardView: View {
                                 viewModel.totalAssets,
                                 currency: viewModel.viewCurrency,
                                 hidden: hideHomeAmounts
-                            )
+                            ),
+                            currency: viewModel.viewCurrency
                         )
                         HomeCardDetailRow(
                             label: viewModel.totalLiabilities > 0
@@ -323,6 +351,7 @@ struct NetWorthCardView: View {
                                 currency: viewModel.viewCurrency,
                                 hidden: hideHomeAmounts
                             ),
+                            currency: viewModel.viewCurrency,
                             valueColor: viewModel.totalLiabilities > 0 ? .lossRed : .primaryText
                         )
                         Divider()
@@ -333,6 +362,7 @@ struct NetWorthCardView: View {
                                 currency: viewModel.viewCurrency,
                                 hidden: hideHomeAmounts
                             ),
+                            currency: viewModel.viewCurrency,
                             valueColor: .appPrimary,
                             emphasized: true
                         )
@@ -353,9 +383,9 @@ struct InvestmentAssetsCardView: View {
         guard viewModel.totalAssets > 0 else { return 0 }
         return (viewModel.totalInvestments / viewModel.totalAssets) * 100
     }
-    
+
     var body: some View {
-        AccentBarCard(title: "投資資產", accentColor: .stockUSColor) {
+        AccentBarCard(title: "投資資產", titleCurrency: viewModel.viewCurrency, accentColor: .stockUSColor) {
             VStack(spacing: 16) {
                 HomeExpandableCardHeader(isExpanded: $isExpanded) {
                     ZStack {
@@ -378,9 +408,14 @@ struct InvestmentAssetsCardView: View {
                             .foregroundColor(.stockUSColor)
                     }
                     
-                    Text(HomeAmountPrivacyFormat.currency(viewModel.totalInvestments, currency: viewModel.viewCurrency, hidden: hideHomeAmounts))
-                        .font(.snapAmountHero)
-                        .foregroundColor(.primaryText)
+                    CurrencyAmountLabel(
+                        text: HomeAmountPrivacyFormat.currency(viewModel.totalInvestments, currency: viewModel.viewCurrency, hidden: hideHomeAmounts),
+                        currency: viewModel.viewCurrency,
+                        font: .snapAmountHero,
+                        weight: .bold,
+                        color: .primaryText,
+                        chipTint: .stockUSColor
+                    )
                 }
                 
                 if isExpanded {
@@ -409,7 +444,7 @@ struct InvestmentAssetsCardView: View {
                                         .foregroundColor(gainLossColor)
                                 } else {
                                     Text(
-                                        HomeAmountPrivacyFormat.currency(
+                                        HomeAmountPrivacyFormat.currencyNumber(
                                             viewModel.unrealizedGainLoss,
                                             currency: viewModel.viewCurrency,
                                             hidden: hideHomeAmounts
@@ -429,7 +464,8 @@ struct InvestmentAssetsCardView: View {
                                 cost,
                                 currency: viewModel.viewCurrency,
                                 hidden: hideHomeAmounts
-                            )
+                            ),
+                            currency: viewModel.viewCurrency
                         )
 
                         Divider()
@@ -441,6 +477,7 @@ struct InvestmentAssetsCardView: View {
                                 currency: viewModel.viewCurrency,
                                 hidden: hideHomeAmounts
                             ),
+                            currency: viewModel.viewCurrency,
                             emphasized: true
                         )
                         HomeCardDetailRow(
@@ -465,15 +502,59 @@ struct CashCardView: View {
         guard viewModel.totalAssets > 0 else { return 0 }
         return (viewModel.totalCash / viewModel.totalAssets) * 100
     }
-    
+
     private var displayUsdToTwdRate: Decimal {
         let fromPie = viewModel.pieChartInputs?.usdToTwdRate ?? 0
         if fromPie > 0 { return fromPie }
         return ExchangeRateSessionCache.usdToTwd ?? 0
     }
+    private var cashRows: [(currency: Currency, amount: Decimal, valueTWD: Decimal, color: Color)] {
+        Currency.baseCurrencyOptions.compactMap { currency in
+            guard let amount = viewModel.cashByCurrency[currency],
+                  amount > 0,
+                  let valueTWD = cashValueInTWD(currency: currency, amount: amount),
+                  valueTWD > 0 else {
+                return nil
+            }
+            return (
+                currency: currency,
+                amount: amount,
+                valueTWD: valueTWD,
+                color: cashColor(for: currency)
+            )
+        }
+    }
+    private var totalCashTWDForRows: Decimal {
+        cashRows.reduce(0) { $0 + $1.valueTWD }
+    }
+
+    private func baseCurrencyAmount(fromTWD amount: Decimal) -> Decimal {
+        guard viewModel.viewCurrency != .TWD,
+              viewModel.twdPerBaseCurrency > 0 else {
+            return amount
+        }
+        return amount / viewModel.twdPerBaseCurrency
+    }
     
+    private func cashValueInTWD(currency: Currency, amount: Decimal) -> Decimal? {
+        if let inputs = viewModel.pieChartInputs {
+            return inputs.cashValueInTWD(currency: currency, amount: amount)
+        }
+        if currency == .TWD { return amount }
+        if currency == .USD, displayUsdToTwdRate > 0 { return amount * displayUsdToTwdRate }
+        return nil
+    }
+    private func cashColor(for currency: Currency) -> Color {
+        guard let inputs = viewModel.pieChartInputs else {
+            return currency == .USD ? .allocationUsdCash : .allocationTwdCash
+        }
+        return HoldingChartMetrics.chartColor(
+            forItemId: PieChartGroupingEngine.cashItemId(for: currency),
+            inputs: inputs
+        )
+    }
     var body: some View {
-        AccentBarCard(title: "現金", accentColor: .allocationTwdCash) {
+        AccentBarCard(title: "現金", titleCurrency: viewModel.viewCurrency, accentColor: .allocationTwdCash) {
             VStack(spacing: 16) {
                 HomeExpandableCardHeader(isExpanded: $isExpanded) {
                     ZStack {
@@ -497,40 +578,45 @@ struct CashCardView: View {
                             .foregroundColor(cashColor)
                     }
                     
-                    Text(HomeAmountPrivacyFormat.currency(viewModel.totalCash, currency: viewModel.viewCurrency, hidden: hideHomeAmounts))
-                        .font(.snapAmountHero)
-                        .foregroundColor(.primaryText)
+                    CurrencyAmountLabel(
+                        text: HomeAmountPrivacyFormat.currency(viewModel.totalCash, currency: viewModel.viewCurrency, hidden: hideHomeAmounts),
+                        currency: viewModel.viewCurrency,
+                        font: .snapAmountHero,
+                        weight: .bold,
+                        color: .primaryText,
+                        chipTint: .allocationTwdCash
+                    )
                 }
                 
                 if !isExpanded {
-                    UsdTwdRateCaptionView(preferredRate: displayUsdToTwdRate, alignment: .leading)
+                    UsdTwdRateCaptionView(
+                        preferredRate: displayUsdToTwdRate,
+                        displayCurrency: viewModel.viewCurrency,
+                        twdPerDisplayCurrency: viewModel.twdPerBaseCurrency,
+                        alignment: .leading
+                    )
                 }
 
                 if isExpanded {
-                    let twdCash = viewModel.cashByCurrency[.TWD] ?? 0
-                    let usdCash = viewModel.cashByCurrency[.USD] ?? 0
-                    let usdToTwdRate = displayUsdToTwdRate
-                    let usdCashTWD = usdCash * usdToTwdRate
-                    let totalCashTWD = twdCash + usdCashTWD
-                    let twdPct = totalCashTWD > 0 ? (twdCash / totalCashTWD * 100) : 0
-                    let usdPct = totalCashTWD > 0 ? (usdCashTWD / totalCashTWD * 100) : 0
-                    let usdFootnote: String? = {
-                        guard !hideHomeAmounts, usdCash > 0, usdToTwdRate > 0 else { return nil }
-                        return "≈ \(usdCashTWD.formatted(currency: .TWD, fractionDigits: 0))"
-                    }()
-
                     VStack(spacing: 10) {
-                        HomeCardCurrencyDetailRow(
-                            dotColor: .allocationTwdCash,
-                            label: "台幣（\(twdPct.formatted(fractionDigits: 1))%）",
-                            value: HomeAmountPrivacyFormat.currency(twdCash, currency: .TWD, hidden: hideHomeAmounts)
-                        )
-                        HomeCardCurrencyDetailRow(
-                            dotColor: .allocationUsdCash,
-                            label: "美金（\(usdPct.formatted(fractionDigits: 1))%）",
-                            value: HomeAmountPrivacyFormat.currency(usdCash, currency: .USD, hidden: hideHomeAmounts),
-                            footnote: usdFootnote
-                        )
+                        ForEach(cashRows, id: \.currency) { row in
+                            let pct = totalCashTWDForRows > 0 ? (row.valueTWD / totalCashTWDForRows * 100) : 0
+                            let baseEquivalentText = HomeAmountPrivacyFormat.currencyNumber(
+                                baseCurrencyAmount(fromTWD: row.valueTWD),
+                                currency: viewModel.viewCurrency,
+                                hidden: hideHomeAmounts
+                            )
+                            let footnote = row.currency == viewModel.viewCurrency || hideHomeAmounts
+                                ? nil
+                                : "≈ \(baseEquivalentText)"
+                            HomeCardCurrencyDetailRow(
+                                dotColor: row.color,
+                                label: "\(pct.formatted(fractionDigits: 1))%",
+                                value: HomeAmountPrivacyFormat.currency(row.amount, currency: row.currency, hidden: hideHomeAmounts),
+                                currency: row.currency,
+                                footnote: footnote
+                            )
+                        }
                         Divider()
                         HomeCardDetailRow(
                             label: "合計",
@@ -539,6 +625,7 @@ struct CashCardView: View {
                                 currency: viewModel.viewCurrency,
                                 hidden: hideHomeAmounts
                             ),
+                            currency: viewModel.viewCurrency,
                             emphasized: true
                         )
                         HomeCardDetailRow(
@@ -546,7 +633,12 @@ struct CashCardView: View {
                             value: "\(cashRatio.formatted(fractionDigits: 1))%",
                             valueColor: .allocationTwdCash
                         )
-                        UsdTwdRateCaptionView(preferredRate: displayUsdToTwdRate, alignment: .leading)
+                        UsdTwdRateCaptionView(
+                            preferredRate: displayUsdToTwdRate,
+                            displayCurrency: viewModel.viewCurrency,
+                            twdPerDisplayCurrency: viewModel.twdPerBaseCurrency,
+                            alignment: .leading
+                        )
                     }
                 }
             }
@@ -569,14 +661,18 @@ struct TodayPLCardView: View {
     }
 
     var body: some View {
-        AccentBarCard(title: "今日損益", accentColor: .appPrimary) {
+        AccentBarCard(title: "今日損益", titleCurrency: viewModel.viewCurrency, accentColor: .appPrimary) {
             VStack(spacing: 16) {
                 if summary.hasData, !summary.categories.isEmpty {
                     HomeExpandableCardHeader(isExpanded: $isExpanded) {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text(HomeAmountPrivacyFormat.currency(displayChange, currency: viewModel.viewCurrency, hidden: hideHomeAmounts))
-                                .font(.snapAmountHero)
-                                .foregroundColor(Color.marketColor(for: summary.totalChangeTWD))
+                            CurrencyAmountLabel(
+                                text: HomeAmountPrivacyFormat.currency(displayChange, currency: viewModel.viewCurrency, hidden: hideHomeAmounts),
+                                currency: viewModel.viewCurrency,
+                                font: .snapAmountHero,
+                                weight: .bold,
+                                color: Color.marketColor(for: summary.totalChangeTWD)
+                            )
 
                             todayPLPercentLabel(
                                 percent: summary.totalChangePercent,
@@ -589,9 +685,13 @@ struct TodayPLCardView: View {
                     HStack(alignment: .firstTextBaseline) {
                         VStack(alignment: .leading, spacing: 6) {
                             if summary.hasData {
-                                Text(HomeAmountPrivacyFormat.currency(displayChange, currency: viewModel.viewCurrency, hidden: hideHomeAmounts))
-                                    .font(.snapAmountHero)
-                                    .foregroundColor(Color.marketColor(for: summary.totalChangeTWD))
+                                CurrencyAmountLabel(
+                                    text: HomeAmountPrivacyFormat.currency(displayChange, currency: viewModel.viewCurrency, hidden: hideHomeAmounts),
+                                    currency: viewModel.viewCurrency,
+                                    font: .snapAmountHero,
+                                    weight: .bold,
+                                    color: Color.marketColor(for: summary.totalChangeTWD)
+                                )
 
                                 todayPLPercentLabel(
                                     percent: summary.totalChangePercent,
@@ -638,10 +738,13 @@ struct TodayPLCardView: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 2) {
-                Text(HomeAmountPrivacyFormat.currency(displayAmount(category.changeTWD), currency: viewModel.viewCurrency, hidden: hideHomeAmounts))
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(Color.marketColor(for: category.changeTWD))
+                CurrencyAmountLabel(
+                    text: HomeAmountPrivacyFormat.currency(displayAmount(category.changeTWD), currency: viewModel.viewCurrency, hidden: hideHomeAmounts),
+                    currency: viewModel.viewCurrency,
+                    font: .subheadline,
+                    weight: .semibold,
+                    color: Color.marketColor(for: category.changeTWD)
+                )
 
                 todayPLPercentLabel(
                     percent: category.changePercent,
@@ -674,12 +777,11 @@ struct TodayPLCardView: View {
     }
 
     private func displayAmount(_ twdAmount: Decimal) -> Decimal {
-        guard viewModel.viewCurrency == .USD,
-              let rate = viewModel.pieChartInputs?.usdToTwdRate,
-              rate > 0 else {
+        guard viewModel.viewCurrency != .TWD,
+              viewModel.twdPerBaseCurrency > 0 else {
             return twdAmount
         }
-        return twdAmount / rate
+        return twdAmount / viewModel.twdPerBaseCurrency
     }
 
     private func accentColor(for assetType: AssetType) -> Color {
@@ -709,12 +811,16 @@ struct RealizedPLCardView: View {
     }
     
     var body: some View {
-        AccentBarCard(title: "已實現損益", accentColor: .appPrimary) {
+        AccentBarCard(title: "已實現損益", titleCurrency: viewModel.viewCurrency, accentColor: .appPrimary) {
             VStack(spacing: 16) {
                 HomeExpandableCardHeader(isExpanded: $isExpanded) {
-                    Text(viewModel.realizedGainLoss.formatted(currency: viewModel.viewCurrency))
-                        .font(.snapAmountHero)
-                        .foregroundColor(Color.marketColor(for: viewModel.realizedGainLoss))
+                    CurrencyAmountLabel(
+                        text: viewModel.realizedGainLoss.formatted(currency: viewModel.viewCurrency),
+                        currency: viewModel.viewCurrency,
+                        font: .snapAmountHero,
+                        weight: .bold,
+                        color: Color.marketColor(for: viewModel.realizedGainLoss)
+                    )
                 }
                 
                 if isExpanded {

@@ -435,7 +435,8 @@ struct TransactionsView: View {
                         userId: userId,
                         portfolioViewModel: portfolioViewModel,
                         accountsViewModel: accountsViewModel,
-                        assetsViewModel: assetsViewModel
+                        assetsViewModel: assetsViewModel,
+                        rebuildAccountDetailCache: false
                     )
                 }
             }
@@ -572,12 +573,6 @@ struct TransactionsView: View {
                 sellTradeEditItem = nil
                 Task {
                     await viewModel.loadTransactions(userId: userId)
-                    await LaunchCoordinator.applyPersistedState(
-                        userId: userId,
-                        portfolioViewModel: portfolioViewModel,
-                        accountsViewModel: accountsViewModel,
-                        assetsViewModel: assetsViewModel
-                    )
                 }
             })
             .toolbar {
@@ -1063,16 +1058,23 @@ struct TransactionRowView: View {
         Group {
             if display.shouldShowExpandedDetail, let detail = display.expandedNotes {
                 cardContent {
-                    DisclosureGroup(isExpanded: $isExpanded) {
-                        detailSection(detail)
+                    Button {
+                        withAnimation(ChartMotion.switchSpring) {
+                            isExpanded.toggle()
+                        }
                     } label: {
-                        rowHeader()
+                        rowHeader(showsChevron: true, isExpandable: true)
                     }
-                    .tint(.secondaryText)
+                    .buttonStyle(.plain)
+
+                    if isExpanded {
+                        detailSection(detail)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
                 }
             } else {
                 cardContent {
-                    rowHeader()
+                    rowHeader(showsChevron: true, isExpandable: false)
                 }
             }
         }
@@ -1129,14 +1131,17 @@ struct TransactionRowView: View {
             .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 2)
     }
     
-    private func rowHeader() -> some View {
+    private func rowHeader(showsChevron: Bool = false, isExpandable: Bool = false) -> some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(display.primaryTitle)
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primaryText)
-                    .lineLimit(2)
+                CurrencyTitleLabel(
+                    title: display.primaryTitle,
+                    currency: transaction.currency,
+                    font: .subheadline,
+                    weight: .semibold,
+                    color: .primaryText,
+                    chipTint: display.typeAccentColor
+                )
                 
                 Text(display.detailSubtitle(accountName: accountName))
                     .font(.caption)
@@ -1147,15 +1152,25 @@ struct TransactionRowView: View {
             Spacer(minLength: 8)
             
             VStack(alignment: .trailing, spacing: 4) {
-                Text(transactionAmount)
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundColor(amountColor)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                CurrencyAmountLabel(
+                    text: transactionAmount,
+                    currency: transaction.currency,
+                    font: .system(size: 17, weight: .bold),
+                    weight: .bold,
+                    color: amountColor,
+                    chipTint: display.typeAccentColor
+                )
                 
                 Text(transaction.transactionDate, style: .date)
                     .font(.caption)
                     .foregroundColor(.secondaryText)
+            }
+
+            if showsChevron {
+                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(isExpandable ? .secondaryText : .secondaryText.opacity(0.38))
+                    .frame(width: 16)
             }
         }
         .contentShape(Rectangle())
@@ -1203,7 +1218,7 @@ struct TransactionRowView: View {
         }
         
         // 安全地格式化金額
-        let formattedAmount = absAmount.formatted(currency: transaction.currency)
+        let formattedAmount = absAmount.formatted(currency: transaction.currency, showSymbol: false)
         // 如果 sign 為空，直接返回金額，否則返回帶符號的金額
         return sign.isEmpty ? formattedAmount : "\(sign) \(formattedAmount)"
     }

@@ -41,8 +41,10 @@ struct UserHoldingsSnapshot: Identifiable, Codable, Equatable {
     
     /// 更新符號列表（自動去重）
     mutating func updateSymbols(_ newSymbols: [SymbolInfo]) {
-        // 使用 Set 去重
-        let uniqueSymbols = Array(Set(newSymbols))
+        var uniqueSymbols: [SymbolInfo] = []
+        for symbol in newSymbols where !uniqueSymbols.contains(symbol) {
+            uniqueSymbols.append(symbol)
+        }
         symbols = uniqueSymbols
     }
 }

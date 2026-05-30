@@ -67,6 +67,12 @@ struct TransactionHistoryView: View {
             await viewModel.loadTransactions(accountId: account.id, userId: account.userId)
             await transactionsViewModel.loadTransactions(userId: account.userId)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .transactionsDidChange)) { _ in
+            Task {
+                await viewModel.loadTransactions(accountId: account.id, userId: account.userId)
+                await transactionsViewModel.loadTransactions(userId: account.userId)
+            }
+        }
         .sheet(isPresented: $showingEditIncome) {
                 if let transaction = editingIncomeTransaction {
                     IncomeView(account: account, viewModel: editingAccountViewModel, editingTransaction: transaction)

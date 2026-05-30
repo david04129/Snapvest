@@ -138,7 +138,11 @@ struct AssetPriceSnapshot: Identifiable, Codable, Equatable {
 }
 
 /// 用於批量請求的符號資訊
-struct SymbolInfo: Codable, Equatable, Hashable {
+struct SymbolInfo: Codable, Equatable {
     let assetType: AssetType
     let symbol: String
+
+    nonisolated static func == (lhs: SymbolInfo, rhs: SymbolInfo) -> Bool {
+        lhs.assetType.rawValue == rhs.assetType.rawValue && lhs.symbol == rhs.symbol
+    }
 }

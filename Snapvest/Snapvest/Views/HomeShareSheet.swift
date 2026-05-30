@@ -19,6 +19,7 @@ struct HomeShareSheet: View {
     let totalInvestments: Decimal
     let performanceMode: PerformanceDisplayMode
     let currency: Currency
+    let twdPerBaseCurrency: Decimal
 
     @ObservedObject private var theme = ThemeManager.shared
     @ObservedObject private var pieGroupingStore = PieChartGroupingStore.shared
@@ -59,7 +60,8 @@ struct HomeShareSheet: View {
         totalAssets: Decimal,
         totalInvestments: Decimal,
         performanceMode: PerformanceDisplayMode,
-        currency: Currency
+        currency: Currency,
+        twdPerBaseCurrency: Decimal
     ) {
         _trendPoints = trendPoints
         self.trendMetricMode = trendMetricMode
@@ -72,6 +74,7 @@ struct HomeShareSheet: View {
         self.totalInvestments = totalInvestments
         self.performanceMode = performanceMode
         self.currency = currency
+        self.twdPerBaseCurrency = twdPerBaseCurrency
         _shareHideAmounts = State(initialValue: HomePrivacyManager.shared.isAmountHidden)
         _shareTrendMetricMode = State(initialValue: trendMetricMode)
         _shareTrendTimeRange = State(initialValue: trendTimeRange)
@@ -87,6 +90,7 @@ struct HomeShareSheet: View {
             hideAmounts: shareHideAmounts,
             isDarkMode: theme.isDarkMode,
             currency: currency,
+            twdPerBaseCurrency: twdPerBaseCurrency,
             generatedAt: Date(),
             includeTrend: false,
             trendPoints: trendPoints,
@@ -114,6 +118,7 @@ struct HomeShareSheet: View {
             hideAmounts: shareHideAmounts,
             isDarkMode: theme.isDarkMode,
             currency: currency,
+            twdPerBaseCurrency: twdPerBaseCurrency,
             generatedAt: Date(),
             includeTrend: selectedKinds.contains(.trend),
             trendPoints: trendPoints,

@@ -8,11 +8,31 @@
 import Foundation
 
 struct PieChartInputs {
-    var twdCash: Decimal
-    var usdCash: Decimal
     var usdToTwdRate: Decimal
+    var cashByCurrency: [Currency: Decimal]
+    var twdRateByCurrency: [Currency: Decimal]
     var aggregatedHoldings: [AggregatedHoldingSnapshot]
     var assetPriceSnapshots: [AssetPriceSnapshot]
+
+    var twdCash: Decimal {
+        cashByCurrency[.TWD] ?? 0
+    }
+
+    var usdCash: Decimal {
+        cashByCurrency[.USD] ?? 0
+    }
+
+    func cashValueInTWD(currency: Currency, amount: Decimal) -> Decimal? {
+        if currency == .TWD { return amount }
+        guard let rate = twdRateByCurrency[currency], rate > 0 else { return nil }
+        return amount * rate
+    }
+
+    var totalCashTWD: Decimal {
+        cashByCurrency.reduce(Decimal.zero) { partial, item in
+            partial + (cashValueInTWD(currency: item.key, amount: item.value) ?? 0)
+        }
+    }
 }
 
 enum PieChartDataLoader {
@@ -52,10 +72,21 @@ enum PieChartDataLoader {
             }
         }
 
+        var twdRateByCurrency: [Currency: Decimal] = [
+            .TWD: 1,
+            .USD: usdToTwdRate
+        ]
+        for currency in cashByCurrency.keys where currency != .TWD && currency != .USD {
+            if let rate = try? await dataService.fetchExchangeRate(from: currency, to: .TWD, date: nil)?.rate,
+               rate > 0 {
+                twdRateByCurrency[currency] = rate
+            }
+        }
+
         return PieChartInputs(
-            twdCash: cashByCurrency[.TWD] ?? 0,
-            usdCash: cashByCurrency[.USD] ?? 0,
             usdToTwdRate: usdToTwdRate,
+            cashByCurrency: cashByCurrency,
+            twdRateByCurrency: twdRateByCurrency,
             aggregatedHoldings: aggregated,
             assetPriceSnapshots: prices
         )
