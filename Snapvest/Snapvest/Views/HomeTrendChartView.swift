@@ -142,6 +142,10 @@ struct HomeTrendChartSection: View {
         point.displayValue(for: metricMode) / baseDivisor
     }
 
+    private func chartDisplayDouble(for point: TrendChartPoint) -> Double {
+        NSDecimalNumber(decimal: chartDisplayValue(for: point)).doubleValue
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             chartTitleHeader
@@ -261,10 +265,11 @@ struct HomeTrendChartSection: View {
     private var trendChart: some View {
         Chart {
             ForEach(filteredPoints) { point in
-                let value = chartDisplayValue(for: point)
+                let value = chartDisplayDouble(for: point)
                 AreaMark(
                     x: .value("日期", point.date),
-                    y: .value("金額", value)
+                    yStart: .value("基準", yAxisDomain.lowerBound),
+                    yEnd: .value("金額", value)
                 )
                 .foregroundStyle(
                     LinearGradient(
@@ -285,7 +290,7 @@ struct HomeTrendChartSection: View {
             }
             
             if let selected = selectedPoint ?? filteredPoints.last {
-                let selectedValue = chartDisplayValue(for: selected)
+                let selectedValue = chartDisplayDouble(for: selected)
                 RuleMark(x: .value("選取", selected.date))
                     .foregroundStyle(Color.secondaryText.opacity(0.45))
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
@@ -343,9 +348,7 @@ struct HomeTrendChartSection: View {
     }
     
     private var yAxisDomain: ClosedRange<Double> {
-        let values = filteredPoints.map {
-            NSDecimalNumber(decimal: chartDisplayValue(for: $0)).doubleValue
-        }
+        let values = filteredPoints.map(chartDisplayDouble)
         guard let minV = values.min(), let maxV = values.max() else { return 0...1 }
         let padding = max((maxV - minV) * 0.08, abs(maxV) * 0.02, 1)
         return (minV - padding)...(maxV + padding)
@@ -376,7 +379,10 @@ struct HomeTrendChartSection: View {
                 startDate: start,
                 endDate: Date()
             )
-            trendPoints = snapshots.map(TrendChartPoint.init(localSnapshot:))
+            let loadedPoints = snapshots.map(TrendChartPoint.init(localSnapshot:))
+            if loadedPoints != trendPoints {
+                trendPoints = loadedPoints
+            }
             loadFailed = false
         } catch {
             loadFailed = true

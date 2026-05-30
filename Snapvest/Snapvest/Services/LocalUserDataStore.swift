@@ -210,6 +210,10 @@ enum LocalUserDataStore {
     static func save(_ payload: LocalUserData) {
         write(payload, userId: payload.userId)
     }
+
+    static func replaceForRestore(_ payload: LocalUserData, userId: String) throws {
+        try writeThrowing(payload, userId: userId)
+    }
     
     static func saveStructure(_ structure: LocalUserStructureStore, userId: String) {
         var payload = load(userId: userId) ?? empty(userId: userId)
@@ -233,28 +237,31 @@ enum LocalUserDataStore {
     
     private static func write(_ payload: LocalUserData, userId: String) {
         do {
-            let directory = try storageDirectoryURL()
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            
-            let url = fileURL(for: userId)
-            let tempURL = directory.appendingPathComponent("\(sanitizedFileStem(for: userId)).tmp")
-            var normalized = payload
-            normalized = LocalUserData(
-                schemaVersion: LocalUserData.currentSchemaVersion,
-                userId: userId,
-                structure: payload.structure,
-                valuation: payload.valuation
-            )
-            let encoded = try encoder.encode(normalized)
-            try encoded.write(to: tempURL, options: .atomic)
-            
-            if FileManager.default.fileExists(atPath: url.path) {
-                _ = try FileManager.default.replaceItemAt(url, withItemAt: tempURL)
-            } else {
-                try FileManager.default.moveItem(at: tempURL, to: url)
-            }
+            try writeThrowing(payload, userId: userId)
         } catch {
             print("[LocalUserDataStore] save failed for \(userId): \(error.localizedDescription)")
+        }
+    }
+
+    private static func writeThrowing(_ payload: LocalUserData, userId: String) throws {
+        let directory = try storageDirectoryURL()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let url = fileURL(for: userId)
+        let tempURL = directory.appendingPathComponent("\(sanitizedFileStem(for: userId)).tmp")
+        let normalized = LocalUserData(
+            schemaVersion: LocalUserData.currentSchemaVersion,
+            userId: userId,
+            structure: payload.structure,
+            valuation: payload.valuation
+        )
+        let encoded = try encoder.encode(normalized)
+        try encoded.write(to: tempURL, options: .atomic)
+
+        if FileManager.default.fileExists(atPath: url.path) {
+            _ = try FileManager.default.replaceItemAt(url, withItemAt: tempURL)
+        } else {
+            try FileManager.default.moveItem(at: tempURL, to: url)
         }
     }
     

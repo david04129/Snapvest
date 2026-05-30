@@ -32,7 +32,6 @@ struct HomeView: View {
             ScrollView {
                 VStack(spacing: 20) {
                     Group {
-                        // 走勢圖（過去：Supabase 每日快照；今天：本機即時）
                         HomeTrendChartSection(
                             userId: userId,
                             currency: viewModel.viewCurrency,

@@ -27,6 +27,11 @@ enum PortfolioMutationUserInfoKey {
     static let affectedAccountIds = "affectedAccountIds"
 }
 
+enum PortfolioMutationRefreshUserInfoKey {
+    static let title = "title"
+    static let message = "message"
+}
+
 enum AppTab: Int {
     case home = 0
     case accounts = 1

@@ -6,7 +6,9 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
+@MainActor
 struct SettingsView: View {
     @ObservedObject private var theme = ThemeManager.shared
     @ObservedObject private var privacyLock = PrivacyLockManager.shared
@@ -17,6 +19,15 @@ struct SettingsView: View {
     @State private var comingSoonFeature: SettingsComingSoonFeature?
     @State private var privacyLockSettingsMessage: String?
     @State private var isBaseCurrencySheetPresented = false
+    @State private var isPreparingBackup = false
+    @State private var isBackupExporterPresented = false
+    @State private var backupExportDocument = BackupDocument()
+    @State private var backupExportFilename = "Walleaf-Backup"
+    @State private var isBackupImporterPresented = false
+    @State private var pendingBackupRestore: WalleafBackupFile?
+    @State private var isRestoreConfirmationPresented = false
+    @State private var isRestoringBackup = false
+    @State private var backupStatusMessage: String?
     #if DEBUG
     @State private var isValidatingSnapshots = false
     @State private var snapshotValidationMessage: String?
@@ -54,6 +65,15 @@ struct SettingsView: View {
                     
                     settingsSection(title: "隱私與安全") {
                         privacyLockRow
+                    }
+
+                    settingsSection(title: "備份與還原") {
+                        backupExportRow
+
+                        Divider()
+                            .padding(.leading, 56)
+
+                        backupRestoreRow
                     }
                 }
                 .padding(20)
@@ -106,6 +126,47 @@ struct SettingsView: View {
                         isBaseCurrencySheetPresented = false
                     }
                 )
+            }
+            .fileExporter(
+                isPresented: $isBackupExporterPresented,
+                document: backupExportDocument,
+                contentType: .json,
+                defaultFilename: backupExportFilename
+            ) { result in
+                switch result {
+                case .success:
+                    backupStatusMessage = "備份檔已建立。若你選擇 iCloud Drive 位置，檔案會保存在自己的 iCloud。請妥善保管備份檔。"
+                case .failure(let error):
+                    backupStatusMessage = "備份失敗：\(error.localizedDescription)"
+                }
+            }
+            .fileImporter(
+                isPresented: $isBackupImporterPresented,
+                allowedContentTypes: [.json],
+                allowsMultipleSelection: false
+            ) { result in
+                handleBackupImport(result)
+            }
+            .alert("還原備份？", isPresented: $isRestoreConfirmationPresented) {
+                Button("取消", role: .cancel) {
+                    pendingBackupRestore = nil
+                }
+                Button("還原", role: .destructive) {
+                    Task { await restorePendingBackup() }
+                }
+            } message: {
+                Text(restoreConfirmationMessage)
+            }
+            .alert(
+                "備份與還原",
+                isPresented: Binding(
+                    get: { backupStatusMessage != nil },
+                    set: { if !$0 { backupStatusMessage = nil } }
+                )
+            ) {
+                Button("知道了", role: .cancel) {}
+            } message: {
+                Text(backupStatusMessage ?? "")
             }
         }
     }
@@ -296,6 +357,96 @@ struct SettingsView: View {
         .buttonStyle(.plain)
         .disabled(privacyLock.isAuthenticating)
     }
+
+    private var backupExportRow: some View {
+        Button {
+            Task { await exportBackup() }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "icloud.and.arrow.up.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.appPrimary)
+                    .frame(width: 30, height: 30)
+                    .background(Color.appPrimary.opacity(0.14))
+                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("備份到 iCloud Drive")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.primaryText)
+
+                    Text("匯出帳戶、交易、其他資產、走勢點與偏好")
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                }
+
+                Spacer(minLength: 12)
+
+                if isPreparingBackup {
+                    ProgressView()
+                        .tint(.appPrimary)
+                } else {
+                    Text("備份")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.appPrimary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(Color.appPrimary.opacity(0.12))
+                        .clipShape(Capsule())
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 13)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(isPreparingBackup || isRestoringBackup)
+    }
+
+    private var backupRestoreRow: some View {
+        Button {
+            isBackupImporterPresented = true
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "icloud.and.arrow.down.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.appPrimary)
+                    .frame(width: 30, height: 30)
+                    .background(Color.appPrimary.opacity(0.14))
+                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("從備份還原")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.primaryText)
+
+                    Text("選取備份檔，確認後覆蓋目前本機資料")
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                }
+
+                Spacer(minLength: 12)
+
+                if isRestoringBackup {
+                    ProgressView()
+                        .tint(.appPrimary)
+                } else {
+                    Text("還原")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.lossRed)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(Color.lossRed.opacity(0.12))
+                        .clipShape(Capsule())
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 13)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(isPreparingBackup || isRestoringBackup)
+    }
     
     private var demoModeRow: some View {
         Button {
@@ -409,6 +560,70 @@ struct SettingsView: View {
         if case .failure(let message) = result {
             privacyLockSettingsMessage = message
         }
+    }
+
+    private var restoreConfirmationMessage: String {
+        guard let pendingBackupRestore else {
+            return "這會覆蓋目前本機資料，請先確認你已保留需要的備份。"
+        }
+        return "備份建立時間：\(formatBackupDate(pendingBackupRestore.createdAt))\n\n這會覆蓋目前本機資料，包含帳戶、交易、其他資產、走勢點與偏好。"
+    }
+
+    private func exportBackup() async {
+        guard !isPreparingBackup else { return }
+        isPreparingBackup = true
+        defer { isPreparingBackup = false }
+
+        do {
+            let backup = try BackupService.makeBackup(userId: AppUser.id)
+            backupExportDocument = BackupDocument(data: try BackupService.encode(backup))
+            backupExportFilename = BackupService.defaultFilename(createdAt: backup.createdAt)
+            isBackupExporterPresented = true
+        } catch {
+            backupStatusMessage = "備份失敗：\(error.localizedDescription)"
+        }
+    }
+
+    private func handleBackupImport(_ result: Result<[URL], Error>) {
+        do {
+            guard let url = try result.get().first else { return }
+            pendingBackupRestore = try BackupService.decodeBackup(from: url)
+            isRestoreConfirmationPresented = true
+        } catch {
+            backupStatusMessage = "讀取備份失敗：\(error.localizedDescription)"
+        }
+    }
+
+    private func restorePendingBackup() async {
+        guard let pendingBackupRestore else { return }
+        isRestoringBackup = true
+        NotificationCenter.default.post(
+            name: .portfolioMutationRefreshBegan,
+            object: nil,
+            userInfo: [
+                PortfolioMutationRefreshUserInfoKey.title: "正在還原備份…",
+                PortfolioMutationRefreshUserInfoKey.message: "完成後會自動顯示備份中的資料"
+            ]
+        )
+        defer {
+            isRestoringBackup = false
+            self.pendingBackupRestore = nil
+            NotificationCenter.default.post(name: .portfolioMutationRefreshEnded, object: nil)
+        }
+
+        do {
+            try await BackupService.restore(pendingBackupRestore, to: AppUser.id)
+            backupStatusMessage = "還原完成。首頁、帳戶與資產資料已重新整理。"
+        } catch {
+            backupStatusMessage = "還原失敗：\(error.localizedDescription)"
+        }
+    }
+
+    private func formatBackupDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_TW")
+        formatter.dateFormat = "yyyy/M/d HH:mm"
+        return formatter.string(from: date)
     }
     
     private func settingsPillRow<Options: View>(

@@ -25,6 +25,8 @@ struct ContentView: View {
     @State private var showsExitDemoModeAlert = false
     @State private var isPortfolioMutationRefreshing = false
     @State private var portfolioMutationRefreshDepth = 0
+    @State private var portfolioMutationRefreshTitle = "正在更新資料…"
+    @State private var portfolioMutationRefreshMessage = "交易完成後會自動顯示最新結果"
     
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -83,13 +85,16 @@ struct ContentView: View {
         }
         .overlay {
             if isPortfolioMutationRefreshing {
-                PortfolioMutationLoadingOverlay()
+                PortfolioMutationLoadingOverlay(
+                    title: portfolioMutationRefreshTitle,
+                    message: portfolioMutationRefreshMessage
+                )
                     .transition(.opacity)
             }
         }
         .animation(.easeInOut(duration: 0.18), value: isPortfolioMutationRefreshing)
-        .onReceive(NotificationCenter.default.publisher(for: .portfolioMutationRefreshBegan)) { _ in
-            beginPortfolioMutationRefresh()
+        .onReceive(NotificationCenter.default.publisher(for: .portfolioMutationRefreshBegan)) { notification in
+            beginPortfolioMutationRefresh(notification: notification)
         }
         .onReceive(NotificationCenter.default.publisher(for: .portfolioMutationRefreshEnded)) { _ in
             finishPortfolioMutationRefresh()
@@ -189,7 +194,11 @@ struct ContentView: View {
         }
     }
 
-    private func beginPortfolioMutationRefresh() {
+    private func beginPortfolioMutationRefresh(notification: Notification? = nil) {
+        portfolioMutationRefreshTitle = notification?.userInfo?[PortfolioMutationRefreshUserInfoKey.title] as? String
+            ?? "正在更新資料…"
+        portfolioMutationRefreshMessage = notification?.userInfo?[PortfolioMutationRefreshUserInfoKey.message] as? String
+            ?? "交易完成後會自動顯示最新結果"
         portfolioMutationRefreshDepth += 1
         isPortfolioMutationRefreshing = true
     }
@@ -198,6 +207,8 @@ struct ContentView: View {
         portfolioMutationRefreshDepth = max(0, portfolioMutationRefreshDepth - 1)
         if portfolioMutationRefreshDepth == 0 {
             isPortfolioMutationRefreshing = false
+            portfolioMutationRefreshTitle = "正在更新資料…"
+            portfolioMutationRefreshMessage = "交易完成後會自動顯示最新結果"
         }
     }
 }
@@ -226,6 +237,9 @@ private struct DemoModeFloatingBadge: View {
 }
 
 private struct PortfolioMutationLoadingOverlay: View {
+    let title: String
+    let message: String
+
     var body: some View {
         ZStack {
             Color.black.opacity(0.18)
@@ -234,10 +248,10 @@ private struct PortfolioMutationLoadingOverlay: View {
             VStack(spacing: 12) {
                 ProgressView()
                     .tint(.appPrimary)
-                Text("正在更新資料…")
+                Text(title)
                     .font(.subheadline.weight(.semibold))
                     .foregroundColor(.primaryText)
-                Text("交易完成後會自動顯示最新結果")
+                Text(message)
                     .font(.caption)
                     .foregroundColor(.secondaryText)
             }

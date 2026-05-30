@@ -442,6 +442,44 @@ class MockDataService: DataServiceProtocol {
         guard userId == AppUser.id else { return }
         persistValuationStore(for: userId)
     }
+
+    func replaceLocalStoreForRestore(_ payload: LocalUserData, userId: String) throws {
+        guard userId == AppUser.id else {
+            throw DataServiceError.invalidOperation("只能還原目前使用者的備份資料。")
+        }
+
+        let normalized = payload.normalizedForRestore(userId: userId)
+        try LocalUserDataStore.replaceForRestore(normalized, userId: userId)
+        clearRuntimeStateForRestore(userId: userId, restoredData: normalized)
+        restorePersistedData(for: userId)
+    }
+
+    private func clearRuntimeStateForRestore(userId: String, restoredData: LocalUserData) {
+        let existingAccountIds = Set(accounts[userId, default: []].map(\.id))
+        let restoredAccountIds = Set(restoredData.structure.accounts.map(\.id))
+        let affectedAccountIds = existingAccountIds.union(restoredAccountIds)
+
+        for accountId in affectedAccountIds {
+            transactions.removeValue(forKey: accountId)
+            holdings.removeValue(forKey: accountId)
+            liabilities.removeValue(forKey: accountId)
+            accountSnapshots.removeValue(forKey: accountId)
+        }
+
+        accounts.removeValue(forKey: userId)
+        manualAssets.removeValue(forKey: userId)
+        manualAssetValuations.removeAll()
+        userHoldingsSnapshots.removeValue(forKey: userId)
+        aggregatedHoldingSnapshots = aggregatedHoldingSnapshots.filter { $0.value.userId != userId }
+        homeDashboardSnapshots.removeValue(forKey: userId)
+        dailyTrendSnapshots.removeValue(forKey: userId)
+        lastDailyTrendBackfillRunDateKeys.removeValue(forKey: userId)
+        portfolioStates.removeValue(forKey: userId)
+        priceSyncedAtByUserId.removeValue(forKey: userId)
+        priceSourceUpdatedAtByUserId.removeValue(forKey: userId)
+        valuationUpdatedAtByUserId.removeValue(forKey: userId)
+        structureUpdatedAtByUserId.removeValue(forKey: userId)
+    }
     
     func fetchPriceSourceUpdatedAt(userId: String) -> Date? {
         priceSourceUpdatedAtByUserId[userId]
