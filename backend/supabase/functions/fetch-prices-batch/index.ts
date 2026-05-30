@@ -11,7 +11,8 @@ const corsHeaders = {
 
 const allowedAssetTypes = new Set(["stock_tw", "stock_us", "crypto"])
 const maxSymbols = 100
-const maxHistoryDays = 370
+const maxHistoryDays = 120
+const maxPriceSlots = 6000
 
 type SymbolInput = {
   assetType?: unknown
@@ -147,6 +148,14 @@ serve(async (req) => {
     }
     if (startDate && endDate && daysInclusive(startDate, endDate) > maxHistoryDays) {
       return new Response(JSON.stringify({ error: `history range exceeds ${maxHistoryDays} days` }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      })
+    }
+    const estimatedHistoryDays = startDate && endDate ? daysInclusive(startDate, endDate) : 0
+    const priceSlots = symbols.length * estimatedHistoryDays
+    if (priceSlots > maxPriceSlots) {
+      return new Response(JSON.stringify({ error: `request exceeds ${maxPriceSlots} price slots` }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       })

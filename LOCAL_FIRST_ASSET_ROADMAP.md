@@ -172,6 +172,7 @@
 - App 使用 `fetch-prices-batch` 一次送出所有持股 symbol 與日期區間，回收 compact matrix 格式的 current/history/fx；不做 10 天 × 10 檔這種逐筆 request。
 - 補點會往第一個缺口日前多抓 14 天歷史價，對每檔做前值延續（forward-fill）。台股 / 美股休市、週末或單日缺價時，沿用該檔上一個可用收盤價；若某檔完全沒有任何可用價格，該檔略過，不讓整天失敗。
 - 若當天完全沒有任何歷史 / 前值價格可用，才不寫入該日走勢點，避免後端資料整段失敗時用今天價格誤補歷史。
+- `fetch-prices-batch` 只做簡單 request size 防護：單次最多 100 檔、歷史最多 120 天、總 price slots 最多 6000。
 
 每天第一次登入：
 
