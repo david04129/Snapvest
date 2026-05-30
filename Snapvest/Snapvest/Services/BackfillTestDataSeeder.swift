@@ -16,7 +16,7 @@ enum BackfillTestDataSeeder {
     private static let usdToTwd: Decimal = 32.15
 
     @MainActor
-    static func run(userId: String = AppUser.id) async -> BackfillTestSeedResult {
+    static func run(userId: String) async -> BackfillTestSeedResult {
         let seed = makeSeed(userId: userId)
         let dataService = MockDataService.shared
         dataService.beginDemoMode(seed: seed.demoSeed)

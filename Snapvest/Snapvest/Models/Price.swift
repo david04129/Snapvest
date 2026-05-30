@@ -17,14 +17,14 @@ struct Price: Identifiable, Codable {
     var source: String?
     var createdAt: Date
     
-    init(id: String = UUID().uuidString,
-         assetType: AssetType,
-         symbol: String,
-         price: Decimal,
-         currency: Currency,
-         priceDate: Date,
-         source: String? = nil,
-         createdAt: Date = Date()) {
+    nonisolated init(id: String = UUID().uuidString,
+                     assetType: AssetType,
+                     symbol: String,
+                     price: Decimal,
+                     currency: Currency,
+                     priceDate: Date,
+                     source: String? = nil,
+                     createdAt: Date = Date()) {
         self.id = id
         self.assetType = assetType
         self.symbol = symbol
