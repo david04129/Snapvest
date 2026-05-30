@@ -39,6 +39,20 @@ final class DemoModeManager: ObservableObject {
         
         isEnabled = true
     }
+
+    #if DEBUG
+    func enterBackfillTestMode(userId: String? = nil) async -> BackfillTestSeedResult {
+        guard !isSwitching else {
+            return BackfillTestSeedResult(summary: "示範資料切換中，請稍後再試。")
+        }
+        isSwitching = true
+        defer { isSwitching = false }
+
+        let result = await BackfillTestDataSeeder.run(userId: userId ?? AppUser.id)
+        isEnabled = true
+        return result
+    }
+    #endif
     
     func exitDemoMode(userId: String? = nil) async {
         guard !isSwitching else { return }

@@ -83,6 +83,14 @@ enum SupabaseConfig: Sendable {
     }
 }
 
+struct SupabasePriceBatch {
+    let dateKeys: [String]
+    let dates: [Date]
+    let historicalPricesByKeyAndDate: [String: [String: Decimal]]
+    let currentSnapshots: [AssetPriceSnapshot]
+    let twdRateByCurrency: [Currency: Decimal]
+}
+
 /// 從 Supabase 讀取股價與更新時間
 struct SupabasePriceService {
     
@@ -172,12 +180,156 @@ struct SupabasePriceService {
             return trimmed
         }
     }
+
+    static func batchKey(assetType: AssetType, symbol: String) -> String {
+        "\(assetType.rawValue):\(normalizeSymbol(assetType: assetType, symbol: symbol))"
+    }
+
+    static func fetchBatchPrices(
+        symbols: [SymbolInfo],
+        historyStartDate: Date? = nil,
+        historyEndDate: Date? = nil,
+        includeCurrent: Bool = true
+    ) async throws -> SupabasePriceBatch {
+        guard SupabaseConfig.isConfigured,
+              let url = URL(string: "\(SupabaseConfig.url!)/functions/v1/fetch-prices-batch") else {
+            throw SupabaseError.notConfigured
+        }
+
+        struct BatchSymbol: Encodable {
+            let assetType: String
+            let symbol: String
+        }
+
+        struct BatchHistory: Encodable {
+            let startDate: String
+            let endDate: String
+        }
+
+        struct BatchBody: Encodable {
+            let symbols: [BatchSymbol]
+            let history: BatchHistory?
+            let includeCurrent: Bool
+        }
+
+        var seenKeys = Set<String>()
+        let normalizedSymbols = symbols.compactMap { info -> BatchSymbol? in
+            let normalized = normalizeSymbol(assetType: info.assetType, symbol: info.symbol)
+            let key = "\(info.assetType.rawValue):\(normalized)"
+            guard !seenKeys.contains(key) else { return nil }
+            seenKeys.insert(key)
+            return BatchSymbol(assetType: info.assetType.rawValue, symbol: normalized)
+        }
+        guard !normalizedSymbols.isEmpty else {
+            return SupabasePriceBatch(
+                dateKeys: [],
+                dates: [],
+                historicalPricesByKeyAndDate: [:],
+                currentSnapshots: [],
+                twdRateByCurrency: [.TWD: 1]
+            )
+        }
+
+        let history: BatchHistory?
+        if let historyStartDate, let historyEndDate {
+            history = BatchHistory(
+                startDate: SupabaseRESTTimestampParser.closeDateString(from: historyStartDate),
+                endDate: SupabaseRESTTimestampParser.closeDateString(from: historyEndDate)
+            )
+        } else {
+            history = nil
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        SupabaseConfig.applyEdgeFunctionAuth(to: &request)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.httpBody = try JSONEncoder().encode(
+            BatchBody(
+                symbols: normalizedSymbols,
+                history: history,
+                includeCurrent: includeCurrent
+            )
+        )
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw SupabaseError.requestFailed
+        }
+
+        let decoded = try JSONDecoder().decode(SupabasePriceBatchResponse.self, from: data)
+        let dateKeys = decoded.dates
+        let dates = dateKeys.compactMap { SupabaseRESTTimestampParser.parseCloseDate($0) }
+
+        var historyByKeyAndDate: [String: [String: Decimal]] = [:]
+        for (key, values) in decoded.history {
+            var byDate: [String: Decimal] = [:]
+            for (index, value) in values.enumerated() where index < dateKeys.count {
+                if let price = value.decimalValue {
+                    byDate[dateKeys[index]] = price
+                }
+            }
+            historyByKeyAndDate[key] = byDate
+        }
+
+        var currentSnapshots: [AssetPriceSnapshot] = []
+        for symbol in normalizedSymbols {
+            let key = "\(symbol.assetType):\(symbol.symbol)"
+            guard let assetType = AssetType(rawValue: symbol.assetType) else { continue }
+            let currency = decoded.currencies[key].flatMap(Currency.init(rawValue:))
+                ?? assetType.quoteCurrency
+            let currentPrice = decoded.current[key]?.decimalValue
+            let previousPrice = decoded.previous[key]?.decimalValue
+            guard currentPrice != nil || previousPrice != nil else { continue }
+            currentSnapshots.append(
+                AssetPriceSnapshot(
+                    assetType: assetType,
+                    symbol: symbol.symbol,
+                    currency: currency,
+                    currentPrice: currentPrice,
+                    previousPrice: previousPrice,
+                    currentCloseDate: SupabaseRESTTimestampParser.parseCloseDate(decoded.currentDates[key]?.stringValue),
+                    previousCloseDate: SupabaseRESTTimestampParser.parseCloseDate(decoded.previousDates[key]?.stringValue)
+                )
+            )
+        }
+
+        var twdRates: [Currency: Decimal] = [.TWD: 1]
+        for (pair, value) in decoded.fx {
+            let parts = pair.split(separator: ":")
+            guard parts.count == 2,
+                  String(parts[1]) == "TWD",
+                  let currency = Currency(rawValue: String(parts[0])),
+                  let rate = value.decimalValue,
+                  rate > 0 else {
+                continue
+            }
+            twdRates[currency] = rate
+        }
+        if let usdToTwd = twdRates[.USD] {
+            ExchangeRateSessionCache.update(usdToTwd: usdToTwd)
+        }
+
+        return SupabasePriceBatch(
+            dateKeys: dateKeys,
+            dates: dates,
+            historicalPricesByKeyAndDate: historyByKeyAndDate,
+            currentSnapshots: currentSnapshots,
+            twdRateByCurrency: twdRates
+        )
+    }
     
-    /// 批量取得股價（並行請求）
+    /// 批量取得目前價；優先走 Edge Function 單筆請求，失敗時保留舊 REST fallback。
     static func fetchPrices(symbols: [SymbolInfo]) async throws -> [AssetPriceSnapshot] {
         guard SupabaseConfig.isConfigured,
               let baseUrl = SupabaseConfig.url,
               let key = SupabaseConfig.anonKey else { throw SupabaseError.notConfigured }
+
+        if let batch = try? await fetchBatchPrices(symbols: symbols, includeCurrent: true),
+           !batch.currentSnapshots.isEmpty {
+            return batch.currentSnapshots
+        }
         
         let rows = await withTaskGroup(of: SupabasePriceRow?.self) { group in
             for s in symbols {
@@ -332,6 +484,7 @@ struct SupabasePriceService {
 
 enum SupabaseError: Error {
     case notConfigured
+    case requestFailed
 }
 
 /// 支援 Postgres 回傳數字或字串格式的價格
@@ -411,5 +564,64 @@ private struct SupabasePriceHistoryRow: Decodable, Sendable {
             source: row.source,
             createdAt: SupabaseRESTTimestampParser.parse(row.updated_at) ?? Date()
         )
+    }
+}
+
+private struct SupabaseBatchDecimal: Decodable, Sendable {
+    let decimalValue: Decimal?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() {
+            decimalValue = nil
+        } else if let i = try? container.decode(Int.self) {
+            decimalValue = Decimal(i)
+        } else if let d = try? container.decode(Double.self) {
+            decimalValue = Decimal(d)
+        } else if let s = try? container.decode(String.self), let d = Decimal(string: s) {
+            decimalValue = d
+        } else {
+            decimalValue = nil
+        }
+    }
+}
+
+private struct SupabaseBatchString: Decodable, Sendable {
+    let stringValue: String?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() {
+            stringValue = nil
+        } else {
+            stringValue = try? container.decode(String.self)
+        }
+    }
+}
+
+private struct SupabasePriceBatchResponse: Decodable, Sendable {
+    let dates: [String]
+    let history: [String: [SupabaseBatchDecimal]]
+    let current: [String: SupabaseBatchDecimal]
+    let previous: [String: SupabaseBatchDecimal]
+    let currentDates: [String: SupabaseBatchString]
+    let previousDates: [String: SupabaseBatchString]
+    let currencies: [String: String]
+    let fx: [String: SupabaseBatchDecimal]
+
+    enum CodingKeys: String, CodingKey {
+        case dates, history, current, previous, currentDates, previousDates, currencies, fx
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        dates = try container.decodeIfPresent([String].self, forKey: .dates) ?? []
+        history = try container.decodeIfPresent([String: [SupabaseBatchDecimal]].self, forKey: .history) ?? [:]
+        current = try container.decodeIfPresent([String: SupabaseBatchDecimal].self, forKey: .current) ?? [:]
+        previous = try container.decodeIfPresent([String: SupabaseBatchDecimal].self, forKey: .previous) ?? [:]
+        currentDates = try container.decodeIfPresent([String: SupabaseBatchString].self, forKey: .currentDates) ?? [:]
+        previousDates = try container.decodeIfPresent([String: SupabaseBatchString].self, forKey: .previousDates) ?? [:]
+        currencies = try container.decodeIfPresent([String: String].self, forKey: .currencies) ?? [:]
+        fx = try container.decodeIfPresent([String: SupabaseBatchDecimal].self, forKey: .fx) ?? [:]
     }
 }

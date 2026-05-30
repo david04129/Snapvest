@@ -55,14 +55,18 @@ enum LocalDailyTrendBackfillService {
             return false
         }
 
-        let context = await BackfillContext.load(userId: userId, dataService: dataService)
+        let context = await BackfillContext.load(
+            userId: userId,
+            dataService: dataService,
+            historyStartDate: targetDates.first,
+            historyEndDate: targetDates.last
+        )
         var writtenCount = 0
         for date in targetDates {
             guard let snapshot = await buildSnapshot(
                 userId: userId,
                 date: date,
-                context: context,
-                dataService: dataService
+                context: context
             ) else {
                 continue
             }
@@ -98,16 +102,15 @@ enum LocalDailyTrendBackfillService {
     private static func buildSnapshot(
         userId: String,
         date: Date,
-        context: BackfillContext,
-        dataService: DataServiceProtocol
+        context: BackfillContext
     ) async -> LocalDailyTrendSnapshot? {
         guard let homeSnapshot = context.homeSnapshot else { return nil }
 
         var historicalInvestmentsTWD: Decimal = 0
         var historicalUnrealizedTWD: Decimal = 0
         for holding in context.holdings {
-            guard let price = await price(for: holding, on: date, context: context, dataService: dataService),
-                  let twdPerCurrency = await twdRate(for: holding.currency, on: date, context: context, dataService: dataService) else {
+            guard let price = price(for: holding, on: date, context: context),
+                  let twdPerCurrency = twdRate(for: holding.currency, context: context) else {
                 return nil
             }
             let marketValue = price * holding.quantity
@@ -134,15 +137,12 @@ enum LocalDailyTrendBackfillService {
     private static func price(
         for holding: HoldingSnapshotItem,
         on date: Date,
-        context: BackfillContext,
-        dataService: DataServiceProtocol
-    ) async -> Decimal? {
-        if let fetchedPrice = try? await dataService.fetchPrice(
-            assetType: holding.assetType,
-            symbol: holding.symbol,
-            date: date
-        ) {
-            return fetchedPrice.price
+        context: BackfillContext
+    ) -> Decimal? {
+        let dayKey = LocalDailyTrendSnapshot.dateKey(for: date)
+        let batchKey = SupabasePriceService.batchKey(assetType: holding.assetType, symbol: holding.symbol)
+        if let price = context.historicalPricesByKeyAndDate[batchKey]?[dayKey] {
+            return price
         }
 
         let normalized = SupabasePriceService.normalizeSymbol(assetType: holding.assetType, symbol: holding.symbol)
@@ -162,15 +162,10 @@ enum LocalDailyTrendBackfillService {
 
     private static func twdRate(
         for currency: Currency,
-        on date: Date,
-        context: BackfillContext,
-        dataService: DataServiceProtocol
-    ) async -> Decimal? {
+        context: BackfillContext
+    ) -> Decimal? {
         guard currency != .TWD else { return 1 }
-        if let cached = context.twdRateByCurrency[currency] {
-            return cached
-        }
-        return (try? await dataService.fetchExchangeRate(from: currency, to: .TWD, date: date)?.rate)
+        return context.twdRateByCurrency[currency]
     }
 
     private static func debugLog(_ message: String) {
@@ -185,10 +180,16 @@ private struct BackfillContext {
     let holdings: [HoldingSnapshotItem]
     let priceSnapshotsByKey: [String: AssetPriceSnapshot]
     let twdRateByCurrency: [Currency: Decimal]
+    let historicalPricesByKeyAndDate: [String: [String: Decimal]]
     let currentHoldingsMarketValueTWD: Decimal
     let currentHoldingsUnrealizedTWD: Decimal
 
-    static func load(userId: String, dataService: DataServiceProtocol) async -> BackfillContext {
+    static func load(
+        userId: String,
+        dataService: DataServiceProtocol,
+        historyStartDate: Date?,
+        historyEndDate: Date?
+    ) async -> BackfillContext {
         let homeSnapshot = try? await dataService.fetchHomeDashboardSnapshot(userId: userId)
         let accounts = (try? await dataService.fetchAccounts(userId: userId)) ?? []
         var holdings: [HoldingSnapshotItem] = []
@@ -204,15 +205,23 @@ private struct BackfillContext {
         let symbols = holdings.map {
             SymbolInfo(assetType: $0.assetType, symbol: $0.symbol)
         }
-        let priceSnapshots = (try? await dataService.fetchAssetPriceSnapshots(symbols: symbols)) ?? []
+        let batch = try? await SupabasePriceService.fetchBatchPrices(
+            symbols: symbols,
+            historyStartDate: historyStartDate,
+            historyEndDate: historyEndDate,
+            includeCurrent: true
+        )
+        let localPriceSnapshots = (try? await dataService.fetchAssetPriceSnapshots(symbols: symbols)) ?? []
+        var priceSnapshotsById = Dictionary(grouping: localPriceSnapshots, by: \.id).compactMapValues(\.first)
+        for snapshot in batch?.currentSnapshots ?? [] {
+            priceSnapshotsById[snapshot.id] = snapshot
+        }
+        let priceSnapshots = Array(priceSnapshotsById.values)
         let priceSnapshotsByKey = Dictionary(grouping: priceSnapshots, by: \.id).compactMapValues(\.first)
 
-        var twdRateByCurrency: [Currency: Decimal] = [.TWD: 1]
-        for currency in Set(holdings.map(\.currency)) where currency != .TWD {
-            if let rate = try? await dataService.fetchExchangeRate(from: currency, to: .TWD, date: nil)?.rate,
-               rate > 0 {
-                twdRateByCurrency[currency] = rate
-            }
+        var twdRateByCurrency = batch?.twdRateByCurrency ?? [.TWD: 1]
+        if twdRateByCurrency[.USD] == nil, let cachedUsdToTwd = ExchangeRateSessionCache.usdToTwd {
+            twdRateByCurrency[.USD] = cachedUsdToTwd
         }
 
         var currentHoldingsMarketValueTWD: Decimal = 0
@@ -235,6 +244,7 @@ private struct BackfillContext {
             holdings: holdings,
             priceSnapshotsByKey: priceSnapshotsByKey,
             twdRateByCurrency: twdRateByCurrency,
+            historicalPricesByKeyAndDate: batch?.historicalPricesByKeyAndDate ?? [:],
             currentHoldingsMarketValueTWD: currentHoldingsMarketValueTWD,
             currentHoldingsUnrealizedTWD: currentHoldingsUnrealizedTWD
         )
