@@ -455,7 +455,8 @@ enum PieChartGroupingEngine {
                     displayName: group.name,
                     unrealizedGainLossTWD: totalGain,
                     returnPercent: returnPct,
-                    color: leadRow.color
+                    color: leadRow.color,
+                    costBasisTWD: totalCost
                 )
             )
         }
@@ -474,6 +475,9 @@ enum PieChartGroupingEngine {
         inputs: PieChartInputs,
         rate: Decimal
     ) -> Decimal {
+        if let costBasisTWD = row.costBasisTWD {
+            return costBasisTWD
+        }
         if let holding = inputs.aggregatedHoldings.first(where: {
             $0.assetType != .cash && "\($0.assetType.rawValue)_\($0.symbol)" == row.id
         }),

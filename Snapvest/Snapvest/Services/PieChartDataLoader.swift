@@ -13,6 +13,7 @@ struct PieChartInputs {
     var twdRateByCurrency: [Currency: Decimal]
     var aggregatedHoldings: [AggregatedHoldingSnapshot]
     var assetPriceSnapshots: [AssetPriceSnapshot]
+    var manualAssets: [ManualAsset] = []
 
     var twdCash: Decimal {
         cashByCurrency[.TWD] ?? 0
@@ -31,6 +32,26 @@ struct PieChartInputs {
     var totalCashTWD: Decimal {
         cashByCurrency.reduce(Decimal.zero) { partial, item in
             partial + (cashValueInTWD(currency: item.key, amount: item.value) ?? 0)
+        }
+    }
+
+    var includedManualAssets: [ManualAsset] {
+        manualAssets.filter { $0.isIncludedInTotalAssets }
+    }
+
+    var investmentManualAssets: [ManualAsset] {
+        includedManualAssets.filter { $0.isIncludedInInvestments }
+    }
+
+    var totalManualAssetsTWD: Decimal {
+        includedManualAssets.reduce(Decimal.zero) { partial, asset in
+            partial + (ManualAssetMetrics.valueTWD(asset: asset, rates: twdRateByCurrency) ?? 0)
+        }
+    }
+
+    var totalManualInvestmentsTWD: Decimal {
+        investmentManualAssets.reduce(Decimal.zero) { partial, asset in
+            partial + (ManualAssetMetrics.valueTWD(asset: asset, rates: twdRateByCurrency) ?? 0)
         }
     }
 }
@@ -52,6 +73,7 @@ enum PieChartDataLoader {
         }
 
         let aggregated = try await dataService.fetchAggregatedHoldingSnapshots(userId: userId, assetType: nil)
+        let manualAssets = try await dataService.fetchManualAssets(userId: userId)
         let symbolInfos = await symbolInfosForPie(
             userId: userId,
             dataService: dataService,
@@ -83,12 +105,21 @@ enum PieChartDataLoader {
             }
         }
 
+        for currency in manualAssets.map(\.currency) where currency != .TWD && currency != .USD {
+            if twdRateByCurrency[currency] != nil { continue }
+            if let rate = try? await dataService.fetchExchangeRate(from: currency, to: .TWD, date: nil)?.rate,
+               rate > 0 {
+                twdRateByCurrency[currency] = rate
+            }
+        }
+
         return PieChartInputs(
             usdToTwdRate: usdToTwdRate,
             cashByCurrency: cashByCurrency,
             twdRateByCurrency: twdRateByCurrency,
             aggregatedHoldings: aggregated,
-            assetPriceSnapshots: prices
+            assetPriceSnapshots: prices,
+            manualAssets: manualAssets
         )
     }
     

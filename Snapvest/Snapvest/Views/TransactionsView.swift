@@ -46,8 +46,8 @@ struct TransactionsView: View {
     @State private var filterEndDate: Date = TransactionsView.defaultFilterEndDate
     @State private var activeTimeFilterDateField: CustomDatePickerField?
     
-    // 篩選偏好持久化的 key
-    private let filterPreferencesKey = "TransactionFilterPreferences"
+    private static let legacyFilterPreferencesKey = "TransactionFilterPreferences"
+    private static var sessionFilterPreferences: FilterPreferences?
     @State private var navigationStackResetID = UUID()
     private static var defaultFilterEndDate: Date {
         Calendar.current.startOfDay(for: Date())
@@ -361,29 +361,24 @@ struct TransactionsView: View {
         saveFilterPreferences()
     }
     
-    // 保存篩選偏好
+    // 保存篩選偏好：只保存在本次 App session，完全關閉 App 後回到預設。
     private func saveFilterPreferences() {
-        let preferences = FilterPreferences(
+        Self.sessionFilterPreferences = FilterPreferences(
             selectedAccountIds: Array(selectedAccountIds),
             timePreset: timePreset.rawValue,
             filterStartDate: timePreset == .all ? nil : filterStartDate,
             filterEndDate: timePreset == .all ? nil : filterEndDate,
             isTimeFilterEnabled: timePreset != .all
         )
-        
-        if let encoded = try? JSONEncoder().encode(preferences) {
-            UserDefaults.standard.set(encoded, forKey: filterPreferencesKey)
-        }
     }
     
-    // 載入篩選偏好（優化：在主線程上執行，避免阻塞）
+    // 載入本次 App session 的篩選偏好；舊版 UserDefaults 篩選會被清除。
     private func loadFilterPreferences() {
-        // 使用同步方式快速載入（UserDefaults 和 JSONDecoder 通常很快）
-        guard let data = UserDefaults.standard.data(forKey: filterPreferencesKey),
-              let preferences = try? JSONDecoder().decode(FilterPreferences.self, from: data) else {
+        UserDefaults.standard.removeObject(forKey: Self.legacyFilterPreferencesKey)
+        guard let preferences = Self.sessionFilterPreferences else {
             return
         }
-        
+
         // 批量更新狀態，減少視圖重繪次數
         selectedAccountIds = Set(preferences.selectedAccountIds)
         if let startDate = preferences.filterStartDate {

@@ -80,6 +80,7 @@ struct AccountDetailView: View {
                 initialUsdToTwdRate: viewModel.exchangeRate,
                 initialTwdPerBaseCurrency: portfolioViewModel.twdPerBaseCurrency
             )
+            .id(item)
         }
         .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { _ in
             Task {
@@ -251,26 +252,35 @@ struct AccountDetailView: View {
         )
     }
 
-    private func refreshSelectedHoldingIfNeeded() {
+    private func refreshSelectedHoldingIfNeeded() async {
         guard let current = selectedHolding else { return }
 
-        if let updated = assetsViewModel.aggregatedHoldings.first(where: { $0.id == current.id }) {
-            let newItem = holdingNavigationItem(for: updated)
-            if newItem != current {
-                selectedHolding = newItem
+        do {
+            if let freshItem = try await HoldingNavigationBuilder.loadFromPersisted(
+                userId: account.userId,
+                assetType: current.aggregatedHolding.assetType,
+                symbol: current.aggregatedHolding.symbol
+            ) {
+                if freshItem != current {
+                    selectedHolding = freshItem
+                }
+            } else {
+                selectedHolding = nil
             }
-        } else {
-            selectedHolding = nil
+        } catch {
+            if let updated = assetsViewModel.aggregatedHoldings.first(where: { $0.id == current.id }) {
+                let newItem = holdingNavigationItem(for: updated)
+                if newItem != current {
+                    selectedHolding = newItem
+                }
+            } else {
+                selectedHolding = nil
+            }
         }
     }
 
     @MainActor
     private func refreshAfterPortfolioMutation(appliesPersistedState: Bool) async {
-        let perfFlow = "accountDetailRefresh \(account.id) appliesPersisted=\(appliesPersistedState)"
-        let perfStart = DebugPerformanceLog.now()
-        var perfLast = perfStart
-        DebugPerformanceLog.start(perfFlow)
-
         if appliesPersistedState {
             await LaunchCoordinator.applyPersistedState(
                 userId: account.userId,
@@ -279,28 +289,21 @@ struct AccountDetailView: View {
                 assetsViewModel: assetsViewModel,
                 rebuildAccountDetailCache: false
             )
-            DebugPerformanceLog.lap("apply persisted", flow: perfFlow, start: perfStart, last: &perfLast)
         }
 
         if account.accountType == .debt {
             await loadDebtAccountData()
-            DebugPerformanceLog.lap("load debt data", flow: perfFlow, start: perfStart, last: &perfLast)
         } else if account.accountType == .otherDebt {
             await loadOtherDebtAccountData()
-            DebugPerformanceLog.lap("load other debt data", flow: perfFlow, start: perfStart, last: &perfLast)
         } else {
             await viewModel.refresh(accountId: account.id, account: account)
-            DebugPerformanceLog.lap("viewModel refresh", flow: perfFlow, start: perfStart, last: &perfLast)
             viewModel.displayCurrency = portfolioViewModel.viewCurrency
             await loadAccountCurrencyRateIfNeeded()
-            DebugPerformanceLog.lap("load account currency rate", flow: perfFlow, start: perfStart, last: &perfLast)
         }
         if let updated = accountsViewModel.accounts.first(where: { $0.id == account.id }) {
             displayAccountName = updated.name
         }
-        refreshSelectedHoldingIfNeeded()
-        DebugPerformanceLog.lap("refresh selected holding", flow: perfFlow, start: perfStart, last: &perfLast)
-        DebugPerformanceLog.end(perfFlow, start: perfStart)
+        await refreshSelectedHoldingIfNeeded()
     }
     
     @ViewBuilder

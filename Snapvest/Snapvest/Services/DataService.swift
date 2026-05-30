@@ -49,6 +49,15 @@ protocol DataServiceProtocol {
     func createLiability(_ liability: Liability) async throws
     func updateLiability(_ liability: Liability) async throws
     func deleteLiability(_ liabilityId: String) async throws
+
+    // 手動資產（本機 private data，不同步至後端）
+    func fetchManualAssets(userId: String) async throws -> [ManualAsset]
+    func createManualAsset(_ asset: ManualAsset) async throws
+    func updateManualAsset(_ asset: ManualAsset) async throws
+    func deleteManualAsset(_ assetId: String) async throws
+    func fetchManualAssetValuations(assetId: String) async throws -> [ManualAssetValuation]
+    func saveManualAssetValuation(_ valuation: ManualAssetValuation) async throws
+    func deleteManualAssetValuation(_ valuationId: String) async throws
     
     // 價格
     func fetchPrice(assetType: AssetType, symbol: String, date: Date?) async throws -> Price?
@@ -121,6 +130,8 @@ class MockDataService: DataServiceProtocol {
     private var transactions: [String: [Transaction]] = [:] // accountId: [Transaction]
     private var holdings: [String: [Holding]] = [:] // accountId: [Holding]
     private var liabilities: [String: [Liability]] = [:] // accountId: [Liability]
+    private var manualAssets: [String: [ManualAsset]] = [:] // userId: [ManualAsset]
+    private var manualAssetValuations: [String: [ManualAssetValuation]] = [:] // manualAssetId: [ManualAssetValuation]
     
     // 快照儲存
     private var accountSnapshots: [String: AccountSnapshot] = [:] // accountId: AccountSnapshot
@@ -148,6 +159,8 @@ class MockDataService: DataServiceProtocol {
         var transactions: [String: [Transaction]]
         var holdings: [String: [Holding]]
         var liabilities: [String: [Liability]]
+        var manualAssets: [String: [ManualAsset]]
+        var manualAssetValuations: [String: [ManualAssetValuation]]
         var accountSnapshots: [String: AccountSnapshot]
         var assetPriceSnapshots: [String: AssetPriceSnapshot]
         var userHoldingsSnapshots: [String: UserHoldingsSnapshot]
@@ -175,6 +188,8 @@ class MockDataService: DataServiceProtocol {
         transactions = seed.transactionsByAccountId
         holdings = [:]
         liabilities = seed.liabilitiesByAccountId
+        manualAssets = [:]
+        manualAssetValuations = [:]
         accountSnapshots = [:]
         assetPriceSnapshots = Dictionary(uniqueKeysWithValues: seed.assetPriceSnapshots.map { ($0.id, $0) })
         userHoldingsSnapshots = [:]
@@ -203,6 +218,8 @@ class MockDataService: DataServiceProtocol {
             transactions: transactions,
             holdings: holdings,
             liabilities: liabilities,
+            manualAssets: manualAssets,
+            manualAssetValuations: manualAssetValuations,
             accountSnapshots: accountSnapshots,
             assetPriceSnapshots: assetPriceSnapshots,
             userHoldingsSnapshots: userHoldingsSnapshots,
@@ -221,6 +238,8 @@ class MockDataService: DataServiceProtocol {
         transactions = store.transactions
         holdings = store.holdings
         liabilities = store.liabilities
+        manualAssets = store.manualAssets
+        manualAssetValuations = store.manualAssetValuations
         accountSnapshots = store.accountSnapshots
         assetPriceSnapshots = store.assetPriceSnapshots
         userHoldingsSnapshots = store.userHoldingsSnapshots
@@ -236,6 +255,8 @@ class MockDataService: DataServiceProtocol {
     private func restorePersistedData(for userId: String) {
         guard let saved = LocalUserDataStore.load(userId: userId) else { return }
         accounts[userId] = saved.structure.accounts
+        manualAssets[userId] = saved.structure.manualAssets
+        manualAssetValuations = saved.valuation.manualAssetValuationsByAssetId
         let accountIds = Set(saved.structure.accounts.map(\.id))
         for accountId in accountIds {
             if let accountTransactions = saved.structure.transactionsByAccountId[accountId] {
@@ -287,6 +308,7 @@ class MockDataService: DataServiceProtocol {
             accounts: userAccounts,
             transactionsByAccountId: transactionsByAccountId,
             liabilitiesByAccountId: liabilitiesByAccountId,
+            manualAssets: manualAssets[userId] ?? [],
             updatedAt: Date()
         )
     }
@@ -318,6 +340,8 @@ class MockDataService: DataServiceProtocol {
                 assetPrices[key] = snapshot
             }
         }
+        let manualAssetIds = Set(manualAssets[userId, default: []].map(\.id))
+        let manualValuations = manualAssetValuations.filter { manualAssetIds.contains($0.key) }
         
         return LocalUserValuationStore(
             homeDashboardSnapshot: homeDashboardSnapshots[userId],
@@ -325,6 +349,7 @@ class MockDataService: DataServiceProtocol {
             accountSnapshotsByAccountId: accountSnapshotsByAccountId,
             assetPriceSnapshotsByKey: assetPrices,
             aggregatedHoldingSnapshots: aggregated,
+            manualAssetValuationsByAssetId: manualValuations,
             priceSyncedAt: priceSyncedAtByUserId[userId],
             priceSourceUpdatedAt: priceSourceUpdatedAtByUserId[userId],
             updatedAt: Date()
@@ -642,6 +667,81 @@ class MockDataService: DataServiceProtocol {
             }
         }
     }
+
+    func fetchManualAssets(userId: String) async throws -> [ManualAsset] {
+        manualAssets[userId] ?? []
+    }
+
+    func createManualAsset(_ asset: ManualAsset) async throws {
+        let normalizedAsset = normalizedManualAsset(asset)
+        if manualAssets[asset.userId] == nil {
+            manualAssets[asset.userId] = []
+        }
+        manualAssets[asset.userId]?.append(normalizedAsset)
+        persistStructureIfActiveUser(normalizedAsset.userId)
+    }
+
+    func updateManualAsset(_ asset: ManualAsset) async throws {
+        let normalizedAsset = normalizedManualAsset(asset)
+        guard var userAssets = manualAssets[asset.userId],
+              let index = userAssets.firstIndex(where: { $0.id == asset.id }) else {
+            throw DataServiceError.invalidOperation("找不到要更新的手動資產")
+        }
+        userAssets[index] = normalizedAsset
+        manualAssets[normalizedAsset.userId] = userAssets
+        persistStructureIfActiveUser(normalizedAsset.userId)
+    }
+
+    private func normalizedManualAsset(_ asset: ManualAsset) -> ManualAsset {
+        guard asset.isIncludedInInvestments, !asset.isIncludedInTotalAssets else {
+            return asset
+        }
+        var normalized = asset
+        normalized.isIncludedInTotalAssets = true
+        return normalized
+    }
+
+    func deleteManualAsset(_ assetId: String) async throws {
+        var affectedUserId: String?
+        for (userId, userAssets) in manualAssets {
+            guard let index = userAssets.firstIndex(where: { $0.id == assetId }) else { continue }
+            manualAssets[userId]?.remove(at: index)
+            manualAssetValuations.removeValue(forKey: assetId)
+            affectedUserId = userId
+            break
+        }
+        if let affectedUserId {
+            persistLocalStore(for: affectedUserId)
+        }
+    }
+
+    func fetchManualAssetValuations(assetId: String) async throws -> [ManualAssetValuation] {
+        manualAssetValuations[assetId, default: []].sorted { $0.valuationDate > $1.valuationDate }
+    }
+
+    func saveManualAssetValuation(_ valuation: ManualAssetValuation) async throws {
+        var valuations = manualAssetValuations[valuation.manualAssetId] ?? []
+        if let index = valuations.firstIndex(where: { $0.id == valuation.id }) {
+            valuations[index] = valuation
+        } else {
+            valuations.append(valuation)
+        }
+        manualAssetValuations[valuation.manualAssetId] = valuations
+        persistLocalValuation(for: valuation.userId)
+    }
+
+    func deleteManualAssetValuation(_ valuationId: String) async throws {
+        var affectedUserId: String?
+        for (assetId, valuations) in manualAssetValuations {
+            guard let valuation = valuations.first(where: { $0.id == valuationId }) else { continue }
+            manualAssetValuations[assetId]?.removeAll { $0.id == valuationId }
+            affectedUserId = valuation.userId
+            break
+        }
+        if let affectedUserId {
+            persistLocalValuation(for: affectedUserId)
+        }
+    }
     
     func fetchPrice(assetType: AssetType, symbol: String, date: Date?) async throws -> Price? {
         nil
@@ -787,6 +887,272 @@ class MockDataService: DataServiceProtocol {
     func deleteHomeDashboardSnapshot(userId: String) async throws {
         homeDashboardSnapshots.removeValue(forKey: userId)
     }
+
+    #if DEBUG
+    func debugValidateSnapshotConsistency(userId: String) async -> SnapshotConsistencyReport {
+        let originalStore = currentRuntimeStore()
+        let currentAccountSnapshots = accountSnapshotsForUser(userId)
+        let currentHomeSnapshot = homeDashboardSnapshots[userId]
+        let currentUserHoldingsSnapshot = userHoldingsSnapshots[userId]
+        let currentAggregatedSnapshots = aggregatedSnapshotsForUser(userId)
+        var mismatches: [SnapshotConsistencyMismatch] = []
+
+        defer {
+            applyRuntimeStore(originalStore)
+        }
+
+        do {
+            _ = try await SnapshotUpdater.rebuildSnapshots(
+                userId: userId,
+                dataService: self,
+                priceService: PriceService(dataService: self)
+            )
+
+            compareAccountSnapshots(
+                current: currentAccountSnapshots,
+                rebuilt: accountSnapshotsForUser(userId),
+                mismatches: &mismatches
+            )
+            compareHomeSnapshot(
+                current: currentHomeSnapshot,
+                rebuilt: homeDashboardSnapshots[userId],
+                mismatches: &mismatches
+            )
+            compareUserHoldingsSnapshot(
+                current: currentUserHoldingsSnapshot,
+                rebuilt: userHoldingsSnapshots[userId],
+                mismatches: &mismatches
+            )
+            compareAggregatedSnapshots(
+                current: currentAggregatedSnapshots,
+                rebuilt: aggregatedSnapshotsForUser(userId),
+                mismatches: &mismatches
+            )
+        } catch {
+            mismatches.append(
+                SnapshotConsistencyMismatch(
+                    scope: "rebuild",
+                    field: "error",
+                    current: "n/a",
+                    rebuilt: error.localizedDescription
+                )
+            )
+        }
+
+        let report = SnapshotConsistencyReport(checkedAt: Date(), mismatches: mismatches)
+        if report.isConsistent {
+            print("[SnapshotConsistency] OK")
+        } else {
+            print("[SnapshotConsistency] \(mismatches.count) mismatch(es)")
+            mismatches.forEach { print("[SnapshotConsistency] \($0.description)") }
+        }
+        return report
+    }
+
+    private func accountSnapshotsForUser(_ userId: String) -> [String: AccountSnapshot] {
+        let accountIds = Set(accounts[userId, default: []].map(\.id))
+        return accountSnapshots.filter { accountIds.contains($0.key) }
+    }
+
+    private func aggregatedSnapshotsForUser(_ userId: String) -> [String: AggregatedHoldingSnapshot] {
+        aggregatedHoldingSnapshots.filter { $0.value.userId == userId }
+    }
+
+    private func compareAccountSnapshots(
+        current: [String: AccountSnapshot],
+        rebuilt: [String: AccountSnapshot],
+        mismatches: inout [SnapshotConsistencyMismatch]
+    ) {
+        let accountIds = Set(current.keys).union(rebuilt.keys).sorted()
+        for accountId in accountIds {
+            guard let currentSnapshot = current[accountId] else {
+                appendMismatch(&mismatches, scope: "account \(accountId)", field: "snapshot", current: "missing", rebuilt: "present")
+                continue
+            }
+            guard let rebuiltSnapshot = rebuilt[accountId] else {
+                appendMismatch(&mismatches, scope: "account \(accountId)", field: "snapshot", current: "present", rebuilt: "missing")
+                continue
+            }
+
+            compareDecimal(currentSnapshot.cashBalance, rebuiltSnapshot.cashBalance, scope: "account \(accountId)", field: "cashBalance", mismatches: &mismatches)
+            compareOptionalDecimal(currentSnapshot.remainingBalance, rebuiltSnapshot.remainingBalance, scope: "account \(accountId)", field: "remainingBalance", mismatches: &mismatches)
+            compareOptionalDecimal(currentSnapshot.totalPaidPrincipal, rebuiltSnapshot.totalPaidPrincipal, scope: "account \(accountId)", field: "totalPaidPrincipal", mismatches: &mismatches)
+            compareOptionalDecimal(currentSnapshot.totalPaidInterest, rebuiltSnapshot.totalPaidInterest, scope: "account \(accountId)", field: "totalPaidInterest", mismatches: &mismatches)
+            compareOptionalDecimal(currentSnapshot.totalSavedInterest, rebuiltSnapshot.totalSavedInterest, scope: "account \(accountId)", field: "totalSavedInterest", mismatches: &mismatches)
+            compareHoldings(currentSnapshot.holdings ?? [], rebuiltSnapshot.holdings ?? [], accountId: accountId, mismatches: &mismatches)
+        }
+    }
+
+    private func compareHoldings(
+        _ current: [HoldingSnapshotItem],
+        _ rebuilt: [HoldingSnapshotItem],
+        accountId: String,
+        mismatches: inout [SnapshotConsistencyMismatch]
+    ) {
+        let currentByKey = Dictionary(grouping: current, by: { "\($0.assetType.rawValue)_\($0.symbol)" }).compactMapValues(\.first)
+        let rebuiltByKey = Dictionary(grouping: rebuilt, by: { "\($0.assetType.rawValue)_\($0.symbol)" }).compactMapValues(\.first)
+        let keys = Set(currentByKey.keys).union(rebuiltByKey.keys).sorted()
+
+        for key in keys {
+            let scope = "account \(accountId) holding \(key)"
+            guard let currentHolding = currentByKey[key] else {
+                appendMismatch(&mismatches, scope: scope, field: "holding", current: "missing", rebuilt: "present")
+                continue
+            }
+            guard let rebuiltHolding = rebuiltByKey[key] else {
+                appendMismatch(&mismatches, scope: scope, field: "holding", current: "present", rebuilt: "missing")
+                continue
+            }
+
+            if currentHolding.currency != rebuiltHolding.currency {
+                appendMismatch(&mismatches, scope: scope, field: "currency", current: currentHolding.currency.rawValue, rebuilt: rebuiltHolding.currency.rawValue)
+            }
+            compareDecimal(currentHolding.quantity, rebuiltHolding.quantity, scope: scope, field: "quantity", mismatches: &mismatches)
+            compareDecimal(currentHolding.averageCost, rebuiltHolding.averageCost, scope: scope, field: "averageCost", mismatches: &mismatches)
+        }
+    }
+
+    private func compareHomeSnapshot(
+        current: HomeDashboardSnapshot?,
+        rebuilt: HomeDashboardSnapshot?,
+        mismatches: inout [SnapshotConsistencyMismatch]
+    ) {
+        guard let current else {
+            appendMismatch(&mismatches, scope: "home", field: "snapshot", current: "missing", rebuilt: rebuilt == nil ? "missing" : "present")
+            return
+        }
+        guard let rebuilt else {
+            appendMismatch(&mismatches, scope: "home", field: "snapshot", current: "present", rebuilt: "missing")
+            return
+        }
+
+        compareDecimal(current.netWorth, rebuilt.netWorth, scope: "home", field: "netWorth", mismatches: &mismatches)
+        compareDecimal(current.totalLiabilities, rebuilt.totalLiabilities, scope: "home", field: "totalLiabilities", mismatches: &mismatches)
+        compareDecimal(current.totalAssets, rebuilt.totalAssets, scope: "home", field: "totalAssets", mismatches: &mismatches)
+        compareDecimal(current.totalInvestments, rebuilt.totalInvestments, scope: "home", field: "totalInvestments", mismatches: &mismatches)
+        compareDecimal(current.totalInvestmentsCost, rebuilt.totalInvestmentsCost, scope: "home", field: "totalInvestmentsCost", mismatches: &mismatches)
+        compareDecimal(current.totalCash, rebuilt.totalCash, scope: "home", field: "totalCash", mismatches: &mismatches)
+        compareDecimal(current.twdCash, rebuilt.twdCash, scope: "home", field: "twdCash", mismatches: &mismatches)
+        compareDecimal(current.usdCash, rebuilt.usdCash, scope: "home", field: "usdCash", mismatches: &mismatches)
+        compareDecimal(current.realizedGainLossTWD, rebuilt.realizedGainLossTWD, scope: "home", field: "realizedGainLossTWD", mismatches: &mismatches)
+        compareDecimal(current.realizedGainLossUSD, rebuilt.realizedGainLossUSD, scope: "home", field: "realizedGainLossUSD", mismatches: &mismatches)
+    }
+
+    private func compareUserHoldingsSnapshot(
+        current: UserHoldingsSnapshot?,
+        rebuilt: UserHoldingsSnapshot?,
+        mismatches: inout [SnapshotConsistencyMismatch]
+    ) {
+        guard let current else {
+            appendMismatch(&mismatches, scope: "userHoldings", field: "snapshot", current: "missing", rebuilt: rebuilt == nil ? "missing" : "present")
+            return
+        }
+        guard let rebuilt else {
+            appendMismatch(&mismatches, scope: "userHoldings", field: "snapshot", current: "present", rebuilt: "missing")
+            return
+        }
+
+        let currentSymbols = current.symbols.map(symbolText).sorted()
+        let rebuiltSymbols = rebuilt.symbols.map(symbolText).sorted()
+        if currentSymbols != rebuiltSymbols {
+            appendMismatch(
+                &mismatches,
+                scope: "userHoldings",
+                field: "symbols",
+                current: currentSymbols.joined(separator: ","),
+                rebuilt: rebuiltSymbols.joined(separator: ",")
+            )
+        }
+    }
+
+    private func compareAggregatedSnapshots(
+        current: [String: AggregatedHoldingSnapshot],
+        rebuilt: [String: AggregatedHoldingSnapshot],
+        mismatches: inout [SnapshotConsistencyMismatch]
+    ) {
+        let keys = Set(current.keys).union(rebuilt.keys).sorted()
+        for key in keys {
+            guard let currentSnapshot = current[key] else {
+                appendMismatch(&mismatches, scope: "aggregated \(key)", field: "snapshot", current: "missing", rebuilt: "present")
+                continue
+            }
+            guard let rebuiltSnapshot = rebuilt[key] else {
+                appendMismatch(&mismatches, scope: "aggregated \(key)", field: "snapshot", current: "present", rebuilt: "missing")
+                continue
+            }
+
+            if currentSnapshot.currency != rebuiltSnapshot.currency {
+                appendMismatch(&mismatches, scope: "aggregated \(key)", field: "currency", current: currentSnapshot.currency.rawValue, rebuilt: rebuiltSnapshot.currency.rawValue)
+            }
+            compareDecimal(currentSnapshot.totalQuantity, rebuiltSnapshot.totalQuantity, scope: "aggregated \(key)", field: "totalQuantity", mismatches: &mismatches)
+            compareDecimal(currentSnapshot.weightedAverageCost, rebuiltSnapshot.weightedAverageCost, scope: "aggregated \(key)", field: "weightedAverageCost", mismatches: &mismatches)
+            compareDecimal(currentSnapshot.totalCost, rebuiltSnapshot.totalCost, scope: "aggregated \(key)", field: "totalCost", mismatches: &mismatches)
+            if currentSnapshot.sourceAccountIds.sorted() != rebuiltSnapshot.sourceAccountIds.sorted() {
+                appendMismatch(
+                    &mismatches,
+                    scope: "aggregated \(key)",
+                    field: "sourceAccountIds",
+                    current: currentSnapshot.sourceAccountIds.sorted().joined(separator: ","),
+                    rebuilt: rebuiltSnapshot.sourceAccountIds.sorted().joined(separator: ",")
+                )
+            }
+        }
+    }
+
+    private func compareOptionalDecimal(
+        _ current: Decimal?,
+        _ rebuilt: Decimal?,
+        scope: String,
+        field: String,
+        mismatches: inout [SnapshotConsistencyMismatch]
+    ) {
+        switch (current, rebuilt) {
+        case (.none, .none):
+            return
+        case (.some(let current), .some(let rebuilt)):
+            compareDecimal(current, rebuilt, scope: scope, field: field, mismatches: &mismatches)
+        default:
+            appendMismatch(&mismatches, scope: scope, field: field, current: decimalText(current), rebuilt: decimalText(rebuilt))
+        }
+    }
+
+    private func compareDecimal(
+        _ current: Decimal,
+        _ rebuilt: Decimal,
+        scope: String,
+        field: String,
+        mismatches: inout [SnapshotConsistencyMismatch]
+    ) {
+        guard current != rebuilt else { return }
+        appendMismatch(&mismatches, scope: scope, field: field, current: decimalText(current), rebuilt: decimalText(rebuilt))
+    }
+
+    private func appendMismatch(
+        _ mismatches: inout [SnapshotConsistencyMismatch],
+        scope: String,
+        field: String,
+        current: String,
+        rebuilt: String
+    ) {
+        mismatches.append(
+            SnapshotConsistencyMismatch(
+                scope: scope,
+                field: field,
+                current: current,
+                rebuilt: rebuilt
+            )
+        )
+    }
+
+    private func decimalText(_ value: Decimal?) -> String {
+        guard let value else { return "nil" }
+        return NSDecimalNumber(decimal: value).stringValue
+    }
+
+    private func symbolText(_ symbol: SymbolInfo) -> String {
+        "\(symbol.assetType.rawValue)_\(symbol.symbol)"
+    }
+    #endif
     
     func syncPortfolioState(_ payload: PortfolioStateSyncPayload) async throws {
         portfolioStates[payload.userId] = payload

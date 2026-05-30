@@ -107,7 +107,7 @@ struct AssetsView: View {
             .background(Color.mainBackground)
             .navigationBarBackButtonHidden(true)
             .safeAreaInset(edge: .top) {
-                customHeaderBar(icon: "chart.bar.fill", title: "資產")
+                customHeaderBar(icon: "chart.bar.fill", title: "投資")
             }
             .refreshable {
                 await SnapshotRefreshCoordinator.rebuildAndNotify(userId: userId)
@@ -124,11 +124,11 @@ struct AssetsView: View {
                         assetsViewModel: viewModel,
                         rebuildAccountDetailCache: false
                     )
-                    refreshSelectedHoldingIfNeeded()
+                    await refreshSelectedHoldingIfNeeded()
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .transactionsDidChange)) { _ in
-                refreshSelectedHoldingIfNeeded()
+                Task { await refreshSelectedHoldingIfNeeded() }
             }
             .navigationDestination(item: $selectedHolding) { item in
                 HoldingDetailView(
@@ -153,16 +153,30 @@ struct AssetsView: View {
     // MARK: - 詳情頁同步（買入／賣出後刷新個股頁）
     
     /// 若正在看個股詳情，用最新快照更新；全賣光則 pop 回列表
-    private func refreshSelectedHoldingIfNeeded() {
+    private func refreshSelectedHoldingIfNeeded() async {
         guard let current = selectedHolding else { return }
         
-        if let updated = viewModel.aggregatedHoldings.first(where: { $0.id == current.id }) {
-            let newItem = holdingNavigationItem(for: updated)
-            if newItem != current {
-                selectedHolding = newItem
+        do {
+            if let freshItem = try await HoldingNavigationBuilder.loadFromPersisted(
+                userId: userId,
+                assetType: current.aggregatedHolding.assetType,
+                symbol: current.aggregatedHolding.symbol
+            ) {
+                if freshItem != current {
+                    selectedHolding = freshItem
+                }
+            } else {
+                selectedHolding = nil
             }
-        } else {
-            selectedHolding = nil
+        } catch {
+            if let updated = viewModel.aggregatedHoldings.first(where: { $0.id == current.id }) {
+                let newItem = holdingNavigationItem(for: updated)
+                if newItem != current {
+                    selectedHolding = newItem
+                }
+            } else {
+                selectedHolding = nil
+            }
         }
     }
     

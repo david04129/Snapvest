@@ -439,9 +439,7 @@ struct SellTradeFormView: View {
         FormRow(title: "帳戶", icon: "building.columns.fill", color: market.themeColor) {
             if let account = selectedAccount {
                 HStack(spacing: 8) {
-                    Image(systemName: account.accountType.icon)
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(account.accountType.color)
+                    CurrencyCodeChip(currency: account.currency, tint: account.accountType.color, style: .filled)
                     Text(account.name)
                         .foregroundColor(.primaryText)
                 }
@@ -494,10 +492,7 @@ struct SellTradeFormView: View {
                     .font(.system(size: 22))
                     .foregroundColor(isSelected ? market.themeColor : .secondaryText)
 
-                Image(systemName: option.account.accountType.icon)
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(option.account.accountType.color)
-                    .font(.system(size: 18))
+                CurrencyCodeChip(currency: option.account.currency, tint: option.account.accountType.color, style: .filled)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(option.account.name)

@@ -52,6 +52,7 @@ class AssetsViewModel: ObservableObject {
             let fetchedAccounts = try await dataService.fetchAccounts(userId: userId)
             let accountSnapshots = try await loadAccountSnapshots(accounts: fetchedAccounts)
             let aggregated = try await dataService.fetchAggregatedHoldingSnapshots(userId: userId, assetType: nil)
+            let manualAssets = try await dataService.fetchManualAssets(userId: userId)
             let symbolInfos = await loadSymbolInfos(
                 userId: userId,
                 accountSnapshots: accountSnapshots,
@@ -64,7 +65,8 @@ class AssetsViewModel: ObservableObject {
             await calculateSummary(
                 assetPriceSnapshots: assetPriceSnapshots,
                 accountSnapshots: accountSnapshots,
-                accounts: fetchedAccounts
+                accounts: fetchedAccounts,
+                manualAssets: manualAssets
             )
         } catch {
             errorMessage = "載入資料失敗：\(error.localizedDescription)"
@@ -121,7 +123,8 @@ class AssetsViewModel: ObservableObject {
     private func calculateSummary(
         assetPriceSnapshots: [AssetPriceSnapshot],
         accountSnapshots: [AccountSnapshot],
-        accounts: [Account]
+        accounts: [Account],
+        manualAssets: [ManualAsset]
     ) async {
         // 建立價格快照映射
         var priceMap: [String: AssetPriceSnapshot] = [:]
@@ -189,6 +192,18 @@ class AssetsViewModel: ObservableObject {
                 totalCashTWD += amount
             }
         }
+
+        let manualRates = await loadTwdRateByCurrency(for: manualAssets.map(\.currency))
+        let totalManualAssetsTWD = manualAssets
+            .filter(\.isIncludedInTotalAssets)
+            .reduce(Decimal.zero) { partial, asset in
+                partial + (ManualAssetMetrics.valueTWD(asset: asset, rates: manualRates) ?? 0)
+            }
+        let totalManualInvestmentsTWD = manualAssets
+            .filter { $0.isIncludedInTotalAssets && $0.isIncludedInInvestments }
+            .reduce(Decimal.zero) { partial, asset in
+                partial + (ManualAssetMetrics.valueTWD(asset: asset, rates: manualRates) ?? 0)
+            }
         
         // ============================================
         // 注意：總成本計算使用購買時匯率
@@ -197,9 +212,9 @@ class AssetsViewModel: ObservableObject {
         // 因此這裡不需要額外處理
         // ============================================
         
-        self.totalInvestments = totalInvestmentsValue
+        self.totalInvestments = totalInvestmentsValue + totalManualInvestmentsTWD
         self.totalCash = totalCashTWD
-        self.totalAssets = totalInvestmentsValue + totalCashTWD
+        self.totalAssets = totalInvestmentsValue + totalCashTWD + totalManualAssetsTWD
         
         allocationTwdCash = cashByCurrency[.TWD] ?? 0
         let usdCash = cashByCurrency[.USD] ?? 0
@@ -231,5 +246,21 @@ class AssetsViewModel: ObservableObject {
         allocationStockTW = tw
         allocationStockUS = us
         allocationCrypto = crypto
+    }
+
+    private func loadTwdRateByCurrency(for currencies: [Currency]) async -> [Currency: Decimal] {
+        var rates: [Currency: Decimal] = [
+            .TWD: 1
+        ]
+        if usdToTwdRate > 0 {
+            rates[.USD] = usdToTwdRate
+        }
+        for currency in Set(currencies) where currency != .TWD && rates[currency] == nil {
+            if let rate = try? await dataService.fetchExchangeRate(from: currency, to: .TWD, date: nil)?.rate,
+               rate > 0 {
+                rates[currency] = rate
+            }
+        }
+        return rates
     }
 }

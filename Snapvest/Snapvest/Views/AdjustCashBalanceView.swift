@@ -390,8 +390,11 @@ struct AdjustCashBalanceView: View {
                 notes: finalNotes,
                 transactionDate: transactionDate
             )
-            await transactionsViewModel.createTransaction(transaction)
-            await viewModel.refresh(accountId: account.id)
+            await transactionsViewModel.createTransaction(
+                transaction,
+                skipPriceValidation: true,
+                showsLoadingOverlay: false
+            )
             dismiss()
         }
     }

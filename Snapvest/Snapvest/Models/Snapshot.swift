@@ -78,6 +78,7 @@ struct HomeDashboardSnapshot: Identifiable, Codable, Equatable {
     let netWorth: Decimal
     let totalLiabilities: Decimal
     let totalAssets: Decimal
+    let totalInvestments: Decimal
     let totalInvestmentsCost: Decimal
     let totalCash: Decimal
     let twdCash: Decimal
@@ -91,6 +92,7 @@ struct HomeDashboardSnapshot: Identifiable, Codable, Equatable {
         netWorth: Decimal,
         totalLiabilities: Decimal,
         totalAssets: Decimal,
+        totalInvestments: Decimal? = nil,
         totalInvestmentsCost: Decimal,
         totalCash: Decimal,
         twdCash: Decimal,
@@ -104,6 +106,7 @@ struct HomeDashboardSnapshot: Identifiable, Codable, Equatable {
         self.netWorth = netWorth
         self.totalLiabilities = totalLiabilities
         self.totalAssets = totalAssets
+        self.totalInvestments = totalInvestments ?? (totalAssets - totalCash)
         self.totalInvestmentsCost = totalInvestmentsCost
         self.totalCash = totalCash
         self.twdCash = twdCash
@@ -111,6 +114,23 @@ struct HomeDashboardSnapshot: Identifiable, Codable, Equatable {
         self.realizedGainLossTWD = realizedGainLossTWD
         self.realizedGainLossUSD = realizedGainLossUSD
         self.lastUpdated = lastUpdated
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        userId = try container.decode(String.self, forKey: .userId)
+        id = try container.decodeIfPresent(String.self, forKey: .id) ?? userId
+        netWorth = try container.decode(Decimal.self, forKey: .netWorth)
+        totalLiabilities = try container.decode(Decimal.self, forKey: .totalLiabilities)
+        totalAssets = try container.decode(Decimal.self, forKey: .totalAssets)
+        totalInvestmentsCost = try container.decode(Decimal.self, forKey: .totalInvestmentsCost)
+        totalCash = try container.decode(Decimal.self, forKey: .totalCash)
+        totalInvestments = try container.decodeIfPresent(Decimal.self, forKey: .totalInvestments) ?? (totalAssets - totalCash)
+        twdCash = try container.decode(Decimal.self, forKey: .twdCash)
+        usdCash = try container.decode(Decimal.self, forKey: .usdCash)
+        realizedGainLossTWD = try container.decode(Decimal.self, forKey: .realizedGainLossTWD)
+        realizedGainLossUSD = try container.decode(Decimal.self, forKey: .realizedGainLossUSD)
+        lastUpdated = try container.decode(Date.self, forKey: .lastUpdated)
     }
 }
 

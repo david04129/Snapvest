@@ -11,7 +11,9 @@ struct AddAccountView: View {
     @ObservedObject var viewModel: AccountsViewModel
     @Environment(\.dismiss) var dismiss
     @StateObject private var transactionsViewModel = TransactionsViewModel()
+    @StateObject private var manualAssetsViewModel = ManualAssetsViewModel()
     
+    @State private var selectedItemKind: AddItemKind?
     @State private var selectedAccountType: AccountType?
     @State private var selectedCurrency: Currency = .TWD
     @State private var showingAccountDetails = false
@@ -69,23 +71,52 @@ struct AddAccountView: View {
         if showingAccountDetails, let accountType = selectedAccountType {
             return "新增\(accountType.displayName)"
         }
-        return "新增帳戶"
+        if let selectedItemKind {
+            return selectedItemKind.navigationTitle
+        }
+        return "新增項目"
+    }
+
+    private var visibleAccountCategories: [AccountCategory] {
+        switch selectedItemKind {
+        case .account:
+            return [.deposit, .investment]
+        case .liability:
+            return [.liability]
+        case .manualAsset, .none:
+            return []
+        }
     }
     
     var body: some View {
         NavigationStack {
             Group {
-                if !showingAccountDetails {
-                    // 第一步：選擇帳戶類型
+                if selectedItemKind == nil {
+                    AddItemKindSelectionView { kind in
+                        selectedItemKind = kind
+                    }
+                } else if selectedItemKind == .manualAsset {
+                    ManualAssetFormView(
+                        viewModel: manualAssetsViewModel,
+                        userId: userId,
+                        onCancel: {
+                            selectedItemKind = nil
+                        },
+                        onSaved: {
+                            dismiss()
+                        }
+                    )
+                } else if !showingAccountDetails {
+                    // 選擇帳戶／負債類型
                     VStack(spacing: 0) {
                         // 標題和說明
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("新增帳戶")
+                            Text(selectedItemKind?.navigationTitle ?? "新增項目")
                                 .font(.title2)
                                 .fontWeight(.bold)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             
-                            Text("請選擇您想建立的帳戶類型。")
+                            Text(selectedItemKind?.selectionDescription ?? "請選擇您想建立的項目。")
                                 .font(.subheadline)
                                 .foregroundColor(.secondaryText)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -97,7 +128,7 @@ struct AddAccountView: View {
                         // 帳戶類型選擇（存款／投資／債務）
                         ScrollView {
                             VStack(alignment: .leading, spacing: 20) {
-                                ForEach(AccountCategory.allCases) { category in
+                                ForEach(visibleAccountCategories) { category in
                                     VStack(alignment: .leading, spacing: 10) {
                                         Text(category.rawValue)
                                             .font(.subheadline)
@@ -197,6 +228,8 @@ struct AddAccountView: View {
                             withAnimation {
                                 showingAccountDetails = false
                             }
+                        } else if selectedItemKind != nil {
+                            selectedItemKind = nil
                         } else {
                             dismiss()
                         }
@@ -206,6 +239,7 @@ struct AddAccountView: View {
         }
         .onAppear {
             resetForm()
+            selectedItemKind = nil
         }
         .snapFormSheetChrome()
     }
@@ -489,6 +523,144 @@ struct AddAccountView: View {
             .dividing(by: denominator)
         
         return result.decimalValue
+    }
+}
+
+private enum AddItemKind: CaseIterable, Identifiable {
+    case account
+    case manualAsset
+    case liability
+
+    var id: String { title }
+
+    var title: String {
+        switch self {
+        case .account: return "新增帳戶"
+        case .manualAsset: return "新增手動資產"
+        case .liability: return "新增負債"
+        }
+    }
+
+    var navigationTitle: String { title }
+
+    var description: String {
+        switch self {
+        case .account:
+            return "現金、證券與加密貨幣帳戶，可用來記錄交易與現金餘額。"
+        case .manualAsset:
+            return "基金、房地產、保單、收藏品等沒有公開即時價格的資產。"
+        case .liability:
+            return "房貸、信貸、卡費或其他需要追蹤的欠款。"
+        }
+    }
+
+    var selectionDescription: String {
+        switch self {
+        case .account:
+            return "請選擇您想建立的帳戶類型。"
+        case .manualAsset:
+            return "請輸入手動資產資料。"
+        case .liability:
+            return "請選擇您想建立的負債類型。"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .account: return "building.columns.fill"
+        case .manualAsset: return "square.grid.2x2.fill"
+        case .liability: return "creditcard.fill"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .account: return .appPrimary
+        case .manualAsset: return .stockUSColor
+        case .liability: return .lossRed
+        }
+    }
+}
+
+private struct AddItemKindSelectionView: View {
+    let onSelect: (AddItemKind) -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("新增項目")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Text("選擇要建立的資料類型。手動資產會保存在本機，不同步到後端。")
+                    .font(.subheadline)
+                    .foregroundColor(.secondaryText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.horizontal)
+            .padding(.top)
+            .padding(.bottom, 8)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(AddItemKind.allCases) { kind in
+                        AddItemKindSelectionCard(kind: kind) {
+                            onSelect(kind)
+                        }
+                    }
+                }
+                .padding()
+            }
+        }
+    }
+}
+
+private struct AddItemKindSelectionCard: View {
+    let kind: AddItemKind
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 16) {
+                ZStack {
+                    Circle()
+                        .fill(kind.color.opacity(0.16))
+                        .frame(width: 50, height: 50)
+
+                    Image(systemName: kind.icon)
+                        .foregroundColor(kind.color)
+                        .font(.system(size: 23, weight: .semibold))
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(kind.title)
+                        .font(.headline)
+                        .foregroundColor(.primaryText)
+
+                    Text(kind.description)
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                        .lineLimit(2)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(.secondaryText)
+            }
+            .padding()
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(kind.color.opacity(0.05))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(kind.color.opacity(0.9), lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -1440,6 +1612,525 @@ private struct CurrencySelectionSheet: View {
                     .stroke(isSelected ? tint.opacity(0.36) : Color.separator.opacity(0.35), lineWidth: 1)
             }
             .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - 手動資產表單
+
+private struct ManualAssetFormView: View {
+    @ObservedObject var viewModel: ManualAssetsViewModel
+    let userId: String
+    let onCancel: () -> Void
+    let onSaved: () -> Void
+
+    @State private var name = ""
+    @State private var category: ManualAssetCategory = .other
+    @State private var currency: Currency = .TWD
+    @State private var currentValue = ""
+    @State private var costBasis = ""
+    @State private var includesPurchaseDate = false
+    @State private var purchaseDate = Date()
+    @State private var notes = ""
+    @State private var isIncludedInTotalAssets = true
+    @State private var isIncludedInInvestments = false
+    @State private var localErrorMessage: String?
+    @State private var showingPurchaseDatePicker = false
+
+    private let accentColor = Color.stockUSColor
+
+    private var isSaveDisabled: Bool {
+        viewModel.isSaving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || currentValue.isEmpty
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(spacing: 24) {
+                    heroSection
+                    formCard
+                    Spacer(minLength: 20)
+                }
+                .padding(.top, 8)
+            }
+            .snapFormScrollDismissesKeyboard()
+
+            saveButton
+        }
+        .onAppear {
+            currency = BaseCurrencyManager.shared.baseCurrency
+        }
+        .onChange(of: isIncludedInInvestments) { _, isIncluded in
+            if isIncluded {
+                isIncludedInTotalAssets = true
+            }
+        }
+        .onChange(of: isIncludedInTotalAssets) { _, isIncluded in
+            if !isIncluded {
+                isIncludedInInvestments = false
+            }
+        }
+        .sheet(isPresented: $showingPurchaseDatePicker) {
+            NavigationStack {
+                VStack {
+                    DatePicker(
+                        "選擇購買日期",
+                        selection: $purchaseDate,
+                        displayedComponents: .date
+                    )
+                    .datePickerStyle(.wheel)
+                    .labelsHidden()
+                    .padding()
+                    Spacer()
+                }
+                .background(Color.mainBackground)
+                .navigationTitle("購買日期")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button("完成") { showingPurchaseDatePicker = false }
+                    }
+                }
+            }
+            .snapFormSheetChrome()
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
+        }
+    }
+
+    private var heroSection: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "square.grid.2x2.fill")
+                .font(.system(size: 48))
+                .foregroundColor(accentColor)
+                .frame(width: 80, height: 80)
+                .background(accentColor.opacity(0.1))
+                .clipShape(Circle())
+
+            Text("手動資產")
+                .font(.title3)
+                .fontWeight(.semibold)
+                .foregroundColor(.primaryText)
+
+            Text("記錄沒有公開即時價格、但需要納入資產總覽的項目。")
+                .font(.subheadline)
+                .foregroundColor(.secondaryText)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 32)
+    }
+
+    private var formCard: some View {
+        VStack(spacing: 0) {
+            fieldSection(title: "資產名稱", icon: "tag.fill") {
+                TextField("例如：房地產、基金、保單", text: $name)
+                    .textFieldStyle(CustomTextFieldStyle())
+                    .onChange(of: name) { _, _ in clearErrors() }
+                errorMessageView
+            }
+
+            formDivider
+
+            ManualAssetCategoryDropdownField(
+                selectedCategory: $category,
+                tint: accentColor
+            )
+            .padding(20)
+
+            formDivider
+
+            CurrencyDropdownField(
+                title: "資產幣別",
+                icon: "dollarsign.arrow.circlepath",
+                color: accentColor,
+                options: Currency.baseCurrencyOptions,
+                selectedCurrency: $currency,
+                helperText: "現值與成本會依這個幣別換算到主要幣別。"
+            )
+            .padding(20)
+
+            formDivider
+
+            fieldSection(title: "目前現值", icon: "dollarsign.circle.fill", trailing: currency.rawValue) {
+                AmountKeypadInputView(
+                    text: $currentValue,
+                    currency: currency,
+                    accentColor: accentColor
+                )
+                .onChange(of: currentValue) { oldValue, newValue in
+                    currentValue = sanitizedDecimalText(newValue, fallback: oldValue)
+                    clearErrors()
+                }
+            }
+
+            formDivider
+
+            fieldSection(title: "成本", icon: "chart.line.uptrend.xyaxis", trailing: "可選") {
+                AmountKeypadInputView(
+                    text: $costBasis,
+                    currency: currency,
+                    accentColor: accentColor
+                )
+                .onChange(of: costBasis) { oldValue, newValue in
+                    costBasis = sanitizedDecimalText(newValue, fallback: oldValue)
+                    clearErrors()
+                }
+                Text("填寫成本後，若納入投資，會顯示在績效圖。")
+                    .font(.caption)
+                    .foregroundColor(.secondaryText)
+                    .padding(.leading, 4)
+            }
+
+            formDivider
+
+            purchaseDateSection
+
+            formDivider
+
+            inclusionSection
+
+            formDivider
+
+            fieldSection(title: "備註", icon: "note.text", trailing: "可選") {
+                TextField("備註", text: $notes, axis: .vertical)
+                    .lineLimit(3...5)
+                    .textFieldStyle(CustomTextFieldStyle())
+            }
+        }
+        .background(Color.secondaryBackground)
+        .cornerRadius(16)
+        .padding(.horizontal)
+    }
+
+    private func fieldSection<Content: View>(
+        title: String,
+        icon: String,
+        trailing: String? = nil,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 16))
+                    .foregroundColor(accentColor)
+                Text(title)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primaryText)
+                if let trailing {
+                    Text("(\(trailing))")
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                }
+            }
+            content()
+        }
+        .padding(20)
+    }
+
+    private var purchaseDateSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Toggle(isOn: $includesPurchaseDate) {
+                HStack(spacing: 8) {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 16))
+                        .foregroundColor(accentColor)
+                    Text("購買日期")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primaryText)
+                    Text("(可選)")
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                }
+            }
+            .tint(accentColor)
+
+            if includesPurchaseDate {
+                Button {
+                    showingPurchaseDatePicker = true
+                } label: {
+                    HStack {
+                        Text(formatDate(purchaseDate))
+                            .foregroundColor(.primaryText)
+                        Spacer()
+                        Image(systemName: "calendar")
+                            .foregroundColor(accentColor)
+                    }
+                    .padding()
+                    .background(Color.cardBackground)
+                    .cornerRadius(12)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(20)
+    }
+
+    private var inclusionSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Toggle(isOn: $isIncludedInTotalAssets) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("納入總資產")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primaryText)
+                    Text("會進首頁總資產、淨資產與總資產圓餅圖。")
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                }
+            }
+            .tint(accentColor)
+
+            Toggle(isOn: $isIncludedInInvestments) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("納入投資")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(isIncludedInTotalAssets ? .primaryText : .secondaryText)
+                    Text("會進投資組合、績效圖；需要成本才能計算報酬率。")
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                }
+            }
+            .tint(accentColor)
+            .disabled(!isIncludedInTotalAssets)
+            .opacity(isIncludedInTotalAssets ? 1 : 0.55)
+        }
+        .padding(20)
+    }
+
+    private var saveButton: some View {
+        Button {
+            saveManualAsset()
+        } label: {
+            HStack(spacing: 8) {
+                if viewModel.isSaving {
+                    ProgressView()
+                        .tint(AppColors.actionForeground)
+                } else {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 18))
+                }
+                Text(viewModel.isSaving ? "建立中..." : "建立手動資產")
+                    .font(.headline)
+            }
+            .foregroundColor(AppColors.actionForeground)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .background(isSaveDisabled ? AppColors.disabledBackground : accentColor)
+            .cornerRadius(12)
+        }
+        .disabled(isSaveDisabled)
+        .padding(.horizontal)
+        .padding(.bottom)
+    }
+
+    private var formDivider: some View {
+        Divider()
+            .padding(.horizontal, 20)
+    }
+
+    @ViewBuilder
+    private var errorMessageView: some View {
+        if let message = localErrorMessage ?? viewModel.errorMessage {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(.caption)
+                    .foregroundColor(.red)
+                Text(message)
+                    .font(.caption)
+                    .foregroundColor(.red)
+            }
+            .padding(.leading, 4)
+            .padding(.top, 4)
+        }
+    }
+
+    private func saveManualAsset() {
+        clearErrors()
+        guard let currentValueDecimal = Decimal(string: currentValue) else {
+            localErrorMessage = "請輸入有效的現值"
+            return
+        }
+        let costBasisDecimal: Decimal?
+        if costBasis.isEmpty {
+            costBasisDecimal = nil
+        } else if let parsed = Decimal(string: costBasis) {
+            costBasisDecimal = parsed
+        } else {
+            localErrorMessage = "請輸入有效的成本"
+            return
+        }
+
+        let formState = ManualAssetFormState(
+            name: name,
+            category: category,
+            currency: currency,
+            currentValue: currentValueDecimal,
+            costBasis: costBasisDecimal,
+            purchaseDate: includesPurchaseDate ? purchaseDate : nil,
+            notes: notes,
+            isIncludedInTotalAssets: isIncludedInTotalAssets,
+            isIncludedInInvestments: isIncludedInInvestments
+        )
+
+        Task {
+            let succeeded = await viewModel.createAsset(from: formState, userId: userId)
+            if succeeded {
+                onSaved()
+            }
+        }
+    }
+
+    private func clearErrors() {
+        localErrorMessage = nil
+        viewModel.errorMessage = nil
+    }
+
+    private func sanitizedDecimalText(_ text: String, fallback: String) -> String {
+        let filtered = text.filter { $0.isNumber || $0 == "." }
+        guard filtered.filter({ $0 == "." }).count <= 1 else { return fallback }
+        return filtered
+    }
+
+    private func formatDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.locale = Locale(identifier: "zh_TW")
+        return formatter.string(from: date)
+    }
+}
+
+private struct ManualAssetCategoryDropdownField: View {
+    @Binding var selectedCategory: ManualAssetCategory
+    let tint: Color
+
+    @State private var showingCategoryPicker = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "folder.fill")
+                    .font(.system(size: 16))
+                    .foregroundColor(tint)
+                Text("資產類別")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primaryText)
+            }
+
+            Button {
+                showingCategoryPicker = true
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "square.grid.2x2.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(tint)
+                        .frame(width: 24, height: 24)
+
+                    Text(selectedCategory.displayName)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.primaryText)
+
+                    Spacer()
+
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(.secondaryText)
+                }
+                .padding()
+                .frame(minHeight: 44)
+                .background(Color.cardBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.secondaryText.opacity(0.2), lineWidth: 1)
+                }
+            }
+            .buttonStyle(.plain)
+            .sheet(isPresented: $showingCategoryPicker) {
+                ManualAssetCategorySelectionSheet(
+                    selectedCategory: $selectedCategory,
+                    tint: tint
+                )
+                .snapFormSheetChrome()
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+            }
+        }
+    }
+}
+
+private struct ManualAssetCategorySelectionSheet: View {
+    @Binding var selectedCategory: ManualAssetCategory
+    let tint: Color
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 10) {
+                    ForEach(ManualAssetCategory.allCases) { category in
+                        categoryRow(category)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .padding(.bottom, 28)
+            }
+            .background(Color.mainBackground)
+            .navigationTitle("資產類別")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                        .foregroundColor(.appPrimary)
+                }
+            }
+        }
+        .background(Color.mainBackground)
+    }
+
+    private func categoryRow(_ category: ManualAssetCategory) -> some View {
+        let isSelected = selectedCategory == category
+        return Button {
+            selectedCategory = category
+            dismiss()
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "square.grid.2x2.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(isSelected ? tint : .secondaryText)
+                    .frame(width: 28, height: 28)
+
+                Text(category.displayName)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.primaryText)
+
+                Spacer()
+
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(tint)
+                } else {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.secondaryText.opacity(0.7))
+                }
+            }
+            .padding(14)
+            .background(isSelected ? tint.opacity(0.10) : Color.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(isSelected ? tint.opacity(0.36) : Color.separator.opacity(0.35), lineWidth: 1)
+            }
         }
         .buttonStyle(.plain)
     }

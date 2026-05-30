@@ -13,6 +13,23 @@ struct HoldingPerformanceRow: Identifiable {
     let unrealizedGainLossTWD: Decimal
     let returnPercent: Decimal
     let color: Color
+    let costBasisTWD: Decimal?
+
+    init(
+        id: String,
+        displayName: String,
+        unrealizedGainLossTWD: Decimal,
+        returnPercent: Decimal,
+        color: Color,
+        costBasisTWD: Decimal? = nil
+    ) {
+        self.id = id
+        self.displayName = displayName
+        self.unrealizedGainLossTWD = unrealizedGainLossTWD
+        self.returnPercent = returnPercent
+        self.color = color
+        self.costBasisTWD = costBasisTWD
+    }
     
     var gainLossDouble: Double {
         NSDecimalNumber(decimal: unrealizedGainLossTWD).doubleValue
@@ -72,6 +89,10 @@ enum HoldingChartMetrics {
            let index = dynamicCashItemIds(inputs: inputs).firstIndex(of: itemId) {
             return AppColors.holdingChartColor(at: index)
         }
+        if itemId.hasPrefix("manual_asset_"),
+           let index = stableManualAssetItemIds(inputs: inputs).firstIndex(of: itemId) {
+            return AppColors.holdingChartColor(at: stableHoldingItemIds(inputs: inputs).count + index)
+        }
         if UserDefaults.standard.data(forKey: itemId) != nil,
            let holding = holding(matchingItemId: itemId, inputs: inputs) {
             return HoldingColorPreferences.getColor(for: holding.symbol, assetType: holding.assetType)
@@ -91,7 +112,8 @@ enum HoldingChartMetrics {
         "cny_cash": 9,
         "stock_us": 1,
         "stock_tw": 2,
-        "crypto": 3
+        "crypto": 3,
+        "manual_assets": 10
     ]
     
     private static func dynamicCashItemIds(inputs: PieChartInputs) -> [String] {
@@ -105,6 +127,12 @@ enum HoldingChartMetrics {
         inputs.aggregatedHoldings
             .filter { $0.assetType != .cash }
             .map { "\($0.assetType.rawValue)_\($0.symbol)" }
+            .sorted()
+    }
+
+    private static func stableManualAssetItemIds(inputs: PieChartInputs) -> [String] {
+        inputs.includedManualAssets
+            .map { ManualAssetMetrics.itemId(for: $0) }
             .sorted()
     }
     
@@ -143,7 +171,24 @@ enum HoldingChartMetrics {
                 displayName: displayName,
                 unrealizedGainLossTWD: gainLoss,
                 returnPercent: pct,
-                color: colorForHolding(h, inputs: inputs)
+                color: colorForHolding(h, inputs: inputs),
+                costBasisTWD: costTWD
+            ))
+        }
+        for asset in inputs.investmentManualAssets {
+            guard let gainLoss = ManualAssetMetrics.gainLossTWD(asset: asset, rates: inputs.twdRateByCurrency),
+                  let costTWD = ManualAssetMetrics.costTWD(asset: asset, rates: inputs.twdRateByCurrency),
+                  let returnPercent = ManualAssetMetrics.returnPercent(asset: asset, rates: inputs.twdRateByCurrency) else {
+                continue
+            }
+            let itemId = ManualAssetMetrics.itemId(for: asset)
+            rows.append(HoldingPerformanceRow(
+                id: itemId,
+                displayName: asset.name,
+                unrealizedGainLossTWD: gainLoss,
+                returnPercent: returnPercent,
+                color: chartColor(forItemId: itemId, inputs: inputs),
+                costBasisTWD: costTWD
             ))
         }
         return rows.sorted {

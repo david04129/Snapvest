@@ -55,7 +55,8 @@ enum PortfolioPieChartBuilder {
         let investmentSegments: [(String, String, Decimal)] = [
             ("stock_us", "美股", us),
             ("stock_tw", "台股", tw),
-            ("crypto", "加密貨幣", crypto)
+            ("crypto", "加密貨幣", crypto),
+            ("manual_assets", "手動資產", inputs.totalManualAssetsTWD)
         ]
         let investmentItems = investmentSegments.filter { $0.2 > 0 }.map {
             PieChartDataItem(
@@ -70,12 +71,12 @@ enum PortfolioPieChartBuilder {
 
     /// 投資組合：各檔持股（不含現金）
     static func portfolioItems(inputs: PieChartInputs) -> [PieChartDataItem] {
-        holdingItems(inputs: inputs, includeCash: false)
+        holdingItems(inputs: inputs, includeCash: false, includeManualAssets: true, onlyInvestmentManualAssets: true)
     }
     
     /// 所有細項：現金 + 各檔持股
     static func allDetailsItems(inputs: PieChartInputs) -> [PieChartDataItem] {
-        holdingItems(inputs: inputs, includeCash: true)
+        holdingItems(inputs: inputs, includeCash: true, includeManualAssets: true, onlyInvestmentManualAssets: false)
     }
     
     static func denominator(mode: PieChartDisplayMode, inputs: PieChartInputs, totalAssets: Decimal, totalInvestments: Decimal) -> Decimal {
@@ -130,7 +131,12 @@ enum PortfolioPieChartBuilder {
         default: return currency.displayName
         }
     }
-    private static func holdingItems(inputs: PieChartInputs, includeCash: Bool) -> [PieChartDataItem] {
+    private static func holdingItems(
+        inputs: PieChartInputs,
+        includeCash: Bool,
+        includeManualAssets: Bool = false,
+        onlyInvestmentManualAssets: Bool = false
+    ) -> [PieChartDataItem] {
         let rate = inputs.usdToTwdRate
         var result: [PieChartDataItem] = []
         if includeCash {
@@ -162,6 +168,26 @@ enum PortfolioPieChartBuilder {
                 name: displayName,
                 marketValue: row.1,
                 color: HoldingChartMetrics.colorForHolding(h, inputs: inputs)
+            ))
+        }
+        guard includeManualAssets else { return result }
+
+        let manualAssets = onlyInvestmentManualAssets
+            ? inputs.investmentManualAssets
+            : inputs.includedManualAssets
+        let manualRows = manualAssets.compactMap { asset -> (ManualAsset, Decimal)? in
+            guard let valueTWD = ManualAssetMetrics.valueTWD(asset: asset, rates: inputs.twdRateByCurrency),
+                  valueTWD > 0 else { return nil }
+            return (asset, valueTWD)
+        }
+        .sorted { $0.1 > $1.1 }
+        for row in manualRows {
+            let itemId = ManualAssetMetrics.itemId(for: row.0)
+            result.append(PieChartDataItem(
+                symbol: itemId,
+                name: row.0.name,
+                marketValue: row.1,
+                color: HoldingChartMetrics.chartColor(forItemId: itemId, inputs: inputs)
             ))
         }
         return result

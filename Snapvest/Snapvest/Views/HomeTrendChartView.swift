@@ -78,7 +78,7 @@ enum TrendChartPointMerger {
             return points.sorted { $0.date < $1.date }
         }
 
-        let unrealized = snapshot.totalAssets - snapshot.totalCash - snapshot.totalInvestmentsCost
+        let unrealized = snapshot.totalInvestments - snapshot.totalInvestmentsCost
         points.append(
             TrendChartPoint(
                 id: dayFormatter.string(from: today),

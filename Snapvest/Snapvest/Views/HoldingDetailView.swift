@@ -193,9 +193,26 @@ struct HoldingDetailView: View {
     private var displayedDailyPriceChange: (amount: Decimal, percent: Decimal)? {
         dailyPriceChange
     }
+
+    private var dailyGainLossOriginal: Decimal? {
+        guard let dailyPriceChange else { return nil }
+        return dailyPriceChange.amount * aggregatedHolding.totalQuantity
+    }
+
+    private var dailyGainLossTWD: Decimal? {
+        guard let dailyGainLossOriginal else { return nil }
+        switch aggregatedHolding.currency {
+        case .TWD:
+            return dailyGainLossOriginal
+        case .USD:
+            return usdToTwdRate > 0 ? dailyGainLossOriginal * usdToTwdRate : dailyGainLossOriginal
+        default:
+            return dailyGainLossOriginal
+        }
+    }
     
     private var canToggleCurrency: Bool {
-        aggregatedHolding.currency != .TWD
+        aggregatedHolding.currency != baseCurrencyManager.baseCurrency
     }
     
     /// 美股／加密：原幣單價 × 即時匯率後以台幣顯示（僅格式化，不影響計算）
@@ -257,6 +274,31 @@ struct HoldingDetailView: View {
         case .original:
             return unrealizedGainLossOriginal.formatted(currency: aggregatedHolding.currency, fractionDigits: 2)
         }
+    }
+
+    private var displayedDailyGainLossText: String? {
+        switch metricAmountDisplay {
+        case .twd:
+            guard let dailyGainLossTWD else { return nil }
+            return amountInSelectedCurrency(fromTWD: dailyGainLossTWD).formatted(
+                currency: selectedDisplayCurrency,
+                fractionDigits: selectedDisplayCurrency == .TWD ? 0 : 2
+            )
+        case .original:
+            guard let dailyGainLossOriginal else { return nil }
+            return dailyGainLossOriginal.formatted(currency: aggregatedHolding.currency, fractionDigits: 2)
+        }
+    }
+
+    private var displayedDailyGainLossColor: Color {
+        guard let dailyGainLossTWD else { return .secondaryText }
+        return Color.marketColor(for: dailyGainLossTWD)
+    }
+
+    private var displayedDailyGainLossPercentText: String? {
+        guard let dailyPriceChange else { return nil }
+        let sign = dailyPriceChange.percent >= 0 ? "+" : ""
+        return "\(sign)\(dailyPriceChange.percent.formatted(fractionDigits: 2))%"
     }
     
     private var displayedUnrealizedPercentText: String {
@@ -544,6 +586,18 @@ struct HoldingDetailView: View {
                 prominence: .featured,
                 accentColor: assetAccentColor
             )
+            if let displayedDailyGainLossText {
+                MetricTile(
+                    title: "單日損益",
+                    value: displayedDailyGainLossText,
+                    currency: selectedDisplayCurrency,
+                    valueColor: displayedDailyGainLossColor,
+                    footnote: displayedDailyGainLossPercentText,
+                    footnoteColor: displayedDailyGainLossColor,
+                    prominence: .featured,
+                    accentColor: displayedDailyGainLossColor
+                )
+            }
             MetricTile(
                 title: "未實現損益",
                 value: displayedUnrealizedAmountText,
@@ -586,9 +640,9 @@ struct HoldingDetailView: View {
             assetType: aggregatedHolding.assetType,
             currency: aggregatedHolding.currency,
             currentPrice: currentPrice,
-            amountDisplay: metricAmountDisplay,
+            amountDisplay: .original,
             usdToTwdRate: usdToTwdRate,
-            baseCurrency: selectedDisplayCurrency,
+            baseCurrency: aggregatedHolding.currency,
             twdPerBaseCurrency: twdPerBaseCurrency
         )
     }
@@ -982,7 +1036,7 @@ private struct FIFOLotTableDataRow: View {
             dataCell(formatLotQuantity(row.lot.remainingQuantity), alignment: .trailing, weight: .semibold)
                 .frame(minWidth: 44, maxWidth: .infinity, alignment: .trailing)
             dataCell(
-                displayCostPerUnit.formatted(currency: displayCurrency, fractionDigits: 4, showSymbol: false),
+                formattedUnitPrice(displayCostPerUnit),
                 alignment: .trailing,
                 weight: .regular
             )
@@ -1009,6 +1063,18 @@ private struct FIFOLotTableDataRow: View {
         }
         .foregroundColor(plColor)
         .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+
+    private func formattedUnitPrice(_ value: Decimal) -> String {
+        let maxFractionDigits = assetType == .crypto ? 8 : 4
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.groupingSeparator = ","
+        formatter.usesGroupingSeparator = true
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = maxFractionDigits
+        formatter.locale = Locale(identifier: "zh_TW")
+        return formatter.string(from: value as NSDecimalNumber) ?? "\(value)"
     }
     
     private func dataCell(_ text: String, alignment: HorizontalAlignment, weight: Font.Weight) -> some View {

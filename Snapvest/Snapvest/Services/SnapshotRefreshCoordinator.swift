@@ -22,17 +22,12 @@ enum SnapshotRefreshCoordinator {
         let resolvedDataService = dataService ?? MockDataService.shared
         let resolvedPriceService = priceService ?? PriceService(dataService: resolvedDataService)
         let isDemoMode = (resolvedDataService as? MockDataService)?.isDemoModeActive == true
-        let perfFlow = "fullSnapshotRebuild notify=\(postsUpdateNotification)"
-        let perfStart = DebugPerformanceLog.now()
-        var perfLast = perfStart
-        DebugPerformanceLog.start(perfFlow)
         do {
             let bundle = try await SnapshotUpdater.rebuildSnapshots(
                 userId: userId,
                 dataService: resolvedDataService,
                 priceService: resolvedPriceService
             )
-            DebugPerformanceLog.lap("rebuild snapshots", flow: perfFlow, start: perfStart, last: &perfLast)
             if deferRemoteWork, !isDemoMode, (syncPortfolio || updatePriceMetadata) {
                 Task { @MainActor in
                     if syncPortfolio {
@@ -57,26 +52,20 @@ enum SnapshotRefreshCoordinator {
                     priceService: resolvedPriceService,
                     bundle: bundle
                 )
-                DebugPerformanceLog.lap("sync portfolio", flow: perfFlow, start: perfStart, last: &perfLast)
             }
             if updatePriceMetadata, !isDemoMode, !deferRemoteWork {
                 await SupabasePriceService.recordSuccessfulPriceSync(
                     userId: userId,
                     dataService: resolvedDataService
                 )
-                DebugPerformanceLog.lap("update price metadata", flow: perfFlow, start: perfStart, last: &perfLast)
             }
             resolvedDataService.persistLocalStore(for: userId)
-            DebugPerformanceLog.lap("persist local store", flow: perfFlow, start: perfStart, last: &perfLast)
             if postsUpdateNotification {
                 NotificationCenter.default.post(name: .snapshotsDidUpdate, object: nil)
-                DebugPerformanceLog.lap("post snapshotsDidUpdate", flow: perfFlow, start: perfStart, last: &perfLast)
             }
-            DebugPerformanceLog.end(perfFlow, start: perfStart)
             return true
         } catch {
             print("[SnapshotRefreshCoordinator] rebuild failed: \(error.localizedDescription)")
-            DebugPerformanceLog.end("\(perfFlow) failed", start: perfStart)
             return false
         }
     }

@@ -132,8 +132,8 @@ class PortfolioViewModel: ObservableObject {
         totalAssets = snapshot.totalAssets / baseDivisor
         totalLiabilities = snapshot.totalLiabilities / baseDivisor
         totalCash = snapshot.totalCash / baseDivisor
-        totalInvestments = (snapshot.totalAssets - snapshot.totalCash) / baseDivisor
-        unrealizedGainLoss = (snapshot.totalAssets - snapshot.totalCash - snapshot.totalInvestmentsCost) / baseDivisor
+        totalInvestments = snapshot.totalInvestments / baseDivisor
+        unrealizedGainLoss = (snapshot.totalInvestments - snapshot.totalInvestmentsCost) / baseDivisor
         realizedGainLossTWD = snapshot.realizedGainLossTWD
         realizedGainLossUSD = snapshot.realizedGainLossUSD
         cashByCurrency = [

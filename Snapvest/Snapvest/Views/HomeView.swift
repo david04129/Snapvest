@@ -803,11 +803,37 @@ struct RealizedPLCardView: View {
     @State private var isLoadingDetails = false
     @State private var detailLoadFailed = false
     @State private var detailsRevision = UUID()
+
+    private struct RealizedCurrencySection: Identifiable {
+        let currency: Currency
+        let transactions: [Transaction]
+        let total: Decimal
+
+        var id: Currency { currency }
+    }
     
     private var realizedTransactionsByCurrency: [Currency: [Transaction]] {
         let _ = detailsRevision
         let sells = RealizedPLDetailCache.sellTransactions
         return Dictionary(grouping: sells, by: { $0.currency })
+    }
+
+    private var realizedCurrencySections: [RealizedCurrencySection] {
+        realizedTransactionsByCurrency.compactMap { currency, transactions in
+            let realizedTransactions = transactions.filter { $0.realizedGainLoss != nil }
+            let total = realizedTransactions.reduce(Decimal(0)) { partial, transaction in
+                partial + (transaction.realizedGainLoss ?? 0)
+            }
+            guard !realizedTransactions.isEmpty, total != 0 else { return nil }
+            return RealizedCurrencySection(
+                currency: currency,
+                transactions: realizedTransactions,
+                total: total
+            )
+        }
+        .sorted { lhs, rhs in
+            currencySortRank(lhs.currency) < currencySortRank(rhs.currency)
+        }
     }
     
     var body: some View {
@@ -832,14 +858,19 @@ struct RealizedPLCardView: View {
                         Text("無法載入明細，請稍後再試")
                             .font(.subheadline)
                             .foregroundColor(.secondaryText)
-                    } else if realizedTransactionsByCurrency.isEmpty {
+                    } else if realizedCurrencySections.isEmpty {
                         Text("尚無已實現損益交易")
                             .font(.subheadline)
                             .foregroundColor(.secondaryText)
                     } else {
                         VStack(spacing: 16) {
-                            realizedSection(title: "台幣已實現損益", transactions: realizedTransactionsByCurrency[.TWD] ?? [], currency: .TWD)
-                            realizedSection(title: "美金已實現損益", transactions: realizedTransactionsByCurrency[.USD] ?? [], currency: .USD)
+                            ForEach(realizedCurrencySections) { section in
+                                realizedSection(
+                                    transactions: section.transactions,
+                                    currency: section.currency,
+                                    total: section.total
+                                )
+                            }
                         }
                     }
                 }
@@ -881,12 +912,27 @@ struct RealizedPLCardView: View {
         }
     }
 
-    private func realizedSection(title: String, transactions: [Transaction], currency: Currency) -> some View {
+    private func realizedSection(transactions: [Transaction], currency: Currency, total: Decimal) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.subheadline)
-                .fontWeight(.semibold)
-                .foregroundColor(.primaryText)
+            HStack(alignment: .firstTextBaseline) {
+                CurrencyTitleLabel(
+                    title: "已實現損益",
+                    currency: currency,
+                    font: .subheadline,
+                    weight: .semibold,
+                    color: .primaryText
+                )
+
+                Spacer(minLength: 8)
+
+                CurrencyAmountLabel(
+                    text: total.formatted(currency: currency),
+                    currency: currency,
+                    font: .subheadline,
+                    weight: .semibold,
+                    color: Color.marketColor(for: total)
+                )
+            }
             
             if transactions.isEmpty {
                 Text("尚無交易")
@@ -1037,6 +1083,10 @@ struct RealizedPLCardView: View {
                 }
             }
         }
+    }
+
+    private func currencySortRank(_ currency: Currency) -> Int {
+        Currency.allCases.firstIndex(of: currency) ?? Int.max
     }
 
     private func toggleTransaction(_ id: String) {

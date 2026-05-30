@@ -392,9 +392,7 @@ struct BuyTradeFormView: View {
             if isAccountLocked {
                 if let account = selectedAccount {
                     HStack(spacing: 8) {
-                        Image(systemName: account.accountType.icon)
-                            .symbolRenderingMode(.hierarchical)
-                            .foregroundStyle(account.accountType.color)
+                        CurrencyCodeChip(currency: account.currency, tint: account.accountType.color, style: .filled)
                         Text(account.name)
                             .foregroundColor(.primaryText)
                     }
@@ -407,9 +405,7 @@ struct BuyTradeFormView: View {
                 Picker(selection: $selectedAccountId) {
                 ForEach(availableAccounts) { account in
                     HStack(spacing: 8) {
-                        Image(systemName: account.accountType.icon)
-                            .symbolRenderingMode(.hierarchical)
-                            .foregroundStyle(account.accountType.color)
+                        CurrencyCodeChip(currency: account.currency, tint: account.accountType.color, style: .filled)
                         Text(account.name)
                     }
                     .tag(account.id)
@@ -417,9 +413,7 @@ struct BuyTradeFormView: View {
             } label: {
                 HStack(spacing: 8) {
                     if let account = selectedAccount {
-                        Image(systemName: account.accountType.icon)
-                            .symbolRenderingMode(.hierarchical)
-                            .foregroundStyle(account.accountType.color)
+                        CurrencyCodeChip(currency: account.currency, tint: account.accountType.color, style: .filled)
                         Text(account.name).foregroundColor(.primaryText)
                     } else {
                         Text("選擇帳戶").foregroundColor(.secondaryText)

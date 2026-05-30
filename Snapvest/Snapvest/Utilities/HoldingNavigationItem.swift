@@ -143,7 +143,8 @@ enum HoldingNavigationBuilder {
             ) else { continue }
             totalInvestments += marketValue
         }
+        totalInvestments += inputs.totalManualInvestmentsTWD
         let totalCash = inputs.totalCashTWD
-        return (totalInvestments + totalCash, totalInvestments)
+        return (totalInvestments + totalCash + inputs.totalManualAssetsTWD - inputs.totalManualInvestmentsTWD, totalInvestments)
     }
 }

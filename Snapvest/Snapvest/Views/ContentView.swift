@@ -39,14 +39,14 @@ struct ContentView: View {
             AccountsView(selectedTab: $selectedTab)
                 .environment(\.openSettings, { isSettingsPresented = true })
                 .tabItem {
-                    Label("帳戶", systemImage: "building.columns.fill")
+                    Label("管理", systemImage: "building.columns.fill")
                 }
                 .tag(AppTab.accounts.rawValue)
             
             AssetsView(selectedTab: $selectedTab)
                 .environment(\.openSettings, { isSettingsPresented = true })
                 .tabItem {
-                    Label("資產", systemImage: "chart.bar.fill")
+                    Label("投資", systemImage: "chart.bar.fill")
                 }
                 .tag(AppTab.assets.rawValue)
             
@@ -102,10 +102,6 @@ struct ContentView: View {
                 beginPortfolioMutationRefresh()
             }
             Task {
-                let perfFlow = "transactionsDidChange UI apply overlay=\(shouldShowOverlay)"
-                let perfStart = DebugPerformanceLog.now()
-                var perfLast = perfStart
-                DebugPerformanceLog.start(perfFlow)
                 await LaunchCoordinator.applyPersistedState(
                     userId: AppUser.id,
                     portfolioViewModel: portfolioViewModel,
@@ -114,14 +110,11 @@ struct ContentView: View {
                     dataService: MockDataService.shared,
                     accountDetailCacheAccountIds: affectedAccountIdSet
                 )
-                DebugPerformanceLog.lap("apply persisted state", flow: perfFlow, start: perfStart, last: &perfLast)
                 await MainActor.run {
                     if shouldShowOverlay {
                         finishPortfolioMutationRefresh()
                     }
                 }
-                DebugPerformanceLog.lap("finish overlay", flow: perfFlow, start: perfStart, last: &perfLast)
-                DebugPerformanceLog.end(perfFlow, start: perfStart)
             }
         }
         .onChange(of: selectedTab) { previousTab, newTab in

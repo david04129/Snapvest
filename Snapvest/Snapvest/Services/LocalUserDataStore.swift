@@ -13,18 +13,30 @@ struct LocalUserStructureStore: Codable {
     var accounts: [Account]
     var transactionsByAccountId: [String: [Transaction]]
     var liabilitiesByAccountId: [String: [Liability]]
+    var manualAssets: [ManualAsset]
     var updatedAt: Date?
     
     init(
         accounts: [Account] = [],
         transactionsByAccountId: [String: [Transaction]] = [:],
         liabilitiesByAccountId: [String: [Liability]] = [:],
+        manualAssets: [ManualAsset] = [],
         updatedAt: Date? = nil
     ) {
         self.accounts = accounts
         self.transactionsByAccountId = transactionsByAccountId
         self.liabilitiesByAccountId = liabilitiesByAccountId
+        self.manualAssets = manualAssets
         self.updatedAt = updatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        accounts = try container.decodeIfPresent([Account].self, forKey: .accounts) ?? []
+        transactionsByAccountId = try container.decodeIfPresent([String: [Transaction]].self, forKey: .transactionsByAccountId) ?? [:]
+        liabilitiesByAccountId = try container.decodeIfPresent([String: [Liability]].self, forKey: .liabilitiesByAccountId) ?? [:]
+        manualAssets = try container.decodeIfPresent([ManualAsset].self, forKey: .manualAssets) ?? []
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
     }
 }
 
@@ -36,6 +48,7 @@ struct LocalUserValuationStore: Codable {
     var accountSnapshotsByAccountId: [String: AccountSnapshot]
     var assetPriceSnapshotsByKey: [String: AssetPriceSnapshot]
     var aggregatedHoldingSnapshots: [AggregatedHoldingSnapshot]
+    var manualAssetValuationsByAssetId: [String: [ManualAssetValuation]]
     /// 本機完成對齊 Supabase 股價的時間
     var priceSyncedAt: Date?
     /// 對齊當下讀到的 price_update_metadata.last_updated_at
@@ -48,6 +61,7 @@ struct LocalUserValuationStore: Codable {
         accountSnapshotsByAccountId: [String: AccountSnapshot] = [:],
         assetPriceSnapshotsByKey: [String: AssetPriceSnapshot] = [:],
         aggregatedHoldingSnapshots: [AggregatedHoldingSnapshot] = [],
+        manualAssetValuationsByAssetId: [String: [ManualAssetValuation]] = [:],
         priceSyncedAt: Date? = nil,
         priceSourceUpdatedAt: Date? = nil,
         updatedAt: Date? = nil
@@ -57,16 +71,30 @@ struct LocalUserValuationStore: Codable {
         self.accountSnapshotsByAccountId = accountSnapshotsByAccountId
         self.assetPriceSnapshotsByKey = assetPriceSnapshotsByKey
         self.aggregatedHoldingSnapshots = aggregatedHoldingSnapshots
+        self.manualAssetValuationsByAssetId = manualAssetValuationsByAssetId
         self.priceSyncedAt = priceSyncedAt
         self.priceSourceUpdatedAt = priceSourceUpdatedAt
         self.updatedAt = updatedAt
     }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        homeDashboardSnapshot = try container.decodeIfPresent(HomeDashboardSnapshot.self, forKey: .homeDashboardSnapshot)
+        userHoldingsSnapshot = try container.decodeIfPresent(UserHoldingsSnapshot.self, forKey: .userHoldingsSnapshot)
+        accountSnapshotsByAccountId = try container.decodeIfPresent([String: AccountSnapshot].self, forKey: .accountSnapshotsByAccountId) ?? [:]
+        assetPriceSnapshotsByKey = try container.decodeIfPresent([String: AssetPriceSnapshot].self, forKey: .assetPriceSnapshotsByKey) ?? [:]
+        aggregatedHoldingSnapshots = try container.decodeIfPresent([AggregatedHoldingSnapshot].self, forKey: .aggregatedHoldingSnapshots) ?? []
+        manualAssetValuationsByAssetId = try container.decodeIfPresent([String: [ManualAssetValuation]].self, forKey: .manualAssetValuationsByAssetId) ?? [:]
+        priceSyncedAt = try container.decodeIfPresent(Date.self, forKey: .priceSyncedAt)
+        priceSourceUpdatedAt = try container.decodeIfPresent(Date.self, forKey: .priceSourceUpdatedAt)
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
+    }
 }
 
-// MARK: - 根文件（schema v3）
+// MARK: - 根文件（schema v4）
 
 struct LocalUserData: Codable {
-    static let currentSchemaVersion = 3
+    static let currentSchemaVersion = 4
     
     let schemaVersion: Int
     let userId: String
@@ -100,17 +128,20 @@ struct LocalUserData: Codable {
         let accounts = try container.decode([Account].self, forKey: .accounts)
         let transactionsByAccountId = try container.decodeIfPresent([String: [Transaction]].self, forKey: .transactionsByAccountId) ?? [:]
         let liabilitiesByAccountId = try container.decodeIfPresent([String: [Liability]].self, forKey: .liabilitiesByAccountId) ?? [:]
+        let manualAssets = try container.decodeIfPresent([ManualAsset].self, forKey: .manualAssets) ?? []
         structure = LocalUserStructureStore(
             accounts: accounts,
             transactionsByAccountId: transactionsByAccountId,
-            liabilitiesByAccountId: liabilitiesByAccountId
+            liabilitiesByAccountId: liabilitiesByAccountId,
+            manualAssets: manualAssets
         )
         valuation = LocalUserValuationStore(
             homeDashboardSnapshot: try container.decodeIfPresent(HomeDashboardSnapshot.self, forKey: .homeDashboardSnapshot),
             userHoldingsSnapshot: try container.decodeIfPresent(UserHoldingsSnapshot.self, forKey: .userHoldingsSnapshot),
             accountSnapshotsByAccountId: try container.decodeIfPresent([String: AccountSnapshot].self, forKey: .accountSnapshotsByAccountId) ?? [:],
             assetPriceSnapshotsByKey: try container.decodeIfPresent([String: AssetPriceSnapshot].self, forKey: .assetPriceSnapshotsByKey) ?? [:],
-            aggregatedHoldingSnapshots: try container.decodeIfPresent([AggregatedHoldingSnapshot].self, forKey: .aggregatedHoldingSnapshots) ?? []
+            aggregatedHoldingSnapshots: try container.decodeIfPresent([AggregatedHoldingSnapshot].self, forKey: .aggregatedHoldingSnapshots) ?? [],
+            manualAssetValuationsByAssetId: try container.decodeIfPresent([String: [ManualAssetValuation]].self, forKey: .manualAssetValuationsByAssetId) ?? [:]
         )
     }
     
@@ -130,11 +161,13 @@ struct LocalUserData: Codable {
         case accounts
         case transactionsByAccountId
         case liabilitiesByAccountId
+        case manualAssets
         case homeDashboardSnapshot
         case userHoldingsSnapshot
         case accountSnapshotsByAccountId
         case assetPriceSnapshotsByKey
         case aggregatedHoldingSnapshots
+        case manualAssetValuationsByAssetId
     }
 }
 

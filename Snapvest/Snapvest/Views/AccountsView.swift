@@ -226,7 +226,7 @@ struct AccountsView: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(.appPrimary)
                 
-                Text("帳戶管理")
+                Text("管理")
                     .font(.headline)
                     .fontWeight(.bold)
                     .foregroundColor(.primaryText)
@@ -241,7 +241,7 @@ struct AccountsView: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "plus.circle.fill")
-                        Text("新增帳戶")
+                        Text("新增項目")
                     }
                     .font(.subheadline)
                     .fontWeight(.semibold)

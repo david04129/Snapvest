@@ -58,41 +58,31 @@ class TransactionsViewModel: ObservableObject {
     func createTransaction(
         _ transaction: Transaction,
         allowDuplicate: Bool = false,
-        skipPriceValidation: Bool = false
+        skipPriceValidation: Bool = false,
+        showsLoadingOverlay: Bool = true
     ) async {
-        let perfFlow = "createTransaction \(transaction.type.rawValue) \(transaction.symbol)"
-        let perfStart = DebugPerformanceLog.now()
-        var perfLast = perfStart
-        DebugPerformanceLog.start(perfFlow)
-
         if !skipPriceValidation,
            let priceError = await SymbolPriceValidator.validatePriceAvailable(
             assetType: transaction.assetType,
             symbol: transaction.symbol,
             transactionType: transaction.type
         ) {
-            DebugPerformanceLog.lap("price validation failed", flow: perfFlow, start: perfStart, last: &perfLast)
             errorMessage = priceError
             return
         }
-        DebugPerformanceLog.lap("price validation", flow: perfFlow, start: perfStart, last: &perfLast)
         
         if !allowDuplicate,
            let duplicate = await findDuplicateMatch(for: transaction) {
-            DebugPerformanceLog.lap("duplicate check failed", flow: perfFlow, start: perfStart, last: &perfLast)
             errorMessage = TransactionDuplicateChecker.alertMessage(
                 for: transaction,
                 existing: duplicate
             )
             return
         }
-        DebugPerformanceLog.lap("duplicate check", flow: perfFlow, start: perfStart, last: &perfLast)
         
         do {
             try await dataService.createTransaction(transaction)
-            DebugPerformanceLog.lap("write transaction", flow: perfFlow, start: perfStart, last: &perfLast)
             let userId = await resolveUserId(for: transaction.accountId) ?? accounts.first?.userId ?? AppUser.id
-            DebugPerformanceLog.lap("resolve user", flow: perfFlow, start: perfStart, last: &perfLast)
             if !isBatchImporting {
                 let affectedAccountIds: Set<String> = [transaction.accountId]
                 let affectedSymbols = impactedSymbols(for: [transaction])
@@ -101,12 +91,6 @@ class TransactionsViewModel: ObservableObject {
                     affectedAccountIds: affectedAccountIds,
                     affectedSymbols: affectedSymbols
                 )
-                DebugPerformanceLog.lap(
-                    "impact analysis fullRebuild=\(forceFullRebuild)",
-                    flow: perfFlow,
-                    start: perfStart,
-                    last: &perfLast
-                )
                 await refreshPortfolioSnapshots(
                     userId: userId,
                     affectedAccountIds: affectedAccountIds,
@@ -114,19 +98,17 @@ class TransactionsViewModel: ObservableObject {
                     realizedGainLossDeltaByCurrency: realizedGainLossDeltaByCurrency(newTransaction: transaction),
                     forceFullRebuild: forceFullRebuild
                 )
-                DebugPerformanceLog.lap("snapshot refresh", flow: perfFlow, start: perfStart, last: &perfLast)
                 Task { await updateHoldings(accountId: transaction.accountId) }
             }
             if !isBatchImporting {
                 await loadTransactions(userId: userId)
-                DebugPerformanceLog.lap("load transactions", flow: perfFlow, start: perfStart, last: &perfLast)
-                notifyTransactionsDidChange(affectedAccountIds: [transaction.accountId], showsLoadingOverlay: true)
-                DebugPerformanceLog.lap("notify UI", flow: perfFlow, start: perfStart, last: &perfLast)
+                notifyTransactionsDidChange(
+                    affectedAccountIds: [transaction.accountId],
+                    showsLoadingOverlay: showsLoadingOverlay
+                )
             }
-            DebugPerformanceLog.end(perfFlow, start: perfStart)
         } catch {
             errorMessage = "建立交易失敗：\(error.localizedDescription)"
-            DebugPerformanceLog.end("\(perfFlow) failed", start: perfStart)
         }
     }
     
@@ -453,30 +435,25 @@ class TransactionsViewModel: ObservableObject {
     }
     
     func updateTransaction(_ transaction: Transaction, previousAccountId: String? = nil, allowDuplicate: Bool = false) async {
-        let perfFlow = "updateTransaction \(transaction.type.rawValue) \(transaction.symbol)"
-        let perfStart = DebugPerformanceLog.now()
-        var perfLast = perfStart
-        DebugPerformanceLog.start(perfFlow)
-
-        let previousTransaction = transactions.first { $0.id == transaction.id }
+        let previousTransaction = await persistedTransaction(
+            id: transaction.id,
+            candidateAccountIds: [transaction.accountId, previousAccountId].compactMap { $0 }
+        )
 
         if !allowDuplicate,
            let duplicate = await findDuplicateMatch(
             for: transaction,
             excludingTransactionId: transaction.id
            ) {
-            DebugPerformanceLog.lap("duplicate check failed", flow: perfFlow, start: perfStart, last: &perfLast)
             errorMessage = TransactionDuplicateChecker.alertMessage(
                 for: transaction,
                 existing: duplicate
             )
             return
         }
-        DebugPerformanceLog.lap("duplicate check", flow: perfFlow, start: perfStart, last: &perfLast)
         
         do {
             try await dataService.updateTransaction(transaction)
-            DebugPerformanceLog.lap("write transaction", flow: perfFlow, start: perfStart, last: &perfLast)
             let affectedAccountIds = Set([transaction.accountId, previousAccountId, previousTransaction?.accountId].compactMap { $0 })
             let affectedSymbols = impactedSymbols(for: [transaction, previousTransaction].compactMap { $0 })
             let forceFullRebuild = await requiresFullSnapshotRebuild(
@@ -484,14 +461,7 @@ class TransactionsViewModel: ObservableObject {
                 affectedAccountIds: affectedAccountIds,
                 affectedSymbols: affectedSymbols
             )
-            DebugPerformanceLog.lap(
-                "impact analysis fullRebuild=\(forceFullRebuild)",
-                flow: perfFlow,
-                start: perfStart,
-                last: &perfLast
-            )
             let userId = await resolveUserId(for: transaction.accountId) ?? AppUser.id
-            DebugPerformanceLog.lap("resolve user", flow: perfFlow, start: perfStart, last: &perfLast)
             await refreshPortfolioSnapshots(
                 userId: userId,
                 affectedAccountIds: affectedAccountIds,
@@ -502,19 +472,14 @@ class TransactionsViewModel: ObservableObject {
                 ),
                 forceFullRebuild: forceFullRebuild
             )
-            DebugPerformanceLog.lap("snapshot refresh", flow: perfFlow, start: perfStart, last: &perfLast)
             Task { await updateHoldings(accountId: transaction.accountId) }
             if let previousAccountId, previousAccountId != transaction.accountId {
                 Task { await updateHoldings(accountId: previousAccountId) }
             }
             await loadTransactions(userId: userId)
-            DebugPerformanceLog.lap("load transactions", flow: perfFlow, start: perfStart, last: &perfLast)
             notifyTransactionsDidChange(affectedAccountIds: affectedAccountIds, showsLoadingOverlay: true)
-            DebugPerformanceLog.lap("notify UI", flow: perfFlow, start: perfStart, last: &perfLast)
-            DebugPerformanceLog.end(perfFlow, start: perfStart)
         } catch {
             errorMessage = "更新交易失敗：\(error.localizedDescription)"
-            DebugPerformanceLog.end("\(perfFlow) failed", start: perfStart)
         }
     }
     
@@ -828,11 +793,6 @@ class TransactionsViewModel: ObservableObject {
         realizedGainLossDeltaByCurrency: [Currency: Decimal] = [:],
         forceFullRebuild: Bool = false
     ) async {
-        let perfFlow = "snapshotRefresh \(forceFullRebuild ? "full" : "incremental") accounts=\(affectedAccountIds?.count ?? 0) symbols=\(affectedSymbols.count)"
-        let perfStart = DebugPerformanceLog.now()
-        var perfLast = perfStart
-        DebugPerformanceLog.start(perfFlow)
-
         if let affectedAccountIds, !forceFullRebuild {
             do {
                 _ = try await SnapshotUpdater.updateSnapshotsIncrementally(
@@ -843,16 +803,12 @@ class TransactionsViewModel: ObservableObject {
                     dataService: dataService,
                     priceService: PriceService(dataService: dataService)
                 )
-                DebugPerformanceLog.lap("incremental updater", flow: perfFlow, start: perfStart, last: &perfLast)
                 dataService.persistLocalStore(for: userId)
-                DebugPerformanceLog.lap("persist local store", flow: perfFlow, start: perfStart, last: &perfLast)
-                DebugPerformanceLog.end(perfFlow, start: perfStart)
                 return
             } catch {
                 #if DEBUG
                 print("[TransactionsViewModel] incremental snapshot failed: \(error.localizedDescription)")
                 #endif
-                DebugPerformanceLog.lap("incremental failed, fallback full", flow: perfFlow, start: perfStart, last: &perfLast)
             }
         }
 
@@ -864,8 +820,6 @@ class TransactionsViewModel: ObservableObject {
             deferRemoteWork: true,
             postsUpdateNotification: false
         )
-        DebugPerformanceLog.lap("full rebuild", flow: perfFlow, start: perfStart, last: &perfLast)
-        DebugPerformanceLog.end(perfFlow, start: perfStart)
     }
     
     private func updateSnapshotsIfNeeded(for accountId: String) async {
@@ -985,6 +939,22 @@ class TransactionsViewModel: ObservableObject {
             return account.userId
         }
         return nil
+    }
+
+    private func persistedTransaction(id: String, candidateAccountIds: [String]) async -> Transaction? {
+        var checkedAccountIds: [String] = []
+        for accountId in candidateAccountIds where !checkedAccountIds.contains(accountId) {
+            checkedAccountIds.append(accountId)
+            if let transaction = try? await dataService.fetchTransactions(accountId: accountId).first(where: { $0.id == id }) {
+                return transaction
+            }
+        }
+
+        if let transaction = transactions.first(where: { $0.id == id }) {
+            return transaction
+        }
+
+        return try? await dataService.fetchAllTransactions(userId: AppUser.id).first(where: { $0.id == id })
     }
 
     private func calculateCostBasis(
