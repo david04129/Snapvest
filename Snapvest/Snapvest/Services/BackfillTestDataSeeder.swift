@@ -69,7 +69,7 @@ enum BackfillTestDataSeeder {
             新增走勢點：\(added)
             日期範圍：\(range)
 
-            若新增走勢點為 0，請先確認 fetch-prices-batch 已部署，且 backend/scripts/dev_seed_backfill_test_prices.py 已成功寫入 DB。
+            若新增走勢點為 0，請先確認 fetch-prices-batch 已部署，且 dev_seed_backfill_test_prices.sql 已成功寫入 DB。
             """
         )
     }
