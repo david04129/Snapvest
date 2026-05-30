@@ -103,6 +103,7 @@ flowchart TB
 | 內容 | 資料表 | 誰寫入 | App 用途 |
 |------|--------|--------|----------|
 | 各檔股價 | `asset_price_snapshots` | 每日腳本 + Edge Function | 顯示現價、算損益；`current_price_source` / `previous_price_source` |
+| 各檔歷史日價格 | `asset_price_history` | 每日腳本 + Edge Function | App 補齊本機走勢圖缺失日期 |
 | 全站最後更新時間 | `price_update_metadata` | 每日腳本 | 判斷要不要刷新 |
 | 匿名追蹤池 | `tracked_symbols` | App 透過 `track-symbol` 只送 asset type + symbol | 每日腳本抓價來源，不含 user_id / quantity / cost |
 | 熱門股清單 | `hot_stocks` | 每日由 `hot_stocks_seed` ∪ `tracked_symbols` 覆寫；備份 `hot_stocks_backup`（保留 2 日） | 每日腳本抓價清單 |
@@ -164,6 +165,7 @@ Snapvest 用 Supabase 當「**會變動資料的倉庫**」：
 | [011_price_snapshot_column_order.sql](./backend/supabase/migrations/011_price_snapshot_column_order.sql) | 欄位顯示順序 | source 緊接在對應 updated_at 後 |
 | [012_exchange_rates_previous.sql](./backend/supabase/migrations/012_exchange_rates_previous.sql) | `previous_rate`、`previous_updated_at` | 本輪抓不到時沿用上一輪 |
 | [014_tracked_symbols.sql](./backend/supabase/migrations/014_tracked_symbols.sql) | `tracked_symbols` | 匿名全站 symbol 大池子；撤銷 App 對 legacy 使用者快照表權限 |
+| [018_asset_price_history.sql](./backend/supabase/migrations/018_asset_price_history.sql) | `asset_price_history` | 公開 symbol 歷史日價格，供 App 本機補點 |
 
 **`asset_price_snapshots` 欄位順序：** 代號 → 現價 → 收盤日 → 更新時間 → **現價來源** → 上次價 → 上次收盤日 → 上次更新時間 → **上次來源**。
 
@@ -178,6 +180,7 @@ Snapvest 用 Supabase 當「**會變動資料的倉庫**」：
 | 功能 | Swift 檔案 | 讀哪張表 |
 |------|------------|----------|
 | 顯示股價 | [SupabasePriceService.swift](./Snapvest/Snapvest/Services/SupabasePriceService.swift) | `asset_price_snapshots` |
+| 補走勢缺口用歷史價 | 同上 | `asset_price_history` |
 | 缺價時即時抓 | 同上 → 呼叫 Edge Function | 寫入後回傳 |
 | 匯率 | [PriceService.swift](./Snapvest/Snapvest/Services/PriceService.swift) 等 | `exchange_rates` |
 
@@ -269,7 +272,7 @@ Snapvest 有 **兩條抓價路線**：
 
 - 排程開始時先**備份** `hot_stocks` → 以 **`hot_stocks_seed` ∪ 匿名 `tracked_symbols`** 覆寫 `hot_stocks`
 - 只對重建後的 `hot_stocks` 抓價（每檔一次，不重複）
-- `fetch-or-create-price` **不**寫入 `hot_stocks`（僅寫 `asset_price_snapshots`）
+- `fetch-or-create-price` **不**寫入 `hot_stocks`（僅寫 `asset_price_snapshots` 與 `asset_price_history`）
 
 | 資料 | API | 連結 | 備註 |
 |------|-----|------|------|
@@ -297,7 +300,7 @@ App 查 `asset_price_snapshots` 發現**沒有這檔的價格**時，會 POST �
 | **美股** | Yahoo Finance Chart API | `https://query1.finance.yahoo.com/v8/finance/chart/{代號}` | 例：`AAPL` |
 | **加密** | CoinGecko Simple Price | [Simple Price API](https://docs.coingecko.com/reference/simple-price) | 可帶 `coingeckoId`；也會搜尋 CoinGecko |
 
-抓到價格後會寫入 `asset_price_snapshots`（`current_price_source`：`yahoo` 或 `coingecko`；不加入 `hot_stocks`）
+抓到價格後會寫入 `asset_price_snapshots` 與 `asset_price_history`（`current_price_source`：`yahoo` 或 `coingecko`；不加入 `hot_stocks`）
 
 **來源欄常見值：** 排程 `finmind`／`finnhub`／`yfinance`／`coingecko`；Edge `yahoo`／`coingecko`。本輪抓失敗未 upsert 的列，**現價與 `current_*` 皆維持上一輪**。
 

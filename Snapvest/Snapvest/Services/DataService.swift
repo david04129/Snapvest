@@ -784,12 +784,21 @@ class MockDataService: DataServiceProtocol {
     }
     
     func fetchPrice(assetType: AssetType, symbol: String, date: Date?) async throws -> Price? {
-        nil
+        guard let date else { return nil }
+        return try await SupabasePriceService.fetchHistoricalPrice(
+            assetType: assetType,
+            symbol: symbol,
+            date: date
+        )
     }
     
     func fetchPrices(assetType: AssetType, symbol: String, startDate: Date, endDate: Date) async throws -> [Price] {
-        // Mock 實作
-        return []
+        try await SupabasePriceService.fetchHistoricalPrices(
+            assetType: assetType,
+            symbol: symbol,
+            startDate: startDate,
+            endDate: endDate
+        )
     }
     
     func fetchExchangeRate(from: Currency, to: Currency, date: Date?) async throws -> ExchangeRate? {

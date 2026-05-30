@@ -41,6 +41,14 @@ private enum SupabaseRESTTimestampParser {
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.date(from: String(string.prefix(10)))
     }
+
+    nonisolated static func closeDateString(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "Asia/Taipei")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
 }
 
 /// Supabase 連線設定（請在 App 啟動時設定）
@@ -239,6 +247,38 @@ struct SupabasePriceService {
         return row.flatMap { SupabasePriceRow.toAssetPriceSnapshot($0)?.displayPrice }
     }
 
+    static func fetchHistoricalPrice(assetType: AssetType, symbol: String, date: Date) async throws -> Price? {
+        let prices = try await fetchHistoricalPrices(assetType: assetType, symbol: symbol, startDate: date, endDate: date)
+        return prices.first
+    }
+
+    static func fetchHistoricalPrices(assetType: AssetType, symbol: String, startDate: Date, endDate: Date) async throws -> [Price] {
+        guard SupabaseConfig.isConfigured,
+              let baseUrl = SupabaseConfig.url,
+              let key = SupabaseConfig.anonKey else { throw SupabaseError.notConfigured }
+
+        let normalized = normalizeSymbol(assetType: assetType, symbol: symbol)
+        let startDay = SupabaseRESTTimestampParser.closeDateString(from: startDate)
+        let endDay = SupabaseRESTTimestampParser.closeDateString(from: endDate)
+        guard let encodedSymbol = normalized.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let url = URL(string: "\(baseUrl)/rest/v1/asset_price_history?asset_type=eq.\(assetType.rawValue)&symbol=eq.\(encodedSymbol)&price_date=gte.\(startDay)&price_date=lte.\(endDay)&select=*&order=price_date.asc") else {
+            return []
+        }
+
+        var request = URLRequest(url: url)
+        request.setValue(key, forHTTPHeaderField: "apikey")
+        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            return []
+        }
+
+        let rows = try JSONDecoder().decode([SupabasePriceHistoryRow].self, from: data)
+        return rows.compactMap { SupabasePriceHistoryRow.toPrice($0) }
+    }
+
     /// 呼叫 fetch-or-create-price（新增股票時使用）
     static func fetchOrCreatePrice(
         assetType: AssetType,
@@ -342,6 +382,34 @@ private struct SupabasePriceRow: Decodable, Sendable {
             previousUpdatedAt: SupabaseRESTTimestampParser.parse(row.previous_updated_at),
             currentPriceSource: row.current_price_source,
             previousPriceSource: row.previous_price_source
+        )
+    }
+}
+
+private struct SupabasePriceHistoryRow: Decodable, Sendable {
+    let asset_type: String
+    let symbol: String
+    let price_date: String
+    let close_price: DecimalOrDouble
+    let currency: String
+    let source: String?
+    let updated_at: String?
+
+    nonisolated static func toPrice(_ row: SupabasePriceHistoryRow) -> Price? {
+        guard let assetType = AssetType(rawValue: row.asset_type),
+              let currency = Currency(rawValue: row.currency),
+              let closePrice = row.close_price.decimalValue else {
+            return nil
+        }
+
+        return Price(
+            assetType: assetType,
+            symbol: row.symbol,
+            price: closePrice,
+            currency: currency,
+            priceDate: SupabaseRESTTimestampParser.parseCloseDate(row.price_date) ?? Date(),
+            source: row.source,
+            createdAt: SupabaseRESTTimestampParser.parse(row.updated_at) ?? Date()
         )
     }
 }

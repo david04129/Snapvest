@@ -191,6 +191,18 @@ serve(async (req) => {
     }
 
     await supabase.from("asset_price_snapshots").upsert(row, { onConflict: "asset_type,symbol" })
+    await supabase.from("asset_price_history").upsert(
+      {
+        asset_type: assetType,
+        symbol,
+        price_date: closeDate,
+        close_price: price,
+        currency,
+        source: priceSource,
+        updated_at: updatedAt,
+      },
+      { onConflict: "asset_type,symbol,price_date" },
+    )
 
     return new Response(JSON.stringify({ price, currency, source: priceSource }), { headers: { ...corsHeaders, "Content-Type": "application/json" } })
   } catch (e) {

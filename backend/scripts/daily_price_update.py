@@ -742,6 +742,35 @@ def upsert_prices(supabase: Client, updates: list[dict]):
     ).execute()
 
 
+def upsert_price_history(supabase: Client, updates: list[dict]) -> None:
+    """將每輪成功抓到的日價格寫入歷史表，供 App 補點使用。"""
+    if not updates:
+        return
+    rows = [
+        {
+            "asset_type": row["asset_type"],
+            "symbol": row["symbol"],
+            "price_date": row["current_close_date"],
+            "close_price": row["current_price"],
+            "currency": row["currency"],
+            "source": row.get("current_price_source"),
+            "updated_at": row["current_updated_at"],
+        }
+        for row in updates
+    ]
+    for i in range(0, len(rows), 100):
+        chunk = rows[i : i + 100]
+        try:
+            resp = supabase.table("asset_price_history").upsert(
+                chunk,
+                on_conflict="asset_type,symbol,price_date",
+            ).execute()
+            _raise_on_supabase_error(resp, "asset_price_history upsert")
+        except Exception as e:
+            print(f"寫入 asset_price_history 失敗: {e}")
+        time.sleep(0.05)
+
+
 def mark_tracked_symbols_synced(supabase: Client, updates: list[dict], synced_at: str) -> None:
     """標記匿名追蹤池中本輪成功同步的 symbol。"""
     for row in updates:
@@ -900,6 +929,7 @@ def run_price_update(markets: Optional[Set[str]] = None) -> None:
     attempted_symbols = symbols
     successful_keys = set(quotes.keys())
     upsert_prices(supabase, rows)
+    upsert_price_history(supabase, rows)
     mark_tracked_symbols_synced(supabase, rows, updated_at)
     mark_tracked_symbols_failed(supabase, attempted_symbols, successful_keys, updated_at)
     print(f"已寫入 {len(rows)} 筆至 Supabase（更新時間 {updated_at}）")
