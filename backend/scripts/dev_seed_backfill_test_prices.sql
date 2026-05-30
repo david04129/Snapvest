@@ -49,6 +49,17 @@ prices AS (
     ) AS close_price
   FROM symbols s
   CROSS JOIN days d
+  -- 模擬股票週末/休市：台股與美股故意缺幾天；crypto 仍每天有價。
+  WHERE s.asset_type = 'crypto'
+    OR d.day_index NOT IN (2, 3, 6)
+),
+history_cleanup AS (
+  DELETE FROM public.asset_price_history h
+  USING symbols s, days d
+  WHERE h.asset_type = s.asset_type
+    AND h.symbol = s.symbol
+    AND h.price_date = d.price_date
+  RETURNING 1
 ),
 history_upsert AS (
   INSERT INTO public.asset_price_history (
@@ -149,6 +160,7 @@ fx_upsert AS (
   RETURNING 1
 )
 SELECT
+  (SELECT count(*) FROM history_cleanup) AS deleted_history_rows,
   (SELECT count(*) FROM history_upsert) AS history_rows,
   (SELECT count(*) FROM snapshot_upsert) AS snapshot_rows,
   (SELECT count(*) FROM fx_upsert) AS fx_rows;

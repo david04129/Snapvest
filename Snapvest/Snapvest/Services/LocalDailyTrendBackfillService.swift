@@ -58,7 +58,7 @@ enum LocalDailyTrendBackfillService {
         let context = await BackfillContext.load(
             userId: userId,
             dataService: dataService,
-            historyStartDate: targetDates.first,
+            historyStartDate: historyLookbackStartDate(from: targetDates.first, calendar: calendar),
             historyEndDate: targetDates.last
         )
         var writtenCount = 0
@@ -99,6 +99,11 @@ enum LocalDailyTrendBackfillService {
         return result
     }
 
+    private static func historyLookbackStartDate(from firstTargetDate: Date?, calendar: Calendar) -> Date? {
+        guard let firstTargetDate else { return nil }
+        return calendar.date(byAdding: .day, value: -14, to: firstTargetDate) ?? firstTargetDate
+    }
+
     private static func buildSnapshot(
         userId: String,
         date: Date,
@@ -108,16 +113,24 @@ enum LocalDailyTrendBackfillService {
 
         var historicalInvestmentsTWD: Decimal = 0
         var historicalUnrealizedTWD: Decimal = 0
+        var hasAtLeastOneHistoricalPrice = false
+        var pricedHoldingCount = 0
         for holding in context.holdings {
-            guard let price = price(for: holding, on: date, context: context),
-                  let twdPerCurrency = twdRate(for: holding.currency, context: context) else {
+            guard let twdPerCurrency = twdRate(for: holding.currency, context: context) else {
                 return nil
             }
+            guard let priceResolution = price(for: holding, on: date, context: context) else {
+                continue
+            }
+            hasAtLeastOneHistoricalPrice = hasAtLeastOneHistoricalPrice || priceResolution.isHistorical
+            pricedHoldingCount += 1
+            let price = priceResolution.price
             let marketValue = price * holding.quantity
             let cost = holding.averageCost * holding.quantity
             historicalInvestmentsTWD += marketValue * twdPerCurrency
             historicalUnrealizedTWD += (marketValue - cost) * twdPerCurrency
         }
+        guard pricedHoldingCount > 0, hasAtLeastOneHistoricalPrice else { return nil }
 
         let stableAssetsTWD = homeSnapshot.totalAssets - context.currentHoldingsMarketValueTWD
         let totalAssets = stableAssetsTWD + historicalInvestmentsTWD
@@ -138,11 +151,11 @@ enum LocalDailyTrendBackfillService {
         for holding: HoldingSnapshotItem,
         on date: Date,
         context: BackfillContext
-    ) -> Decimal? {
+    ) -> HistoricalPriceResolution? {
         let dayKey = LocalDailyTrendSnapshot.dateKey(for: date)
         let batchKey = SupabasePriceService.batchKey(assetType: holding.assetType, symbol: holding.symbol)
         if let price = context.historicalPricesByKeyAndDate[batchKey]?[dayKey] {
-            return price
+            return HistoricalPriceResolution(price: price, isHistorical: true)
         }
 
         let normalized = SupabasePriceService.normalizeSymbol(assetType: holding.assetType, symbol: holding.symbol)
@@ -151,13 +164,19 @@ enum LocalDailyTrendBackfillService {
         let calendar = Calendar.current
         if let currentCloseDate = snapshot.currentCloseDate,
            calendar.isDate(currentCloseDate, inSameDayAs: date) {
-            return snapshot.currentPrice
+            return snapshot.currentPrice.map {
+                HistoricalPriceResolution(price: $0, isHistorical: true)
+            }
         }
         if let previousCloseDate = snapshot.previousCloseDate,
            calendar.isDate(previousCloseDate, inSameDayAs: date) {
-            return snapshot.previousPrice
+            return snapshot.previousPrice.map {
+                HistoricalPriceResolution(price: $0, isHistorical: true)
+            }
         }
-        return nil
+        return snapshot.displayPrice.map {
+            HistoricalPriceResolution(price: $0, isHistorical: false)
+        }
     }
 
     private static func twdRate(
@@ -173,6 +192,11 @@ enum LocalDailyTrendBackfillService {
         print("[LocalDailyTrendBackfill] \(message)")
         #endif
     }
+}
+
+private struct HistoricalPriceResolution {
+    let price: Decimal
+    let isHistorical: Bool
 }
 
 private struct BackfillContext {
@@ -244,9 +268,42 @@ private struct BackfillContext {
             holdings: holdings,
             priceSnapshotsByKey: priceSnapshotsByKey,
             twdRateByCurrency: twdRateByCurrency,
-            historicalPricesByKeyAndDate: batch?.historicalPricesByKeyAndDate ?? [:],
+            historicalPricesByKeyAndDate: forwardFilledHistoricalPrices(
+                batch: batch,
+                symbols: symbols
+            ),
             currentHoldingsMarketValueTWD: currentHoldingsMarketValueTWD,
             currentHoldingsUnrealizedTWD: currentHoldingsUnrealizedTWD
         )
+    }
+
+    private static func forwardFilledHistoricalPrices(
+        batch: SupabasePriceBatch?,
+        symbols: [SymbolInfo]
+    ) -> [String: [String: Decimal]] {
+        guard let batch, !batch.dateKeys.isEmpty else { return [:] }
+        var result: [String: [String: Decimal]] = [:]
+
+        for symbol in symbols {
+            let key = SupabasePriceService.batchKey(assetType: symbol.assetType, symbol: symbol.symbol)
+            let exactPrices = batch.historicalPricesByKeyAndDate[key] ?? [:]
+            var lastKnownPrice: Decimal?
+            var filledByDate: [String: Decimal] = [:]
+
+            for dateKey in batch.dateKeys {
+                if let exact = exactPrices[dateKey] {
+                    lastKnownPrice = exact
+                    filledByDate[dateKey] = exact
+                } else if let lastKnownPrice {
+                    filledByDate[dateKey] = lastKnownPrice
+                }
+            }
+
+            if !filledByDate.isEmpty {
+                result[key] = filledByDate
+            }
+        }
+
+        return result
     }
 }

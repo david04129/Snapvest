@@ -5,7 +5,6 @@ Seed deterministic public price data for local daily trend backfill testing.
 Writes 20 public symbols across the last 10 Taiwan calendar days into:
 - asset_price_history
 - asset_price_snapshots
-- tracked_symbols
 - exchange_rates (USD/TWD)
 
 Required env:
@@ -24,6 +23,7 @@ from supabase import create_client
 
 TW_TZ = timezone(timedelta(hours=8))
 USD_TWD = 32.15
+STOCK_MISSING_DAY_INDEXES = {2, 3, 6}
 
 SYMBOLS = [
     ("stock_tw", "990001", "TWD", 935.0),
@@ -79,7 +79,9 @@ def main() -> None:
 
     for symbol_index, (asset_type, symbol, currency, base_price) in enumerate(SYMBOLS):
         prices = [price_for(base_price, symbol_index, day_index) for day_index in range(len(dates))]
-        for price_date, close_price in zip(dates, prices):
+        for day_index, (price_date, close_price) in enumerate(zip(dates, prices)):
+            if asset_type != "crypto" and day_index in STOCK_MISSING_DAY_INDEXES:
+                continue
             history_rows.append(
                 {
                     "asset_type": asset_type,
@@ -107,6 +109,18 @@ def main() -> None:
                 "previous_price_source": "dev_seed",
             }
         )
+
+    for asset_type, symbol, _, _ in SYMBOLS:
+        supabase.table("asset_price_history").delete().eq(
+            "asset_type",
+            asset_type,
+        ).eq("symbol", symbol).gte(
+            "price_date",
+            dates[0].isoformat(),
+        ).lte(
+            "price_date",
+            dates[-1].isoformat(),
+        ).execute()
 
     supabase.table("asset_price_history").upsert(
         history_rows,
