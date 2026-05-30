@@ -55,11 +55,13 @@ flowchart TB
 
     subgraph Supabase["Supabase（雲端 PostgreSQL）"]
         T1[(asset_price_snapshots<br/>股價)]
+        T1H[(asset_price_history<br/>歷史日價格)]
         T2[(exchange_rates<br/>匯率)]
         T3[(tracked_symbols<br/>匿名 symbol 大池子)]
         T4[(user_daily_snapshots<br/>legacy 走勢)]
         EF[Edge Function<br/>fetch-or-create-price]
         EF2[Edge Function<br/>track-symbol]
+        EF3[Edge Function<br/>fetch-prices-batch]
     end
 
     subgraph App["iOS App"]
@@ -78,12 +80,18 @@ flowchart TB
     WF3 -. legacy manual .-> T4
     UI -->|讀| T1
     UI -->|讀| T2
+    UI -->|批次讀目前價 / 歷史價 / fx| EF3
     UI -->|匿名追蹤 symbol| EF2
     UI -->|缺價時呼叫| EF
     EF2 -->|upsert| T3
     EF --> Ext
     EF -->|寫入| T1
+    EF -->|寫入| T1H
+    EF3 -->|讀| T1
+    EF3 -->|讀| T1H
+    EF3 -->|讀| T2
     WF2 -->|讀 tracked_symbols| T3
+    WF2 -->|寫入| T1H
     WF2 --> Ext
 ```
 
@@ -179,16 +187,27 @@ Snapvest 用 Supabase 當「**會變動資料的倉庫**」：
 
 | 功能 | Swift 檔案 | 讀哪張表 |
 |------|------------|----------|
-| 顯示股價 | [SupabasePriceService.swift](./Snapvest/Snapvest/Services/SupabasePriceService.swift) | `asset_price_snapshots` |
-| 補走勢缺口用歷史價 | 同上 | `asset_price_history` |
+| 顯示股價 | [SupabasePriceService.swift](./Snapvest/Snapvest/Services/SupabasePriceService.swift) → Edge Function `fetch-prices-batch` | `asset_price_snapshots` |
+| 補走勢缺口用歷史價 | 同上 → `fetch-prices-batch` | `asset_price_history` |
 | 缺價時即時抓 | 同上 → 呼叫 Edge Function | 寫入後回傳 |
 | 匯率 | [PriceService.swift](./Snapvest/Snapvest/Services/PriceService.swift) 等 | `exchange_rates` |
+
+`fetch-prices-batch` 是目前價與補點歷史價的主路徑：App 一次提交所有持股 symbol 與可選日期區間，回收 compact maps / matrix（current、history、fx）。DEBUG build 會在 Xcode Console 印出 `[SupabasePriceService] batch request ...`、`batch response ...`、`fetchPrices using batch ...`；若 batch function 失敗或沒有 current snapshots，才會印出 fallback 並退回舊的逐檔 REST 查詢。
 
 ### App 從本機讀
 
 | 功能 | Swift 檔案 | 讀哪裡 |
 |------|------------|--------|
 | 首頁走勢圖 | [HomeTrendChartView.swift](./Snapvest/Snapvest/Views/HomeTrendChartView.swift) → `LocalDailyTrendSnapshot` | 本機 JSON `dailyTrendSnapshotsByDate` |
+
+App 每次產生 / 儲存 `HomeDashboardSnapshot` 都會覆蓋今天的本機 daily trend snapshot。每天第一次啟動時，`LocalDailyTrendBackfillService` 會補 / 覆蓋昨天點，並補齊最後一筆本機走勢點到昨天之間的缺口；補點時只用本機帳本狀態 + Supabase 公開價格 / 匯率。
+
+缺價規則：
+
+- `fetch-prices-batch` 查缺口區間時會往前多抓 14 天，讓 App 能對每檔 symbol 做 forward-fill。
+- 台股 / 美股週末、休市或單日缺價時，沿用該檔上一個可用收盤價。
+- 少數 symbol 完全沒價時略過該檔，不讓整天補點失敗；整天完全沒有任何歷史 / 前值價格時才不寫入該日走勢點。
+- 補出的點持久化在手機；首頁走勢圖不讀 Supabase `user_daily_snapshots` fallback。
 
 ### App 寫入 Supabase
 
@@ -255,10 +274,11 @@ App 啟動時用本機帳本 + 公開價格補齊缺失走勢點
 
 ## 股價與匯率：用什麼 API？
 
-Snapvest 有 **兩條抓價路線**：
+Snapvest 有 **三條抓價路線**：
 
 1. **每日批量更新**（GitHub Actions → Python）
-2. **App 新增冷門標的、DB 還沒價格時**（Edge Function 即時抓）
+2. **App 批次讀目前價 / 歷史價**（Edge Function `fetch-prices-batch`）
+3. **App 新增冷門標的、DB 還沒價格時**（Edge Function 即時抓）
 
 ---
 
@@ -287,7 +307,30 @@ Snapvest 有 **兩條抓價路線**：
 
 ---
 
-### 2. 即時取價（Edge Function `fetch-or-create-price`）
+### 2. 批次讀價（Edge Function `fetch-prices-batch`）
+
+**程式位置：** [backend/supabase/functions/fetch-prices-batch/index.ts](./backend/supabase/functions/fetch-prices-batch/index.ts)
+
+**什麼時候觸發？**
+
+- App 刷新目前所有持股價格時。
+- 本機 daily trend snapshots 補缺口時，需要一段日期內所有持股的歷史價與匯率。
+
+**回傳方式：**
+
+- `current`：`asset_type:symbol -> price`
+- `history`：`asset_type:symbol -> [prices aligned to dates]`
+- `fx`：例如 `USD:TWD`
+- 缺失價格保留 `null`，App 端再做前值延續。
+
+**部署方式：**
+
+```bash
+cd backend
+supabase functions deploy fetch-prices-batch --no-verify-jwt
+```
+
+### 3. 即時取價（Edge Function `fetch-or-create-price`）
 
 **程式位置：** [backend/supabase/functions/fetch-or-create-price/index.ts](./backend/supabase/functions/fetch-or-create-price/index.ts)
 
@@ -310,6 +353,7 @@ App 查 `asset_price_snapshots` 發現**沒有這檔的價格**時，會 POST �
 cd backend
 supabase link --project-ref 你的專案ID
 supabase functions deploy fetch-or-create-price
+supabase functions deploy fetch-prices-batch --no-verify-jwt
 ```
 
 Supabase CLI 文件：[Edge Functions](https://supabase.com/docs/guides/functions)
@@ -405,7 +449,9 @@ Snapvest/
 │   └── supabase/
 │       ├── migrations/         # SQL 建表（手動在 Supabase 執行）
 │       └── functions/
-│           └── fetch-or-create-price/   # 即時抓價
+│           ├── fetch-prices-batch/      # 批次讀目前價 / 歷史價 / fx
+│           ├── fetch-or-create-price/   # 即時抓價
+│           └── track-symbol/            # 匿名追蹤公開 symbol
 ├── scripts/
 │   ├── build_all.sh            # 一鍵建 symbols
 │   ├── archive_symbols.py      # 備份舊版清單
@@ -487,7 +533,7 @@ Monthly Symbols Update 跑完後，若 JSON 有變，機器人會自動 `git com
 | 手動更新 symbols | [Actions → Monthly Symbols Update → Run workflow](https://github.com/david04129/Snapvest/actions/workflows/monthly-symbols-update.yml) |
 | 本機測股價腳本 | `cd backend/scripts && export SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... && python daily_price_update.py` |
 | 本機建 symbols | `cd scripts && ./build_all.sh` |
-| 部署 Edge Function | `cd backend && supabase functions deploy fetch-or-create-price && supabase functions deploy track-symbol` |
+| 部署 Edge Function | `cd backend && supabase functions deploy fetch-or-create-price && supabase functions deploy track-symbol && supabase functions deploy fetch-prices-batch --no-verify-jwt` |
 | 在 Supabase 看股價表 | Dashboard → **Table Editor** → `asset_price_snapshots` |
 | 看 GitHub 上的 symbols JSON | [Resources/Symbols/](https://github.com/david04129/Snapvest/tree/main/Snapvest/Snapvest/Resources/Symbols) |
 
@@ -512,4 +558,4 @@ Monthly Symbols Update 跑完後，若 JSON 有變，機器人會自動 `git com
 
 ---
 
-*最後更新：2026-05-24。若程式有改動，以 repo 內實際檔案為準。*
+*最後更新：2026-05-30。若程式有改動，以 repo 內實際檔案為準。*

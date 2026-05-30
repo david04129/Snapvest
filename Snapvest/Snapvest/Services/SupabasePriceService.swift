@@ -253,8 +253,18 @@ struct SupabasePriceService {
             )
         )
 
+        #if DEBUG
+        let historyDescription = history.map { "\($0.startDate)...\($0.endDate)" } ?? "none"
+        print("[SupabasePriceService] batch request symbols=\(normalizedSymbols.count), includeCurrent=\(includeCurrent), history=\(historyDescription)")
+        #endif
+
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            #if DEBUG
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+            let body = String(data: data, encoding: .utf8) ?? ""
+            print("[SupabasePriceService] batch request failed HTTP \(statusCode): \(body.prefix(300))")
+            #endif
             throw SupabaseError.requestFailed
         }
 
@@ -311,6 +321,10 @@ struct SupabasePriceService {
             ExchangeRateSessionCache.update(usdToTwd: usdToTwd)
         }
 
+        #if DEBUG
+        print("[SupabasePriceService] batch response current=\(currentSnapshots.count)/\(normalizedSymbols.count), dates=\(dateKeys.count), fx=\(twdRates.keys.map(\.rawValue).sorted())")
+        #endif
+
         return SupabasePriceBatch(
             dateKeys: dateKeys,
             dates: dates,
@@ -326,9 +340,21 @@ struct SupabasePriceService {
               let baseUrl = SupabaseConfig.url,
               let key = SupabaseConfig.anonKey else { throw SupabaseError.notConfigured }
 
-        if let batch = try? await fetchBatchPrices(symbols: symbols, includeCurrent: true),
-           !batch.currentSnapshots.isEmpty {
-            return batch.currentSnapshots
+        do {
+            let batch = try await fetchBatchPrices(symbols: symbols, includeCurrent: true)
+            if !batch.currentSnapshots.isEmpty {
+                #if DEBUG
+                print("[SupabasePriceService] fetchPrices using batch snapshots=\(batch.currentSnapshots.count)/\(symbols.count)")
+                #endif
+                return batch.currentSnapshots
+            }
+            #if DEBUG
+            print("[SupabasePriceService] fetchPrices batch returned no snapshots; falling back to per-symbol REST")
+            #endif
+        } catch {
+            #if DEBUG
+            print("[SupabasePriceService] fetchPrices batch failed; falling back to per-symbol REST: \(error)")
+            #endif
         }
         
         let rows = await withTaskGroup(of: SupabasePriceRow?.self) { group in

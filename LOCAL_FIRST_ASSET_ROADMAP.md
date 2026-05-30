@@ -169,18 +169,28 @@
   - 使用該日匯率換算到使用者主要幣別。
   - 算出每天 snapshot。
   - 寫入手機本機 store。
+- App 使用 `fetch-prices-batch` 一次送出所有持股 symbol 與日期區間，回收 compact matrix 格式的 current/history/fx；不做 10 天 × 10 檔這種逐筆 request。
+- 補點會往第一個缺口日前多抓 14 天歷史價，對每檔做前值延續（forward-fill）。台股 / 美股休市、週末或單日缺價時，沿用該檔上一個可用收盤價；若某檔完全沒有任何可用價格，該檔略過，不讓整天失敗。
+- 若當天完全沒有任何歷史 / 前值價格可用，才不寫入該日走勢點，避免後端資料整段失敗時用今天價格誤補歷史。
 
 每天第一次登入：
 
 - 應檢查並補 / 更新昨天的日終走勢點。
 - 原因：使用者昨天即使有開 App，今天點不一定代表昨天 23:59 或收盤後價格。
 - 昨天點應以昨天帳本狀態 + 昨天收盤價 / 參考價格 + 昨天匯率重算後覆蓋本機 daily trend snapshot。
+- `lastDailyTrendBackfillRunDateKey` 控制每天只跑一次；測試隔天流程時應避免直接調系統時間，因為可能影響憑證與啟動流程。
 
 補點資料來源：
 
 - App 本機保存使用者自己的帳本狀態與持股數量。
 - 後端只提供公開市場資料：symbol 的歷史價格與匯率。
 - App 不應把使用者 daily snapshots、持股數量、成本或淨資產送到後端。
+
+驗證重點：
+
+- Xcode Console 應看到 `[SupabasePriceService] batch request ...` 與 `fetchPrices using batch ...`；若看到 `falling back to per-symbol REST`，代表 batch function 失敗或回傳空 current snapshots。
+- 休市 / 缺價情境應仍能補滿日期，除非整段完全沒有任何可用公開價格。
+- 首頁走勢圖只讀本機 `dailyTrendSnapshotsByDate`，不回讀 Supabase `user_daily_snapshots`。
 
 區間重算路徑：
 
