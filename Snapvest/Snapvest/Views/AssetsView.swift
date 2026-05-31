@@ -25,6 +25,12 @@ struct AssetsView: View {
         case totalAssets = "總資產由高到低"
         case todayPL = "今日損益由高到低"
     }
+
+    private var showsHoldingsOnboardingEmpty: Bool {
+        viewModel.hasLoadedOnce
+            && !viewModel.isLoading
+            && viewModel.aggregatedHoldings.isEmpty
+    }
     
     private func holdingNavigationItem(for holding: AggregatedHoldingSnapshot) -> HoldingNavigationItem {
         HoldingNavigationBuilder.make(
@@ -54,6 +60,20 @@ struct AssetsView: View {
                                 ratioType: $holdingsRatioType,
                                 currencyDisplay: $holdingsCurrencyDisplay
                             )
+
+                            if showsHoldingsOnboardingEmpty {
+                                OnboardingEmptyStateCard(
+                                    icon: "chart.bar.fill",
+                                    title: "還沒有持股",
+                                    message: "在管理分頁建立投資帳戶並記錄買賣後，持股會出現在這裡。",
+                                    actionTitle: "去新增帳戶"
+                                ) {
+                                    selectedTab = AppTab.accounts.rawValue
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                                        NotificationCenter.default.post(name: .openAddAccountSheet, object: nil)
+                                    }
+                                }
+                            }
                             
                             AssetCategorySummariesSection(
                                 aggregatedHoldings: viewModel.aggregatedHoldings,

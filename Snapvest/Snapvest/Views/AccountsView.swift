@@ -86,6 +86,14 @@ struct AccountsView: View {
     @State private var manualAssetDetailRoute: ManualAssetDetailRoute?
     @State private var accountDetailRefreshToken = 0
     @State private var draggedManagementSection: ManagementSectionID?
+
+    private var activeAccounts: [Account] {
+        viewModel.accounts.filter { !$0.isArchived }
+    }
+
+    private var showsManagementOnboardingEmpty: Bool {
+        !viewModel.isLoading && activeAccounts.isEmpty
+    }
     
     var body: some View {
         NavigationStack {
@@ -96,11 +104,22 @@ struct AccountsView: View {
                         shareDisplayMode: $managementShareDisplayMode,
                         showsEditControl: true,
                         isEditingOrder: isEditingOrder,
-                        isEditDisabled: orderedVisibleManagementSections.isEmpty,
+                        isEditDisabled: orderedVisibleManagementSections.isEmpty && !showsManagementOnboardingEmpty,
                         onEditTapped: {
                             toggleOrderEditing()
                         }
                     )
+
+                    if showsManagementOnboardingEmpty {
+                        OnboardingEmptyStateCard(
+                            icon: "building.columns.fill",
+                            title: "還沒有帳戶",
+                            message: "先建立現金、台股、美股或加密錢包，淨資產與走勢才會開始累積。",
+                            actionTitle: "新增第一個帳戶"
+                        ) {
+                            showingAddAccount = true
+                        }
+                    }
                     
                     ForEach(orderedVisibleManagementSections) { sectionID in
                         sortableManagementSectionView(for: sectionID)
@@ -127,6 +146,9 @@ struct AccountsView: View {
                 reconcileAccountOrders()
             }) {
                 AddAccountView(viewModel: viewModel)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .openAddAccountSheet)) { _ in
+                showingAddAccount = true
             }
             .onAppear {
                 accountsCurrencyDisplay = .twd

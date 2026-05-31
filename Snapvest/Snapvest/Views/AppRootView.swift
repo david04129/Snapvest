@@ -14,6 +14,7 @@ struct AppRootView: View {
     @StateObject private var assetsViewModel = AssetsViewModel()
     @ObservedObject private var themeManager = ThemeManager.shared
     @ObservedObject private var privacyLock = PrivacyLockManager.shared
+    @ObservedObject private var onboardingManager = OnboardingManager.shared
     @State private var isLaunchComplete = false
     @State private var networkErrorMessage: String?
     @State private var blockedLaunchMessage: String?
@@ -44,6 +45,15 @@ struct AppRootView: View {
                     .environmentObject(LaunchSessionState.shared)
                     .environmentObject(DataFreshnessStore.shared)
                     .snapDismissKeyboardOnTap()
+                    .fullScreenCover(isPresented: $onboardingManager.isPresented) {
+                        OnboardingView(
+                            onFinish: { onboardingManager.complete() },
+                            onDemoMode: {
+                                await DemoModeManager.shared.enterDemoMode()
+                                onboardingManager.complete()
+                            }
+                        )
+                    }
             }
         }
         .preferredColorScheme(themeManager.isDarkMode ? .dark : .light)
@@ -56,7 +66,18 @@ struct AppRootView: View {
         .onChange(of: isLaunchComplete) { _, launchComplete in
             guard launchComplete else { return }
             privacyLock.handleLaunchComplete()
+            presentOnboardingIfAppropriate()
         }
+        .onChange(of: privacyLock.isLocked) { wasLocked, isLocked in
+            if wasLocked && !isLocked {
+                presentOnboardingIfAppropriate()
+            }
+        }
+    }
+
+    private func presentOnboardingIfAppropriate() {
+        guard isLaunchComplete, !privacyLock.isLocked else { return }
+        onboardingManager.presentIfNeeded()
     }
     
     private func runLaunchSequence() async {

@@ -80,4 +80,17 @@ struct HoldingColorPreferences {
         let keyString = "\(assetType.rawValue)_\(symbol)"
         UserDefaults.standard.removeObject(forKey: keyString)
     }
+
+    /// 還原預設風格時一併清除所有持股自訂色
+    static func clearAll() {
+        let prefixes = [
+            AssetType.stockTW.rawValue + "_",
+            AssetType.stockUS.rawValue + "_",
+            AssetType.crypto.rawValue + "_"
+        ]
+        for key in UserDefaults.standard.dictionaryRepresentation().keys {
+            guard prefixes.contains(where: { key.hasPrefix($0) }) else { continue }
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+    }
 }

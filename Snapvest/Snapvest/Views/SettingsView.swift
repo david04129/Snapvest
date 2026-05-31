@@ -7,6 +7,9 @@
 
 import SwiftUI
 import UniformTypeIdentifiers
+#if canImport(UIKit)
+import UIKit
+#endif
 
 @MainActor
 struct SettingsView: View {
@@ -28,6 +31,8 @@ struct SettingsView: View {
     @State private var isRestoreConfirmationPresented = false
     @State private var isRestoringBackup = false
     @State private var backupStatusMessage: String?
+    @State private var editingCustomForDarkMode: Bool = false
+    @State private var themeCustomCopyMessage: String?
     #if DEBUG
     @State private var isValidatingSnapshots = false
     @State private var snapshotValidationMessage: String?
@@ -46,6 +51,7 @@ struct SettingsView: View {
                             .padding(.leading, 56)
 
                         themeStyleRow
+                        themeCustomSection
 
                         Divider()
                             .padding(.leading, 56)
@@ -60,6 +66,11 @@ struct SettingsView: View {
                     
                     settingsSection(title: "體驗") {
                         demoModeRow
+
+                        Divider()
+                            .padding(.leading, 56)
+
+                        onboardingReplayRow
                     }
 
                     #if DEBUG
@@ -172,6 +183,28 @@ struct SettingsView: View {
                 Button("知道了", role: .cancel) {}
             } message: {
                 Text(backupStatusMessage ?? "")
+            }
+            .alert(
+                "自訂配色",
+                isPresented: Binding(
+                    get: { themeCustomCopyMessage != nil },
+                    set: { if !$0 { themeCustomCopyMessage = nil } }
+                )
+            ) {
+                Button("知道了", role: .cancel) {}
+            } message: {
+                Text(themeCustomCopyMessage ?? "")
+            }
+            .onAppear {
+                editingCustomForDarkMode = theme.isDarkMode
+            }
+            .onChange(of: theme.isDarkMode) { _, _ in
+                editingCustomForDarkMode = theme.isDarkMode
+            }
+            .onChange(of: theme.isCustomThemeActive) { _, isActive in
+                if isActive {
+                    editingCustomForDarkMode = theme.isDarkMode
+                }
             }
         }
     }
@@ -287,16 +320,209 @@ struct SettingsView: View {
                 ForEach(ThemeStyleID.allCases) { style in
                     ThemeStyleOptionCard(
                         style: style,
-                        isSelected: theme.selectedStyle == style,
+                        isSelected: !theme.isCustomThemeActive && theme.selectedStyle == style,
                         isDarkMode: theme.isDarkMode
                     ) {
                         theme.setStyle(style)
                     }
                 }
+
+                ThemeCustomStyleOptionCard(
+                    isSelected: theme.isCustomThemeActive,
+                    isDarkMode: theme.isDarkMode,
+                    lightOverrides: theme.customOverrides(forDarkMode: false),
+                    darkOverrides: theme.customOverrides(forDarkMode: true),
+                    baseStyle: theme.selectedStyle
+                ) {
+                    theme.activateCustomTheme()
+                    editingCustomForDarkMode = theme.isDarkMode
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.bottom, theme.isCustomThemeActive ? 10 : 13)
+        }
+    }
+
+    @ViewBuilder
+    private var themeCustomSection: some View {
+        if theme.isCustomThemeActive {
+            themeCustomEditor
+        }
+    }
+
+    private var themeCustomEditor: some View {
+        let basePalette = ThemeStyleCatalog.palette(
+            style: theme.selectedStyle,
+            isDarkMode: editingCustomForDarkMode
+        )
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                ThemeCustomModeChip(
+                    title: "淺色自訂",
+                    isSelected: !editingCustomForDarkMode
+                ) {
+                    editingCustomForDarkMode = false
+                    theme.setDarkMode(false)
+                }
+                ThemeCustomModeChip(
+                    title: "深色自訂",
+                    isSelected: editingCustomForDarkMode
+                ) {
+                    editingCustomForDarkMode = true
+                    theme.setDarkMode(true)
+                }
+            }
+            .padding(.horizontal, 14)
+
+            VStack(spacing: 6) {
+                ThemeCustomColorGroupHeader(title: "背景")
+                ThemeCustomColorPickerRow(
+                    label: "主背景",
+                    color: customColorBinding(
+                        \.mainBackground,
+                        fallback: basePalette.mainBackground,
+                        editingDark: editingCustomForDarkMode
+                    )
+                )
+                ThemeCustomColorPickerRow(
+                    label: "卡片",
+                    color: customColorBinding(
+                        \.cardBackground,
+                        fallback: basePalette.cardBackground,
+                        editingDark: editingCustomForDarkMode
+                    )
+                )
+                ThemeCustomColorPickerRow(
+                    label: "次層",
+                    color: customColorBinding(
+                        \.secondaryBackground,
+                        fallback: basePalette.secondaryBackground,
+                        editingDark: editingCustomForDarkMode
+                    )
+                )
+
+                ThemeCustomColorGroupHeader(title: "品牌")
+                    .padding(.top, 6)
+                ThemeCustomColorPickerRow(
+                    label: "主色",
+                    color: customColorBinding(
+                        \.appPrimary,
+                        fallback: basePalette.appPrimary,
+                        editingDark: editingCustomForDarkMode
+                    )
+                )
+
+                ThemeCustomColorGroupHeader(title: "投資類別")
+                    .padding(.top, 6)
+                ThemeCustomColorPickerRow(
+                    label: "台股",
+                    color: customColorBinding(
+                        \.stockTW,
+                        fallback: basePalette.stockTWColor,
+                        editingDark: editingCustomForDarkMode
+                    )
+                )
+                ThemeCustomColorPickerRow(
+                    label: "美股",
+                    color: customColorBinding(
+                        \.stockUS,
+                        fallback: basePalette.stockUSColor,
+                        editingDark: editingCustomForDarkMode
+                    )
+                )
+                ThemeCustomColorPickerRow(
+                    label: "加密",
+                    color: customColorBinding(
+                        \.crypto,
+                        fallback: basePalette.cryptoColor,
+                        editingDark: editingCustomForDarkMode
+                    )
+                )
+
+                ThemeCustomColorGroupHeader(title: "首頁大類")
+                    .padding(.top, 6)
+                ThemeCustomColorPickerRow(
+                    label: "淨資產",
+                    color: customColorBinding(
+                        \.homeNetWorth,
+                        fallback: basePalette.homeNetWorthAccent,
+                        editingDark: editingCustomForDarkMode
+                    )
+                )
+                ThemeCustomColorPickerRow(
+                    label: "投資資產",
+                    color: customColorBinding(
+                        \.homeInvestments,
+                        fallback: basePalette.homeInvestmentsAccent,
+                        editingDark: editingCustomForDarkMode
+                    )
+                )
+                ThemeCustomColorPickerRow(
+                    label: "現金",
+                    color: customColorBinding(
+                        \.homeCash,
+                        fallback: basePalette.homeCashAccent,
+                        editingDark: editingCustomForDarkMode
+                    )
+                )
+            }
+            .padding(.horizontal, 14)
+
+            HStack(spacing: 10) {
+                Button {
+                    theme.clearCustomOverrides(isDarkMode: editingCustomForDarkMode)
+                } label: {
+                    Text("清除此模式")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.secondaryText)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Color.secondaryBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    copyCustomThemeDescription()
+                } label: {
+                    Text("複製設定說明")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.appPrimary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Color.appPrimary.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                .buttonStyle(.plain)
             }
             .padding(.horizontal, 14)
             .padding(.bottom, 13)
         }
+    }
+
+    private func customColorBinding(
+        _ keyPath: WritableKeyPath<ThemeCustomColorOverrides, String?>,
+        fallback: Color,
+        editingDark: Bool
+    ) -> Binding<Color> {
+        Binding(
+            get: {
+                let overrides = theme.customOverrides(forDarkMode: editingDark)
+                return overrides.color(for: keyPath) ?? fallback
+            },
+            set: { newColor in
+                theme.setCustomColor(newColor, for: keyPath, isDarkMode: editingDark)
+            }
+        )
+    }
+
+    private func copyCustomThemeDescription() {
+        let text = theme.exportCustomColorDescription(editingDarkMode: editingCustomForDarkMode)
+        #if canImport(UIKit)
+        UIPasteboard.general.string = text
+        #endif
+        themeCustomCopyMessage = "已複製到剪貼簿。可貼給開發或 AI 說明想要的配色。"
     }
 
     private var themeModeRow: some View {
@@ -536,6 +762,44 @@ struct SettingsView: View {
         }
         .buttonStyle(.plain)
         .disabled(demoMode.isSwitching)
+    }
+
+    private var onboardingReplayRow: some View {
+        Button {
+            dismiss()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                OnboardingManager.shared.presentManually()
+            }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "book.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.appPrimary)
+                    .frame(width: 30, height: 30)
+                    .background(Color.appPrimary.opacity(0.14))
+                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("重新觀看新手教學")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.primaryText)
+
+                    Text("再次瀏覽帳戶、紀錄與備份說明")
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                }
+
+                Spacer(minLength: 12)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(.secondaryText.opacity(0.7))
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 13)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     #if DEBUG
@@ -879,6 +1143,58 @@ private struct BaseCurrencyPickerSheet: View {
 
 // MARK: - 配色風格選項
 
+private struct ThemeCustomStyleOptionCard: View {
+    let isSelected: Bool
+    let isDarkMode: Bool
+    let lightOverrides: ThemeCustomColorOverrides
+    let darkOverrides: ThemeCustomColorOverrides
+    let baseStyle: ThemeStyleID
+    let action: () -> Void
+
+    private var previewColors: (stockTW: Color, stockUS: Color, crypto: Color) {
+        let overrides = isDarkMode ? darkOverrides : lightOverrides
+        let base = ThemeStyleCatalog.palette(style: baseStyle, isDarkMode: isDarkMode)
+        let resolved = ThemeStyleCatalog.applying(custom: overrides, to: base, isDarkMode: isDarkMode)
+        return (resolved.stockTWColor, resolved.stockUSColor, resolved.cryptoColor)
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("自訂配色")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.primaryText)
+                    Text("套用你的淺色／深色自訂色")
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                        .multilineTextAlignment(.leading)
+                }
+
+                Spacer(minLength: 8)
+
+                HStack(spacing: 8) {
+                    ThemeStyleSwatch(color: previewColors.stockTW, label: "台股")
+                    ThemeStyleSwatch(color: previewColors.stockUS, label: "美股")
+                    ThemeStyleSwatch(color: previewColors.crypto, label: "加密")
+                }
+
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 20))
+                    .foregroundColor(isSelected ? .appPrimary : .tertiaryText)
+            }
+            .padding(12)
+            .background(Color.secondaryBackground.opacity(isSelected ? 0.85 : 0.45))
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(isSelected ? Color.appPrimary.opacity(0.55) : Color.separator.opacity(0.4), lineWidth: isSelected ? 1.5 : 1)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 private struct ThemeStyleOptionCard: View {
     let style: ThemeStyleID
     let isSelected: Bool
@@ -943,5 +1259,68 @@ private struct ThemeStyleSwatch: View {
                 .font(.system(size: 9, weight: .medium))
                 .foregroundColor(.secondaryText)
         }
+    }
+}
+
+// MARK: - 自訂配色列
+
+private struct ThemeCustomModeChip: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundColor(isSelected ? AppColors.actionForeground : .primaryText)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(isSelected ? Color.appPrimary : Color.secondaryBackground)
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct ThemeCustomColorGroupHeader: View {
+    let title: String
+
+    var body: some View {
+        Text(title)
+            .font(.caption.weight(.semibold))
+            .foregroundColor(.secondaryText)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 2)
+    }
+}
+
+private struct ThemeCustomColorPickerRow: View {
+    let label: String
+    @Binding var color: Color
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Circle()
+                .fill(color)
+                .frame(width: 28, height: 28)
+                .overlay {
+                    Circle()
+                        .stroke(Color.separator.opacity(0.5), lineWidth: 1)
+                }
+
+            Text(label)
+                .font(.subheadline)
+                .foregroundColor(.primaryText)
+
+            Spacer(minLength: 8)
+
+            ColorPicker("", selection: $color, supportsOpacity: false)
+                .labelsHidden()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.secondaryBackground.opacity(0.55))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }

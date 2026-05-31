@@ -391,4 +391,278 @@ private extension ThemePalette {
             manualAssetLight: manualAssetLight
         )
     }
+
+    func withBackgroundColors(main: Color, card: Color, secondary: Color) -> ThemePalette {
+        ThemePalette(
+            stockUSColor: stockUSColor,
+            stockUSDeep: stockUSDeep,
+            stockUSLight: stockUSLight,
+            stockTWColor: stockTWColor,
+            stockTWDeepAmber: stockTWDeepAmber,
+            stockTWLight: stockTWLight,
+            cryptoColor: cryptoColor,
+            cryptoDeep: cryptoDeep,
+            cryptoLight: cryptoLight,
+            pieChartTWColors: pieChartTWColors,
+            pieChartUSColors: pieChartUSColors,
+            pieChartCryptoColors: pieChartCryptoColors,
+            holdingChartColors: holdingChartColors,
+            allocationTwdCash: allocationTwdCash,
+            allocationUsdCash: allocationUsdCash,
+            allocationStockUS: allocationStockUS,
+            allocationStockTW: allocationStockTW,
+            allocationCrypto: allocationCrypto,
+            pieChartVibrantColors: pieChartVibrantColors,
+            colorOptionsForPicker: colorOptionsForPicker,
+            appPrimary: appPrimary,
+            appSecondary: appSecondary,
+            mainBackground: main,
+            cardBackground: card,
+            secondaryBackground: secondary,
+            tertiaryBackground: main,
+            profitGreen: profitGreen,
+            lossRed: lossRed,
+            primaryText: primaryText,
+            secondaryText: secondaryText,
+            tertiaryText: tertiaryText,
+            separator: separator,
+            borderLight: borderLight,
+            disabledBackground: secondary,
+            overlayDark: overlayDark,
+            shadowLow: shadowLow,
+            shadowMedium: shadowMedium,
+            shadowSoft: shadowSoft,
+            shadowCard: shadowCard,
+            shadowHigh: shadowHigh,
+            actionForeground: actionForeground,
+            placeholderFill: placeholderFill,
+            chartBackdropLight: secondary,
+            chartBackdropDark: secondary.opacity(0.35),
+            cashAccountColor: cashAccountColor,
+            homeNetWorthAccent: homeNetWorthAccent,
+            homeInvestmentsAccent: homeInvestmentsAccent,
+            homeCashAccent: homeCashAccent,
+            manualAssetColor: manualAssetColor,
+            manualAssetLight: manualAssetLight
+        )
+    }
+
+    func withBrandPrimary(_ primary: Color, isDarkMode: Bool) -> ThemePalette {
+        let secondary = primary.themeScaledBrightness(isDarkMode ? 0.1 : 0.08)
+        return ThemePalette(
+            stockUSColor: stockUSColor,
+            stockUSDeep: stockUSDeep,
+            stockUSLight: stockUSLight,
+            stockTWColor: stockTWColor,
+            stockTWDeepAmber: stockTWDeepAmber,
+            stockTWLight: stockTWLight,
+            cryptoColor: cryptoColor,
+            cryptoDeep: cryptoDeep,
+            cryptoLight: cryptoLight,
+            pieChartTWColors: pieChartTWColors,
+            pieChartUSColors: pieChartUSColors,
+            pieChartCryptoColors: pieChartCryptoColors,
+            holdingChartColors: holdingChartColors,
+            allocationTwdCash: allocationTwdCash,
+            allocationUsdCash: allocationUsdCash,
+            allocationStockUS: allocationStockUS,
+            allocationStockTW: allocationStockTW,
+            allocationCrypto: allocationCrypto,
+            pieChartVibrantColors: pieChartVibrantColors,
+            colorOptionsForPicker: colorOptionsForPicker,
+            appPrimary: primary,
+            appSecondary: secondary,
+            mainBackground: mainBackground,
+            cardBackground: cardBackground,
+            secondaryBackground: secondaryBackground,
+            tertiaryBackground: tertiaryBackground,
+            profitGreen: profitGreen,
+            lossRed: lossRed,
+            primaryText: primaryText,
+            secondaryText: secondaryText,
+            tertiaryText: tertiaryText,
+            separator: separator,
+            borderLight: borderLight,
+            disabledBackground: disabledBackground,
+            overlayDark: overlayDark,
+            shadowLow: shadowLow,
+            shadowMedium: shadowMedium,
+            shadowSoft: shadowSoft,
+            shadowCard: shadowCard,
+            shadowHigh: shadowHigh,
+            actionForeground: actionForeground,
+            placeholderFill: placeholderFill,
+            chartBackdropLight: chartBackdropLight,
+            chartBackdropDark: chartBackdropDark,
+            cashAccountColor: cashAccountColor,
+            homeNetWorthAccent: homeNetWorthAccent,
+            homeInvestmentsAccent: homeInvestmentsAccent,
+            homeCashAccent: homeCashAccent,
+            manualAssetColor: manualAssetColor,
+            manualAssetLight: manualAssetLight
+        )
+    }
+
+    func withHomeAccents(netWorth: Color, investments: Color, cash: Color) -> ThemePalette {
+        ThemePalette(
+            stockUSColor: stockUSColor,
+            stockUSDeep: stockUSDeep,
+            stockUSLight: stockUSLight,
+            stockTWColor: stockTWColor,
+            stockTWDeepAmber: stockTWDeepAmber,
+            stockTWLight: stockTWLight,
+            cryptoColor: cryptoColor,
+            cryptoDeep: cryptoDeep,
+            cryptoLight: cryptoLight,
+            pieChartTWColors: pieChartTWColors,
+            pieChartUSColors: pieChartUSColors,
+            pieChartCryptoColors: pieChartCryptoColors,
+            holdingChartColors: holdingChartColors,
+            allocationTwdCash: allocationTwdCash,
+            allocationUsdCash: allocationUsdCash,
+            allocationStockUS: allocationStockUS,
+            allocationStockTW: allocationStockTW,
+            allocationCrypto: allocationCrypto,
+            pieChartVibrantColors: pieChartVibrantColors,
+            colorOptionsForPicker: colorOptionsForPicker,
+            appPrimary: appPrimary,
+            appSecondary: appSecondary,
+            mainBackground: mainBackground,
+            cardBackground: cardBackground,
+            secondaryBackground: secondaryBackground,
+            tertiaryBackground: tertiaryBackground,
+            profitGreen: profitGreen,
+            lossRed: lossRed,
+            primaryText: primaryText,
+            secondaryText: secondaryText,
+            tertiaryText: tertiaryText,
+            separator: separator,
+            borderLight: borderLight,
+            disabledBackground: disabledBackground,
+            overlayDark: overlayDark,
+            shadowLow: shadowLow,
+            shadowMedium: shadowMedium,
+            shadowSoft: shadowSoft,
+            shadowCard: shadowCard,
+            shadowHigh: shadowHigh,
+            actionForeground: actionForeground,
+            placeholderFill: placeholderFill,
+            chartBackdropLight: chartBackdropLight,
+            chartBackdropDark: chartBackdropDark,
+            cashAccountColor: cashAccountColor,
+            homeNetWorthAccent: netWorth,
+            homeInvestmentsAccent: investments,
+            homeCashAccent: cash,
+            manualAssetColor: manualAssetColor,
+            manualAssetLight: manualAssetLight
+        )
+    }
+}
+
+// MARK: - 自訂覆寫（呼叫既有群組 API）
+
+extension ThemeStyleCatalog {
+    static func applying(
+        custom overrides: ThemeCustomColorOverrides,
+        to base: ThemePalette,
+        isDarkMode: Bool
+    ) -> ThemePalette {
+        guard !overrides.isEmpty else { return base }
+
+        var palette = base
+
+        if overrides.mainBackground != nil
+            || overrides.cardBackground != nil
+            || overrides.secondaryBackground != nil {
+            let main = overrides.mainBackground.flatMap { Color(hex: $0) } ?? palette.mainBackground
+            let card = overrides.cardBackground.flatMap { Color(hex: $0) } ?? palette.cardBackground
+            let secondary = overrides.secondaryBackground.flatMap { Color(hex: $0) } ?? palette.secondaryBackground
+            palette = palette.withBackgroundColors(main: main, card: card, secondary: secondary)
+        }
+
+        if let primary = overrides.appPrimary.flatMap({ Color(hex: $0) }) {
+            palette = palette.withBrandPrimary(primary, isDarkMode: isDarkMode)
+        }
+
+        if overrides.stockTW != nil || overrides.stockUS != nil || overrides.crypto != nil {
+            palette = palette.withMarketAssetColors(
+                combinedMarketOverrides(overrides: overrides, base: base, isDarkMode: isDarkMode)
+            )
+        }
+
+        let netWorth = overrides.homeNetWorth.flatMap { Color(hex: $0) } ?? palette.homeNetWorthAccent
+        let investments = overrides.homeInvestments.flatMap { Color(hex: $0) } ?? palette.homeInvestmentsAccent
+        let cash = overrides.homeCash.flatMap { Color(hex: $0) } ?? palette.homeCashAccent
+        if overrides.homeNetWorth != nil || overrides.homeInvestments != nil || overrides.homeCash != nil {
+            palette = palette.withHomeAccents(netWorth: netWorth, investments: investments, cash: cash)
+        }
+
+        return palette
+    }
+
+    private static func combinedMarketOverrides(
+        overrides: ThemeCustomColorOverrides,
+        base: ThemePalette,
+        isDarkMode: Bool
+    ) -> ThemePalette.MarketAssetColorOverrides {
+        let indices = holdingAccentIndices(in: base)
+        let lightOpacity: CGFloat = isDarkMode ? 0.24 : 0.22
+
+        func pack(_ anchor: Color) -> (main: Color, deep: Color, light: Color, pie: [Color]) {
+            (
+                anchor,
+                anchor.themeScaledBrightness(-0.14),
+                anchor.opacity(lightOpacity),
+                anchor.themePiePaletteVariants()
+            )
+        }
+
+        let twAnchor = overrides.stockTW.flatMap { Color(hex: $0) } ?? base.stockTWColor
+        let usAnchor = overrides.stockUS.flatMap { Color(hex: $0) } ?? base.stockUSColor
+        let cryptoAnchor = overrides.crypto.flatMap { Color(hex: $0) } ?? base.cryptoColor
+
+        let tw = pack(twAnchor)
+        let us = pack(usAnchor)
+        let cr = pack(cryptoAnchor)
+
+        return ThemePalette.MarketAssetColorOverrides(
+            stockTW: tw.main,
+            stockTWDeep: overrides.stockTW != nil ? tw.deep : base.stockTWDeepAmber,
+            stockTWLight: overrides.stockTW != nil ? tw.light : base.stockTWLight,
+            stockUS: us.main,
+            stockUSDeep: overrides.stockUS != nil ? us.deep : base.stockUSDeep,
+            stockUSLight: overrides.stockUS != nil ? us.light : base.stockUSLight,
+            crypto: cr.main,
+            cryptoDeep: overrides.crypto != nil ? cr.deep : base.cryptoDeep,
+            cryptoLight: overrides.crypto != nil ? cr.light : base.cryptoLight,
+            pieChartTW: overrides.stockTW != nil ? tw.pie : base.pieChartTWColors,
+            pieChartUS: overrides.stockUS != nil ? us.pie : base.pieChartUSColors,
+            pieChartCrypto: overrides.crypto != nil ? cr.pie : base.pieChartCryptoColors,
+            allocationStockTW: overrides.stockTW != nil ? tw.main : base.allocationStockTW,
+            allocationStockUS: overrides.stockUS != nil ? us.main : base.allocationStockUS,
+            allocationCrypto: overrides.crypto != nil ? cr.main : base.allocationCrypto,
+            holdingChartAccentIndices: indices,
+            holdingChartTW: overrides.stockTW != nil ? tw.main : base.holdingChartColors[indices.tw],
+            holdingChartUS: overrides.stockUS != nil ? us.main : base.holdingChartColors[indices.us],
+            holdingChartCrypto: overrides.crypto != nil ? cr.main : base.holdingChartColors[indices.crypto],
+            pickerAccentTW: overrides.stockTW != nil ? tw.main : base.stockTWColor,
+            pickerAccentUS: overrides.stockUS != nil ? us.main : base.stockUSColor
+        )
+    }
+
+    private static func holdingAccentIndices(in palette: ThemePalette) -> (tw: Int, us: Int, crypto: Int) {
+        let holding = palette.holdingChartColors
+        func index(matching color: Color, in values: [Color], fallback: Int) -> Int {
+            guard let target = color.themeHexString else { return fallback }
+            if let found = values.firstIndex(where: { $0.themeHexString == target }) {
+                return found
+            }
+            return fallback
+        }
+        return (
+            tw: index(matching: palette.stockTWColor, in: holding, fallback: 2),
+            us: index(matching: palette.stockUSColor, in: holding, fallback: 0),
+            crypto: index(matching: palette.cryptoColor, in: holding, fallback: 1)
+        )
+    }
 }

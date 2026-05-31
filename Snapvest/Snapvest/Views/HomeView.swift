@@ -26,12 +26,30 @@ struct HomeView: View {
     @State private var pieChartMode: PieChartDisplayMode = .totalAssets
     @State private var performanceMode: PerformanceDisplayMode = .gainLoss
     @ObservedObject private var pieGroupingStore = PieChartGroupingStore.shared
+
+    private var showsHomeOnboardingEmpty: Bool {
+        accountsViewModel.accounts.filter { !$0.isArchived }.isEmpty
+    }
     
     var body: some View {
         NavigationStack {
             ScrollViewReader { scrollProxy in
             ScrollView {
                 VStack(spacing: 20) {
+                    if showsHomeOnboardingEmpty {
+                        OnboardingEmptyStateCard(
+                            icon: "house.fill",
+                            title: "歡迎使用 Walleaf",
+                            message: "建立帳戶後，這裡會顯示淨資產、走勢圖與資產配置。",
+                            actionTitle: "去新增帳戶"
+                        ) {
+                            selectedTab = AppTab.accounts.rawValue
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                                NotificationCenter.default.post(name: .openAddAccountSheet, object: nil)
+                            }
+                        }
+                    }
+
                     Group {
                         HomeTrendChartSection(
                             userId: userId,

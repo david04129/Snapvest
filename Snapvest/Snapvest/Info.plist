@@ -9,7 +9,7 @@
 	<key>NSFaceIDUsageDescription</key>
 	<string>Walleaf 需要使用 Face ID 來保護您的資產與交易資訊。</string>
 	<key>SNAPVEST_USER_ID</key>
-	<string>david.hsu</string>
+	<string>piggy</string>
 	<key>SUPABASE_ANON_KEY</key>
 	<string>sb_publishable__E7HewKbHnA47_P1Z6mkOg_qMxiC3os</string>
 	<key>SUPABASE_URL</key>

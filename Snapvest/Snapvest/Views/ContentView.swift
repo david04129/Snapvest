@@ -90,14 +90,26 @@ struct ContentView: View {
                     message: portfolioMutationRefreshMessage
                 )
                     .transition(.opacity)
+            } else if demoMode.isSwitching {
+                PortfolioMutationLoadingOverlay(
+                    title: "正在準備示範資料…",
+                    message: "會載入一組範例帳戶、持股與走勢"
+                )
+                .transition(.opacity)
             }
         }
         .animation(.easeInOut(duration: 0.18), value: isPortfolioMutationRefreshing)
+        .animation(.easeInOut(duration: 0.18), value: demoMode.isSwitching)
         .onReceive(NotificationCenter.default.publisher(for: .portfolioMutationRefreshBegan)) { notification in
             beginPortfolioMutationRefresh(notification: notification)
         }
         .onReceive(NotificationCenter.default.publisher(for: .portfolioMutationRefreshEnded)) { _ in
             finishPortfolioMutationRefresh()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .switchToTab)) { notification in
+            if let tab = notification.userInfo?[TabResignUserInfoKey.tabIndex] as? Int {
+                selectedTab = tab
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .transactionsDidChange)) { notification in
             guard let request = notification.object as? PortfolioMutationRefreshRequest else { return }

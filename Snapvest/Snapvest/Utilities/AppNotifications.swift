@@ -16,6 +16,12 @@ extension Notification.Name {
     static let portfolioMutationRefreshEnded = Notification.Name("portfolioMutationRefreshEnded")
     /// 使用者切換到其他 Tab 時發送；userInfo["tabIndex"] = Int
     static let tabResigned = Notification.Name("tabResigned")
+
+    /// 切換主分頁（userInfo: `TabResignUserInfoKey.tabIndex`）
+    static let switchToTab = Notification.Name("walleaf.switchToTab")
+
+    /// 開啟新增帳戶 sheet（請先切到管理分頁）
+    static let openAddAccountSheet = Notification.Name("walleaf.openAddAccountSheet")
 }
 
 enum TabResignUserInfoKey {

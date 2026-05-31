@@ -311,13 +311,33 @@ struct TransactionsView: View {
     }
     
     private var emptyStateView: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 20) {
             Image(systemName: "list.bullet.clipboard")
                 .font(.system(size: 50))
                 .foregroundColor(.secondaryText)
             Text("尚無紀錄")
                 .font(.headline)
                 .foregroundColor(.secondaryText)
+            Text("建立帳戶後，買賣與現金收支會出現在這裡。")
+                .font(.subheadline)
+                .foregroundColor(.secondaryText)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
+
+            Button {
+                selectedTab = AppTab.accounts.rawValue
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    NotificationCenter.default.post(name: .openAddAccountSheet, object: nil)
+                }
+            } label: {
+                Text("去新增帳戶")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(AppColors.actionForeground)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+                    .background(Color.appPrimary)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
