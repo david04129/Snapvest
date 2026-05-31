@@ -33,7 +33,6 @@ final class DemoModeManager: ObservableObject {
             userId: resolvedUserId,
             dataService: MockDataService.shared,
             priceService: DemoPriceService(seed: seed),
-            syncPortfolio: false,
             updatePriceMetadata: false
         )
         

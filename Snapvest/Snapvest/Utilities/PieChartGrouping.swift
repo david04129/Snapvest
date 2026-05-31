@@ -540,9 +540,14 @@ final class PieChartGroupingStore: ObservableObject {
     @Published var expandedLegendGroupIds: Set<String> = []
     /// 編輯群組中：首頁需先結束編輯才能操作其他區塊
     @Published var isEditingGroups = false
+    /// 群組化切換過渡中（圓餅圖／績效圖共用）
+    @Published private(set) var isGroupingTransitioning = false
+    /// 遞增後強制圓餅圖乾淨重建
+    @Published private(set) var pieChartRebuildGeneration = 0
 
     private var userId: String = AppUser.id
     private var isUsingTransientDemoDefaults = false
+    private var groupingToggleUnlockTask: Task<Void, Never>?
 
     var isGroupingEnabled: Bool { displayMode == .grouped }
 
@@ -616,6 +621,35 @@ final class PieChartGroupingStore: ObservableObject {
     func toggleDisplayMode() {
         displayMode = displayMode.toggled
         persistDisplayMode()
+    }
+
+    /// 群組 ↔ 明細：與首頁圓餅圖、績效圖共用（含切換冷卻與圓餅重建）
+    func requestDisplayModeToggle() {
+        guard !isGroupingTransitioning else { return }
+        isGroupingTransitioning = true
+        groupingToggleUnlockTask?.cancel()
+
+        groupingToggleUnlockTask = Task { @MainActor in
+            try? await Task.sleep(for: ChartMotion.groupingToggleLeadIn)
+            guard !Task.isCancelled else { return }
+
+            let turningOff = isGroupingEnabled
+            toggleDisplayMode()
+            if turningOff {
+                setEditingGroups(false)
+                clearExpandedLegendGroups()
+            }
+            pieChartRebuildGeneration += 1
+
+            try? await Task.sleep(for: ChartMotion.groupingToggleCooldown)
+            guard !Task.isCancelled else { return }
+            isGroupingTransitioning = false
+        }
+    }
+
+    func cancelGroupingToggleTasks() {
+        groupingToggleUnlockTask?.cancel()
+        isGroupingTransitioning = false
     }
 
     private func persistGroups() {

@@ -99,19 +99,14 @@ class TransactionsViewModel: ObservableObject {
                     affectedAccountIds: affectedAccountIds,
                     affectedSymbols: affectedSymbols
                 )
-                await refreshPortfolioSnapshots(
+                Task { await updateHoldings(accountId: transaction.accountId) }
+                await loadTransactions(userId: userId)
+                schedulePortfolioRefresh(
                     userId: userId,
                     affectedAccountIds: affectedAccountIds,
                     affectedSymbols: affectedSymbols,
                     realizedGainLossDeltaByCurrency: realizedGainLossDeltaByCurrency(newTransaction: transaction),
-                    forceFullRebuild: forceFullRebuild
-                )
-                Task { await updateHoldings(accountId: transaction.accountId) }
-            }
-            if !isBatchImporting {
-                await loadTransactions(userId: userId)
-                notifyTransactionsDidChange(
-                    affectedAccountIds: [transaction.accountId],
+                    forceFullRebuild: forceFullRebuild,
                     showsLoadingOverlay: showsLoadingOverlay
                 )
             }
@@ -199,17 +194,20 @@ class TransactionsViewModel: ObservableObject {
                 await importRow(row)
             }
             
+            await loadTransactions(userId: userId)
+
             if imported > 0 {
                 let importedTransactions = validRows.compactMap(\.transaction)
-                let affectedAccountIds = Set(importedTransactions.map(\.accountId))
-                await refreshPortfolioSnapshots(
+                schedulePortfolioRefresh(
                     userId: userId,
-                    affectedAccountIds: affectedAccountIds,
+                    affectedAccountIds: Set(importedTransactions.map(\.accountId)),
                     affectedSymbols: impactedSymbols(for: importedTransactions),
-                    forceFullRebuild: true
+                    forceFullRebuild: true,
+                    showsLoadingOverlay: true,
+                    loadingTitle: "正在更新持倉…",
+                    loadingMessage: "重新計算帳戶餘額與投資總覽"
                 )
             }
-            await loadTransactions(userId: userId)
             
             if !failures.isEmpty {
                 errorMessage = TransactionImportBatchResult(imported: imported, failures: failures).alertMessage
@@ -477,7 +475,12 @@ class TransactionsViewModel: ObservableObject {
                 affectedSymbols: affectedSymbols
             )
             let userId = await resolveUserId(for: transaction.accountId) ?? AppUser.id
-            await refreshPortfolioSnapshots(
+            Task { await updateHoldings(accountId: transaction.accountId) }
+            if let previousAccountId, previousAccountId != transaction.accountId {
+                Task { await updateHoldings(accountId: previousAccountId) }
+            }
+            await loadTransactions(userId: userId)
+            schedulePortfolioRefresh(
                 userId: userId,
                 affectedAccountIds: affectedAccountIds,
                 affectedSymbols: affectedSymbols,
@@ -485,14 +488,9 @@ class TransactionsViewModel: ObservableObject {
                     newTransaction: transaction,
                     previousTransaction: previousTransaction
                 ),
-                forceFullRebuild: forceFullRebuild
+                forceFullRebuild: forceFullRebuild,
+                showsLoadingOverlay: true
             )
-            Task { await updateHoldings(accountId: transaction.accountId) }
-            if let previousAccountId, previousAccountId != transaction.accountId {
-                Task { await updateHoldings(accountId: previousAccountId) }
-            }
-            await loadTransactions(userId: userId)
-            notifyTransactionsDidChange(affectedAccountIds: affectedAccountIds, showsLoadingOverlay: true)
         } catch {
             errorMessage = "更新交易失敗：\(error.localizedDescription)"
         }
@@ -780,14 +778,16 @@ class TransactionsViewModel: ObservableObject {
                 affectedAccountIds: affectedAccountIds,
                 affectedSymbols: affectedSymbols
             )
-            await refreshPortfolioSnapshots(
+            schedulePortfolioRefresh(
                 userId: userId,
                 affectedAccountIds: affectedAccountIds,
                 affectedSymbols: affectedSymbols,
                 realizedGainLossDeltaByCurrency: realizedGainLossDeltaByCurrency(deletedTransaction: transaction),
-                forceFullRebuild: forceFullRebuild
+                forceFullRebuild: forceFullRebuild,
+                showsLoadingOverlay: true,
+                loadingTitle: "正在更新資料…",
+                loadingMessage: "重新計算帳戶、持股與總資產"
             )
-            notifyTransactionsDidChange(affectedAccountIds: affectedAccountIds, showsLoadingOverlay: true)
             // 清除錯誤訊息（如果刪除成功）
             await MainActor.run {
                 errorMessage = nil
@@ -801,46 +801,13 @@ class TransactionsViewModel: ObservableObject {
         }
     }
 
-    private func refreshPortfolioSnapshots(
-        userId: String,
-        affectedAccountIds: Set<String>? = nil,
-        affectedSymbols: [SymbolInfo] = [],
-        realizedGainLossDeltaByCurrency: [Currency: Decimal] = [:],
-        forceFullRebuild: Bool = false
-    ) async {
-        if let affectedAccountIds, !forceFullRebuild {
-            do {
-                _ = try await SnapshotUpdater.updateSnapshotsIncrementally(
-                    userId: userId,
-                    affectedAccountIds: affectedAccountIds,
-                    affectedSymbols: affectedSymbols,
-                    realizedGainLossDeltaByCurrency: realizedGainLossDeltaByCurrency,
-                    dataService: dataService,
-                    priceService: PriceService(dataService: dataService)
-                )
-                await TrackedSymbolSync.sync(symbols: affectedSymbols)
-                dataService.persistLocalStore(for: userId)
-                return
-            } catch {
-                #if DEBUG
-                print("[TransactionsViewModel] incremental snapshot failed: \(error.localizedDescription)")
-                #endif
-            }
-        }
-
-        await SnapshotRefreshCoordinator.rebuildAndNotify(
-            userId: userId,
-            dataService: dataService,
-            syncPortfolio: !affectedSymbols.isEmpty,
-            updatePriceMetadata: false,
-            deferRemoteWork: true,
-            postsUpdateNotification: false
-        )
-    }
-    
     private func updateSnapshotsIfNeeded(for accountId: String) async {
         let userId = await resolveUserId(for: accountId) ?? AppUser.id
-        await refreshPortfolioSnapshots(userId: userId)
+        schedulePortfolioRefresh(
+            userId: userId,
+            affectedAccountIds: [accountId],
+            showsLoadingOverlay: false
+        )
     }
 
     private func impactedSymbols(for transactions: [Transaction]) -> [SymbolInfo] {
@@ -916,16 +883,31 @@ class TransactionsViewModel: ObservableObject {
         return deltas
     }
 
-    private func notifyTransactionsDidChange(
-        affectedAccountIds: Set<String> = [],
-        showsLoadingOverlay: Bool = false
+    private func schedulePortfolioRefresh(
+        userId: String,
+        affectedAccountIds: Set<String>,
+        affectedSymbols: [SymbolInfo] = [],
+        realizedGainLossDeltaByCurrency: [Currency: Decimal] = [:],
+        forceFullRebuild: Bool = false,
+        showsLoadingOverlay: Bool = true,
+        loadingTitle: String = "正在更新資料…",
+        loadingMessage: String = "重新計算帳戶、持股與總資產"
     ) {
+        let request = PortfolioMutationRefreshRequest(
+            userId: userId,
+            affectedAccountIds: affectedAccountIds,
+            affectedSymbols: affectedSymbols,
+            forceFullRebuild: forceFullRebuild,
+            realizedGainLossDeltaByCurrency: realizedGainLossDeltaByCurrency,
+            showsLoadingOverlay: showsLoadingOverlay,
+            loadingTitle: loadingTitle,
+            loadingMessage: loadingMessage
+        )
         NotificationCenter.default.post(
             name: .transactionsDidChange,
-            object: nil,
+            object: request,
             userInfo: [
-                PortfolioMutationUserInfoKey.affectedAccountIds: Array(affectedAccountIds),
-                PortfolioMutationUserInfoKey.showsLoadingOverlay: showsLoadingOverlay
+                PortfolioMutationUserInfoKey.affectedAccountIds: Array(affectedAccountIds)
             ]
         )
     }

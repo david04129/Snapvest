@@ -195,12 +195,17 @@ enum PortfolioPieChartBuilder {
 }
 
 // MARK: - 首頁圓餅圖區塊
+enum HomePieChartScrollAnchor {
+    static let donut = "homePieChartDonut"
+}
+
 struct HomePieChartSection: View {
     let inputs: PieChartInputs?
     let totalAssets: Decimal
     let totalInvestments: Decimal
     let currency: Currency
     let twdPerBaseCurrency: Decimal
+    var onScrollToChart: (() -> Void)? = nil
     
     @Binding var mode: PieChartDisplayMode
     @ObservedObject var groupingStore: PieChartGroupingStore
@@ -211,10 +216,6 @@ struct HomePieChartSection: View {
     @State private var showRenameAlert = false
     @State private var pendingDissolveGroupId: UUID?
     @State private var showDissolveGroupAlert = false
-    @State private var isGroupingTransitioning = false
-    @State private var groupingToggleUnlockTask: Task<Void, Never>?
-    /// 每次群組化切換後遞增，強制 Chart 乾淨重建（避免 morph 崩潰）
-    @State private var pieChartRevision = 0
     /// 方案 C：點群組標題 ＋ 後，勾選群組外個股再「加入」
     @State private var addToGroupId: UUID?
     @State private var selectionEditCategory: PieChartGroupEditCategory?
@@ -305,14 +306,6 @@ struct HomePieChartSection: View {
             )
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .onChange(of: mode) { _, _ in
-                guard !isEditingGroups else { return }
-                addToGroupId = nil
-                selectionEditCategory = nil
-                selectedMemberIds.removeAll()
-                pickLargest()
-            }
-            
             if displayItems.isEmpty {
                 Text("尚無可顯示的資料")
                     .font(.subheadline)
@@ -321,20 +314,23 @@ struct HomePieChartSection: View {
                     .padding(.vertical, 32)
             } else {
                 Group {
-                    PortfolioDonutChart(
-                        data: displayItems,
-                        denominator: denominator,
-                        selectedId: $selectedId,
-                        displayMode: mode,
-                        displayCurrency: currency,
-                        twdPerDisplayCurrency: twdPerBaseCurrency,
-                        isGroupingEnabled: isGroupingEnabled,
-                        allowsSelection: !isGroupingTransitioning && !isEditingGroups
-                    )
-                    .id("pie-\(pieChartRevision)-\(isGroupingEnabled)")
-                    .opacity(isGroupingTransitioning ? 0.88 : 1)
-                    .animation(ChartMotion.switchQuick, value: isGroupingTransitioning)
+                    Group {
+                        PortfolioDonutChart(
+                            data: displayItems,
+                            denominator: denominator,
+                            selectedId: $selectedId,
+                            displayMode: mode,
+                            displayCurrency: currency,
+                            twdPerDisplayCurrency: twdPerBaseCurrency,
+                            isGroupingEnabled: isGroupingEnabled,
+                            allowsSelection: !groupingStore.isGroupingTransitioning && !isEditingGroups
+                        )
+                        .id("pie-\(groupingStore.pieChartRebuildGeneration)-\(isGroupingEnabled)")
+                    }
+                    .id(HomePieChartScrollAnchor.donut)
+                    .opacity(groupingStore.isGroupingTransitioning ? 0.88 : 1)
                     .padding(.vertical, 4)
+                    .animation(ChartMotion.switchQuick, value: groupingStore.isGroupingTransitioning)
                     
                     if isGroupingEnabled {
                         pieGroupingToolbar
@@ -361,11 +357,12 @@ struct HomePieChartSection: View {
                         onRemoveMember: removeMemberFromGroup,
                         onToggleAddToGroup: toggleAddToGroup,
                         onToggleMemberSelection: toggleMemberSelection,
-                        suppressLayoutAnimation: isGroupingTransitioning
+                        suppressLayoutAnimation: groupingStore.isGroupingTransitioning,
+                        onDetailItemSelected: onScrollToChart
                     )
                     .padding(.horizontal, 12)
                     .padding(.bottom, 12)
-                    .allowsHitTesting(!isGroupingTransitioning)
+                    .allowsHitTesting(!groupingStore.isGroupingTransitioning)
                 }
             }
         }
@@ -381,11 +378,28 @@ struct HomePieChartSection: View {
             syncSelectionAfterDisplayChange()
         }
         .onChange(of: mode) { _, _ in
+            guard !isEditingGroups else { return }
+            addToGroupId = nil
+            selectionEditCategory = nil
+            selectedMemberIds.removeAll()
             refreshGroupingState()
+            withAnimation(ChartMotion.pieMorphSpring) {
+                pickLargest()
+            }
+        }
+        .onChange(of: groupingStore.isGroupingEnabled) { _, enabled in
+            if !enabled {
+                selectedMemberIds.removeAll()
+                addToGroupId = nil
+                selectionEditCategory = nil
+            }
+            syncSelectionAfterDisplayChange()
+        }
+        .onChange(of: groupingStore.pieChartRebuildGeneration) { _, _ in
             syncSelectionAfterDisplayChange()
         }
         .onDisappear {
-            groupingToggleUnlockTask?.cancel()
+            groupingStore.cancelGroupingToggleTasks()
             groupingStore.setEditingGroups(false)
         }
         .alert("編輯群組名稱", isPresented: $showRenameAlert) {
@@ -412,8 +426,24 @@ struct HomePieChartSection: View {
         }
     }
     
+    private var hasPendingGroupSelection: Bool {
+        !selectedMemberIds.isEmpty
+    }
+
+    private var canExitGroupEdit: Bool {
+        !hasPendingGroupSelection
+    }
+
     private var pieGroupingToolbar: some View {
         VStack(alignment: .trailing, spacing: 8) {
+            if isEditingGroups, hasPendingGroupSelection {
+                Text("請先按組合、加入群組")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.appPrimary)
+                    .multilineTextAlignment(.trailing)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+
             AssetsFilterChipButton(
                 title: isEditingGroups ? "結束編輯" : "編輯群組",
                 icon: isEditingGroups ? "checkmark" : "square.and.pencil",
@@ -421,20 +451,24 @@ struct HomePieChartSection: View {
             ) {
                 withAnimation(ChartMotion.switchSpring) {
                     let entering = !isEditingGroups
-                    groupingStore.setEditingGroups(entering)
                     if entering {
+                        groupingStore.setEditingGroups(true)
                         expandAllGroups()
                         selectedMemberIds.removeAll()
                         addToGroupId = nil
                         selectionEditCategory = nil
                     } else {
+                        guard canExitGroupEdit else { return }
+                        groupingStore.setEditingGroups(false)
                         selectedMemberIds.removeAll()
                         addToGroupId = nil
                         selectionEditCategory = nil
                     }
                 }
             }
-            
+            .disabled(isEditingGroups && hasPendingGroupSelection)
+            .opacity(isEditingGroups && hasPendingGroupSelection ? 0.45 : 1)
+
             if isEditingGroups {
                 groupSelectionActionBar
             }
@@ -548,33 +582,6 @@ struct HomePieChartSection: View {
                 selectionEditCategory = itemCategory
             }
             selectedMemberIds.insert(itemId)
-        }
-    }
-    
-    /// 群組化 chip：先鎖定 → 延後換資料 → 重建 Chart，避免 Swift Charts morph 崩潰
-    private func requestGroupingDisplayModeToggle() {
-        guard !isGroupingTransitioning else { return }
-        isGroupingTransitioning = true
-        groupingToggleUnlockTask?.cancel()
-        
-        groupingToggleUnlockTask = Task { @MainActor in
-            try? await Task.sleep(for: ChartMotion.groupingToggleLeadIn)
-            guard !Task.isCancelled else { return }
-            
-            groupingStore.toggleDisplayMode()
-            if !isGroupingEnabled {
-                groupingStore.setEditingGroups(false)
-                selectedMemberIds.removeAll()
-                groupingStore.clearExpandedLegendGroups()
-                addToGroupId = nil
-                selectionEditCategory = nil
-            }
-            pieChartRevision += 1
-            syncSelectionAfterDisplayChange()
-            
-            try? await Task.sleep(for: ChartMotion.groupingToggleCooldown)
-            guard !Task.isCancelled else { return }
-            isGroupingTransitioning = false
         }
     }
     
@@ -750,7 +757,6 @@ struct HomePieChartSection: View {
                 Text(mode.rawValue)
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(AppColors.appPrimary)
-                CurrencyCodeChip(currency: currency)
             }
             Spacer(minLength: 8)
             if supportsGrouping {
@@ -759,11 +765,11 @@ struct HomePieChartSection: View {
                     icon: groupingStore.displayMode.chipIcon,
                     isActive: true
                 ) {
-                    requestGroupingDisplayModeToggle()
+                    groupingStore.requestDisplayModeToggle()
                 }
-                .disabled(isGroupingTransitioning || isEditingGroups)
-                .opacity(isGroupingTransitioning || isEditingGroups ? 0.45 : 1)
-                .animation(ChartMotion.switchQuick, value: isGroupingTransitioning)
+                .disabled(groupingStore.isGroupingTransitioning || isEditingGroups)
+                .opacity(groupingStore.isGroupingTransitioning || isEditingGroups ? 0.45 : 1)
+                .animation(ChartMotion.switchQuick, value: groupingStore.isGroupingTransitioning)
                 .animation(ChartMotion.switchQuick, value: isEditingGroups)
             }
         }
@@ -772,6 +778,121 @@ struct HomePieChartSection: View {
         .animation(ChartMotion.switchSpring, value: mode)
         .animation(ChartMotion.switchSpring, value: isEditingGroups)
     }
+}
+
+// MARK: - Canvas 甜甜圈（色票不插值，僅角度 morph，避免少數扇區錯色閃爍）
+private enum DonutCanvasCapacity {
+    static let maxSlices = 48
+    static let angularInsetDegrees: Double = 2
+}
+
+private struct DonutSliceAnimatableValues: VectorArithmetic {
+    private var storage: [Double]
+
+    init(sliceValues: [Double]) {
+        var values = sliceValues
+        if values.count > DonutCanvasCapacity.maxSlices {
+            values = Array(values.prefix(DonutCanvasCapacity.maxSlices))
+        }
+        while values.count < DonutCanvasCapacity.maxSlices {
+            values.append(0)
+        }
+        storage = values
+    }
+
+    private init(storage: [Double]) {
+        self.storage = storage
+    }
+
+    func value(at index: Int) -> Double {
+        guard storage.indices.contains(index) else { return 0 }
+        return storage[index]
+    }
+
+    static var zero: DonutSliceAnimatableValues {
+        DonutSliceAnimatableValues(storage: Array(repeating: 0, count: DonutCanvasCapacity.maxSlices))
+    }
+
+    static func + (lhs: DonutSliceAnimatableValues, rhs: DonutSliceAnimatableValues) -> DonutSliceAnimatableValues {
+        DonutSliceAnimatableValues(storage: zip(lhs.storage, rhs.storage).map(+))
+    }
+
+    static func - (lhs: DonutSliceAnimatableValues, rhs: DonutSliceAnimatableValues) -> DonutSliceAnimatableValues {
+        DonutSliceAnimatableValues(storage: zip(lhs.storage, rhs.storage).map(-))
+    }
+
+    mutating func scale(by rhs: Double) {
+        storage = storage.map { $0 * rhs }
+    }
+
+    var magnitudeSquared: Double {
+        storage.reduce(0) { $0 + $1 * $1 }
+    }
+}
+
+private struct PortfolioDonutCanvas: View, Animatable {
+    let slices: [PieChartDataItem]
+    let selectedId: String?
+
+    var animatableData: DonutSliceAnimatableValues {
+        DonutSliceAnimatableValues(sliceValues: slices.map(\.value))
+    }
+
+    var body: some View {
+        Canvas { context, size in
+            drawDonut(context: &context, size: size)
+        }
+    }
+
+    private func drawDonut(context: inout GraphicsContext, size: CGSize) {
+        let activeCount = min(slices.count, DonutCanvasCapacity.maxSlices)
+        guard activeCount > 0 else { return }
+
+        var animated: [Double] = []
+        animated.reserveCapacity(activeCount)
+        for index in 0..<activeCount {
+            animated.append(animatableData.value(at: index))
+        }
+        let sum = max(animated.reduce(0, +), 0.001)
+        let center = CGPoint(x: size.width / 2, y: size.height / 2)
+        let outerRadius = min(size.width, size.height) / 2
+        let innerRadius = outerRadius * innerRadiusRatio
+        var startDegrees = -90.0
+
+        for index in 0..<activeCount {
+            let item = slices[index]
+            let fullSpan = (animated[index] / sum) * 360
+            let drawSpan = max(fullSpan - DonutCanvasCapacity.angularInsetDegrees, 0.5)
+            let endDegrees = startDegrees + drawSpan
+
+            var path = Path()
+            path.addArc(
+                center: center,
+                radius: outerRadius,
+                startAngle: .degrees(startDegrees),
+                endAngle: .degrees(endDegrees),
+                clockwise: false
+            )
+            path.addArc(
+                center: center,
+                radius: innerRadius,
+                startAngle: .degrees(endDegrees),
+                endAngle: .degrees(startDegrees),
+                clockwise: true
+            )
+            path.closeSubpath()
+
+            let isSelected = selectedId == item.id
+            let dimmed = selectedId != nil && !isSelected
+            var sliceContext = context
+            sliceContext.opacity = dimmed ? 0.42 : 1
+            sliceContext.fill(path, with: .color(item.color))
+
+            startDegrees += fullSpan
+        }
+    }
+
+    private let innerRadiusRatio: CGFloat = 0.78
 }
 
 // MARK: - 細環甜甜圈
@@ -794,7 +915,12 @@ struct PortfolioDonutChart: View {
     private let hitOuterPadding: CGFloat = 18
     
     private var chartIdentity: String {
-        "\(isGroupingEnabled)-" + data.map(\.id).joined(separator: "|")
+        "\(displayMode)-\(isGroupingEnabled)-" + data.map(\.id).joined(separator: "|")
+    }
+
+    private var pieMorphKey: String {
+        "\(displayMode)-\(isGroupingEnabled)-"
+            + data.map { "\($0.id):\($0.value)" }.joined(separator: "|")
     }
     
     private var totalDouble: Double {
@@ -836,7 +962,7 @@ struct PortfolioDonutChart: View {
                         .lineLimit(2)
                         .minimumScaleFactor(0.75)
                     if !hideHomeAmounts {
-                        CurrencyAmountLabel(
+                        CurrencyAmountWithChip(
                             text: displayAmount(fromTWD: selected.marketValue).formatted(
                                 currency: displayCurrency,
                                 fractionDigits: displayCurrency == .TWD ? 0 : 2
@@ -844,7 +970,8 @@ struct PortfolioDonutChart: View {
                             currency: displayCurrency,
                             font: .system(size: 16),
                             weight: .bold,
-                            color: .primaryText
+                            color: .primaryText,
+                            chipTint: selected.color
                         )
                         .monospacedDigit()
                     }
@@ -854,6 +981,7 @@ struct PortfolioDonutChart: View {
                 }
                 .frame(width: chartSize * innerRadiusRatio * 1.2)
                 .allowsHitTesting(false)
+                .animation(ChartMotion.switchQuick, value: selectedId)
             }
         }
         .frame(maxWidth: .infinity)
@@ -867,23 +995,14 @@ struct PortfolioDonutChart: View {
     }
     
     private var chartBody: some View {
-        Chart {
-            ForEach(data) { item in
-                let selected = selectedItem?.id == item.id
-                sectorMark(for: item, selected: selected)
+        PortfolioDonutCanvas(slices: data, selectedId: selectedId)
+            .frame(width: chartSize, height: chartSize)
+            .animation(ChartMotion.pieMorphSpring, value: pieMorphKey)
+            .overlay {
+                if allowsSelection {
+                    donutTouchOverlay
+                }
             }
-        }
-        .chartLegend(.hidden)
-        .frame(width: chartSize, height: chartSize)
-        .overlay {
-            if allowsSelection {
-                donutTouchOverlay
-            }
-        }
-        .transaction { transaction in
-            transaction.animation = nil
-        }
-        .animation(ChartMotion.switchQuick, value: selectedId)
     }
 
     /// 自訂環帶手勢（比 chartAngleSelection 更好點中細環）
@@ -898,18 +1017,6 @@ struct PortfolioDonutChart: View {
                         }
                 )
         }
-    }
-    
-    @ChartContentBuilder
-    private func sectorMark(for item: PieChartDataItem, selected: Bool) -> some ChartContent {
-        SectorMark(
-            angle: .value("配置", item.value),
-            innerRadius: .ratio(innerRadiusRatio),
-            outerRadius: .ratio(1.0),
-            angularInset: 2.0
-        )
-        .foregroundStyle(item.color)
-        .opacity(selected ? 1.0 : (selectedId == nil ? 1.0 : 0.42))
     }
     
     private func percentageText(for item: PieChartDataItem) -> String {
@@ -972,6 +1079,7 @@ struct PortfolioGroupedAllocationLegend: View {
     let onToggleMemberSelection: (String) -> Void
     var suppressLayoutAnimation: Bool = false
     var showsGroupActions: Bool = true
+    var onDetailItemSelected: (() -> Void)? = nil
     
     @Environment(\.homeAmountsHidden) private var hideHomeAmounts
     
@@ -1242,6 +1350,7 @@ struct PortfolioGroupedAllocationLegend: View {
                 withAnimation(ChartMotion.switchSpring) {
                     selectedId = item.id
                 }
+                onDetailItemSelected?()
             }
         } label: {
             rowContent(
@@ -1311,6 +1420,7 @@ struct PortfolioGroupedAllocationLegend: View {
                         }
                         selectedId = id
                     }
+                    onDetailItemSelected?()
                 } label: {
                     HStack(spacing: 8) {
                         if isGroupingEnabled {
@@ -1479,20 +1589,22 @@ struct PortfolioGroupedAllocationLegend: View {
         let fractionDigits = displayCurrency == .TWD ? 0 : 2
         VStack(alignment: .trailing, spacing: 2) {
             Text(String(format: "%.2f%%", pct))
-                .font(.system(size: 15, weight: .semibold))
+                .font(.snapChartRowValue)
                 .foregroundColor(.primaryText)
             if !hideHomeAmounts {
-                CurrencyAmountLabel(
+                CurrencyAmountWithChip(
                     text: displayAmount.formatted(
                         currency: displayCurrency,
                         fractionDigits: fractionDigits
                     ),
                     currency: displayCurrency,
-                    font: .system(size: 12),
-                    weight: .regular,
-                    color: .secondaryText
+                    font: .snapChartRowValue,
+                    weight: .semibold,
+                    color: .secondaryText,
+                    chipTint: .appPrimary,
+                    spacing: 4
                 )
-                .frame(maxWidth: 120, alignment: .trailing)
+                .frame(maxWidth: 132, alignment: .trailing)
             }
         }
     }
@@ -1556,11 +1668,11 @@ struct PortfolioAllocationLegend: View {
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(String(format: "%.2f%%", pct))
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.snapChartRowValue)
                         .foregroundColor(.primaryText)
                     if !hideHomeAmounts {
                         Text(item.marketValue.formatted(currency: .TWD, fractionDigits: 0))
-                            .font(.system(size: 12))
+                            .font(.snapChartRowValue)
                             .foregroundColor(.secondaryText)
                     }
                 }

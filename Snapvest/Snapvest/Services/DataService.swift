@@ -840,15 +840,21 @@ class MockDataService: DataServiceProtocol {
     }
     
     func fetchExchangeRate(from: Currency, to: Currency, date: Date?) async throws -> ExchangeRate? {
-        if from == .USD, to == .TWD, let cached = ExchangeRateSessionCache.usdToTwd {
+        if to == .TWD, from != .TWD, let cached = ExchangeRateSessionCache.twdPer(from) {
+            let rateDate = from == .USD
+                ? (ExchangeRateSessionCache.usdToTwdUpdatedAt ?? date ?? Date())
+                : (date ?? Date())
             return ExchangeRate(
                 fromCurrency: from,
                 toCurrency: to,
                 rate: cached,
-                rateDate: ExchangeRateSessionCache.usdToTwdUpdatedAt ?? date ?? Date()
+                rateDate: rateDate
             )
         }
         if let quote = await SupabaseExchangeRateService.fetchQuote(from: from, to: to) {
+            if to == .TWD {
+                ExchangeRateSessionCache.mergeTwdRate(currency: from, rate: quote.rate)
+            }
             if from == .USD, to == .TWD {
                 ExchangeRateSessionCache.update(usdToTwd: quote.rate, updatedAt: quote.updatedAt)
             }

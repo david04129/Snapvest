@@ -108,6 +108,27 @@ enum LaunchCoordinator {
             usdToTwdRate = ExchangeRateSessionCache.usdToTwd ?? 0
         }
 
+        let accounts = (try? await resolvedDataService.fetchAccounts(userId: userId)) ?? []
+        let liabilities = await loadLiabilitiesForWarmup(
+            accounts: accounts,
+            dataService: resolvedDataService
+        )
+        var accountSnapshots: [AccountSnapshot] = []
+        for account in accounts where !account.accountType.isLiabilityAccount && !account.isArchived {
+            if let snapshot = try? await resolvedDataService.fetchAccountSnapshot(accountId: account.id) {
+                accountSnapshots.append(snapshot)
+            }
+        }
+        let manualAssets = (try? await resolvedDataService.fetchManualAssets(userId: userId)) ?? []
+        await ExchangeRateSessionCache.warmForPortfolio(
+            accounts: accounts,
+            liabilities: liabilities,
+            accountSnapshots: accountSnapshots,
+            manualAssets: manualAssets,
+            dataService: resolvedDataService,
+            usdToTwdRate: usdToTwdRate
+        )
+
         await portfolioViewModel.prepareFromPersisted(userId: userId, usdToTwdRate: usdToTwdRate)
         if let accountDetailCacheAccountIds, !accountDetailCacheAccountIds.isEmpty {
             await accountsViewModel.applyChangedAccountsFromPersisted(
@@ -129,7 +150,6 @@ enum LaunchCoordinator {
             return
         }
 
-        let accounts = (try? await resolvedDataService.fetchAccounts(userId: userId)) ?? []
         if let accountDetailCacheAccountIds {
             AccountDetailPresentationStore.remove(accountIds: accountDetailCacheAccountIds)
             for account in accounts where accountDetailCacheAccountIds.contains(account.id) {
@@ -152,6 +172,20 @@ enum LaunchCoordinator {
             )
             AccountDetailPresentationStore.replaceAll(holdingsMap)
         }
+    }
+
+    @MainActor
+    private static func loadLiabilitiesForWarmup(
+        accounts: [Account],
+        dataService: DataServiceProtocol
+    ) async -> [Liability] {
+        var allLiabilities: [Liability] = []
+        for account in accounts {
+            if let accountLiabilities = try? await dataService.fetchLiabilities(accountId: account.id) {
+                allLiabilities.append(contentsOf: accountLiabilities)
+            }
+        }
+        return allLiabilities
     }
 
     @MainActor

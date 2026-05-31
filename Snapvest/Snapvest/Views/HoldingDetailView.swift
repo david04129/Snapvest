@@ -504,20 +504,15 @@ struct HoldingDetailView: View {
                 .frame(minHeight: 48)
             
             VStack(alignment: .leading, spacing: 6) {
-                CurrencyTitleLabel(
-                    title: "每股現價",
-                    currency: displayedPriceCurrency,
-                    font: .caption,
-                    weight: .semibold,
-                    color: .secondaryText,
-                    chipTint: assetAccentColor,
-                    titleLineLimit: 1
-                )
+                Text("每股現價")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.secondaryText)
                 
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Group {
                         if let price = displayedCurrentPrice {
-                            CurrencyAmountLabel(
+                            CurrencyAmountWithChip(
                                 text: price.formatted(
                                     currency: displayedPriceCurrency,
                                     fractionDigits: currentPriceFractionDigits,
@@ -531,10 +526,11 @@ struct HoldingDetailView: View {
                             )
                         } else {
                             Text("--")
+                                .font(.snapStockPriceHero)
+                                .fontWeight(.bold)
                                 .foregroundColor(.secondaryText)
                         }
                     }
-                    .font(.snapStockPriceHero)
                     .monospacedDigit()
                     
                     if let daily = displayedDailyPriceChange {
@@ -563,7 +559,7 @@ struct HoldingDetailView: View {
         let color: Color = up ? .marketUp : .marketDown
         let amountDigits = convertedFromForeignToTWD ? 1 : 2
         return HStack(spacing: 4) {
-            Image(systemName: up ? "arrow.up" : "arrow.down")
+            Image(systemName: MarketDirectionSymbol.systemName(isUp: up))
                 .font(.caption2.weight(.bold))
             Text("\(amount.formatted(currency: currency, fractionDigits: amountDigits, showSymbol: false)) (\(percent.formatted(fractionDigits: 2))%)")
                 .font(.caption)
@@ -842,7 +838,7 @@ struct HoldingFIFOLotsTableSection: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text("買入批次")
                             .font(.headline)
                             .foregroundColor(.primaryText)
@@ -1056,13 +1052,14 @@ private struct FIFOLotTableDataRow: View {
                 fractionDigits: 0,
                 showSymbol: false
             ))
-                .font(.caption)
-                .fontWeight(.semibold)
+            .font(.caption)
+            .fontWeight(.semibold)
+            .foregroundColor(plColor)
+            .monospacedDigit()
             Text("\(unrealizedGainLossPercent.formatted(fractionDigits: 2))%")
                 .font(.caption2)
+                .foregroundColor(plColor)
         }
-        .foregroundColor(plColor)
-        .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
     private func formattedUnitPrice(_ value: Decimal) -> String {

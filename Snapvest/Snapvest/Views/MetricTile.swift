@@ -40,28 +40,16 @@ struct MetricTile: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: isFeatured ? 10 : 8) {
-            if let currency {
-                CurrencyTitleLabel(
-                    title: title,
-                    currency: currency,
-                    font: .subheadline,
-                    weight: .medium,
-                    color: .secondaryText,
-                    chipTint: accentColor ?? .appPrimary,
-                    titleLineLimit: titleLineLimit
-                )
-            } else {
-                Text(title)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundColor(.secondaryText)
-                    .lineLimit(titleLineLimit)
-                    .minimumScaleFactor(0.85)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Text(title)
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .foregroundColor(.secondaryText)
+                .lineLimit(titleLineLimit)
+                .minimumScaleFactor(0.85)
+                .fixedSize(horizontal: false, vertical: true)
             
             if let currency {
-                CurrencyAmountLabel(
+                CurrencyAmountWithChip(
                     text: value,
                     currency: currency,
                     font: valueFont,

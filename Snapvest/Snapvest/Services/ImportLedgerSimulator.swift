@@ -156,11 +156,16 @@ enum ImportLedgerSimulator {
         }
     }
     
+    /// `lotKey` 為 `\(assetType.rawValue)_\(symbol)`；台美股 rawValue 含 `_`，不可用第一個 `_` 切分。
     private static func parseLotKey(_ key: String) -> (AssetType, String)? {
-        guard let underscore = key.firstIndex(of: "_") else { return nil }
-        let typeRaw = String(key[..<underscore])
-        let symbol = String(key[key.index(after: underscore)...])
-        guard let assetType = AssetType(rawValue: typeRaw) else { return nil }
-        return (assetType, symbol)
+        let orderedTypes = AssetType.allCases.sorted { $0.rawValue.count > $1.rawValue.count }
+        for assetType in orderedTypes {
+            let prefix = "\(assetType.rawValue)_"
+            guard key.hasPrefix(prefix) else { continue }
+            let symbol = String(key.dropFirst(prefix.count))
+            guard !symbol.isEmpty else { return nil }
+            return (assetType, symbol)
+        }
+        return nil
     }
 }

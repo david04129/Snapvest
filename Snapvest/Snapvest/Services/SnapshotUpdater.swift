@@ -447,19 +447,11 @@ enum SnapshotUpdater {
         for snapshot in accountSnapshots {
             snapshot.holdings?.forEach { currencies.insert($0.currency) }
         }
-
-        var rates: [Currency: Decimal] = [.TWD: 1]
-        if usdToTwdRate > 0 {
-            rates[.USD] = usdToTwdRate
-        }
-
-        for currency in currencies where currency != .TWD && rates[currency] == nil {
-            if let rate = try? await dataService.fetchExchangeRate(from: currency, to: .TWD, date: nil)?.rate,
-               rate > 0 {
-                rates[currency] = rate
-            }
-        }
-        return CurrencyRateTable(twdPerCurrency: rates)
+        return await ExchangeRateSessionCache.loadRateTable(
+            currencies: currencies,
+            dataService: dataService,
+            usdToTwdRate: usdToTwdRate
+        )
     }
 
     private static func buildHomeDashboardSnapshot(

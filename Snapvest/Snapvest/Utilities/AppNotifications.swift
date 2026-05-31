@@ -32,6 +32,11 @@ enum PortfolioMutationRefreshUserInfoKey {
     static let message = "message"
 }
 
+enum SnapshotUpdateUserInfoKey {
+    /// Coordinator 已套用各 Tab ViewModel；各頁 `snapshotsDidUpdate` 可略過重複 `applyPersistedState`。
+    static let alreadyApplied = "alreadyApplied"
+}
+
 enum AppTab: Int {
     case home = 0
     case accounts = 1

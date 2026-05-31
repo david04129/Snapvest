@@ -68,6 +68,8 @@ struct AssetsFilterChipLabel: View {
             Text(title)
                 .font(.subheadline)
                 .fontWeight(.semibold)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
                 .contentTransition(.interpolate)
         }
         .foregroundColor(isActive ? .appPrimary : .secondaryText)
@@ -258,6 +260,7 @@ struct AccountsCurrencyControlsBar: View {
     @ObservedObject private var baseCurrency = BaseCurrencyManager.shared
 
     @Binding var currencyDisplay: AssetsCurrencyDisplay
+    var shareDisplayMode: Binding<ManagementShareDisplayMode>? = nil
     var showsEditControl: Bool = false
     var isEditingOrder: Bool = false
     var isEditDisabled: Bool = false
@@ -286,6 +289,23 @@ struct AccountsCurrencyControlsBar: View {
                     .opacity(isEditDisabled ? 0.45 : 1)
                 }
                 
+                if let shareDisplayMode {
+                    AssetsFilterChipButton(
+                        title: shareDisplayMode.wrappedValue.chipTitle,
+                        icon: shareDisplayMode.wrappedValue.chipIcon,
+                        isActive: shareDisplayMode.wrappedValue == .shareRing
+                    ) {
+                        withAnimation(ChartMotion.switchSpring) {
+                            let next: ManagementShareDisplayMode =
+                                shareDisplayMode.wrappedValue == .shareRing ? .currencyIcon : .shareRing
+                            shareDisplayMode.wrappedValue = next
+                            ManagementShareDisplayPreference.set(next)
+                        }
+                    }
+                    .disabled(isEditingOrder)
+                    .opacity(isEditingOrder ? 0.45 : 1)
+                }
+
                 Spacer(minLength: 0)
                 
                 CurrencyDisplayChipButton(
@@ -427,6 +447,9 @@ struct AssetCategorySummariesSection: View {
                     totalInvestments: totalInvestments,
                     assetType: assetType
                 )
+                if metrics.holdingCount == 0 {
+                    EmptyView()
+                } else {
                 AssetCategorySummaryCard(
                     assetType: assetType,
                     metrics: metrics,
@@ -437,6 +460,7 @@ struct AssetCategorySummariesSection: View {
                     isSelected: selectedCategories.contains(assetType),
                     onTap: { onCategoryTap(assetType) }
                 )
+                }
             }
         }
     }
@@ -498,59 +522,79 @@ struct AssetCategorySummaryCard: View {
     private var marketValueFractionDigits: Int {
         usesOriginalAmounts || baseCurrency != .TWD ? 2 : 0
     }
+
+    private var unrealizedSummaryText: String {
+        let amount = displayUnrealized.formatted(
+            currency: displayCurrency,
+            fractionDigits: marketValueFractionDigits,
+            showSymbol: false
+        )
+        let percent = displayUnrealizedPercent.formatted(fractionDigits: 1)
+        return "\(amount) (\(percent)%)"
+    }
+
+    private var portfolioRatioText: String {
+        "\(ratioType.segmentLabel) \(metrics.portfolioRatio.formatted(fractionDigits: 1))%"
+    }
     
     var body: some View {
         Button(action: onTap) {
-            HStack(alignment: .center, spacing: 12) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    CurrencyTitleLabel(
-                        title: assetType.displayName,
-                        currency: displayCurrency,
-                        font: .headline,
-                        weight: .semibold,
-                        color: .primaryText,
-                        chipTint: accentColor,
-                        titleLineLimit: 1
-                    )
+                    Text(assetType.displayName)
+                        .font(.snapOverviewText)
+                        .foregroundColor(.primaryText)
+                        .snapOverviewFittingLine()
                     Text(countLabel)
                         .font(.caption)
                         .foregroundColor(.secondaryText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
                 }
+                .layoutPriority(1)
                 
                 Spacer(minLength: 8)
                 
                 VStack(alignment: .trailing, spacing: 4) {
-                    CurrencyAmountLabel(
+                    CurrencyAmountWithChip(
                         text: displayMarketValue.formatted(currency: displayCurrency, fractionDigits: marketValueFractionDigits),
                         currency: displayCurrency,
-                        font: .snapAmountRow,
-                        weight: .semibold,
+                        font: .snapOverviewAmount,
+                        weight: .bold,
                         color: .primaryText,
-                        chipTint: accentColor
+                        chipTint: accentColor,
+                        minimumScaleFactor: SnapOverviewBarMetrics.minScaleFactor
                     )
-                    
+                    .monospacedDigit()
+                    .snapOverviewFittingLine()
+
                     HStack(spacing: 4) {
                         if metrics.holdingCount > 0 {
-                            Image(systemName: displayUnrealized >= 0 ? "arrow.up" : "arrow.down")
+                            Image(systemName: MarketDirectionSymbol.systemName(for: displayUnrealized))
                                 .font(.caption2.weight(.bold))
+                                .foregroundColor(plColor)
                         }
-                        Text(displayUnrealized.formatted(currency: displayCurrency, fractionDigits: marketValueFractionDigits, showSymbol: false))
-                        Text("(\(displayUnrealizedPercent.formatted(fractionDigits: 1))%)")
+                        Text(unrealizedSummaryText)
+                            .font(.caption)
+                            .fontWeight(.bold)
+                            .foregroundColor(plColor)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
                     }
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundColor(plColor)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                    
-                    Text("\(ratioType.segmentLabel) \(metrics.portfolioRatio.formatted(fractionDigits: 1))%")
+
+                    Text(portfolioRatioText)
                         .font(.caption)
+                        .fontWeight(.bold)
                         .foregroundColor(.secondaryText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                         .contentTransition(.numericText())
                 }
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .trailing)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
+            .snapCappedDynamicTypeSize()
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(isSelected ? accentColor.opacity(0.1) : Color.cardBackground)
@@ -558,7 +602,7 @@ struct AssetCategorySummaryCard: View {
             .overlay(alignment: .leading) {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(accentColor)
-                    .frame(width: isSelected ? 5 : 4)
+                    .frame(width: SnapOverviewBarMetrics.overviewWidth)
             }
             .overlay {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)

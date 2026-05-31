@@ -151,37 +151,13 @@ struct RepaymentView: View {
             }
             
             if deductFromTWDAccount {
-                Button(action: { showingAccountPicker = true }) {
-                    CardView {
-                        HStack {
-                            if let sourceAccount = selectedSourceAccount {
-                                Image(systemName: sourceAccount.accountType.icon)
-                                    .font(.system(size: 20))
-                                    .foregroundColor(sourceAccount.accountType.color)
-                                
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(sourceAccount.name)
-                                        .font(.headline)
-                                        .foregroundColor(.primaryText)
-                                    Text("現金餘額：\(sourceAccountCashBalance.formatted(currency: sourceAccount.currency))")
-                                        .font(.caption)
-                                        .foregroundColor(.secondaryText)
-                                }
-                            } else {
-                                Text("選擇 \(liability.currency.rawValue) 帳戶")
-                                    .font(.headline)
-                                    .foregroundColor(.secondaryText)
-                            }
-                            
-                            Spacer()
-                            
-                            Image(systemName: "chevron.down")
-                                .font(.caption)
-                                .foregroundColor(.secondaryText)
-                        }
-                    }
-                }
-                .buttonStyle(.plain)
+                AccountPickerTriggerField(
+                    placeholder: "選擇 \(liability.currency.rawValue) 帳戶",
+                    selectedAccount: selectedSourceAccount,
+                    subtitle: sourceAccountPickerSubtitle,
+                    tint: themeColor,
+                    action: { showingAccountPicker = true }
+                )
             }
         }
         .padding(.horizontal)
@@ -201,12 +177,10 @@ struct RepaymentView: View {
             }
             
             CardView {
-                HStack {
+                HStack(spacing: 12) {
                     if let debtAccount = debtAccount {
-                        Image(systemName: debtAccount.accountType.icon)
-                            .font(.system(size: 20))
-                            .foregroundColor(debtAccount.accountType.color)
-                        
+                        CurrencyIconBadge(currency: debtAccount.currency, tint: debtAccount.accountType.color)
+
                         VStack(alignment: .leading, spacing: 4) {
                             Text(debtAccount.name)
                                 .font(.headline)
@@ -220,8 +194,8 @@ struct RepaymentView: View {
                             .font(.headline)
                             .foregroundColor(.primaryText)
                     }
-                    
-                    Spacer()
+
+                    Spacer(minLength: 0)
                 }
             }
         }
@@ -533,10 +507,16 @@ struct RepaymentView: View {
                 .background(Color.cardBackground)
             }
             .sheet(isPresented: $showingAccountPicker) {
-                RepaymentAccountPickerSheet(
+                AccountSelectionSheet(
+                    title: "選擇扣款帳戶",
                     accounts: availableSourceAccounts,
-                    selectedAccount: $selectedSourceAccount
+                    selectedAccount: $selectedSourceAccount,
+                    subtitle: accountSelectionSubtitle,
+                    tint: themeColor
                 )
+                .snapFormSheetChrome()
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
             }
             .task {
                 await loadInitialData()
@@ -558,6 +538,21 @@ struct RepaymentView: View {
     }
     
     // MARK: - Computed Properties
+    private var sourceAccountPickerSubtitle: String? {
+        guard let account = selectedSourceAccount else { return nil }
+        return accountSelectionSubtitle(account)
+    }
+
+    private func accountSelectionSubtitle(_ account: Account) -> String {
+        if let balance = accountsViewModel.balancesByAccountId[account.id] {
+            return "現金餘額：\(balance.cashBalance.formatted(currency: account.currency))"
+        }
+        if account.id == selectedSourceAccount?.id, sourceAccountCashBalance > 0 {
+            return "現金餘額：\(sourceAccountCashBalance.formatted(currency: account.currency))"
+        }
+        return account.accountType.displayName
+    }
+
     private var availableSourceAccounts: [Account] {
         accountsViewModel.accounts.filter { account in
             guard account.currency == liability.currency else { return false }
@@ -1260,58 +1255,6 @@ struct RepaymentView: View {
         }
     }
     
-}
-
-// MARK: - 還款帳戶選擇器 Sheet
-struct RepaymentAccountPickerSheet: View {
-    let accounts: [Account]
-    @Binding var selectedAccount: Account?
-    @Environment(\.dismiss) var dismiss
-    
-    var body: some View {
-        NavigationStack {
-            List {
-                ForEach(accounts) { account in
-                    Button(action: {
-                        selectedAccount = account
-                        dismiss()
-                    }) {
-                        HStack {
-                            Image(systemName: account.accountType.icon)
-                                .font(.system(size: 24))
-                                .frame(width: 32, height: 32)
-                                .foregroundColor(account.accountType.color)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(account.name)
-                                    .font(.headline)
-                                    .foregroundColor(.primaryText)
-                                Text(account.accountType.displayName)
-                                    .font(.caption)
-                                    .foregroundColor(.secondaryText)
-                            }
-                            
-                            Spacer()
-                            
-                            if selectedAccount?.id == account.id {
-                                Image(systemName: "checkmark")
-                                    .foregroundColor(.appPrimary)
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
-            }
-            .navigationTitle("選擇扣款帳戶")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("取消") {
-                        dismiss()
-                    }
-                }
-            }
-        }
-    }
 }
 
 #Preview {

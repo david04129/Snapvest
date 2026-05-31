@@ -2,7 +2,7 @@
 //  TrackedSymbolSync.swift
 //  Snapvest
 //
-//  將目前持有的公開 symbol 匿名加入後端全站追蹤池。
+//  將指定公開 symbol（通常來自本筆 buy/sell 交易）匿名加入後端全站追蹤池。
 //
 
 import Foundation

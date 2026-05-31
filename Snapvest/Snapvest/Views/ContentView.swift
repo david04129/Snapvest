@@ -100,26 +100,16 @@ struct ContentView: View {
             finishPortfolioMutationRefresh()
         }
         .onReceive(NotificationCenter.default.publisher(for: .transactionsDidChange)) { notification in
-            let shouldShowOverlay = notification.userInfo?[PortfolioMutationUserInfoKey.showsLoadingOverlay] as? Bool == true
-            let affectedAccountIds = notification.userInfo?[PortfolioMutationUserInfoKey.affectedAccountIds] as? [String]
-            let affectedAccountIdSet = affectedAccountIds.map { Set($0) }
-            if shouldShowOverlay {
-                beginPortfolioMutationRefresh()
-            }
+            guard let request = notification.object as? PortfolioMutationRefreshRequest else { return }
             Task {
-                await LaunchCoordinator.applyPersistedState(
-                    userId: AppUser.id,
+                await PortfolioMutationCoordinator.performRefresh(
+                    request,
                     portfolioViewModel: portfolioViewModel,
                     accountsViewModel: accountsViewModel,
                     assetsViewModel: assetsViewModel,
-                    dataService: MockDataService.shared,
-                    accountDetailCacheAccountIds: affectedAccountIdSet
+                    dataService: MockDataService.shared
                 )
-                await MainActor.run {
-                    if shouldShowOverlay {
-                        finishPortfolioMutationRefresh()
-                    }
-                }
+                dataFreshness.refresh()
             }
         }
         .onChange(of: selectedTab) { previousTab, newTab in

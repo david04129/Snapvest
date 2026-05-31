@@ -2,7 +2,7 @@
 //  ThemePalette.swift
 //  Snapvest
 //
-//  淺色 / 深色兩套色票（方向 A：沉穩理財）
+//  單套完整色票；實際數值見 ThemeStyleCatalog。
 //
 
 import SwiftUI
@@ -11,19 +11,19 @@ struct ThemePalette {
     let stockUSColor: Color
     let stockUSDeep: Color
     let stockUSLight: Color
-    
+
     let stockTWColor: Color
     let stockTWDeepAmber: Color
     let stockTWLight: Color
-    
+
     let cryptoColor: Color
     let cryptoDeep: Color
     let cryptoLight: Color
-    
+
     let pieChartTWColors: [Color]
     let pieChartUSColors: [Color]
     let pieChartCryptoColors: [Color]
-    
+
     /// 績效圖、圓餅圖（細項）共用十色輪播
     let holdingChartColors: [Color]
     let allocationTwdCash: Color
@@ -33,183 +33,47 @@ struct ThemePalette {
     let allocationCrypto: Color
     let pieChartVibrantColors: [Color]
     let colorOptionsForPicker: [Color]
-    
+
     let appPrimary: Color
     let appSecondary: Color
-    
+
     let mainBackground: Color
     let cardBackground: Color
     let secondaryBackground: Color
     let tertiaryBackground: Color
-    
+
     let profitGreen: Color
     let lossRed: Color
-    
+
     let primaryText: Color
     let secondaryText: Color
     let tertiaryText: Color
-    
+
     let separator: Color
     let borderLight: Color
     let disabledBackground: Color
     let overlayDark: Color
-    
+
     let shadowLow: Color
     let shadowMedium: Color
     let shadowSoft: Color
     let shadowCard: Color
     let shadowHigh: Color
-    
+
     let actionForeground: Color
     let placeholderFill: Color
     let chartBackdropLight: Color
     let chartBackdropDark: Color
     let cashAccountColor: Color
-    
-    // MARK: - 淺色（方向 A）
-    static let light = ThemePalette(
-        stockUSColor: Color(hex: "#2563EB"),
-        stockUSDeep: Color(hex: "#1D4ED8"),
-        stockUSLight: Color(hex: "#2563EB").opacity(0.16),
-        stockTWColor: Color(hex: "#F2C078"),
-        stockTWDeepAmber: Color(hex: "#F2C078"),
-        stockTWLight: Color(hex: "#F2C078").opacity(0.22),
-        cryptoColor: Color(hex: "#4CAF36"),
-        cryptoDeep: Color(hex: "#3F8F2D"),
-        cryptoLight: Color(hex: "#B7E99A").opacity(0.28),
-        pieChartTWColors: [
-            Color(hex: "#F2C078"), Color(hex: "#D97706"), Color(hex: "#F59E0B"),
-            Color(hex: "#B45309"), Color(hex: "#92400E"), Color(hex: "#FBBF24")
-        ],
-        pieChartUSColors: [
-            Color(hex: "#2563EB"), Color(hex: "#3B82F6"), Color(hex: "#1D4ED8"),
-            Color(hex: "#60A5FA"), Color(hex: "#93C5FD"), Color(hex: "#BFDBFE")
-        ],
-        pieChartCryptoColors: [
-            Color(hex: "#4CAF36"), Color(hex: "#7ED957"), Color(hex: "#B7E99A"),
-            Color(hex: "#14B8A6"), Color(hex: "#2DD4BF"), Color(hex: "#99F6E4")
-        ],
-        holdingChartColors: [
-            Color(hex: "#4CAF36"), Color(hex: "#7ED957"), Color(hex: "#F2C078"),
-            Color(hex: "#7C3AED"), Color(hex: "#0891B2"), Color(hex: "#4F46E5"),
-            Color(hex: "#EA580C"), Color(hex: "#DB2777"), Color(hex: "#CA8A04"),
-            Color(hex: "#64748B")
-        ],
-        allocationTwdCash: Color(hex: "#4CAF36"),
-        allocationUsdCash: Color(hex: "#B7E99A"),
-        allocationStockUS: Color(hex: "#2563EB"),
-        allocationStockTW: Color(hex: "#F2C078"),
-        allocationCrypto: Color(hex: "#4CAF36"),
-        pieChartVibrantColors: [
-            Color(hex: "#4CAF36"), Color(hex: "#7ED957"), Color(hex: "#F2C078"),
-            Color(hex: "#7C3AED"), Color(hex: "#0891B2"), Color(hex: "#4F46E5"),
-            Color(hex: "#EA580C"), Color(hex: "#DB2777"), Color(hex: "#CA8A04"),
-            Color(hex: "#64748B")
-        ],
-        colorOptionsForPicker: [
-            Color(hex: "#4CAF36"), Color(hex: "#7ED957"), Color(hex: "#B7E99A"),
-            Color(hex: "#F2C078"),
-            Color(hex: "#0F766E"), Color(hex: "#0D9488"), Color(hex: "#14B8A6"),
-            Color(hex: "#2563EB"), Color(hex: "#3B82F6"), Color(hex: "#D97706"),
-            Color(hex: "#F59E0B"), Color(hex: "#64748B")
-        ],
-        appPrimary: Color(hex: "#4CAF36"),
-        appSecondary: Color(hex: "#7ED957"),
-        mainBackground: Color(hex: "#F4F6F8"),
-        cardBackground: Color.white,
-        secondaryBackground: Color(hex: "#EEF2F6"),
-        tertiaryBackground: Color(hex: "#F4F6F8"),
-        profitGreen: Color(hex: "#4CAF36"),
-        lossRed: Color(hex: "#DC2626"),
-        primaryText: Color(hex: "#111827"),
-        secondaryText: Color(hex: "#64748B"),
-        tertiaryText: Color(hex: "#94A3B8"),
-        separator: Color(hex: "#E2E8F0"),
-        borderLight: Color(hex: "#CBD5E1"),
-        disabledBackground: Color(hex: "#EEF2F6"),
-        overlayDark: Color.black.opacity(0.85),
-        shadowLow: Color.black.opacity(0.03),
-        shadowMedium: Color.black.opacity(0.05),
-        shadowSoft: Color(hex: "#0F172A").opacity(0.06),
-        shadowCard: Color(hex: "#0F172A").opacity(0.08),
-        shadowHigh: Color(hex: "#0F172A").opacity(0.1),
-        actionForeground: Color.white,
-        placeholderFill: Color(hex: "#E2E8F0"),
-        chartBackdropLight: Color(hex: "#EEF2F6"),
-        chartBackdropDark: Color(hex: "#E2E8F0").opacity(0.35),
-        cashAccountColor: Color(hex: "#64748B")
-    )
-    
-    // MARK: - 深色（方向 A，同語意提高亮度）
-    static let dark = ThemePalette(
-        stockUSColor: Color(hex: "#60A5FA"),
-        stockUSDeep: Color(hex: "#93C5FD"),
-        stockUSLight: Color(hex: "#60A5FA").opacity(0.22),
-        stockTWColor: Color(hex: "#F2C078"),
-        stockTWDeepAmber: Color(hex: "#F2C078"),
-        stockTWLight: Color(hex: "#F2C078").opacity(0.24),
-        cryptoColor: Color(hex: "#7ED957"),
-        cryptoDeep: Color(hex: "#B7E99A"),
-        cryptoLight: Color(hex: "#7ED957").opacity(0.22),
-        pieChartTWColors: [
-            Color(hex: "#F2C078"), Color(hex: "#FBBF24"), Color(hex: "#F59E0B"),
-            Color(hex: "#D97706"), Color(hex: "#B45309"), Color(hex: "#FCD34D")
-        ],
-        pieChartUSColors: [
-            Color(hex: "#3B82F6"), Color(hex: "#60A5FA"), Color(hex: "#93C5FD"),
-            Color(hex: "#BFDBFE"), Color(hex: "#DBEAFE"), Color(hex: "#EFF6FF")
-        ],
-        pieChartCryptoColors: [
-            Color(hex: "#7ED957"), Color(hex: "#B7E99A"), Color(hex: "#2DD4BF"),
-            Color(hex: "#5EEAD4"), Color(hex: "#14B8A6"), Color(hex: "#99F6E4")
-        ],
-        holdingChartColors: [
-            Color(hex: "#7ED957"), Color(hex: "#B7E99A"), Color(hex: "#F2C078"),
-            Color(hex: "#A78BFA"), Color(hex: "#22D3EE"), Color(hex: "#818CF8"),
-            Color(hex: "#FB923C"), Color(hex: "#F472B6"), Color(hex: "#FACC15"),
-            Color(hex: "#94A3B8")
-        ],
-        allocationTwdCash: Color(hex: "#7ED957"),
-        allocationUsdCash: Color(hex: "#B7E99A"),
-        allocationStockUS: Color(hex: "#60A5FA"),
-        allocationStockTW: Color(hex: "#F2C078"),
-        allocationCrypto: Color(hex: "#7ED957"),
-        pieChartVibrantColors: [
-            Color(hex: "#7ED957"), Color(hex: "#B7E99A"), Color(hex: "#F2C078"),
-            Color(hex: "#A78BFA"), Color(hex: "#22D3EE"), Color(hex: "#818CF8"),
-            Color(hex: "#FB923C"), Color(hex: "#F472B6"), Color(hex: "#FACC15"),
-            Color(hex: "#94A3B8")
-        ],
-        colorOptionsForPicker: [
-            Color(hex: "#7ED957"), Color(hex: "#B7E99A"), Color(hex: "#F2C078"),
-            Color(hex: "#2DD4BF"), Color(hex: "#14B8A6"), Color(hex: "#5EEAD4"),
-            Color(hex: "#60A5FA"), Color(hex: "#38BDF8"), Color(hex: "#93C5FD"),
-            Color(hex: "#FBBF24"), Color(hex: "#FCD34D"), Color(hex: "#94A3B8")
-        ],
-        appPrimary: Color(hex: "#7ED957"),
-        appSecondary: Color(hex: "#B7E99A"),
-        mainBackground: Color(hex: "#0B1220"),
-        cardBackground: Color(hex: "#1E293B"),
-        secondaryBackground: Color(hex: "#334155"),
-        tertiaryBackground: Color(hex: "#0F172A"),
-        profitGreen: Color(hex: "#7ED957"),
-        lossRed: Color(hex: "#F87171"),
-        primaryText: Color(hex: "#F1F5F9"),
-        secondaryText: Color(hex: "#94A3B8"),
-        tertiaryText: Color(hex: "#64748B"),
-        separator: Color(hex: "#334155"),
-        borderLight: Color(hex: "#475569"),
-        disabledBackground: Color(hex: "#1E293B"),
-        overlayDark: Color.black.opacity(0.92),
-        shadowLow: Color.black.opacity(0.2),
-        shadowMedium: Color.black.opacity(0.28),
-        shadowSoft: Color.black.opacity(0.32),
-        shadowCard: Color.black.opacity(0.38),
-        shadowHigh: Color.black.opacity(0.45),
-        actionForeground: Color(hex: "#0F172A"),
-        placeholderFill: Color(hex: "#334155"),
-        chartBackdropLight: Color(hex: "#1E293B"),
-        chartBackdropDark: Color(hex: "#334155").opacity(0.6),
-        cashAccountColor: Color(hex: "#94A3B8")
-    )
+
+    /// 首頁淨資產／總資產（與品牌主色一致）
+    let homeNetWorthAccent: Color
+    /// 首頁投資資產大類（與美股／台股市場色分離）
+    let homeInvestmentsAccent: Color
+    /// 首頁現金大類（與品牌綠分離）
+    let homeCashAccent: Color
+
+    /// 其他資產（靛紫，與美股藍分離）
+    let manualAssetColor: Color
+    let manualAssetLight: Color
 }

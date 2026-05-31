@@ -63,7 +63,7 @@ struct MarketColorConventionToggleButton: View {
                     .fill(upColor.opacity(0.16))
                     .frame(width: 32, height: 32)
                 
-                Image(systemName: "arrow.up")
+                Image(systemName: MarketDirectionSymbol.systemName(isUp: true))
                     .font(.system(size: 14, weight: .bold))
                     .foregroundColor(upColor)
             }

@@ -107,6 +107,7 @@ class AccountDetailViewModel: ObservableObject {
         )
         holdings = builtHoldings
         holdingsValue = sumHoldingsValue(builtHoldings, account: account)
+        AccountDetailPresentationStore.replace(builtHoldings, for: accountId)
         if account.currency == .TWD {
             displayCurrency = .TWD
         }

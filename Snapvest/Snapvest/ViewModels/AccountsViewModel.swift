@@ -20,6 +20,7 @@ class AccountsViewModel: ObservableObject {
     @Published var otherDebtCategoryTotalBalance: Decimal = 0
     @Published var balancesLoading = false
     @Published var balancesLoadedOnce = false
+    @Published private(set) var isSaving = false
     
     private let dataService: DataServiceProtocol
     
@@ -106,16 +107,41 @@ class AccountsViewModel: ObservableObject {
         balancesLoadedOnce = true
     }
     
-    func createAccount(_ account: Account) async {
+    func createAccountRecord(_ account: Account) async throws {
+        try await dataService.createAccount(account)
+        await loadAccounts(userId: account.userId)
+    }
+
+    func persistTransaction(_ transaction: Transaction) async throws {
+        try await dataService.createTransaction(transaction)
+    }
+
+    func persistLiability(_ liability: Liability) async throws {
+        try await dataService.createLiability(liability)
+    }
+
+    /// 寫入帳戶／交易／負債後一次重建快照；`isSaving` 期間按鈕顯示建立中。
+    func runAccountSave(userId: String, _ work: () async throws -> Void) async -> Bool {
+        guard !isSaving else { return false }
+        isSaving = true
+        errorMessage = nil
+        defer { isSaving = false }
         do {
-            try await dataService.createAccount(account)
-            await loadAccounts(userId: account.userId)
+            try await work()
             await SnapshotRefreshCoordinator.rebuildAndNotify(
-                userId: account.userId,
+                userId: userId,
                 dataService: dataService
             )
+            return true
         } catch {
             errorMessage = "建立帳戶失敗：\(error.localizedDescription)"
+            return false
+        }
+    }
+
+    func createAccount(_ account: Account) async {
+        _ = await runAccountSave(userId: account.userId) {
+            try await createAccountRecord(account)
         }
     }
 
@@ -143,7 +169,6 @@ class AccountsViewModel: ObservableObject {
     
     /// 永久刪除帳戶與其交易、持股快照、負債資料；成功回傳 nil。
     func deleteAccount(_ account: Account) async -> String? {
-        let userId = account.userId
         let accountId = account.id
         do {
             if account.accountType == .debt {
@@ -156,14 +181,7 @@ class AccountsViewModel: ObservableObject {
             try await dataService.deleteAccount(accountId)
             accounts.removeAll { $0.id == accountId }
             balancesByAccountId.removeValue(forKey: accountId)
-
-            await SnapshotRefreshCoordinator.rebuildAndNotify(
-                userId: userId,
-                dataService: dataService
-            )
-
-            let remainingLiabilities = try await loadAllLiabilities(userId: userId)
-            await refreshBalances(userId: userId, preloadedLiabilities: remainingLiabilities)
+            recalculateCategoryTotalsFromCachedBalances()
             return nil
         } catch {
             let message = "刪除帳戶失敗：\(error.localizedDescription)"

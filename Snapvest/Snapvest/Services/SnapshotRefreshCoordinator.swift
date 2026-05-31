@@ -14,7 +14,7 @@ enum SnapshotRefreshCoordinator {
         userId: String,
         dataService: DataServiceProtocol? = nil,
         priceService: PriceServiceProtocol? = nil,
-        syncPortfolio: Bool = true,
+        trackSymbols: [SymbolInfo] = [],
         updatePriceMetadata: Bool = true,
         deferRemoteWork: Bool = false,
         postsUpdateNotification: Bool = true
@@ -22,32 +22,36 @@ enum SnapshotRefreshCoordinator {
         let resolvedDataService = dataService ?? MockDataService.shared
         let resolvedPriceService = priceService ?? PriceService(dataService: resolvedDataService)
         let isDemoMode = (resolvedDataService as? MockDataService)?.isDemoModeActive == true
+        let shouldTrackSymbols = !trackSymbols.isEmpty && !isDemoMode
         do {
-            let bundle = try await SnapshotUpdater.rebuildSnapshots(
+            _ = try await SnapshotUpdater.rebuildSnapshots(
                 userId: userId,
                 dataService: resolvedDataService,
                 priceService: resolvedPriceService
             )
-            if deferRemoteWork, !isDemoMode, (syncPortfolio || updatePriceMetadata) {
+            if deferRemoteWork, shouldTrackSymbols || (updatePriceMetadata && !isDemoMode) {
+                let symbols = trackSymbols
                 Task { @MainActor in
-                    if syncPortfolio {
-                        await TrackedSymbolSync.sync(symbols: bundle.userHoldingsSnapshot.symbols)
+                    if shouldTrackSymbols {
+                        await TrackedSymbolSync.sync(symbols: symbols)
                     }
-                    if updatePriceMetadata {
+                    if updatePriceMetadata, !isDemoMode {
                         await SupabasePriceService.recordSuccessfulPriceSync(
                             userId: userId,
                             dataService: resolvedDataService
                         )
                     }
                 }
-            } else if syncPortfolio, !isDemoMode {
-                await TrackedSymbolSync.sync(symbols: bundle.userHoldingsSnapshot.symbols)
-            }
-            if updatePriceMetadata, !isDemoMode, !deferRemoteWork {
-                await SupabasePriceService.recordSuccessfulPriceSync(
-                    userId: userId,
-                    dataService: resolvedDataService
-                )
+            } else {
+                if shouldTrackSymbols {
+                    await TrackedSymbolSync.sync(symbols: trackSymbols)
+                }
+                if updatePriceMetadata, !isDemoMode {
+                    await SupabasePriceService.recordSuccessfulPriceSync(
+                        userId: userId,
+                        dataService: resolvedDataService
+                    )
+                }
             }
             resolvedDataService.persistLocalStore(for: userId)
             if postsUpdateNotification {

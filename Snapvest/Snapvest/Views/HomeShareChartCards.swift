@@ -478,7 +478,7 @@ struct HomePerformanceChartShareCard: View {
 // MARK: - 共用
 
 private func shareCardHeader(title: String, subtitle: String, currency: Currency? = nil) -> some View {
-    HStack(alignment: .firstTextBaseline) {
+    HStack(alignment: .firstTextBaseline, spacing: 8) {
         Text(title)
             .font(.system(size: 17, weight: .bold))
             .foregroundColor(.primaryText)
@@ -489,9 +489,9 @@ private func shareCardHeader(title: String, subtitle: String, currency: Currency
             .font(.system(size: 15, weight: .semibold))
             .foregroundColor(AppColors.appPrimary)
         if let currency {
-            CurrencyCodeChip(currency: currency, tint: AppColors.appPrimary)
+            CurrencyCodeChip(currency: currency, tint: .appPrimary)
         }
-        Spacer()
+        Spacer(minLength: 0)
     }
     .padding(.horizontal, 16)
     .padding(.top, 16)
@@ -583,12 +583,26 @@ private struct HomeSharePerformanceRow: View {
             }
             .frame(height: 22)
 
-            Text(valueText)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(valueColor)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .frame(width: 88, alignment: .trailing)
+            Group {
+                if mode == .gainLoss {
+                    CurrencyAmountWithChip(
+                        text: valueText,
+                        currency: currency,
+                        font: .snapChartRowValue,
+                        weight: .semibold,
+                        color: valueColor,
+                        chipTint: row.color,
+                        spacing: 4
+                    )
+                } else {
+                    Text(valueText)
+                        .font(.snapChartRowValue)
+                        .foregroundColor(valueColor)
+                }
+            }
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .frame(width: mode == .gainLoss ? 108 : 88, alignment: .trailing)
         }
     }
 }

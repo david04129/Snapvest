@@ -72,6 +72,7 @@ struct AccountsView: View {
     @State private var accountOrders: [AccountType: [String]] = [:]
     @State private var navigationStackResetID = UUID()
     @State private var accountsCurrencyDisplay: AssetsCurrencyDisplay = .twd
+    @State private var managementShareDisplayMode: ManagementShareDisplayMode = ManagementShareDisplayPreference.get()
     @State private var isEditingOrder = false
     @State private var accountPendingDelete: Account?
     @State private var manualAssetPendingDelete: ManualAsset?
@@ -92,6 +93,7 @@ struct AccountsView: View {
                 VStack(spacing: 12) {
                     AccountsCurrencyControlsBar(
                         currencyDisplay: $accountsCurrencyDisplay,
+                        shareDisplayMode: $managementShareDisplayMode,
                         showsEditControl: true,
                         isEditingOrder: isEditingOrder,
                         isEditDisabled: orderedVisibleManagementSections.isEmpty,
@@ -112,6 +114,7 @@ struct AccountsView: View {
             }
             .background(Color.mainBackground)
             .navigationBarBackButtonHidden(true)
+            .environment(\.managementShareDisplayMode, managementShareDisplayMode)
             .environment(\.editMode, .constant(isEditingOrder ? .active : .inactive))
             .safeAreaInset(edge: .top) {
                 accountsHeaderBar
@@ -147,7 +150,13 @@ struct AccountsView: View {
             .onChange(of: manualAssetsViewModel.assets.map(\.id)) { _, _ in
                 reconcileManagementSectionOrder()
             }
-            .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { notification in
+                if notification.userInfo?[SnapshotUpdateUserInfoKey.alreadyApplied] as? Bool == true {
+                    reconcileAccountOrders()
+                    reconcileManagementSectionOrder()
+                    accountDetailRefreshToken += 1
+                    return
+                }
                 Task {
                     await LaunchCoordinator.applyPersistedState(
                         userId: userId,
@@ -229,6 +238,9 @@ struct AccountsView: View {
             AccountDetailView(
                 account: account,
                 prefilledBalance: viewModel.balancesByAccountId[account.id],
+                initialDisplayCurrency: accountsCurrencyDisplay == .original
+                    ? account.currency
+                    : portfolioViewModel.viewCurrency,
                 refreshToken: accountDetailRefreshToken
             )
         } else {
@@ -313,6 +325,7 @@ struct AccountsView: View {
                 accountType: accountType,
                 accounts: ordered,
                 categoryTotalTWD: categoryTotal,
+                totalAssetsDenominator: portfolioViewModel.totalAssets,
                 currencyDisplay: accountsCurrencyDisplay,
                 baseCurrency: portfolioViewModel.viewCurrency,
                 twdPerBaseCurrency: portfolioViewModel.twdPerBaseCurrency,
@@ -354,6 +367,7 @@ struct AccountsView: View {
             ArchivedDebtAccountsSection(
                 accounts: archived,
                 balancesByAccountId: viewModel.balancesByAccountId,
+                totalAssetsDenominator: portfolioViewModel.totalAssets,
                 currencyDisplay: accountsCurrencyDisplay,
                 baseCurrency: portfolioViewModel.viewCurrency,
                 twdPerBaseCurrency: portfolioViewModel.twdPerBaseCurrency,
@@ -376,6 +390,7 @@ struct AccountsView: View {
             ManualAssetCategorySection(
                 category: category,
                 assets: assets.sorted { $0.updatedAt > $1.updatedAt },
+                totalAssetsDenominator: portfolioViewModel.totalAssets,
                 currencyDisplay: accountsCurrencyDisplay,
                 baseCurrency: portfolioViewModel.viewCurrency,
                 twdPerBaseCurrency: portfolioViewModel.twdPerBaseCurrency,
@@ -483,16 +498,33 @@ struct AccountsView: View {
         guard let account = accountPendingDelete else { return }
         isDeleting = true
         defer { isDeleting = false }
-        
-        if let error = await viewModel.deleteAccount(account) {
-            deleteErrorMessage = error
-        } else {
-            var order = accountOrders[account.accountType] ?? []
-            order.removeAll { $0 == account.id }
-            accountOrders[account.accountType] = order
-            saveAccountOrder()
-            accountPendingDelete = nil
-        }
+
+        let succeeded = await PortfolioMutationCoordinator.perform(
+            userId: userId,
+            loading: PortfolioMutationCoordinator.LoadingMessage(
+                title: "正在刪除帳戶…",
+                message: "會一併更新相關資產與分類總額"
+            ),
+            portfolioViewModel: portfolioViewModel,
+            accountsViewModel: viewModel,
+            assetsViewModel: assetsViewModel,
+            forceFullRebuild: true,
+            operation: {
+                if let error = await viewModel.deleteAccount(account) {
+                    deleteErrorMessage = error
+                    return false
+                }
+                return true
+            }
+        )
+
+        guard succeeded else { return }
+
+        var order = accountOrders[account.accountType] ?? []
+        order.removeAll { $0 == account.id }
+        accountOrders[account.accountType] = order
+        saveAccountOrder()
+        accountPendingDelete = nil
     }
     
     // MARK: - 拖曳排序輔助函數
@@ -665,6 +697,7 @@ private struct ManualAssetDetailRoute: Identifiable, Hashable {
 struct ArchivedDebtAccountsSection: View {
     let accounts: [Account]
     let balancesByAccountId: [String: AccountBalanceDisplay]
+    let totalAssetsDenominator: Decimal
     let currencyDisplay: AssetsCurrencyDisplay
     let baseCurrency: Currency
     let twdPerBaseCurrency: Decimal
@@ -719,6 +752,7 @@ struct ArchivedDebtAccountsSection: View {
                             AccountCardView(
                                 account: account,
                                 balance: balancesByAccountId[account.id],
+                                totalAssetsDenominator: totalAssetsDenominator,
                                 currencyDisplay: currencyDisplay,
                                 baseCurrency: baseCurrency,
                                 twdPerBaseCurrency: twdPerBaseCurrency,
@@ -743,6 +777,7 @@ struct ArchivedDebtAccountsSection: View {
 struct ManualAssetCategorySection: View {
     let category: ManualAssetCategory
     let assets: [ManualAsset]
+    let totalAssetsDenominator: Decimal
     let currencyDisplay: AssetsCurrencyDisplay
     let baseCurrency: Currency
     let twdPerBaseCurrency: Decimal
@@ -752,18 +787,39 @@ struct ManualAssetCategorySection: View {
     let onOpenAsset: (ManualAsset) -> Void
     let onDeleteAsset: (ManualAsset) -> Void
 
-    private var accentColor: Color { .stockUSColor }
+    private var accentColor: Color { .manualAssetColor }
+
+    private var includedAssets: [ManualAsset] {
+        assets.filter(\.isIncludedInTotalAssets)
+    }
+
+    private var categoryTotalTWD: Decimal {
+        includedAssets.reduce(Decimal.zero) { partial, asset in
+            partial + (ManualAssetMetrics.valueTWD(asset: asset, rates: twdRateByCurrency) ?? 0)
+        }
+    }
+
+    private var categorySharePercent: Decimal {
+        let numerator = TotalAssetsShareCalculator.displayAmount(
+            fromTWD: categoryTotalTWD,
+            twdPerBaseCurrency: twdPerBaseCurrency
+        )
+        return TotalAssetsShareCalculator.sharePercentFromDisplay(
+            numeratorDisplay: numerator,
+            totalAssetsDisplay: totalAssetsDenominator
+        )
+    }
 
     private var categoryTotalDisplays: [(amount: Decimal, currency: Currency)] {
         if currencyDisplay == .twd {
-            let totalTWD = assets.reduce(Decimal.zero) { partial, asset in
-                partial + (ManualAssetMetrics.valueTWD(asset: asset, rates: twdRateByCurrency) ?? 0)
-            }
-            let amount = twdPerBaseCurrency > 0 ? totalTWD / twdPerBaseCurrency : totalTWD
+            let amount = TotalAssetsShareCalculator.displayAmount(
+                fromTWD: categoryTotalTWD,
+                twdPerBaseCurrency: twdPerBaseCurrency
+            )
             return [(amount, baseCurrency)]
         }
 
-        let grouped = assets.reduce(into: [Currency: Decimal]()) { partial, asset in
+        let grouped = includedAssets.reduce(into: [Currency: Decimal]()) { partial, asset in
             partial[asset.currency, default: 0] += asset.currentValue
         }
         return grouped
@@ -780,33 +836,40 @@ struct ManualAssetCategorySection: View {
                     isExpanded.toggle()
                 }
             } label: {
-                HStack {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    TotalAssetsShareRingView(
+                        sharePercent: categorySharePercent,
+                        accentColor: accentColor
+                    )
+
                     VStack(alignment: .leading, spacing: 2) {
                         Text(category.displayName)
-                            .font(.headline)
+                            .font(.snapOverviewText)
                             .foregroundColor(.primaryText)
+                            .snapOverviewFittingLine()
                         Text("\(assets.count)項其他資產")
                             .font(.caption)
                             .foregroundColor(.secondaryText)
                     }
+                    .layoutPriority(1)
 
-                    Spacer()
+                    Spacer(minLength: 8)
 
-                    VStack(alignment: .trailing, spacing: 3) {
+                    VStack(alignment: .trailing, spacing: 4) {
                         Text("類別總資產")
                             .font(.caption)
+                            .fontWeight(.medium)
                             .foregroundColor(.secondaryText)
                         ForEach(categoryTotalDisplays, id: \.currency) { display in
-                            CurrencyAmountLabel(
-                                text: display.amount.formatted(currency: display.currency),
+                            categoryOverviewAmountChip(
+                                amount: display.amount,
                                 currency: display.currency,
-                                font: .snapAmountRow,
-                                weight: .semibold,
                                 color: .primaryText,
                                 chipTint: accentColor
                             )
                         }
                     }
+                    .layoutPriority(1)
 
                     if isEditingOrder {
                         SectionDragHandle()
@@ -819,6 +882,7 @@ struct ManualAssetCategorySection: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
                 .padding()
+                .snapCappedDynamicTypeSize()
             }
             .buttonStyle(.plain)
 
@@ -830,6 +894,7 @@ struct ManualAssetCategorySection: View {
                         } label: {
                             ManualAssetCardView(
                                 asset: asset,
+                                totalAssetsDenominator: totalAssetsDenominator,
                                 currencyDisplay: currencyDisplay,
                                 baseCurrency: baseCurrency,
                                 twdPerBaseCurrency: twdPerBaseCurrency,
@@ -866,7 +931,7 @@ struct ManualAssetCategorySection: View {
         .overlay(alignment: .leading) {
             RoundedRectangle(cornerRadius: 16)
                 .fill(accentColor)
-                .frame(width: 4)
+                .frame(width: SnapOverviewBarMetrics.overviewWidth)
         }
         .shadow(color: AppColors.shadowMedium, radius: 8, x: 0, y: 2)
     }
@@ -874,12 +939,26 @@ struct ManualAssetCategorySection: View {
 
 struct ManualAssetCardView: View {
     let asset: ManualAsset
+    let totalAssetsDenominator: Decimal
     let currencyDisplay: AssetsCurrencyDisplay
     let baseCurrency: Currency
     let twdPerBaseCurrency: Decimal
     let twdRateByCurrency: [Currency: Decimal]
 
-    private var accentColor: Color { .stockUSColor }
+    private var accentColor: Color { .manualAssetColor }
+
+    private var sharePercent: Decimal {
+        guard asset.isIncludedInTotalAssets else { return 0 }
+        let twd = ManualAssetMetrics.valueTWD(asset: asset, rates: twdRateByCurrency) ?? 0
+        let numerator = TotalAssetsShareCalculator.displayAmount(
+            fromTWD: twd,
+            twdPerBaseCurrency: twdPerBaseCurrency
+        )
+        return TotalAssetsShareCalculator.sharePercentFromDisplay(
+            numeratorDisplay: numerator,
+            totalAssetsDisplay: totalAssetsDenominator
+        )
+    }
 
     private var displayAmount: (amount: Decimal, currency: Currency) {
         if currencyDisplay == .original {
@@ -892,16 +971,18 @@ struct ManualAssetCardView: View {
 
     var body: some View {
         HStack(spacing: 12) {
+            ManagementRowLeadingIndicator(
+                currency: asset.currency,
+                accentColor: accentColor,
+                sharePercent: sharePercent
+            )
+
             VStack(alignment: .leading, spacing: 6) {
-                CurrencyTitleLabel(
-                    title: asset.name,
-                    currency: displayAmount.currency,
-                    font: .headline,
-                    weight: .semibold,
-                    color: .primaryText,
-                    chipTint: accentColor,
-                    titleLineLimit: 1
-                )
+                Text(asset.name)
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primaryText)
+                    .lineLimit(1)
 
                 HStack(spacing: 6) {
                     if asset.isIncludedInTotalAssets {
@@ -915,11 +996,11 @@ struct ManualAssetCardView: View {
 
             Spacer(minLength: 8)
 
-            CurrencyAmountLabel(
+            CurrencyAmountWithChip(
                 text: displayAmount.amount.formatted(currency: displayAmount.currency),
                 currency: displayAmount.currency,
                 font: .snapAmountRow,
-                weight: .semibold,
+                weight: .bold,
                 color: .primaryText,
                 chipTint: accentColor
             )
@@ -930,7 +1011,7 @@ struct ManualAssetCardView: View {
         .overlay(alignment: .leading) {
             RoundedRectangle(cornerRadius: 16)
                 .fill(accentColor)
-                .frame(width: 4)
+                .frame(width: SnapOverviewBarMetrics.detailWidth)
         }
         .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 1)
     }
@@ -978,6 +1059,28 @@ private struct AccountListRowButton<RowContent: View>: View {
     }
 }
 
+// MARK: - 類別總覽金額（統一字級，避免長數字被壓縮）
+
+@ViewBuilder
+private func categoryOverviewAmountChip(
+    amount: Decimal,
+    currency: Currency,
+    color: Color,
+    chipTint: Color
+) -> some View {
+    CurrencyAmountWithChip(
+        text: amount.formatted(currency: currency),
+        currency: currency,
+        font: .snapOverviewAmount,
+        weight: .bold,
+        color: color,
+        chipTint: chipTint,
+        minimumScaleFactor: SnapOverviewBarMetrics.minScaleFactor
+    )
+    .monospacedDigit()
+    .snapOverviewFittingLine()
+}
+
 // MARK: - 帳戶列表顯示用（台幣 / 原幣）
 
 enum AccountListAmountDisplay {
@@ -1003,7 +1106,7 @@ enum AccountListAmountDisplay {
             case .twdDeposit:
                 amount = balance.cashBalance
             case .debt, .otherDebt:
-                amount = balance.remainingBalance
+                amount = -balance.remainingBalance
             default:
                 amount = balance.totalAssets
             }
@@ -1019,6 +1122,22 @@ enum AccountListAmountDisplay {
             .map { (amount: $0.value, currency: $0.key) }
     }
     
+    /// 換算為 TWD 的帳戶資產／現金／欠款，供佔總資產比例計算。
+    static func accountValueTWD(account: Account, balance: AccountBalanceDisplay?) -> Decimal {
+        guard let balance else { return 0 }
+        switch account.accountType {
+        case .debt, .otherDebt:
+            let native = balance.remainingBalance
+            return account.currency == .TWD ? native : (balance.twdEquivalent ?? native)
+        case .twdDeposit:
+            let native = balance.cashBalance
+            return account.currency == .TWD ? native : (balance.twdEquivalent ?? native)
+        default:
+            let native = balance.totalAssets
+            return account.currency == .TWD ? native : (balance.twdEquivalent ?? native)
+        }
+    }
+
     static func cardAmount(
         account: Account,
         balance: AccountBalanceDisplay,
@@ -1099,6 +1218,7 @@ struct ExpandableAccountCategorySection: View {
     let accountType: AccountType
     let accounts: [Account]
     let categoryTotalTWD: Decimal
+    let totalAssetsDenominator: Decimal
     let currencyDisplay: AssetsCurrencyDisplay
     let baseCurrency: Currency
     let twdPerBaseCurrency: Decimal
@@ -1128,6 +1248,18 @@ struct ExpandableAccountCategorySection: View {
         accountType == .debt || accountType == .otherDebt ? .lossRed : .primaryText
     }
 
+    private var categorySharePercent: Decimal {
+        let numeratorTWD = abs(categoryTotalTWD)
+        let numerator = TotalAssetsShareCalculator.displayAmount(
+            fromTWD: numeratorTWD,
+            twdPerBaseCurrency: twdPerBaseCurrency
+        )
+        return TotalAssetsShareCalculator.sharePercentFromDisplay(
+            numeratorDisplay: numerator,
+            totalAssetsDisplay: totalAssetsDenominator
+        )
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             Button(action: {
@@ -1136,45 +1268,51 @@ struct ExpandableAccountCategorySection: View {
                     isExpanded.toggle()
                 }
             }) {
-                HStack {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    TotalAssetsShareRingView(
+                        sharePercent: categorySharePercent,
+                        accentColor: accountType == .debt || accountType == .otherDebt ? .lossRed : accountType.color
+                    )
+
                     VStack(alignment: .leading, spacing: 2) {
                         Text(accountType.displayName)
-                            .font(.headline)
+                            .font(.snapOverviewText)
                             .foregroundColor(.primaryText)
+                            .snapOverviewFittingLine()
                         Text("\(accounts.count)個帳戶")
                             .font(.caption)
                             .foregroundColor(.secondaryText)
                     }
+                    .layoutPriority(1)
                     
-                    Spacer()
+                    Spacer(minLength: 8)
                     
-                    VStack(alignment: .trailing, spacing: 3) {
+                    VStack(alignment: .trailing, spacing: 4) {
                         if !categoryTotalDisplays.isEmpty {
                             Text(accountType == .debt || accountType == .otherDebt ? "類別總債務" : "類別總資產")
                                 .font(.caption)
+                                .fontWeight(.medium)
                                 .foregroundColor(.secondaryText)
                             ForEach(categoryTotalDisplays, id: \.currency) { display in
-                                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                                    CurrencyAmountLabel(
-                                        text: display.amount.formatted(currency: display.currency),
-                                        currency: display.currency,
-                                        font: .snapAmountRow,
-                                        weight: .semibold,
-                                        color: categoryAmountColor,
-                                        chipTint: accountType.color
-                                    )
-                                    CurrencyCodeChip(currency: display.currency)
-                                }
+                                categoryOverviewAmountChip(
+                                    amount: display.amount,
+                                    currency: display.currency,
+                                    color: categoryAmountColor,
+                                    chipTint: accountType.color
+                                )
                             }
                         } else {
                             Text(accountType == .debt || accountType == .otherDebt ? "類別總債務" : "類別總資產")
                                 .font(.caption)
+                                .fontWeight(.medium)
                                 .foregroundColor(.secondaryText)
                             Text("—")
-                                .font(.snapAmountRow)
+                                .font(.snapOverviewAmount)
                                 .foregroundColor(.secondaryText)
+                                .snapOverviewFittingLine()
                         }
                     }
+                    .layoutPriority(1)
                     
                     if isEditingOrder {
                         SectionDragHandle()
@@ -1187,6 +1325,7 @@ struct ExpandableAccountCategorySection: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
                 .padding()
+                .snapCappedDynamicTypeSize()
             }
             .buttonStyle(.plain)
             
@@ -1202,6 +1341,7 @@ struct ExpandableAccountCategorySection: View {
                             AccountCardView(
                                 account: account,
                                 balance: balancesByAccountId[account.id],
+                                totalAssetsDenominator: totalAssetsDenominator,
                                 currencyDisplay: currencyDisplay,
                                 baseCurrency: baseCurrency,
                                 twdPerBaseCurrency: twdPerBaseCurrency,
@@ -1225,7 +1365,7 @@ struct ExpandableAccountCategorySection: View {
         .overlay(alignment: .leading) {
             RoundedRectangle(cornerRadius: 16)
                 .fill(accountType.color)
-                .frame(width: 4)
+                .frame(width: SnapOverviewBarMetrics.overviewWidth)
         }
         .overlay {
             RoundedRectangle(cornerRadius: 16)
@@ -1239,6 +1379,7 @@ struct ExpandableAccountCategorySection: View {
 struct AccountCardView: View {
     let account: Account
     let balance: AccountBalanceDisplay?
+    let totalAssetsDenominator: Decimal
     let currencyDisplay: AssetsCurrencyDisplay
     let baseCurrency: Currency
     let twdPerBaseCurrency: Decimal
@@ -1248,20 +1389,28 @@ struct AccountCardView: View {
     private var showLoadingPlaceholder: Bool {
         isBalanceLoading && balance == nil
     }
-    
-    private var displayCurrencyForChip: Currency? {
-        guard !showLoadingPlaceholder, let balance else { return nil }
-        return AccountListAmountDisplay.cardAmount(
-            account: account,
-            balance: balance,
-            currencyDisplay: currencyDisplay,
-            baseCurrency: baseCurrency,
+
+    private var sharePercent: Decimal {
+        let twd = AccountListAmountDisplay.accountValueTWD(account: account, balance: balance)
+        let numerator = TotalAssetsShareCalculator.displayAmount(
+            fromTWD: twd,
             twdPerBaseCurrency: twdPerBaseCurrency
-        ).currency
+        )
+        return TotalAssetsShareCalculator.sharePercentFromDisplay(
+            numeratorDisplay: numerator,
+            totalAssetsDisplay: totalAssetsDenominator
+        )
     }
+    
     var body: some View {
         VStack {
-            HStack {
+            HStack(alignment: .center, spacing: 12) {
+                ManagementRowLeadingIndicator(
+                    currency: account.currency,
+                    accentColor: account.accountType.color,
+                    sharePercent: sharePercent
+                )
+
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
                         Text(account.name)
@@ -1278,21 +1427,9 @@ struct AccountCardView: View {
                                 .clipShape(Capsule())
                         }
                     }
-                    if let currency = displayCurrencyForChip {
-                        CurrencyTitleLabel(
-                            title: accountSubtitle,
-                            currency: currency,
-                            font: .caption,
-                            weight: .regular,
-                            color: .secondaryText,
-                            chipTint: account.accountType.color,
-                            titleLineLimit: 1
-                        )
-                    } else {
-                        Text(accountSubtitle)
-                            .font(.caption)
-                            .foregroundColor(.secondaryText)
-                    }
+                    Text(accountSubtitle)
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
                 }
                 
                 Spacer()
@@ -1309,7 +1446,7 @@ struct AccountCardView: View {
             HStack {
                 RoundedRectangle(cornerRadius: 16)
                     .fill(account.accountType.color)
-                    .frame(width: 4)
+                    .frame(width: SnapOverviewBarMetrics.detailWidth)
                 Spacer()
             }
         )
@@ -1330,6 +1467,7 @@ struct AccountCardView: View {
         if showLoadingPlaceholder {
             Text("—")
                 .font(.snapAmountRow)
+                .fontWeight(.bold)
                 .foregroundColor(.secondaryText)
         } else if account.accountType == .debt || account.accountType == .otherDebt, let balance {
             let display = AccountListAmountDisplay.cardAmount(
@@ -1339,11 +1477,11 @@ struct AccountCardView: View {
                 baseCurrency: baseCurrency,
                 twdPerBaseCurrency: twdPerBaseCurrency
             )
-            CurrencyAmountLabel(
+            CurrencyAmountWithChip(
                 text: display.amount.formatted(currency: display.currency),
                 currency: display.currency,
                 font: .snapAmountRow,
-                weight: .semibold,
+                weight: .bold,
                 color: .lossRed,
                 chipTint: account.accountType.color
             )
@@ -1355,11 +1493,11 @@ struct AccountCardView: View {
                 baseCurrency: baseCurrency,
                 twdPerBaseCurrency: twdPerBaseCurrency
             )
-            CurrencyAmountLabel(
+            CurrencyAmountWithChip(
                 text: display.amount.formatted(currency: display.currency),
                 currency: display.currency,
                 font: .snapAmountRow,
-                weight: .semibold,
+                weight: .bold,
                 color: .primaryText,
                 chipTint: account.accountType.color
             )
@@ -1371,17 +1509,18 @@ struct AccountCardView: View {
                 baseCurrency: baseCurrency,
                 twdPerBaseCurrency: twdPerBaseCurrency
             )
-            CurrencyAmountLabel(
+            CurrencyAmountWithChip(
                 text: display.amount.formatted(currency: display.currency),
                 currency: display.currency,
                 font: .snapAmountRow,
-                weight: .semibold,
+                weight: .bold,
                 color: .primaryText,
                 chipTint: account.accountType.color
             )
         } else {
             Text("—")
                 .font(.snapAmountRow)
+                .fontWeight(.bold)
                 .foregroundColor(.secondaryText)
         }
     }
@@ -1405,49 +1544,46 @@ struct ExpandableDebtAccountSection: View {
                     isExpanded.toggle()
                 }
             }) {
-                HStack {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(accountType.displayName)
-                            .font(.headline)
+                            .font(.snapOverviewText)
                             .foregroundColor(.primaryText)
+                            .snapOverviewFittingLine()
                         
                         Text("\(liabilities.count)個帳戶")
                             .font(.caption)
                             .foregroundColor(.secondaryText)
                     }
+                    .layoutPriority(1)
                     
-                    Spacer()
+                    Spacer(minLength: 8)
                     
-                    VStack(alignment: .trailing, spacing: 2) {
+                    VStack(alignment: .trailing, spacing: 4) {
                         Text("類別總債務")
                             .font(.caption)
                             .foregroundColor(.secondaryText)
                         
-                        CurrencyAmountLabel(
-                            text: (-totalDebt).formatted(currency: .TWD),
+                        categoryOverviewAmountChip(
+                            amount: -totalDebt,
                             currency: .TWD,
-                            font: .snapAmountRow,
-                            weight: .bold,
                             color: .lossRed,
                             chipTint: .lossRed
                         )
                     }
+                    .layoutPriority(1)
                     
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                         .foregroundColor(.secondaryText)
                         .font(.caption)
-                    }
-                    .padding()
-                    .background(accountType.color.opacity(0.15))
-                    .cornerRadius(12)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(accountType.color.opacity(0.3), lineWidth: 1)
-                    )
                 }
-                .buttonStyle(PlainButtonStyle())
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .padding()
+                .snapCappedDynamicTypeSize()
+            }
+            .buttonStyle(.plain)
             
-            // 負債列表（可展開/收縮）
             if isExpanded {
                 VStack(spacing: 8) {
                     ForEach(liabilities) { liability in
@@ -1457,10 +1593,19 @@ struct ExpandableDebtAccountSection: View {
                         .buttonStyle(PlainButtonStyle())
                     }
                 }
-                .padding(.top, 8)
+                .padding(.horizontal)
+                .padding(.bottom)
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
+        .background(Color.cardBackground)
+        .cornerRadius(16)
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 16)
+                .fill(accountType.color)
+                .frame(width: SnapOverviewBarMetrics.overviewWidth)
+        }
+        .shadow(color: AppColors.shadowMedium, radius: 8, x: 0, y: 2)
     }
 }
 
@@ -1504,7 +1649,7 @@ struct DebtCardView: View {
         .overlay(alignment: .leading) {
             RoundedRectangle(cornerRadius: 16)
                 .fill(Color.lossRed)
-                .frame(width: 4)
+                .frame(width: SnapOverviewBarMetrics.detailWidth)
         }
         .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 1)
     }

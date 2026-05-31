@@ -47,7 +47,6 @@ struct AppRootView: View {
             }
         }
         .preferredColorScheme(themeManager.isDarkMode ? .dark : .light)
-        .animation(.easeInOut(duration: 0.35), value: isLaunchComplete)
         .task(id: launchAttempt) {
             await runLaunchSequence()
         }

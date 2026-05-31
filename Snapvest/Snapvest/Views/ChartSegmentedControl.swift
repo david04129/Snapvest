@@ -23,6 +23,7 @@ struct ChartSegmentedControl<Option: Hashable & Identifiable>: View {
             }
         }
         .padding(4)
+        .animation(ChartMotion.switchSpring, value: selection.id)
         .background(
             RoundedRectangle(cornerRadius: 11, style: .continuous)
                 .fill(AppColors.secondaryBackground)
@@ -37,9 +38,7 @@ struct ChartSegmentedControl<Option: Hashable & Identifiable>: View {
         let isSelected = selection.id == option.id
         return Button {
             guard isInteractionEnabled, !isSelected else { return }
-            withAnimation(ChartMotion.switchSpring) {
-                selection = option
-            }
+            selection = option
         } label: {
             Text(label(option))
                 .font(.system(size: fontSize, weight: isSelected ? .bold : .medium))

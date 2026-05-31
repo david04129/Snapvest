@@ -31,8 +31,8 @@ enum AccountType: String, Codable, CaseIterable {
     case twdSecurities = "twd_securities"     // 台幣證券戶（複委托）
     case usdAccount = "usd_account"          // 美金證券戶
     case cryptoWallet = "crypto_wallet"      // 加密貨幣戶
-    case debt = "debt"                        // 分期貸款戶
-    case otherDebt = "other_debt"             // 其他負債戶
+    case debt = "debt"                        // 分期貸款
+    case otherDebt = "other_debt"             // 其他負債
     
     var category: AccountCategory {
         switch self {
@@ -48,8 +48,8 @@ enum AccountType: String, Codable, CaseIterable {
         case .twdSecurities: return "台股證券"
         case .usdAccount: return "美股證券"
         case .cryptoWallet: return "加密貨幣錢包"
-        case .debt: return "分期貸款戶"
-        case .otherDebt: return "其他負債戶"
+        case .debt: return "分期貸款"
+        case .otherDebt: return "其他負債"
         }
     }
     

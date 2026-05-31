@@ -29,6 +29,7 @@ struct HomeView: View {
     
     var body: some View {
         NavigationStack {
+            ScrollViewReader { scrollProxy in
             ScrollView {
                 VStack(spacing: 20) {
                     Group {
@@ -66,30 +67,42 @@ struct HomeView: View {
                     
                     // 圓餅圖（總資產 / 投資組合 / 所有細項）
                     if viewModel.pieChartInputs != nil {
-                        HomePieChartSection(
-                            inputs: viewModel.pieChartInputs,
-                            totalAssets: viewModel.totalAssets,
-                            totalInvestments: viewModel.totalInvestments,
-                            currency: viewModel.viewCurrency,
-                            twdPerBaseCurrency: viewModel.twdPerBaseCurrency,
-                            mode: $pieChartMode,
-                            groupingStore: pieGroupingStore
-                        )
-                        
-                        HomePerformanceChartSection(
-                            inputs: viewModel.pieChartInputs,
-                            pieMode: pieChartMode,
-                            groupingStore: pieGroupingStore,
-                            mode: $performanceMode,
-                            currency: viewModel.viewCurrency,
-                            twdPerBaseCurrency: viewModel.twdPerBaseCurrency
-                        )
+                        Group {
+                            HomePieChartSection(
+                                inputs: viewModel.pieChartInputs,
+                                totalAssets: viewModel.totalAssets,
+                                totalInvestments: viewModel.totalInvestments,
+                                currency: viewModel.viewCurrency,
+                                twdPerBaseCurrency: viewModel.twdPerBaseCurrency,
+                                onScrollToChart: {
+                                    withAnimation(.easeInOut(duration: 0.38)) {
+                                        scrollProxy.scrollTo(
+                                            HomePieChartScrollAnchor.donut,
+                                            anchor: UnitPoint(x: 0.5, y: 0.12)
+                                        )
+                                    }
+                                },
+                                mode: $pieChartMode,
+                                groupingStore: pieGroupingStore
+                            )
+                            
+                            HomePerformanceChartSection(
+                                inputs: viewModel.pieChartInputs,
+                                pieMode: pieChartMode,
+                                groupingStore: pieGroupingStore,
+                                mode: $performanceMode,
+                                currency: viewModel.viewCurrency,
+                                twdPerBaseCurrency: viewModel.twdPerBaseCurrency
+                            )
+                            .snapHomeSummaryMetricStyle()
+                        }
                     }
                     
                     DataFreshnessFooterView(style: .valuationTabs)
                 }
                 .padding()
                 .animation(.easeInOut(duration: 0.22), value: homePrivacy.isAmountHidden)
+            }
             }
             .background(Color.mainBackground)
             .navigationBarBackButtonHidden(true)
@@ -100,7 +113,8 @@ struct HomeView: View {
                 guard !pieGroupingStore.isEditingGroups else { return }
                 await SnapshotRefreshCoordinator.rebuildAndNotify(userId: userId)
             }
-            .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { notification in
+                guard notification.userInfo?[SnapshotUpdateUserInfoKey.alreadyApplied] as? Bool != true else { return }
                 Task {
                     await LaunchCoordinator.applyPersistedState(
                         userId: userId,
@@ -196,7 +210,7 @@ private struct HomeExpandableCardHeader<Content: View>: View {
                 isExpanded.toggle()
             }
         } label: {
-            HStack(alignment: .center, spacing: 16) {
+            HStack(alignment: .firstTextBaseline, spacing: 16) {
                 content()
                 Spacer(minLength: 0)
                 HomeCardExpandChevron(isExpanded: isExpanded)
@@ -222,7 +236,7 @@ private struct HomeCardDetailRow: View {
                 .foregroundColor(.secondaryText)
             Spacer(minLength: 8)
             if let currency {
-                CurrencyAmountLabel(
+                CurrencyAmountWithChip(
                     text: value,
                     currency: currency,
                     font: .subheadline,
@@ -247,17 +261,20 @@ private struct HomeCardCurrencyDetailRow: View {
     var footnote: String? = nil
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            CurrencyCodeChip(currency: currency, tint: dotColor)
+
             HStack(spacing: 6) {
                 Circle()
                     .fill(dotColor)
                     .frame(width: 8, height: 8)
-                CurrencyCodeChip(currency: currency, tint: dotColor)
                 Text(label)
                     .font(.subheadline)
                     .foregroundColor(.secondaryText)
             }
+
             Spacer(minLength: 8)
+
             VStack(alignment: .trailing, spacing: 2) {
                 CurrencyAmountLabel(
                     text: value,
@@ -298,35 +315,24 @@ struct NetWorthCardView: View {
     }
 
     var body: some View {
-        AccentBarCard(title: "淨資產", titleCurrency: viewModel.viewCurrency, accentColor: .appPrimary) {
+        AccentBarCard(title: "淨資產", titleCurrency: viewModel.viewCurrency, accentColor: .homeNetWorthAccent) {
             VStack(spacing: 16) {
                 HomeExpandableCardHeader(isExpanded: $isExpanded) {
-                    ZStack {
-                        let netWorthShare = CGFloat(NSDecimalNumber(decimal: netWorthRatio / 100).doubleValue)
+                    AdaptivePercentageRingView(
+                        sharePercent: netWorthRatio,
+                        accentColor: .homeNetWorthAccent,
+                        ringSize: 50,
+                        lineWidth: 7,
+                        animatesProgressChanges: false
+                    )
 
-                        Circle()
-                            .trim(from: 0, to: 1.0)
-                            .stroke(Color.appPrimary.opacity(0.15), lineWidth: 7)
-                            .frame(width: 50, height: 50)
-
-                        Circle()
-                            .trim(from: 0, to: netWorthShare)
-                            .stroke(Color.appPrimary, style: StrokeStyle(lineWidth: 7, lineCap: .round))
-                            .frame(width: 50, height: 50)
-                            .rotationEffect(.degrees(-90))
-
-                        Text("\(netWorthRatio.formatted(fractionDigits: 1))%")
-                            .font(.caption2)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.appPrimary)
-                    }
-                    
-                    CurrencyAmountLabel(
+                    CurrencyAmountWithChip(
                         text: HomeAmountPrivacyFormat.currency(netWorth, currency: viewModel.viewCurrency, hidden: hideHomeAmounts),
                         currency: viewModel.viewCurrency,
                         font: .snapAmountHero,
                         weight: .bold,
-                        color: .primaryText
+                        color: .primaryText,
+                        animatesNumericContentTransition: false
                     )
                 }
                 
@@ -362,13 +368,14 @@ struct NetWorthCardView: View {
                                 hidden: hideHomeAmounts
                             ),
                             currency: viewModel.viewCurrency,
-                            valueColor: .appPrimary,
+                            valueColor: .homeNetWorthAccent,
                             emphasized: true
                         )
                     }
                 }
             }
         }
+        .snapHomeSummaryMetricStyle()
     }
 }
 
@@ -384,36 +391,25 @@ struct InvestmentAssetsCardView: View {
     }
 
     var body: some View {
-        AccentBarCard(title: "投資資產", titleCurrency: viewModel.viewCurrency, accentColor: .stockUSColor) {
+        AccentBarCard(title: "投資資產", titleCurrency: viewModel.viewCurrency, accentColor: .homeInvestmentsAccent) {
             VStack(spacing: 16) {
                 HomeExpandableCardHeader(isExpanded: $isExpanded) {
-                    ZStack {
-                        let investmentRatioDouble = CGFloat(NSDecimalNumber(decimal: investmentRatio / 100).doubleValue)
-                        
-                        Circle()
-                            .trim(from: 0, to: 1.0)
-                            .stroke(Color.stockUSColor.opacity(0.15), lineWidth: 7)
-                            .frame(width: 50, height: 50)
-                        
-                        Circle()
-                            .trim(from: 0, to: investmentRatioDouble)
-                            .stroke(Color.stockUSColor, style: StrokeStyle(lineWidth: 7, lineCap: .round))
-                            .frame(width: 50, height: 50)
-                            .rotationEffect(.degrees(-90))
-                        
-                        Text("\(investmentRatio.formatted(fractionDigits: 1))%")
-                            .font(.caption2)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.stockUSColor)
-                    }
-                    
-                    CurrencyAmountLabel(
+                    AdaptivePercentageRingView(
+                        sharePercent: investmentRatio,
+                        accentColor: .homeInvestmentsAccent,
+                        ringSize: 50,
+                        lineWidth: 7,
+                        animatesProgressChanges: false
+                    )
+
+                    CurrencyAmountWithChip(
                         text: HomeAmountPrivacyFormat.currency(viewModel.totalInvestments, currency: viewModel.viewCurrency, hidden: hideHomeAmounts),
                         currency: viewModel.viewCurrency,
                         font: .snapAmountHero,
                         weight: .bold,
                         color: .primaryText,
-                        chipTint: .stockUSColor
+                        chipTint: .homeInvestmentsAccent,
+                        animatesNumericContentTransition: false
                     )
                 }
                 
@@ -432,7 +428,7 @@ struct InvestmentAssetsCardView: View {
                             Spacer(minLength: 8)
                             HStack(spacing: 4) {
                                 if !hideHomeAmounts {
-                                    Image(systemName: viewModel.unrealizedGainLoss >= 0 ? "arrow.up" : "arrow.down")
+                                    Image(systemName: MarketDirectionSymbol.systemName(for: viewModel.unrealizedGainLoss))
                                         .font(.caption2)
                                         .foregroundColor(gainLossColor)
                                 }
@@ -482,12 +478,13 @@ struct InvestmentAssetsCardView: View {
                         HomeCardDetailRow(
                             label: "占總資產",
                             value: "\(investmentRatio.formatted(fractionDigits: 1))%",
-                            valueColor: .stockUSColor
+                            valueColor: .homeInvestmentsAccent
                         )
                     }
                 }
             }
         }
+        .snapHomeSummaryMetricStyle()
     }
 }
 
@@ -553,37 +550,26 @@ struct CashCardView: View {
         )
     }
     var body: some View {
-        AccentBarCard(title: "現金", titleCurrency: viewModel.viewCurrency, accentColor: .allocationTwdCash) {
+        AccentBarCard(title: "現金", titleCurrency: viewModel.viewCurrency, accentColor: .homeCashAccent) {
             VStack(spacing: 16) {
                 HomeExpandableCardHeader(isExpanded: $isExpanded) {
-                    ZStack {
-                        let cashColor = Color.allocationTwdCash
-                        let cashRatioDouble = CGFloat(NSDecimalNumber(decimal: cashRatio / 100).doubleValue)
-                        
-                        Circle()
-                            .trim(from: 0, to: 1.0)
-                            .stroke(cashColor.opacity(0.15), lineWidth: 7)
-                            .frame(width: 50, height: 50)
-                        
-                        Circle()
-                            .trim(from: 1.0 - cashRatioDouble, to: 1.0)
-                            .stroke(cashColor, style: StrokeStyle(lineWidth: 7, lineCap: .round))
-                            .frame(width: 50, height: 50)
-                            .rotationEffect(.degrees(-90))
-                        
-                        Text("\(cashRatio.formatted(fractionDigits: 1))%")
-                            .font(.caption2)
-                            .fontWeight(.semibold)
-                            .foregroundColor(cashColor)
-                    }
-                    
-                    CurrencyAmountLabel(
+                    AdaptivePercentageRingView(
+                        sharePercent: cashRatio,
+                        accentColor: .homeCashAccent,
+                        trimStyle: .counterclockwiseTail,
+                        ringSize: 50,
+                        lineWidth: 7,
+                        animatesProgressChanges: false
+                    )
+
+                    CurrencyAmountWithChip(
                         text: HomeAmountPrivacyFormat.currency(viewModel.totalCash, currency: viewModel.viewCurrency, hidden: hideHomeAmounts),
                         currency: viewModel.viewCurrency,
                         font: .snapAmountHero,
                         weight: .bold,
                         color: .primaryText,
-                        chipTint: .allocationTwdCash
+                        chipTint: .homeCashAccent,
+                        animatesNumericContentTransition: false
                     )
                 }
                 
@@ -630,7 +616,7 @@ struct CashCardView: View {
                         HomeCardDetailRow(
                             label: "占總資產",
                             value: "\(cashRatio.formatted(fractionDigits: 1))%",
-                            valueColor: .allocationTwdCash
+                            valueColor: .homeCashAccent
                         )
                         UsdTwdRateCaptionView(
                             preferredRate: displayUsdToTwdRate,
@@ -642,6 +628,7 @@ struct CashCardView: View {
                 }
             }
         }
+        .snapHomeSummaryMetricStyle()
     }
 }
 
@@ -665,12 +652,13 @@ struct TodayPLCardView: View {
                 if summary.hasData, !summary.categories.isEmpty {
                     HomeExpandableCardHeader(isExpanded: $isExpanded) {
                         VStack(alignment: .leading, spacing: 6) {
-                            CurrencyAmountLabel(
+                            CurrencyAmountWithChip(
                                 text: HomeAmountPrivacyFormat.currency(displayChange, currency: viewModel.viewCurrency, hidden: hideHomeAmounts),
                                 currency: viewModel.viewCurrency,
                                 font: .snapAmountHero,
                                 weight: .bold,
-                                color: Color.marketColor(for: summary.totalChangeTWD)
+                                color: Color.marketColor(for: summary.totalChangeTWD),
+                                animatesNumericContentTransition: false
                             )
 
                             todayPLPercentLabel(
@@ -684,12 +672,13 @@ struct TodayPLCardView: View {
                     HStack(alignment: .firstTextBaseline) {
                         VStack(alignment: .leading, spacing: 6) {
                             if summary.hasData {
-                                CurrencyAmountLabel(
+                                CurrencyAmountWithChip(
                                     text: HomeAmountPrivacyFormat.currency(displayChange, currency: viewModel.viewCurrency, hidden: hideHomeAmounts),
                                     currency: viewModel.viewCurrency,
                                     font: .snapAmountHero,
                                     weight: .bold,
-                                    color: Color.marketColor(for: summary.totalChangeTWD)
+                                    color: Color.marketColor(for: summary.totalChangeTWD),
+                                    animatesNumericContentTransition: false
                                 )
 
                                 todayPLPercentLabel(
@@ -720,6 +709,7 @@ struct TodayPLCardView: View {
                 }
             }
         }
+        .snapHomeSummaryMetricStyle()
     }
 
     @ViewBuilder
@@ -737,7 +727,7 @@ struct TodayPLCardView: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 2) {
-                CurrencyAmountLabel(
+                CurrencyAmountWithChip(
                     text: HomeAmountPrivacyFormat.currency(displayAmount(category.changeTWD), currency: viewModel.viewCurrency, hidden: hideHomeAmounts),
                     currency: viewModel.viewCurrency,
                     font: .subheadline,
@@ -761,7 +751,7 @@ struct TodayPLCardView: View {
     private func todayPLPercentLabel(percent: Decimal, font: Font, weight: Font.Weight) -> some View {
         let up = percent >= 0
         return HStack(spacing: 3) {
-            Image(systemName: up ? "arrow.up" : "arrow.down")
+            Image(systemName: MarketDirectionSymbol.systemName(isUp: up))
                 .font(.caption2.weight(.bold))
             Text("\(signedPercent(percent))%")
                 .font(font)
@@ -839,12 +829,13 @@ struct RealizedPLCardView: View {
         AccentBarCard(title: "已實現損益", titleCurrency: viewModel.viewCurrency, accentColor: .appPrimary) {
             VStack(spacing: 16) {
                 HomeExpandableCardHeader(isExpanded: $isExpanded) {
-                    CurrencyAmountLabel(
+                    CurrencyAmountWithChip(
                         text: viewModel.realizedGainLoss.formatted(currency: viewModel.viewCurrency),
                         currency: viewModel.viewCurrency,
                         font: .snapAmountHero,
                         weight: .bold,
-                        color: Color.marketColor(for: viewModel.realizedGainLoss)
+                        color: Color.marketColor(for: viewModel.realizedGainLoss),
+                        animatesNumericContentTransition: false
                     )
                 }
                 
@@ -875,6 +866,7 @@ struct RealizedPLCardView: View {
                 }
             }
         }
+        .snapHomeSummaryMetricStyle()
         .onChange(of: isExpanded) { _, expanded in
             guard expanded else { return }
             Task { await loadDetailsIfNeeded(force: false) }
@@ -914,17 +906,14 @@ struct RealizedPLCardView: View {
     private func realizedSection(transactions: [Transaction], currency: Currency, total: Decimal) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
-                CurrencyTitleLabel(
-                    title: "已實現損益",
-                    currency: currency,
-                    font: .subheadline,
-                    weight: .semibold,
-                    color: .primaryText
-                )
+                Text("已實現損益")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primaryText)
 
                 Spacer(minLength: 8)
 
-                CurrencyAmountLabel(
+                CurrencyAmountWithChip(
                     text: total.formatted(currency: currency),
                     currency: currency,
                     font: .subheadline,

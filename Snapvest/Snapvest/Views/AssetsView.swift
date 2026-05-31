@@ -115,7 +115,11 @@ struct AssetsView: View {
             .onAppear {
                 holdingsCurrencyDisplay = .twd
             }
-            .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { notification in
+                if notification.userInfo?[SnapshotUpdateUserInfoKey.alreadyApplied] as? Bool == true {
+                    Task { await refreshSelectedHoldingIfNeeded() }
+                    return
+                }
                 Task {
                     await LaunchCoordinator.applyPersistedState(
                         userId: userId,
@@ -508,35 +512,19 @@ struct AllHoldingCard: View {
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 12) {
-                // 圓形比例圖標
-                ZStack {
-                    Circle()
-                        .stroke(holdingColor.opacity(0.2), lineWidth: 4)
-                        .frame(width: 40, height: 40)
-                    
-                    Circle()
-                        .trim(from: 0, to: CGFloat(min(1.0, NSDecimalNumber(decimal: item.ratio / 100).doubleValue)))
-                        .stroke(holdingColor, style: StrokeStyle(lineWidth: 4, lineCap: .round))
-                        .frame(width: 40, height: 40)
-                        .rotationEffect(.degrees(-90))
-                    
-                    Text("\(item.ratio.formatted(fractionDigits: 1))%")
-                        .font(.caption2)
+                AdaptivePercentageRingView(
+                    sharePercent: item.ratio,
+                    accentColor: holdingColor,
+                    ringSize: 40,
+                    lineWidth: 4
+                )
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.displayName)
+                        .font(.headline)
                         .fontWeight(.semibold)
                         .foregroundColor(.primaryText)
-                }
-                
-                // 持股信息（只顯示名稱）
-                VStack(alignment: .leading, spacing: 4) {
-                    CurrencyTitleLabel(
-                        title: item.displayName,
-                        currency: showOriginalCurrency ? item.currency : baseCurrency,
-                        font: .headline,
-                        weight: .semibold,
-                        color: .primaryText,
-                        chipTint: holdingColor,
-                        titleLineLimit: 1
-                    )
+                        .lineLimit(1)
                 }
                 
                 Spacer()
@@ -545,31 +533,30 @@ struct AllHoldingCard: View {
                 VStack(alignment: .trailing, spacing: 4) {
                     // 根據 showOriginalCurrency 決定顯示台幣還是原幣
                     if showOriginalCurrency {
-                        // 顯示原幣市值
                         let originalMarketValue = item.aggregatedHolding.totalQuantity * item.currentPrice
-                        CurrencyAmountLabel(
+                        CurrencyAmountWithChip(
                             text: originalMarketValue.formatted(currency: item.currency),
                             currency: item.currency,
                             font: .snapAmountRow,
-                            weight: .semibold,
+                            weight: .bold,
                             color: .primaryText,
                             chipTint: holdingColor
                         )
                     } else {
                         let displayValue = twdPerBaseCurrency > 0 ? item.marketValue / twdPerBaseCurrency : item.marketValue
-                        CurrencyAmountLabel(
+                        CurrencyAmountWithChip(
                             text: displayValue.formatted(currency: baseCurrency),
                             currency: baseCurrency,
                             font: .snapAmountRow,
-                            weight: .semibold,
+                            weight: .bold,
                             color: .primaryText,
                             chipTint: holdingColor
                         )
                     }
                     
                     HStack(spacing: 4) {
-                        Image(systemName: item.unrealizedGainLoss >= 0 ? "arrow.up" : "arrow.down")
-                            .font(.caption2)
+                        Image(systemName: MarketDirectionSymbol.systemName(for: item.unrealizedGainLoss))
+                            .font(.caption2.weight(.bold))
                         if showOriginalCurrency {
                             // 顯示原幣損益
                             let originalCost = item.aggregatedHolding.totalCost
@@ -578,14 +565,18 @@ struct AllHoldingCard: View {
                             let originalGainLossPercent: Decimal = originalCost > 0 ? (originalGainLoss / originalCost) * 100 : 0
                             Text(originalGainLoss.formatted(currency: item.currency, showSymbol: false))
                                 .font(.caption)
+                                .fontWeight(.bold)
                             Text("(\(originalGainLossPercent.formatted(fractionDigits: 1))%)")
                                 .font(.caption)
+                                .fontWeight(.bold)
                         } else {
                             let displayGainLoss = twdPerBaseCurrency > 0 ? item.unrealizedGainLoss / twdPerBaseCurrency : item.unrealizedGainLoss
                             Text(displayGainLoss.formatted(currency: baseCurrency, showSymbol: false))
                                 .font(.caption)
+                                .fontWeight(.bold)
                             Text("(\(item.unrealizedGainLossPercent.formatted(fractionDigits: 1))%)")
                                 .font(.caption)
+                                .fontWeight(.bold)
                         }
                     }
                     .foregroundColor(Color.marketColor(for: item.unrealizedGainLoss))
@@ -599,7 +590,7 @@ struct AllHoldingCard: View {
                 HStack {
                     RoundedRectangle(cornerRadius: 16)
                         .fill(holdingColor)
-                        .frame(width: 4)
+                        .frame(width: SnapOverviewBarMetrics.detailWidth)
                     Spacer()
                 }
             )

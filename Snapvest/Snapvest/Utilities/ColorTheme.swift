@@ -7,7 +7,7 @@
 
 import SwiftUI
 
-// MARK: - 集中化顏色集合（隨 ThemeManager 切換淺色 / 深色，方向 A）
+// MARK: - 集中化顏色集合（隨 ThemeManager：風格 × 淺色 / 深色）
 enum AppColors {
     private static var p: ThemePalette { ThemeManager.shared.palette }
     
@@ -119,6 +119,11 @@ enum AppColors {
     static var chartBackdropLight: Color { p.chartBackdropLight }
     static var chartBackdropDark: Color { p.chartBackdropDark }
     static var cashAccountColor: Color { p.cashAccountColor }
+    static var homeNetWorthAccent: Color { p.homeNetWorthAccent }
+    static var homeInvestmentsAccent: Color { p.homeInvestmentsAccent }
+    static var homeCashAccent: Color { p.homeCashAccent }
+    static var manualAssetColor: Color { p.manualAssetColor }
+    static var manualAssetLight: Color { p.manualAssetLight }
 }
 
 /// iOS 風格的顏色主題（為舊有呼叫提供相容入口）
@@ -191,4 +196,9 @@ extension Color {
     static var colorOptionsForPicker: [Color] { AppColors.colorOptionsForPicker }
     static var allocationTwdCash: Color { AppColors.allocationTwdCash }
     static var allocationUsdCash: Color { AppColors.allocationUsdCash }
+    static var homeNetWorthAccent: Color { AppColors.homeNetWorthAccent }
+    static var homeInvestmentsAccent: Color { AppColors.homeInvestmentsAccent }
+    static var homeCashAccent: Color { AppColors.homeCashAccent }
+    static var manualAssetColor: Color { AppColors.manualAssetColor }
+    static var manualAssetLight: Color { AppColors.manualAssetLight }
 }

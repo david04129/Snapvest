@@ -153,39 +153,13 @@ struct AddLiabilityView: View {
                                 .foregroundColor(.primaryText)
                         }
                         
-                        Button(action: {
-                            showingAccountPicker = true
-                        }) {
-                            CardView {
-                                HStack(spacing: 12) {
-                                    if let account = selectedRepaymentAccount {
-                                        Image(systemName: account.accountType.icon)
-                                            .font(.system(size: 20))
-                                            .foregroundColor(account.accountType.color)
-                                            .frame(width: 24, height: 24)
-                                        
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text(account.name)
-                                                .font(.headline)
-                                                .foregroundColor(.primaryText)
-                                            Text(account.accountType.displayName)
-                                                .font(.caption)
-                                                .foregroundColor(.secondaryText)
-                                        }
-                                    } else {
-                                        Text("選擇一個台幣帳戶")
-                                            .foregroundColor(.secondaryText)
-                                    }
-                                    
-                                    Spacer()
-                                    
-                                    Image(systemName: "chevron.down")
-                                        .font(.system(size: 14))
-                                        .foregroundColor(.secondaryText)
-                                }
-                            }
-                        }
-                        .buttonStyle(PlainButtonStyle())
+                        AccountPickerTriggerField(
+                            placeholder: "選擇一個台幣帳戶",
+                            selectedAccount: selectedRepaymentAccount,
+                            subtitle: selectedRepaymentAccount?.accountType.displayName,
+                            tint: .lossRed,
+                            action: { showingAccountPicker = true }
+                        )
                     }
                     .padding(.horizontal)
                     
@@ -275,10 +249,15 @@ struct AddLiabilityView: View {
                 }
             }
             .sheet(isPresented: $showingAccountPicker) {
-                LiabilityAccountPickerSheet(
+                AccountSelectionSheet(
+                    title: "選擇還款帳戶",
                     accounts: availableRepaymentAccounts,
-                    selectedAccount: $selectedRepaymentAccount
+                    selectedAccount: $selectedRepaymentAccount,
+                    tint: .lossRed
                 )
+                .snapFormSheetChrome()
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
             }
         }
         .navigationTitle(editingLiability == nil ? "新增債務帳戶" : "編輯債務帳戶")
@@ -497,60 +476,6 @@ struct AddLiabilityView: View {
                 dismiss()
             } catch {
                 // TODO: 顯示錯誤訊息
-            }
-        }
-    }
-}
-
-// MARK: - 債務還款帳戶選擇器 Sheet
-struct LiabilityAccountPickerSheet: View {
-    let accounts: [Account]
-    @Binding var selectedAccount: Account?
-    @Environment(\.dismiss) var dismiss
-    
-    var body: some View {
-        NavigationStack {
-            List {
-                ForEach(accounts) { account in
-                    Button(action: {
-                        selectedAccount = account
-                        dismiss()
-                    }) {
-                        HStack {
-                            Image(systemName: account.accountType.icon)
-                                .font(.system(size: 24))
-                                .frame(width: 32, height: 32)
-                                .foregroundColor(account.accountType.color)
-                            
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(account.name)
-                                    .font(.headline)
-                                    .foregroundColor(.primaryText)
-                                Text(account.accountType.displayName)
-                                    .font(.caption)
-                                    .foregroundColor(.secondaryText)
-                            }
-                            
-                            Spacer()
-                            
-                            if selectedAccount?.id == account.id {
-                                Image(systemName: "checkmark")
-                                    .foregroundColor(.appPrimary)
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
-            }
-            .navigationTitle("選擇還款帳戶")
-            .navigationBarTitleDisplayMode(.inline)
-            .tint(.appPrimary)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("取消") {
-                        dismiss()
-                    }
-                }
             }
         }
     }

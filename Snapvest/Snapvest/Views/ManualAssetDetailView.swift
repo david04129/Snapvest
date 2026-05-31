@@ -19,6 +19,10 @@ struct ManualAssetDetailView: View {
     @State private var showingRenameSheet = false
     @State private var showingUpdateValueSheet = false
     @State private var isDetailsExpanded = false
+    @State private var valuationEntries: [ManualAssetValuationHistoryEntry] = []
+    @State private var isLoadingValuations = false
+    @State private var showValuationHistory = false
+    @State private var editingValuationEntry: ManualAssetValuationHistoryEntry?
 
     init(
         asset: ManualAsset,
@@ -35,7 +39,7 @@ struct ManualAssetDetailView: View {
         _displayAsset = State(initialValue: asset)
     }
 
-    private var accentColor: Color { .stockUSColor }
+    private var accentColor: Color { .manualAssetColor }
 
     private var currentValueTWD: Decimal {
         ManualAssetMetrics.valueTWD(asset: displayAsset, rates: twdRateByCurrency) ?? displayAsset.currentValue
@@ -58,6 +62,13 @@ struct ManualAssetDetailView: View {
             VStack(spacing: 16) {
                 heroCard
                 metricsGrid
+                ManualAssetValuationHistoryPreviewSection(
+                    asset: displayAsset,
+                    entries: valuationEntries,
+                    isLoading: isLoadingValuations,
+                    onViewAll: { showValuationHistory = true },
+                    onSelectEntry: { editingValuationEntry = $0 }
+                )
                 detailsCard
             }
             .padding(.horizontal, 20)
@@ -89,7 +100,63 @@ struct ManualAssetDetailView: View {
                 viewModel: viewModel
             ) { updated in
                 displayAsset = updated
+                Task { await reloadValuationEntries() }
             }
+        }
+        .navigationDestination(isPresented: $showValuationHistory) {
+            ManualAssetValuationHistoryView(
+                asset: displayAsset,
+                viewModel: viewModel,
+                onAssetUpdated: { displayAsset = $0 }
+            )
+        }
+        .sheet(item: $editingValuationEntry) { entry in
+            valuationEditSheet(for: entry)
+        }
+        .task {
+            await reloadValuationEntries()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { _ in
+            Task { await reloadValuationEntries() }
+        }
+    }
+
+    @ViewBuilder
+    private func valuationEditSheet(for entry: ManualAssetValuationHistoryEntry) -> some View {
+        if entry.isCreation {
+            ManualAssetFormView(
+                viewModel: viewModel,
+                mode: .edit(asset: displayAsset, syncCreationValuation: true),
+                chrome: .sheet,
+                onCancel: { editingValuationEntry = nil },
+                onSaved: {
+                    editingValuationEntry = nil
+                    Task { await reloadValuationEntries() }
+                }
+            )
+        } else {
+            ManualAssetUpdateValueView(
+                asset: displayAsset,
+                viewModel: viewModel,
+                editingValuation: entry.valuation
+            ) { updated in
+                displayAsset = updated
+                editingValuationEntry = nil
+                Task { await reloadValuationEntries() }
+            }
+        }
+    }
+
+    @MainActor
+    private func reloadValuationEntries() async {
+        isLoadingValuations = true
+        defer { isLoadingValuations = false }
+
+        let valuations = await viewModel.loadValuations(assetId: displayAsset.id)
+        valuationEntries = ManualAssetValuationHistoryBuilder.entries(from: valuations)
+
+        if let refreshed = viewModel.assets.first(where: { $0.id == displayAsset.id }) {
+            displayAsset = refreshed
         }
     }
 
@@ -456,7 +523,7 @@ struct ManualAssetUpdateValueView: View {
         _notes = State(initialValue: editingValuation?.notes ?? "")
     }
 
-    private var themeColor: Color { .appPrimary }
+    private var themeColor: Color { .manualAssetColor }
 
     private var newValue: Decimal? {
         Decimal(string: newValueText)
@@ -784,175 +851,3 @@ struct ManualAssetUpdateValueView: View {
     }
 }
 
-struct ManualAssetEditSheet: View {
-    enum Mode {
-        case full
-        case valueOnly
-    }
-
-    let asset: ManualAsset
-    @ObservedObject var viewModel: ManualAssetsViewModel
-    let mode: Mode
-    var syncCreationValuation: Bool = false
-    let onSaved: (ManualAsset) -> Void
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var name: String
-    @State private var category: ManualAssetCategory
-    @State private var currency: Currency
-    @State private var currentValue: String
-    @State private var costBasis: String
-    @State private var isIncludedInTotalAssets: Bool
-    @State private var isIncludedInInvestments: Bool
-    @State private var purchaseDate: Date
-    @State private var includesPurchaseDate: Bool
-    @State private var notes: String
-    @State private var errorMessage: String?
-
-    init(
-        asset: ManualAsset,
-        viewModel: ManualAssetsViewModel,
-        mode: Mode,
-        syncCreationValuation: Bool = false,
-        onSaved: @escaping (ManualAsset) -> Void
-    ) {
-        self.asset = asset
-        self.viewModel = viewModel
-        self.mode = mode
-        self.syncCreationValuation = syncCreationValuation
-        self.onSaved = onSaved
-        _name = State(initialValue: asset.name)
-        _category = State(initialValue: asset.category)
-        _currency = State(initialValue: asset.currency)
-        _currentValue = State(initialValue: NSDecimalNumber(decimal: asset.currentValue).stringValue)
-        _costBasis = State(initialValue: asset.costBasis.map { NSDecimalNumber(decimal: $0).stringValue } ?? "")
-        _isIncludedInTotalAssets = State(initialValue: asset.isIncludedInTotalAssets)
-        _isIncludedInInvestments = State(initialValue: asset.isIncludedInInvestments)
-        _purchaseDate = State(initialValue: asset.purchaseDate ?? Date())
-        _includesPurchaseDate = State(initialValue: asset.purchaseDate != nil)
-        _notes = State(initialValue: asset.notes ?? "")
-    }
-
-    private var title: String {
-        mode == .valueOnly ? "更新現值" : "編輯其他資產"
-    }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                if mode == .full {
-                    Section("基本資料") {
-                        Picker("類別", selection: $category) {
-                            ForEach(ManualAssetCategory.allCases) { category in
-                                Text(category.displayName).tag(category)
-                            }
-                        }
-                        TextField("名稱", text: $name)
-                        Picker("幣別", selection: $currency) {
-                            ForEach(Currency.baseCurrencyOptions, id: \.self) { currency in
-                                Text(currency.rawValue).tag(currency)
-                            }
-                        }
-                    }
-                }
-
-                Section(mode == .valueOnly ? "目前現值" : "估值") {
-                    TextField("目前現值", text: $currentValue)
-                        .keyboardType(.decimalPad)
-                    if mode == .full {
-                        Toggle("納入總資產", isOn: $isIncludedInTotalAssets)
-                        Toggle("納入投資", isOn: $isIncludedInInvestments)
-                            .disabled(!isIncludedInTotalAssets)
-                        if isIncludedInInvestments {
-                            TextField("成本（必填）", text: $costBasis)
-                                .keyboardType(.decimalPad)
-                        }
-                    }
-                }
-
-                if mode == .full {
-                    Section("其他") {
-                        Toggle("填寫購買日期", isOn: $includesPurchaseDate)
-                        if includesPurchaseDate {
-                            DatePicker("購買日期", selection: $purchaseDate, displayedComponents: .date)
-                        }
-                        TextField("備註", text: $notes, axis: .vertical)
-                    }
-                }
-
-                if let message = errorMessage ?? viewModel.errorMessage {
-                    Section {
-                        Text(message)
-                            .font(.subheadline)
-                            .foregroundColor(.lossRed)
-                    }
-                }
-            }
-            .navigationTitle(title)
-            .navigationBarTitleDisplayMode(.inline)
-            .onChange(of: isIncludedInTotalAssets) { _, included in
-                if !included { isIncludedInInvestments = false }
-            }
-            .onChange(of: isIncludedInInvestments) { _, included in
-                if included { isIncludedInTotalAssets = true }
-            }
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("儲存") {
-                        Task { await save() }
-                    }
-                    .disabled(viewModel.isSaving)
-                }
-            }
-        }
-        .snapFormSheetChrome()
-    }
-
-    @MainActor
-    private func save() async {
-        guard let value = Decimal(string: currentValue) else {
-            errorMessage = "請輸入有效的現值"
-            return
-        }
-        let parsedCost: Decimal?
-        if costBasis.isEmpty {
-            parsedCost = nil
-        } else if let cost = Decimal(string: costBasis) {
-            parsedCost = cost
-        } else {
-            errorMessage = "請輸入有效的成本"
-            return
-        }
-
-        var form = ManualAssetFormState(asset: asset)
-        if mode == .full {
-            form.name = name
-            form.category = category
-            form.currency = currency
-            form.costBasis = parsedCost
-            form.purchaseDate = includesPurchaseDate ? purchaseDate : nil
-            form.notes = notes
-            form.isIncludedInTotalAssets = isIncludedInTotalAssets
-            form.isIncludedInInvestments = isIncludedInInvestments
-        }
-        form.currentValue = value
-
-        let succeeded = await viewModel.updateAsset(
-            id: asset.id,
-            formState: form,
-            userId: asset.userId,
-            syncCreationValuation: syncCreationValuation
-        )
-        if succeeded {
-            var updated = try? form.makeAsset(userId: asset.userId, existing: asset)
-            updated?.currentValue = value
-            onSaved(updated ?? asset)
-            dismiss()
-        } else {
-            errorMessage = viewModel.errorMessage
-        }
-    }
-}

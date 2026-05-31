@@ -41,7 +41,11 @@ struct HomePerformanceChartSection: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            chartHeader(title: "績效圖", subtitle: mode.rawValue)
+            chartHeader(
+                title: "績效圖",
+                subtitle: mode.rawValue,
+                currency: mode == .gainLoss ? currency : nil
+            )
             
             ChartSegmentedControl(
                 options: PerformanceDisplayMode.allCases,
@@ -77,6 +81,7 @@ struct HomePerformanceChartSection: View {
                     }
                 }
                 .animation(ChartMotion.switchSpring, value: mode)
+                .animation(ChartMotion.switchSpring, value: groupingStore.isGroupingEnabled)
                 .padding(.horizontal, 12)
                 .padding(.bottom, 16)
                 .opacity(contentPhase)
@@ -90,9 +95,9 @@ struct HomePerformanceChartSection: View {
         .opacity(isInteractionLocked ? 0.45 : 1)
         .animation(ChartMotion.switchQuick, value: isInteractionLocked)
     }
-    
-    private func chartHeader(title: String, subtitle: String) -> some View {
-        HStack(alignment: .firstTextBaseline) {
+
+    private func chartHeader(title: String, subtitle: String, currency: Currency? = nil) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(title)
                 .font(.system(size: 17, weight: .bold))
                 .foregroundColor(.primaryText)
@@ -102,10 +107,10 @@ struct HomePerformanceChartSection: View {
             Text(subtitle)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundColor(AppColors.appPrimary)
-            if mode == .gainLoss {
-                CurrencyCodeChip(currency: currency, tint: AppColors.appPrimary)
+            if let currency {
+                CurrencyCodeChip(currency: currency, tint: .appPrimary)
             }
-            Spacer()
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, 16)
         .padding(.top, 16)
@@ -213,7 +218,7 @@ private struct PerformanceTornadoRow: View {
             .frame(height: 22)
             
             Text(valueText)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.snapChartRowValue)
                 .foregroundColor(valueColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)

@@ -45,7 +45,7 @@ enum AccountsSnapshotDisplayBuilder {
         let priceMap = Dictionary(
             uniqueKeysWithValues: priceSnapshots.map { ("\($0.assetType.rawValue)_\($0.symbol)", $0) }
         )
-        let rateTable = await loadRateTable(
+        let rateTable = await ExchangeRateSessionCache.loadRateTable(
             currencies: currencies,
             dataService: dataService,
             usdToTwdRate: usdToTwdRate
@@ -244,24 +244,6 @@ enum AccountsSnapshotDisplayBuilder {
         guard currency != .TWD else { return accountTotal }
         guard let rate = rateTable.rate(from: currency, to: .TWD) else { return accountTotal }
         return accountTotal * rate
-    }
-
-    private static func loadRateTable(
-        currencies: Set<Currency>,
-        dataService: DataServiceProtocol,
-        usdToTwdRate: Decimal
-    ) async -> CurrencyRateTable {
-        var rates: [Currency: Decimal] = [.TWD: 1]
-        if usdToTwdRate > 0 {
-            rates[.USD] = usdToTwdRate
-        }
-        for currency in currencies where currency != .TWD && rates[currency] == nil {
-            if let rate = try? await dataService.fetchExchangeRate(from: currency, to: .TWD, date: nil)?.rate,
-               rate > 0 {
-                rates[currency] = rate
-            }
-        }
-        return CurrencyRateTable(twdPerCurrency: rates)
     }
 
     private static func holdingsValueInAccountCurrency(

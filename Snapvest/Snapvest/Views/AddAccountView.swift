@@ -7,16 +7,26 @@
 
 import SwiftUI
 
+private enum AddItemScreen: Equatable {
+    case hub
+    case manualAsset
+    case accountForm(AccountType)
+
+    var accountType: AccountType? {
+        if case .accountForm(let accountType) = self {
+            return accountType
+        }
+        return nil
+    }
+}
+
 struct AddAccountView: View {
     @ObservedObject var viewModel: AccountsViewModel
     @Environment(\.dismiss) var dismiss
-    @StateObject private var transactionsViewModel = TransactionsViewModel()
     @StateObject private var manualAssetsViewModel = ManualAssetsViewModel()
     
-    @State private var selectedItemKind: AddItemKind?
-    @State private var selectedAccountType: AccountType?
+    @State private var screen: AddItemScreen = .hub
     @State private var selectedCurrency: Currency = .TWD
-    @State private var showingAccountDetails = false
     @State private var name: String = ""
     @State private var initialBalance: String = ""
     // 債務相關欄位
@@ -45,7 +55,7 @@ struct AddAccountView: View {
         startDate = Date()
         otherDebtAmount = ""
         otherDebtNotes = ""
-        selectedCurrency = preferredDefaultCurrency(for: selectedAccountType)
+        selectedCurrency = preferredDefaultCurrency(for: screen.accountType)
         duplicateNameError = nil
     }
     
@@ -68,148 +78,55 @@ struct AddAccountView: View {
     
     // 動態導航標題
     private var navigationTitle: String {
-        if showingAccountDetails, let accountType = selectedAccountType {
+        switch screen {
+        case .hub:
+            return "新增項目"
+        case .manualAsset:
+            return AddItemKind.manualAsset.navigationTitle
+        case .accountForm(let accountType):
             return "新增\(accountType.displayName)"
         }
-        if let selectedItemKind {
-            return selectedItemKind.navigationTitle
-        }
-        return "新增項目"
     }
 
-    private var visibleAccountCategories: [AccountCategory] {
-        switch selectedItemKind {
-        case .account:
-            return [.deposit, .investment]
-        case .liability:
-            return [.liability]
-        case .manualAsset, .none:
-            return []
+    private func openAccountForm(_ accountType: AccountType) {
+        resetForm()
+        selectedCurrency = preferredDefaultCurrency(for: accountType)
+        withAnimation(.easeInOut(duration: 0.22)) {
+            screen = .accountForm(accountType)
+        }
+    }
+
+    private func returnToAddItemHub() {
+        resetForm()
+        withAnimation(.easeInOut(duration: 0.22)) {
+            screen = .hub
         }
     }
     
     var body: some View {
         NavigationStack {
             Group {
-                if selectedItemKind == nil {
-                    AddItemKindSelectionView { kind in
-                        selectedItemKind = kind
-                    }
-                } else if selectedItemKind == .manualAsset {
-                    ManualAssetFormView(
-                        viewModel: manualAssetsViewModel,
-                        userId: userId,
-                        onCancel: {
-                            selectedItemKind = nil
-                        },
-                        onSaved: {
-                            dismiss()
+                switch screen {
+                case .hub:
+                    AddItemHubView(
+                        onSelectAccountType: openAccountForm,
+                        onSelectManualAsset: {
+                            resetForm()
+                            withAnimation(.easeInOut(duration: 0.22)) {
+                                screen = .manualAsset
+                            }
                         }
                     )
-                } else if !showingAccountDetails {
-                    // 選擇帳戶／負債類型
-                    VStack(spacing: 0) {
-                        // 標題和說明
-                        AddSheetHeroCard(
-                            title: selectedItemKind?.navigationTitle ?? "新增項目",
-                            subtitle: selectedItemKind?.selectionDescription ?? "請選擇您想建立的項目。",
-                            accentColor: selectedItemKind?.color ?? .appPrimary,
-                            badge: "選擇類型"
-                        )
-                        .padding(.horizontal)
-                        .padding(.top, 12)
-                        .padding(.bottom, 10)
-                        
-                        // 帳戶類型選擇（存款／投資／債務）
-                        ScrollView {
-                            VStack(alignment: .leading, spacing: 20) {
-                                ForEach(visibleAccountCategories) { category in
-                                    VStack(alignment: .leading, spacing: 10) {
-                                        Text(category.rawValue)
-                                            .font(.subheadline)
-                                            .fontWeight(.semibold)
-                                            .foregroundColor(.secondaryText)
-                                        
-                                        ForEach(category.accountTypes, id: \.self) { accountType in
-                                            AccountTypeSelectionCard(
-                                                accountType: accountType,
-                                                isSelected: selectedAccountType == accountType
-                                            ) {
-                                                resetForm()
-                                                selectedAccountType = accountType
-                                                selectedCurrency = preferredDefaultCurrency(for: accountType)
-                                                withAnimation {
-                                                    showingAccountDetails = true
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            .padding()
-                        }
-                    }
-                } else {
-                    // 第二步：輸入帳戶詳情
-                    if selectedAccountType == .debt {
-                        DebtAccountDetailsFormView(
-                            name: $name,
-                            principal: $principal,
-                            totalPeriods: $totalPeriods,
-                            paidPeriods: $paidPeriods,
-                            interestRate: $interestRate,
-                            monthlyPayment: $monthlyPayment,
-                            repaymentDay: $repaymentDay,
-                            startDate: $startDate,
-                            selectedCurrency: $selectedCurrency,
-                            accountsViewModel: viewModel,
-                            duplicateNameError: $duplicateNameError,
-                            onCancel: {
-                                resetForm() // 重置表單
-                                withAnimation {
-                                    showingAccountDetails = false
-                                }
-                            },
-                            onSave: {
-                                saveDebtAccount()
-                            }
-                        )
-                    } else if selectedAccountType == .otherDebt {
-                        OtherDebtAccountDetailsFormView(
-                            name: $name,
-                            amount: $otherDebtAmount,
-                            notes: $otherDebtNotes,
-                            startDate: $startDate,
-                            selectedCurrency: $selectedCurrency,
-                            duplicateNameError: $duplicateNameError,
-                            onCancel: {
-                                resetForm()
-                                withAnimation {
-                                    showingAccountDetails = false
-                                }
-                            },
-                            onSave: {
-                                saveOtherDebtAccount()
-                            }
-                        )
-                    } else {
-                        AccountDetailsFormView(
-                            accountType: selectedAccountType!,
-                            name: $name,
-                            initialBalance: $initialBalance,
-                            selectedCurrency: $selectedCurrency,
-                            duplicateNameError: $duplicateNameError,
-                            onCancel: {
-                                resetForm() // 重置表單
-                                withAnimation {
-                                    showingAccountDetails = false
-                                }
-                            },
-                            onSave: {
-                                saveAccount()
-                            }
-                        )
-                    }
+                case .manualAsset:
+                    ManualAssetFormView(
+                        viewModel: manualAssetsViewModel,
+                        mode: .create(userId: userId),
+                        chrome: .embedded,
+                        onCancel: returnToAddItemHub,
+                        onSaved: { dismiss() }
+                    )
+                case .accountForm(let accountType):
+                    accountFormContent(for: accountType)
                 }
             }
             .navigationTitle(navigationTitle)
@@ -218,37 +135,77 @@ struct AddAccountView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     SnapToolbarIconButton(icon: .back) {
-                        if showingAccountDetails {
-                            resetForm()
-                            withAnimation {
-                                showingAccountDetails = false
-                            }
-                        } else if selectedItemKind != nil {
-                            selectedItemKind = nil
-                        } else {
+                        if screen == .hub {
                             dismiss()
+                        } else {
+                            returnToAddItemHub()
                         }
                     }
+                    .disabled(viewModel.isSaving)
                 }
             }
         }
         .onAppear {
             resetForm()
-            selectedItemKind = nil
+            screen = .hub
         }
         .snapFormSheetChrome()
     }
+
+    @ViewBuilder
+    private func accountFormContent(for accountType: AccountType) -> some View {
+        switch accountType {
+        case .debt:
+            DebtAccountDetailsFormView(
+                name: $name,
+                principal: $principal,
+                totalPeriods: $totalPeriods,
+                paidPeriods: $paidPeriods,
+                interestRate: $interestRate,
+                monthlyPayment: $monthlyPayment,
+                repaymentDay: $repaymentDay,
+                startDate: $startDate,
+                selectedCurrency: $selectedCurrency,
+                accountsViewModel: viewModel,
+                duplicateNameError: $duplicateNameError,
+                onCancel: returnToAddItemHub,
+                onSave: { Task { await saveDebtAccount() } }
+            )
+        case .otherDebt:
+            OtherDebtAccountDetailsFormView(
+                name: $name,
+                amount: $otherDebtAmount,
+                notes: $otherDebtNotes,
+                startDate: $startDate,
+                selectedCurrency: $selectedCurrency,
+                accountsViewModel: viewModel,
+                duplicateNameError: $duplicateNameError,
+                onCancel: returnToAddItemHub,
+                onSave: { Task { await saveOtherDebtAccount() } }
+            )
+        default:
+            AccountDetailsFormView(
+                accountType: accountType,
+                name: $name,
+                initialBalance: $initialBalance,
+                selectedCurrency: $selectedCurrency,
+                duplicateNameError: $duplicateNameError,
+                accountsViewModel: viewModel,
+                onCancel: returnToAddItemHub,
+                onSave: { Task { await saveAccount() } }
+            )
+        }
+    }
     
-    private func saveAccount() {
-        guard let accountType = selectedAccountType else { return }
+    @MainActor
+    private func saveAccount() async {
+        guard case .accountForm(let accountType) = screen else { return }
         
-        // 檢查名稱是否為空
         guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
             duplicateNameError = "請輸入帳戶名稱"
             return
         }
         
-        // 檢查同一類型是否已有相同名稱的帳戶
         if isDuplicateName(name, accountType: accountType) {
             duplicateNameError = "此帳戶類型已存在相同名稱的帳戶"
             return
@@ -263,11 +220,8 @@ struct AddAccountView: View {
             currency: selectedCurrency
         )
         
-        Task {
-            // 創建帳戶
-            await viewModel.createAccount(account)
-            
-            // 如果有初始餘額，創建一筆 deposit 交易
+        let succeeded = await viewModel.runAccountSave(userId: userId) {
+            try await viewModel.createAccountRecord(account)
             if let balance = Decimal(string: initialBalance), balance > 0 {
                 let transaction = Transaction(
                     accountId: account.id,
@@ -281,16 +235,18 @@ struct AddAccountView: View {
                     notes: "初始餘額",
                     transactionDate: Date()
                 )
-                await transactionsViewModel.createTransaction(transaction)
+                try await viewModel.persistTransaction(transaction)
             }
-            
-            resetForm() // 重置表單
-            dismiss()
         }
+        guard succeeded else { return }
+        
+        resetForm()
+        dismiss()
     }
     
-    private func saveOtherDebtAccount() {
-        guard selectedAccountType == .otherDebt,
+    @MainActor
+    private func saveOtherDebtAccount() async {
+        guard case .accountForm(.otherDebt) = screen,
               let amountValue = Decimal(string: otherDebtAmount),
               amountValue > 0 else { return }
         
@@ -306,48 +262,44 @@ struct AddAccountView: View {
         
         duplicateNameError = nil
         
-        Task {
-            let account = Account(
-                userId: userId,
-                name: name.trimmingCharacters(in: .whitespaces),
-                accountType: .otherDebt,
-                currency: selectedCurrency
-            )
-            await viewModel.createAccount(account)
-            
-            let noteText = otherDebtNotes.trimmingCharacters(in: .whitespacesAndNewlines)
-            var transactionNotes = "新增其他債務：\(account.name)"
-            if !noteText.isEmpty {
-                transactionNotes += "｜\(noteText)"
-            }
-            
-            let transaction = Transaction(
-                accountId: account.id,
-                type: .liability,
-                assetType: .cash,
-                symbol: "DEBT",
-                quantity: 1,
-                price: amountValue,
-                currency: account.currency,
-                notes: transactionNotes,
-                transactionDate: startDate
-            )
-            await transactionsViewModel.createTransaction(transaction)
-            
-            await viewModel.loadAccounts(userId: userId)
-            await SnapshotRefreshCoordinator.rebuildAndNotify(
-                userId: userId,
-                dataService: MockDataService.shared
-            )
-            
-            resetForm()
-            dismiss()
+        let account = Account(
+            userId: userId,
+            name: name.trimmingCharacters(in: .whitespaces),
+            accountType: .otherDebt,
+            currency: selectedCurrency
+        )
+        
+        let noteText = otherDebtNotes.trimmingCharacters(in: .whitespacesAndNewlines)
+        var transactionNotes = "新增其他債務：\(account.name)"
+        if !noteText.isEmpty {
+            transactionNotes += "｜\(noteText)"
         }
+        
+        let transaction = Transaction(
+            accountId: account.id,
+            type: .liability,
+            assetType: .cash,
+            symbol: "DEBT",
+            quantity: 1,
+            price: amountValue,
+            currency: account.currency,
+            notes: transactionNotes,
+            transactionDate: startDate
+        )
+        
+        let succeeded = await viewModel.runAccountSave(userId: userId) {
+            try await viewModel.createAccountRecord(account)
+            try await viewModel.persistTransaction(transaction)
+        }
+        guard succeeded else { return }
+        
+        resetForm()
+        dismiss()
     }
     
-    private func saveDebtAccount() {
-        guard let accountType = selectedAccountType,
-              accountType == .debt,
+    @MainActor
+    private func saveDebtAccount() async {
+        guard case .accountForm(.debt) = screen,
               let principalValue = Decimal(string: principal),
               let rate = Decimal(string: interestRate) else { return }
         
@@ -365,90 +317,79 @@ struct AddAccountView: View {
         
         duplicateNameError = nil
         
-        Task {
-            // 1. 創建債務帳戶
-            let account = Account(
-                userId: userId,
-                name: name,
-                accountType: .debt,
-                currency: selectedCurrency
-            )
-            await viewModel.createAccount(account)
-            
-            // 2. 創建債務記錄
-            // 計算總期數和已還期數
-            let periods = Int(totalPeriods) ?? 12
-            let paidPeriodsValue = Int(paidPeriods) ?? 0
-            
-            // 根據已還期數計算剩餘本金（方案A：等額本息公式反推）
-            let calculatedRemainingBalance = calculateRemainingBalance(
-                principal: principalValue,
-                interestRate: rate,
-                totalPeriods: periods,
-                paidPeriods: paidPeriodsValue,
-                monthlyPayment: monthlyPayment
-            )
-            
-            // 使用用戶輸入的開始日期作為債務建立日期（新增債務的日期）
-            // 注意：每月還款日與開始日期無關，僅用於未來還款提醒，目前不使用
-            
-            // 計算已還款本金和已支出利息（如果已還期數 > 0）
-            let calculatedTotalPaidPrincipal: Decimal
-            let calculatedTotalPaidInterest: Decimal
-            
-            if paidPeriodsValue > 0 {
-                // 已還款本金 = 原始本金 - 剩餘本金
-                calculatedTotalPaidPrincipal = principalValue - calculatedRemainingBalance
-                // 已支出利息 = 已還期數 × 每月應繳金額 - 已還款本金
-                calculatedTotalPaidInterest = monthlyPayment * Decimal(paidPeriodsValue) - calculatedTotalPaidPrincipal
-            } else {
-                // 如果還沒還款，初始值為 0
-                calculatedTotalPaidPrincipal = 0
-                calculatedTotalPaidInterest = 0
-            }
-            
-            let liability = Liability(
-                accountId: account.id,
-                name: name,
-                principal: principalValue,
-                interestRate: rate,
-                monthlyPayment: monthlyPayment,
-                remainingBalance: calculatedRemainingBalance,
-                currency: selectedCurrency,
-                startDate: startDate,  // 直接使用用戶選擇的開始日期
-                totalPeriods: periods,
-                paidPeriods: paidPeriodsValue,
-                totalPaidPrincipal: calculatedTotalPaidPrincipal,
-                totalPaidInterest: calculatedTotalPaidInterest,
-                totalSavedInterest: 0  // 新建債務，沒有提前還款，節省利息為 0
-            )
-            try? await MockDataService.shared.createLiability(liability)
-            
-            // 3. 創建債務帳戶的初始交易記錄（.liability 類型）
-            // 如果已還期數 > 0，使用剩餘本金；否則使用原始本金
-            let transactionAmount = calculatedRemainingBalance > 0 ? calculatedRemainingBalance : principalValue
-            var transactionNotes = "新增債務：\(name)"
-            if paidPeriodsValue > 0 {
-                transactionNotes += "（已還 \(paidPeriodsValue) 期，剩餘本金 \(transactionAmount.formatted(currency: selectedCurrency))）"
-            }
-            
-            let liabilityTransaction = Transaction(
-                accountId: account.id, // 債務帳戶的 ID
-                type: .liability,
-                assetType: .cash,
-                symbol: "CASH",
-                quantity: transactionAmount,
-                price: 1,
-                currency: selectedCurrency,
-                fee: 0,
-                notes: transactionNotes,
-                transactionDate: startDate  // 直接使用用戶選擇的開始日期（新增債務的日期）
-            )
-            await transactionsViewModel.createTransaction(liabilityTransaction)
-            
-            resetForm() // 重置表單
-            dismiss()
+        let account = Account(
+            userId: userId,
+            name: name,
+            accountType: .debt,
+            currency: selectedCurrency
+        )
+        
+        let periods = Int(totalPeriods) ?? 12
+        let paidPeriodsValue = Int(paidPeriods) ?? 0
+        
+        let calculatedRemainingBalance = calculateRemainingBalance(
+            principal: principalValue,
+            interestRate: rate,
+            totalPeriods: periods,
+            paidPeriods: paidPeriodsValue,
+            monthlyPayment: monthlyPayment
+        )
+        
+        let calculatedTotalPaidPrincipal: Decimal
+        let calculatedTotalPaidInterest: Decimal
+        
+        if paidPeriodsValue > 0 {
+            calculatedTotalPaidPrincipal = principalValue - calculatedRemainingBalance
+            calculatedTotalPaidInterest = monthlyPayment * Decimal(paidPeriodsValue) - calculatedTotalPaidPrincipal
+        } else {
+            calculatedTotalPaidPrincipal = 0
+            calculatedTotalPaidInterest = 0
         }
+        
+        let liability = Liability(
+            accountId: account.id,
+            name: name,
+            principal: principalValue,
+            interestRate: rate,
+            monthlyPayment: monthlyPayment,
+            remainingBalance: calculatedRemainingBalance,
+            currency: selectedCurrency,
+            startDate: startDate,
+            totalPeriods: periods,
+            paidPeriods: paidPeriodsValue,
+            totalPaidPrincipal: calculatedTotalPaidPrincipal,
+            totalPaidInterest: calculatedTotalPaidInterest,
+            totalSavedInterest: 0
+        )
+        
+        let transactionAmount = calculatedRemainingBalance > 0 ? calculatedRemainingBalance : principalValue
+        var transactionNotes = "新增債務：\(name)"
+        if paidPeriodsValue > 0 {
+            transactionNotes += "（已還 \(paidPeriodsValue) 期，剩餘本金 \(transactionAmount.formatted(currency: selectedCurrency))）"
+        }
+        
+        let liabilityTransaction = Transaction(
+            accountId: account.id,
+            type: .liability,
+            assetType: .cash,
+            symbol: "CASH",
+            quantity: transactionAmount,
+            price: 1,
+            currency: selectedCurrency,
+            fee: 0,
+            notes: transactionNotes,
+            transactionDate: startDate
+        )
+        
+        let succeeded = await viewModel.runAccountSave(userId: userId) {
+            try await viewModel.createAccountRecord(account)
+            try await viewModel.persistLiability(liability)
+            try await viewModel.persistTransaction(liabilityTransaction)
+        }
+        guard succeeded else { return }
+        
+        resetForm()
+        dismiss()
     }
     
     // MARK: - 計算剩餘本金（方案A：等額本息公式反推）
@@ -563,144 +504,307 @@ private enum AddItemKind: CaseIterable, Identifiable {
     var color: Color {
         switch self {
         case .account: return .appPrimary
-        case .manualAsset: return .stockUSColor
+        case .manualAsset: return .manualAssetColor
         case .liability: return .lossRed
         }
     }
 }
 
-private struct AddSheetHeroCard: View {
+// MARK: - 新增項目 Hub（帳戶／負債／其他資產三大類）
+
+private struct AddItemHubGroup: Identifiable {
+    let id: String
     let title: String
     let subtitle: String
     let accentColor: Color
-    var badge: String? = nil
+    let subsections: [AddItemHubSubsection]
+}
+
+private struct AddItemHubSubsection: Identifiable {
+    let id: String
+    /// 空字串表示不顯示小分層標題（選項直接列在大類底下）
+    let title: String
+    let accentColor: Color
+    let options: [AddItemHubOption]
+}
+
+private struct AddItemHubOption: Identifiable {
+    enum Destination {
+        case account(AccountType)
+        case manualAsset
+    }
+
+    let id: String
+    let title: String
+    let subtitle: String?
+    let accentColor: Color
+    let destination: Destination
+}
+
+private struct AddItemHubView: View {
+    let onSelectAccountType: (AccountType) -> Void
+    let onSelectManualAsset: () -> Void
+
+    /// Hub 頂部說明卡：中性色，不與「帳戶」大類品牌綠重複
+    private static let heroAccentColor = Color.secondaryText.opacity(0.55)
+
+    private static let groups: [AddItemHubGroup] = [
+        AddItemHubGroup(
+            id: "accounts",
+            title: "帳戶",
+            subtitle: "現金與投資帳戶，可記錄餘額與交易",
+            accentColor: .appPrimary,
+            subsections: [
+                AddItemHubSubsection(
+                    id: "cash",
+                    title: "現金帳戶",
+                    accentColor: AccountType.twdDeposit.color,
+                    options: [
+                        AddItemHubOption(
+                            id: AccountType.twdDeposit.rawValue,
+                            title: AccountType.twdDeposit.displayName,
+                            subtitle: "台幣存款、外幣現金與日常資金",
+                            accentColor: AccountType.twdDeposit.color,
+                            destination: .account(.twdDeposit)
+                        )
+                    ]
+                ),
+                AddItemHubSubsection(
+                    id: "investment",
+                    title: "投資帳戶",
+                    accentColor: AccountType.twdSecurities.color,
+                    options: [
+                        hubOption(.twdSecurities),
+                        hubOption(.usdAccount),
+                        hubOption(.cryptoWallet)
+                    ]
+                )
+            ]
+        ),
+        AddItemHubGroup(
+            id: "liability",
+            title: "負債",
+            subtitle: "房貸、信貸、卡費與其他欠款",
+            accentColor: AccountType.debt.color,
+            subsections: [
+                AddItemHubSubsection(
+                    id: "liability_items",
+                    title: "",
+                    accentColor: AccountType.debt.color,
+                    options: [
+                        AddItemHubOption(
+                            id: AccountType.debt.rawValue,
+                            title: "分期貸款",
+                            subtitle: AccountType.debt.description,
+                            accentColor: AccountType.debt.color,
+                            destination: .account(.debt)
+                        ),
+                        AddItemHubOption(
+                            id: AccountType.otherDebt.rawValue,
+                            title: "其他負債",
+                            subtitle: AccountType.otherDebt.description,
+                            accentColor: AccountType.otherDebt.color,
+                            destination: .account(.otherDebt)
+                        )
+                    ]
+                )
+            ]
+        ),
+        AddItemHubGroup(
+            id: "manual_asset",
+            title: "其他資產",
+            subtitle: "基金、房地產、保單等無即時市價的資產",
+            accentColor: AddItemKind.manualAsset.color,
+            subsections: [
+                AddItemHubSubsection(
+                    id: "manual_asset_items",
+                    title: "",
+                    accentColor: AddItemKind.manualAsset.color,
+                    options: [
+                        AddItemHubOption(
+                            id: "manual_asset_row",
+                            title: "新增其他資產",
+                            subtitle: AddItemKind.manualAsset.description,
+                            accentColor: AddItemKind.manualAsset.color,
+                            destination: .manualAsset
+                        )
+                    ]
+                )
+            ]
+        )
+    ]
+
+    private static func hubOption(_ accountType: AccountType) -> AddItemHubOption {
+        AddItemHubOption(
+            id: accountType.rawValue,
+            title: accountType.displayName,
+            subtitle: accountType.description,
+            accentColor: accountType.color,
+            destination: .account(accountType)
+        )
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 6) {
-                    if let badge {
-                        Text(badge)
-                            .font(.caption.weight(.semibold))
-                            .foregroundColor(accentColor)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 5)
-                            .background(accentColor.opacity(0.12))
-                            .clipShape(Capsule())
-                    }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                AddSheetHeroCard(
+                    title: "新增項目",
+                    subtitle: "選擇要建立的帳戶、負債或其他資產；完成後會出現在管理分頁。",
+                    accentColor: Self.heroAccentColor
+                )
 
-                    Text(title)
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.primaryText)
+                ForEach(Self.groups) { group in
+                    AddItemHubMajorGroupCard(group: group, onSelect: handleSelection)
                 }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 12)
+        }
+    }
 
-                Spacer(minLength: 0)
+    private func handleSelection(_ option: AddItemHubOption) {
+        switch option.destination {
+        case .account(let accountType):
+            onSelectAccountType(accountType)
+        case .manualAsset:
+            onSelectManualAsset()
+        }
+    }
+}
+
+private struct AddItemHubMajorGroupCard: View {
+    let group: AddItemHubGroup
+    let onSelect: (AddItemHubOption) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 10) {
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(group.accentColor)
+                    .frame(width: 4)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(group.title)
+                        .font(.title3.weight(.bold))
+                        .foregroundColor(.primaryText)
+                    Text(group.subtitle)
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
-            Text(subtitle)
-                .font(.subheadline)
-                .foregroundColor(.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(group.subsections) { subsection in
+                    VStack(alignment: .leading, spacing: 8) {
+                        if !subsection.title.isEmpty {
+                            AddItemHubSubsectionHeader(
+                                title: subsection.title,
+                                accentColor: subsection.accentColor
+                            )
+                        }
+                        AddItemHubOptionsGroup(
+                            options: subsection.options,
+                            onSelect: onSelect
+                        )
+                    }
+                }
+            }
         }
-        .padding(18)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.cardBackground)
+        .background(group.accentColor.opacity(0.08))
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(accentColor)
-                .frame(width: 4)
-        }
         .overlay {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.separator.opacity(0.32), lineWidth: 1)
+                .stroke(group.accentColor.opacity(0.22), lineWidth: 1)
+        }
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(group.accentColor)
+                .frame(width: 4)
         }
         .shadow(color: AppColors.shadowMedium, radius: 8, x: 0, y: 2)
     }
 }
 
-private struct AddSheetFormCard: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .background(Color.cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(Color.separator.opacity(0.32), lineWidth: 1)
-            }
-            .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 2)
-            .padding(.horizontal)
+private struct AddItemHubSubsectionHeader: View {
+    let title: String
+    let accentColor: Color
+
+    var body: some View {
+        HStack(spacing: 8) {
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(accentColor.opacity(0.85))
+                .frame(width: 3, height: 12)
+            Text(title)
+                .font(.footnote.weight(.semibold))
+                .foregroundColor(.secondaryText)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 2)
     }
 }
 
-private extension View {
-    func addSheetFormCard() -> some View {
-        modifier(AddSheetFormCard())
-    }
-}
-
-private struct AddItemKindSelectionView: View {
-    let onSelect: (AddItemKind) -> Void
+private struct AddItemHubOptionsGroup: View {
+    let options: [AddItemHubOption]
+    let onSelect: (AddItemHubOption) -> Void
 
     var body: some View {
         VStack(spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach(AddItemKind.allCases) { kind in
-                        AddItemKindSelectionCard(kind: kind) {
-                            onSelect(kind)
-                        }
-                    }
+            ForEach(Array(options.enumerated()), id: \.element.id) { index, option in
+                AddItemHubOptionRow(option: option) {
+                    onSelect(option)
                 }
-                .padding()
-                .padding(.top, 8)
+                if index < options.count - 1 {
+                    Divider()
+                        .overlay(Color.separator.opacity(0.35))
+                        .padding(.leading, 14)
+                }
             }
+        }
+        .background(Color.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Color.separator.opacity(0.32), lineWidth: 1)
         }
     }
 }
 
-private struct AddItemKindSelectionCard: View {
-    let kind: AddItemKind
+private struct AddItemHubOptionRow: View {
+    let option: AddItemHubOption
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(kind.title)
-                        .font(.headline)
-                        .foregroundColor(.primaryText)
+            HStack(spacing: 12) {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(option.accentColor)
+                    .frame(width: 3, height: 28)
 
-                    Text(kind.description)
-                        .font(.caption)
-                        .foregroundColor(.secondaryText)
-                        .lineLimit(2)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(option.title)
+                        .font(.body.weight(.medium))
+                        .foregroundColor(.primaryText)
+                    if let subtitle = option.subtitle {
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundColor(.secondaryText)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                    }
                 }
 
                 Spacer(minLength: 8)
 
-                Text("選擇")
+                Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
-                    .foregroundColor(kind.color)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 5)
-                    .background(kind.color.opacity(0.12))
-                    .clipShape(Capsule())
+                    .foregroundColor(.secondaryText)
             }
-            .padding()
-            .background(Color.cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(kind.color)
-                    .frame(width: 4)
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(kind.color.opacity(0.28), lineWidth: 1)
-            }
-            .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 2)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -1311,23 +1415,12 @@ struct DebtAccountDetailsFormView: View {
             }
             .snapFormScrollDismissesKeyboard()
             
-            // 儲存按鈕
-            Button(action: onSave) {
-                HStack(spacing: 8) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 18))
-                    Text("建立帳戶")
-                        .font(.headline)
-                }
-                .foregroundColor(AppColors.actionForeground)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .background(isDebtFormValid ? accountType.color : AppColors.disabledBackground)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            }
-            .disabled(!isDebtFormValid)
-            .padding(.horizontal)
-            .padding(.bottom)
+            AddAccountSaveButton(
+                isEnabled: isDebtFormValid,
+                isSaving: accountsViewModel.isSaving,
+                accentColor: accountType.color,
+                action: onSave
+            )
         }
         .sheet(isPresented: $showingDatePicker) {
             NavigationStack {
@@ -1466,710 +1559,39 @@ struct DebtAccountDetailsFormView: View {
     }
 }
 
-// MARK: - 幣別下拉選單
-
-private struct CurrencyDropdownField: View {
-    let title: String
-    let icon: String
-    let color: Color
-    let options: [Currency]
-    @Binding var selectedCurrency: Currency
-    var helperText: String?
-    @State private var showingCurrencyPicker = false
+// MARK: - 建立帳戶儲存按鈕
+private struct AddAccountSaveButton: View {
+    let isEnabled: Bool
+    let isSaving: Bool
+    let accentColor: Color
+    let action: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        Button(action: action) {
             HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: 16))
-                    .foregroundColor(color)
-                Text(title)
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primaryText)
-            }
-
-            Button {
-                showingCurrencyPicker = true
-            } label: {
-                HStack(spacing: 10) {
-                    CurrencyCodeChip(currency: selectedCurrency, tint: color)
-
-                    Text(selectedCurrency.displayName)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.primaryText)
-
-                    Spacer()
-
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(.secondaryText)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
-                .frame(minHeight: 44)
-                .background(Color.secondaryBackground)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color.secondaryText.opacity(0.2), lineWidth: 1)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .sheet(isPresented: $showingCurrencyPicker) {
-                CurrencySelectionSheet(
-                    title: title,
-                    options: options,
-                    selectedCurrency: $selectedCurrency,
-                    tint: color
-                )
-                .snapFormSheetChrome()
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-            }
-
-            if let helperText {
-                Text(helperText)
-                    .font(.caption)
-                    .foregroundColor(.secondaryText)
-                    .padding(.leading, 4)
-            }
-        }
-    }
-}
-
-private struct CurrencySelectionSheet: View {
-    let title: String
-    let options: [Currency]
-    @Binding var selectedCurrency: Currency
-    let tint: Color
-
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    selectedSummary
-
-                    VStack(spacing: 10) {
-                        ForEach(options, id: \.self) { currency in
-                            currencyRow(currency)
-                        }
-                    }
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 12)
-                .padding(.bottom, 28)
-            }
-            .background(Color.mainBackground)
-            .navigationTitle(title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") { dismiss() }
-                        .foregroundColor(.appPrimary)
-                }
-            }
-        }
-        .background(Color.mainBackground)
-    }
-
-    private var selectedSummary: some View {
-        HStack(spacing: 12) {
-            CurrencyIconBadge(currency: selectedCurrency, tint: tint)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text("目前選擇")
-                    .font(.caption)
-                    .foregroundColor(.secondaryText)
-                Text(selectedCurrency.settingsDisplayName)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(.primaryText)
-            }
-
-            Spacer(minLength: 0)
-        }
-        .padding(14)
-        .background(Color.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(tint.opacity(0.22), lineWidth: 1)
-        }
-    }
-
-    private func currencyRow(_ currency: Currency) -> some View {
-        let isSelected = selectedCurrency == currency
-        return Button {
-            selectedCurrency = currency
-            dismiss()
-        } label: {
-            HStack(spacing: 12) {
-                CurrencyIconBadge(currency: currency, tint: isSelected ? tint : .secondaryText)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(currency.displayName)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.primaryText)
-                    Text(currency.rawValue)
-                        .font(.caption)
-                        .foregroundColor(.secondaryText)
-                }
-
-                Spacer(minLength: 0)
-
-                if isSelected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundColor(tint)
-                } else {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.secondaryText.opacity(0.7))
-                }
-            }
-            .padding(14)
-            .background(isSelected ? tint.opacity(0.10) : Color.cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(isSelected ? tint.opacity(0.36) : Color.separator.opacity(0.35), lineWidth: 1)
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-// MARK: - 其他資產表單
-
-private struct ManualAssetFormView: View {
-    private enum FieldID: Hashable {
-        case costBasis
-    }
-
-    @ObservedObject var viewModel: ManualAssetsViewModel
-    let userId: String
-    let onCancel: () -> Void
-    let onSaved: () -> Void
-
-    @State private var name = ""
-    @State private var category: ManualAssetCategory = .other
-    @State private var currency: Currency = .TWD
-    @State private var currentValue = ""
-    @State private var costBasis = ""
-    @State private var includesPurchaseDate = false
-    @State private var purchaseDate = Date()
-    @State private var notes = ""
-    @State private var isIncludedInTotalAssets = true
-    @State private var isIncludedInInvestments = false
-    @State private var localErrorMessage: String?
-    @State private var costBasisErrorMessage: String?
-    @State private var showingPurchaseDatePicker = false
-
-    private let accentColor = Color.stockUSColor
-
-    private var isSaveDisabled: Bool {
-        viewModel.isSaving || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || currentValue.isEmpty
-    }
-
-    var body: some View {
-        ScrollViewReader { scrollProxy in
-            VStack(spacing: 0) {
-                ScrollView {
-                    VStack(spacing: 24) {
-                        heroSection
-                        formCard
-                        Spacer(minLength: 20)
-                    }
-                    .padding(.top, 8)
-                }
-                .snapFormScrollDismissesKeyboard()
-
-                saveButton(scrollProxy: scrollProxy)
-            }
-        }
-        .onAppear {
-            currency = BaseCurrencyManager.shared.baseCurrency
-        }
-        .onChange(of: isIncludedInInvestments) { _, isIncluded in
-            if isIncluded {
-                isIncludedInTotalAssets = true
-            }
-        }
-        .onChange(of: isIncludedInTotalAssets) { _, isIncluded in
-            if !isIncluded {
-                isIncludedInInvestments = false
-            }
-        }
-        .sheet(isPresented: $showingPurchaseDatePicker) {
-            NavigationStack {
-                VStack {
-                    DatePicker(
-                        "選擇購買日期",
-                        selection: $purchaseDate,
-                        displayedComponents: .date
-                    )
-                    .datePickerStyle(.wheel)
-                    .labelsHidden()
-                    .padding()
-                    Spacer()
-                }
-                .background(Color.mainBackground)
-                .navigationTitle("購買日期")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button("完成") { showingPurchaseDatePicker = false }
-                    }
-                }
-            }
-            .snapFormSheetChrome()
-            .presentationDetents([.medium])
-            .presentationDragIndicator(.visible)
-        }
-    }
-
-    private var heroSection: some View {
-        AddSheetHeroCard(
-            title: "其他資產",
-            subtitle: "記錄沒有公開即時價格、但需要納入資產總覽的項目。",
-            accentColor: accentColor,
-            badge: "新增其他資產"
-        )
-        .padding(.horizontal)
-    }
-
-    private var formCard: some View {
-        VStack(spacing: 0) {
-            ManualAssetCategoryDropdownField(
-                selectedCategory: $category,
-                tint: accentColor
-            )
-            .padding(20)
-
-            formDivider
-
-            fieldSection(title: "資產名稱", icon: "tag.fill") {
-                TextField("例如：台北房子、基金、保單", text: $name)
-                    .textFieldStyle(CustomTextFieldStyle())
-                    .onChange(of: name) { _, _ in clearErrors() }
-                errorMessageView
-            }
-
-            formDivider
-
-            CurrencyDropdownField(
-                title: "資產幣別",
-                icon: "dollarsign.arrow.circlepath",
-                color: accentColor,
-                options: Currency.baseCurrencyOptions,
-                selectedCurrency: $currency,
-                helperText: "現值與成本會依這個幣別換算到主要幣別。"
-            )
-            .padding(20)
-
-            formDivider
-
-            fieldSection(title: "目前現值", icon: "dollarsign.circle.fill", trailing: currency.rawValue) {
-                AmountKeypadInputView(
-                    text: $currentValue,
-                    currency: currency,
-                    accentColor: accentColor
-                )
-                .onChange(of: currentValue) { oldValue, newValue in
-                    currentValue = sanitizedDecimalText(newValue, fallback: oldValue)
-                    clearErrors()
-                }
-            }
-
-            formDivider
-
-            inclusionSection
-
-            if isIncludedInInvestments {
-                formDivider
-
-                fieldSection(title: "成本", icon: "chart.line.uptrend.xyaxis", trailing: "必填") {
-                    AmountKeypadInputView(
-                        text: $costBasis,
-                        currency: currency,
-                        accentColor: accentColor
-                    )
-                    .onChange(of: costBasis) { oldValue, newValue in
-                        costBasis = sanitizedDecimalText(newValue, fallback: oldValue)
-                        clearErrors()
-                    }
-                    costBasisErrorView
-                    Text("納入投資時必填，用於計算損益與報酬率。")
-                        .font(.caption)
-                        .foregroundColor(.secondaryText)
-                        .padding(.leading, 4)
-                }
-                .id(FieldID.costBasis)
-            }
-
-            formDivider
-
-            purchaseDateSection
-
-            formDivider
-
-            fieldSection(title: "備註", icon: "note.text", trailing: "可選") {
-                TextField("備註", text: $notes, axis: .vertical)
-                    .lineLimit(3...5)
-                    .textFieldStyle(CustomTextFieldStyle())
-            }
-        }
-        .addSheetFormCard()
-    }
-
-    private func fieldSection<Content: View>(
-        title: String,
-        icon: String,
-        trailing: String? = nil,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: 16))
-                    .foregroundColor(accentColor)
-                Text(title)
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primaryText)
-                if let trailing {
-                    Text("(\(trailing))")
-                        .font(.caption)
-                        .foregroundColor(.secondaryText)
-                }
-            }
-            content()
-        }
-        .padding(20)
-    }
-
-    private var purchaseDateSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Toggle(isOn: $includesPurchaseDate) {
-                HStack(spacing: 8) {
-                    Image(systemName: "calendar")
-                        .font(.system(size: 16))
-                        .foregroundColor(accentColor)
-                    Text("購買日期")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primaryText)
-                    Text("(可選)")
-                        .font(.caption)
-                        .foregroundColor(.secondaryText)
-                }
-            }
-            .tint(accentColor)
-
-            if includesPurchaseDate {
-                Button {
-                    showingPurchaseDatePicker = true
-                } label: {
-                    HStack {
-                        Text(formatDate(purchaseDate))
-                            .foregroundColor(.primaryText)
-                        Spacer()
-                        Image(systemName: "calendar")
-                            .foregroundColor(accentColor)
-                    }
-                    .padding()
-                    .background(Color.cardBackground)
-                    .cornerRadius(12)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(20)
-    }
-
-    private var inclusionSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Toggle(isOn: $isIncludedInTotalAssets) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("納入總資產")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primaryText)
-                    Text("會進首頁總資產、淨資產與總資產圓餅圖。")
-                        .font(.caption)
-                        .foregroundColor(.secondaryText)
-                }
-            }
-            .tint(accentColor)
-
-            Toggle(isOn: $isIncludedInInvestments) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("納入投資")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(isIncludedInTotalAssets ? .primaryText : .secondaryText)
-                    Text("會進投資組合、績效圖；需要成本才能計算報酬率。")
-                        .font(.caption)
-                        .foregroundColor(.secondaryText)
-                }
-            }
-            .tint(accentColor)
-            .disabled(!isIncludedInTotalAssets)
-            .opacity(isIncludedInTotalAssets ? 1 : 0.55)
-        }
-        .padding(20)
-    }
-
-    private func saveButton(scrollProxy: ScrollViewProxy) -> some View {
-        Button {
-            saveManualAsset(scrollProxy: scrollProxy)
-        } label: {
-            HStack(spacing: 8) {
-                if viewModel.isSaving {
+                if isSaving {
                     ProgressView()
                         .tint(AppColors.actionForeground)
                 } else {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 18))
                 }
-                Text(viewModel.isSaving ? "建立中..." : "建立其他資產")
+                Text(isSaving ? "建立中..." : "建立帳戶")
                     .font(.headline)
             }
             .foregroundColor(AppColors.actionForeground)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 16)
-            .background(isSaveDisabled ? AppColors.disabledBackground : accentColor)
+            .background(isEnabled ? accentColor : AppColors.disabledBackground)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
-        .disabled(isSaveDisabled)
+        .buttonStyle(.plain)
+        .disabled(!isEnabled || isSaving)
+        .scaleEffect(isSaving ? 0.97 : 1)
+        .opacity(isSaving ? 0.92 : 1)
+        .animation(.easeInOut(duration: 0.15), value: isSaving)
         .padding(.horizontal)
         .padding(.bottom)
-    }
-
-    private var formDivider: some View {
-        Divider()
-            .padding(.horizontal, 20)
-    }
-
-    @ViewBuilder
-    private var errorMessageView: some View {
-        if let message = localErrorMessage ?? viewModel.errorMessage {
-            HStack(spacing: 6) {
-                Image(systemName: "exclamationmark.circle.fill")
-                    .font(.caption)
-                    .foregroundColor(.red)
-                Text(message)
-                    .font(.caption)
-                    .foregroundColor(.red)
-            }
-            .padding(.leading, 4)
-            .padding(.top, 4)
-        }
-    }
-
-    @ViewBuilder
-    private var costBasisErrorView: some View {
-        if let message = costBasisErrorMessage {
-            HStack(spacing: 6) {
-                Image(systemName: "exclamationmark.circle.fill")
-                    .font(.caption)
-                    .foregroundColor(.lossRed)
-                Text(message)
-                    .font(.caption)
-                    .foregroundColor(.lossRed)
-            }
-            .padding(.leading, 4)
-            .padding(.top, 4)
-            .transition(.opacity.combined(with: .move(edge: .top)))
-        }
-    }
-
-    private func saveManualAsset(scrollProxy: ScrollViewProxy) {
-        clearErrors()
-        guard let currentValueDecimal = Decimal(string: currentValue) else {
-            localErrorMessage = "請輸入有效的現值"
-            return
-        }
-        if isIncludedInInvestments {
-            guard let parsedCost = Decimal(string: costBasis), parsedCost > 0 else {
-                showCostBasisRequired(scrollProxy: scrollProxy)
-                return
-            }
-        }
-        let costBasisDecimal: Decimal?
-        if costBasis.isEmpty {
-            costBasisDecimal = nil
-        } else if let parsed = Decimal(string: costBasis) {
-            costBasisDecimal = parsed
-        } else {
-            localErrorMessage = "請輸入有效的成本"
-            return
-        }
-
-        let formState = ManualAssetFormState(
-            name: name,
-            category: category,
-            currency: currency,
-            currentValue: currentValueDecimal,
-            costBasis: costBasisDecimal,
-            purchaseDate: includesPurchaseDate ? purchaseDate : nil,
-            notes: notes,
-            isIncludedInTotalAssets: isIncludedInTotalAssets,
-            isIncludedInInvestments: isIncludedInInvestments
-        )
-
-        Task {
-            let succeeded = await viewModel.createAsset(from: formState, userId: userId)
-            if succeeded {
-                onSaved()
-            }
-        }
-    }
-
-    private func showCostBasisRequired(scrollProxy: ScrollViewProxy) {
-        costBasisErrorMessage = "納入投資時，請填寫大於 0 的成本。"
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-            scrollProxy.scrollTo(FieldID.costBasis, anchor: .center)
-        }
-    }
-
-    private func clearErrors() {
-        localErrorMessage = nil
-        costBasisErrorMessage = nil
-        viewModel.errorMessage = nil
-    }
-
-    private func sanitizedDecimalText(_ text: String, fallback: String) -> String {
-        let filtered = text.filter { $0.isNumber || $0 == "." }
-        guard filtered.filter({ $0 == "." }).count <= 1 else { return fallback }
-        return filtered
-    }
-
-    private func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.locale = Locale(identifier: "zh_TW")
-        return formatter.string(from: date)
-    }
-}
-
-private struct ManualAssetCategoryDropdownField: View {
-    @Binding var selectedCategory: ManualAssetCategory
-    let tint: Color
-
-    @State private var showingCategoryPicker = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("資產類別")
-                .font(.subheadline)
-                .fontWeight(.semibold)
-                .foregroundColor(.primaryText)
-
-            Button {
-                showingCategoryPicker = true
-            } label: {
-                HStack(spacing: 10) {
-                    Text(selectedCategory.displayName)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.primaryText)
-
-                    Spacer()
-
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(.secondaryText)
-                }
-                .padding()
-                .frame(minHeight: 44)
-                .background(Color.cardBackground)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color.secondaryText.opacity(0.2), lineWidth: 1)
-                }
-            }
-            .buttonStyle(.plain)
-            .sheet(isPresented: $showingCategoryPicker) {
-                ManualAssetCategorySelectionSheet(
-                    selectedCategory: $selectedCategory,
-                    tint: tint
-                )
-                .snapFormSheetChrome()
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-            }
-        }
-    }
-}
-
-private struct ManualAssetCategorySelectionSheet: View {
-    @Binding var selectedCategory: ManualAssetCategory
-    let tint: Color
-
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 10) {
-                    ForEach(ManualAssetCategory.allCases) { category in
-                        categoryRow(category)
-                    }
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 12)
-                .padding(.bottom, 28)
-            }
-            .background(Color.mainBackground)
-            .navigationTitle("資產類別")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") { dismiss() }
-                        .foregroundColor(.appPrimary)
-                }
-            }
-        }
-        .background(Color.mainBackground)
-    }
-
-    private func categoryRow(_ category: ManualAssetCategory) -> some View {
-        let isSelected = selectedCategory == category
-        return Button {
-            selectedCategory = category
-            dismiss()
-        } label: {
-            HStack(spacing: 12) {
-                Text(category.displayName)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(.primaryText)
-
-                Spacer()
-
-                if isSelected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundColor(tint)
-                } else {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.secondaryText.opacity(0.7))
-                }
-            }
-            .padding(14)
-            .background(isSelected ? tint.opacity(0.10) : Color.cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(isSelected ? tint.opacity(0.36) : Color.separator.opacity(0.35), lineWidth: 1)
-            }
-        }
-        .buttonStyle(.plain)
     }
 }
 
@@ -2180,6 +1602,7 @@ struct AccountDetailsFormView: View {
     @Binding var initialBalance: String
     @Binding var selectedCurrency: Currency
     @Binding var duplicateNameError: String?
+    @ObservedObject var accountsViewModel: AccountsViewModel
     let onCancel: () -> Void
     let onSave: () -> Void
     
@@ -2314,23 +1737,12 @@ struct AccountDetailsFormView: View {
             }
             .snapFormScrollDismissesKeyboard()
             
-            // 儲存按鈕
-            Button(action: onSave) {
-                HStack(spacing: 8) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 18))
-                    Text("建立帳戶")
-                        .font(.headline)
-                }
-                .foregroundColor(AppColors.actionForeground)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .background(name.isEmpty ? AppColors.disabledBackground : accountType.color)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            }
-            .disabled(name.isEmpty)
-            .padding(.horizontal)
-            .padding(.bottom)
+            AddAccountSaveButton(
+                isEnabled: !name.isEmpty,
+                isSaving: accountsViewModel.isSaving,
+                accentColor: accountType.color,
+                action: onSave
+            )
         }
     }
 }
@@ -2383,55 +1795,6 @@ struct AccountTypeSelectionCard: View {
     }
 }
 
-// MARK: - 帳戶選擇器 Sheet
-struct AccountPickerSheet: View {
-    let accounts: [Account]
-    @Binding var selectedAccount: Account?
-    @Environment(\.dismiss) var dismiss
-    
-    var body: some View {
-        NavigationStack {
-            List {
-                ForEach(accounts) { account in
-                    Button(action: {
-                        selectedAccount = account
-                        dismiss()
-                    }) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(account.name)
-                                    .font(.headline)
-                                    .foregroundColor(.primaryText)
-                                Text(account.accountType.displayName)
-                                    .font(.caption)
-                                    .foregroundColor(.secondaryText)
-                            }
-                            
-                            Spacer()
-                            
-                            if selectedAccount?.id == account.id {
-                                Image(systemName: "checkmark")
-                                    .foregroundColor(.appPrimary)
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
-            }
-            .navigationTitle("選擇還款帳戶")
-            .navigationBarTitleDisplayMode(.inline)
-            .tint(.appPrimary)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("取消") {
-                        dismiss()
-                    }
-                }
-            }
-        }
-    }
-}
-
 // MARK: - 其他債務帳戶詳情表單
 
 struct OtherDebtAccountDetailsFormView: View {
@@ -2440,6 +1803,7 @@ struct OtherDebtAccountDetailsFormView: View {
     @Binding var notes: String
     @Binding var startDate: Date
     @Binding var selectedCurrency: Currency
+    @ObservedObject var accountsViewModel: AccountsViewModel
     @Binding var duplicateNameError: String?
     let onCancel: () -> Void
     let onSave: () -> Void
@@ -2615,22 +1979,12 @@ struct OtherDebtAccountDetailsFormView: View {
             }
             .snapFormScrollDismissesKeyboard()
             
-            Button(action: onSave) {
-                HStack(spacing: 8) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 18))
-                    Text("建立帳戶")
-                        .font(.headline)
-                }
-                .foregroundColor(AppColors.actionForeground)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .background(isFormValid ? accountType.color : AppColors.disabledBackground)
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            }
-            .disabled(!isFormValid)
-            .padding(.horizontal)
-            .padding(.bottom)
+            AddAccountSaveButton(
+                isEnabled: isFormValid,
+                isSaving: accountsViewModel.isSaving,
+                accentColor: accountType.color,
+                action: onSave
+            )
         }
         .sheet(isPresented: $showingDatePicker) {
             NavigationStack {

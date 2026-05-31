@@ -140,6 +140,10 @@ struct HomeShareSheet: View {
         )
     }
     
+    private var sharePieGroupingDisplayMode: PieChartGroupingDisplayMode {
+        sharePieIsGroupingEnabled ? .grouped : .ungrouped
+    }
+
     private var previewRefreshToken: String {
         [
             "selected=\(selectedKinds.map(\.rawValue).sorted().joined(separator: ","))",
@@ -405,18 +409,13 @@ struct HomeShareSheet: View {
                 shareOptionLabel("顯示方式")
                 HStack(spacing: 8) {
                     AssetsFilterChipButton(
-                        title: "群組",
-                        icon: "square.grid.2x2.fill",
-                        isActive: sharePieIsGroupingEnabled
+                        title: sharePieGroupingDisplayMode.label,
+                        icon: sharePieGroupingDisplayMode.chipIcon,
+                        isActive: true
                     ) {
-                        sharePieIsGroupingEnabled = true
-                    }
-                    AssetsFilterChipButton(
-                        title: "明細",
-                        icon: "list.bullet",
-                        isActive: !sharePieIsGroupingEnabled
-                    ) {
-                        sharePieIsGroupingEnabled = false
+                        withAnimation(ChartMotion.switchQuick) {
+                            sharePieIsGroupingEnabled.toggle()
+                        }
                     }
                     AssetsFilterChipButton(
                         title: "清單",

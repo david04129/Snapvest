@@ -132,6 +132,8 @@ struct CurrencyAmountLabel: View {
     var color: Color = .primaryText
     var chipTint: Color = .appPrimary
     var alignment: VerticalAlignment = .firstTextBaseline
+    var minimumScaleFactor: CGFloat = 0.72
+    var animatesNumericContentTransition: Bool = true
     
     private var displayText: String {
         var result = text
@@ -147,9 +149,53 @@ struct CurrencyAmountLabel: View {
             .font(font)
             .fontWeight(weight)
             .foregroundColor(color)
-            .contentTransition(.numericText())
+            .modifier(OptionalNumericTextTransition(enabled: animatesNumericContentTransition))
             .lineLimit(1)
-            .minimumScaleFactor(0.72)
+            .minimumScaleFactor(minimumScaleFactor)
+    }
+}
+
+private struct OptionalNumericTextTransition: ViewModifier {
+    let enabled: Bool
+    func body(content: Content) -> some View {
+        if enabled {
+            content.contentTransition(.numericText())
+        } else {
+            content
+        }
+    }
+}
+
+/// 列表／卡片標準：數字後接顯示幣別 chip（與左側帳戶幣別圖示語意分離）
+struct CurrencyAmountWithChip: View {
+    let text: String
+    let currency: Currency
+    var font: Font = .subheadline
+    var weight: Font.Weight = .semibold
+    var color: Color = .primaryText
+    var chipTint: Color = .appPrimary
+    var chipStyle: CurrencyCodeChip.Style = .subtle
+    var spacing: CGFloat = 6
+    var showsChip: Bool = true
+    var minimumScaleFactor: CGFloat = 0.72
+    var animatesNumericContentTransition: Bool = true
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: spacing) {
+            CurrencyAmountLabel(
+                text: text,
+                currency: currency,
+                font: font,
+                weight: weight,
+                color: color,
+                chipTint: chipTint,
+                minimumScaleFactor: minimumScaleFactor,
+                animatesNumericContentTransition: animatesNumericContentTransition
+            )
+            if showsChip {
+                CurrencyCodeChip(currency: currency, tint: chipTint, style: chipStyle)
+            }
+        }
     }
 }
 

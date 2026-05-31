@@ -90,7 +90,6 @@ enum BackupService {
         _ = await SnapshotRefreshCoordinator.rebuildAndNotify(
             userId: userId,
             dataService: resolvedDataService,
-            syncPortfolio: false,
             updatePriceMetadata: false,
             deferRemoteWork: false,
             postsUpdateNotification: false

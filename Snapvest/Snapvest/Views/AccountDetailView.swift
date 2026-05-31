@@ -40,13 +40,21 @@ struct AccountDetailView: View {
     @State private var showingOtherDebtRepayment = false
     @State private var showingTransactionImport = false
     @State private var showingNewTradeFlow = false
-    @State private var twdPerAccountCurrency: Decimal = 1
+    @State private var twdPerAccountCurrency: Decimal
     @StateObject private var importTransactionsViewModel = TransactionsViewModel()
     
-    init(account: Account, prefilledBalance: AccountBalanceDisplay? = nil, refreshToken: Int = 0) {
+    init(
+        account: Account,
+        prefilledBalance: AccountBalanceDisplay? = nil,
+        initialDisplayCurrency: Currency? = nil,
+        refreshToken: Int = 0
+    ) {
         self.account = account
         self.refreshToken = refreshToken
         _displayAccountName = State(initialValue: account.name)
+        _twdPerAccountCurrency = State(
+            initialValue: Self.initialTwdPerAccountCurrency(for: account)
+        )
         let vm = AccountDetailViewModel()
         if let prefilledBalance {
             vm.applyPrefill(prefilledBalance)
@@ -54,8 +62,13 @@ struct AccountDetailView: View {
         if let cachedHoldings = AccountDetailPresentationStore.holdings(for: account.id), !cachedHoldings.isEmpty {
             vm.applyCachedHoldings(cachedHoldings, account: account)
         }
-        vm.displayCurrency = account.currency == .TWD ? .TWD : account.currency
+        vm.displayCurrency = initialDisplayCurrency ?? (account.currency == .TWD ? .TWD : account.currency)
         _viewModel = StateObject(wrappedValue: vm)
+    }
+
+    private static func initialTwdPerAccountCurrency(for account: Account) -> Decimal {
+        if account.currency == .TWD { return 1 }
+        return ExchangeRateSessionCache.twdPer(account.currency) ?? 0
     }
     
     var body: some View {
@@ -89,9 +102,11 @@ struct AccountDetailView: View {
             )
             .id(item)
         }
-        .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { notification in
             Task {
-                await refreshAfterPortfolioMutation(appliesPersistedState: false)
+                await refreshAfterPortfolioMutation(
+                    appliesPersistedState: notification.userInfo?[SnapshotUpdateUserInfoKey.alreadyApplied] as? Bool != true
+                )
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .transactionsDidChange)) { notification in
@@ -99,8 +114,9 @@ struct AccountDetailView: View {
                !affectedAccountIds.contains(account.id) {
                 return
             }
+            let appliesPersistedState = !(notification.object is PortfolioMutationRefreshRequest)
             Task {
-                await refreshAfterPortfolioMutation(appliesPersistedState: false)
+                await refreshAfterPortfolioMutation(appliesPersistedState: appliesPersistedState)
             }
         }
         .onChange(of: refreshToken) { _, _ in
@@ -212,9 +228,8 @@ struct AccountDetailView: View {
             }
         }
         .task {
-            await viewModel.loadFromPersisted(accountId: account.id, account: account)
             await loadAccountCurrencyRateIfNeeded()
-            viewModel.displayCurrency = portfolioViewModel.viewCurrency
+            await viewModel.loadFromPersisted(accountId: account.id, account: account)
             if account.accountType.supportsTransactionImport {
                 await importTransactionsViewModel.loadTransactions(userId: account.userId)
             }
@@ -294,7 +309,8 @@ struct AccountDetailView: View {
                 portfolioViewModel: portfolioViewModel,
                 accountsViewModel: accountsViewModel,
                 assetsViewModel: assetsViewModel,
-                rebuildAccountDetailCache: false
+                rebuildAccountDetailCache: true,
+                accountDetailCacheAccountIds: [account.id]
             )
         }
 
@@ -303,9 +319,8 @@ struct AccountDetailView: View {
         } else if account.accountType == .otherDebt {
             await loadOtherDebtAccountData()
         } else {
-            await viewModel.refresh(accountId: account.id, account: account)
-            viewModel.displayCurrency = portfolioViewModel.viewCurrency
             await loadAccountCurrencyRateIfNeeded()
+            await viewModel.refresh(accountId: account.id, account: account)
         }
         if let updated = accountsViewModel.accounts.first(where: { $0.id == account.id }) {
             displayAccountName = updated.name
@@ -352,6 +367,18 @@ struct AccountDetailView: View {
     
     private var accountHeroPrimaryAmount: Decimal {
         account.accountType == .twdDeposit ? accountDisplayCashBalance : accountTotalValue
+    }
+
+    private var accountAmountsDisplayReady: Bool {
+        if account.currency == .TWD { return true }
+        if viewModel.displayCurrency == account.currency { return true }
+        if account.currency == .USD, viewModel.exchangeRate > 0 { return true }
+        return twdPerAccountCurrency > 0
+    }
+
+    private func accountFormattedAmount(_ amount: Decimal) -> String {
+        guard accountAmountsDisplayReady else { return "—" }
+        return amount.formatted(currency: viewModel.displayCurrency)
     }
     
     private var accountCurrencyDisplayBinding: Binding<AssetsCurrencyDisplay> {
@@ -405,13 +432,22 @@ struct AccountDetailView: View {
             twdPerAccountCurrency = 1
             return
         }
+        if let cached = ExchangeRateSessionCache.twdPer(account.currency) {
+            twdPerAccountCurrency = cached
+            if account.currency == .USD, viewModel.exchangeRate <= 0 {
+                viewModel.exchangeRate = cached
+            }
+            return
+        }
         if account.currency == .USD, viewModel.exchangeRate > 0 {
             twdPerAccountCurrency = viewModel.exchangeRate
+            ExchangeRateSessionCache.mergeTwdRate(currency: .USD, rate: viewModel.exchangeRate)
             return
         }
         if account.currency == portfolioViewModel.viewCurrency,
            portfolioViewModel.twdPerBaseCurrency > 0 {
             twdPerAccountCurrency = portfolioViewModel.twdPerBaseCurrency
+            ExchangeRateSessionCache.mergeTwdRate(currency: account.currency, rate: portfolioViewModel.twdPerBaseCurrency)
             return
         }
         if let rate = try? await MockDataService.shared.fetchExchangeRate(from: account.currency, to: .TWD, date: nil)?.rate,
@@ -445,17 +481,11 @@ struct AccountDetailView: View {
                 )
                 .padding(.bottom, 4)
 
-                CurrencyTitleLabel(
-                    title: accountHeroPrimaryLabel,
-                    currency: viewModel.displayCurrency,
-                    font: .caption,
-                    weight: .regular,
-                    color: .secondaryText,
-                    chipTint: account.accountType.color,
-                    titleLineLimit: 1
-                )
-                CurrencyAmountLabel(
-                    text: accountHeroPrimaryAmount.formatted(currency: viewModel.displayCurrency),
+                Text(accountHeroPrimaryLabel)
+                    .font(.caption)
+                    .foregroundColor(.secondaryText)
+                CurrencyAmountWithChip(
+                    text: accountFormattedAmount(accountHeroPrimaryAmount),
                     currency: viewModel.displayCurrency,
                     font: .snapAmountHero,
                     weight: .bold,
@@ -482,7 +512,7 @@ struct AccountDetailView: View {
         if account.accountType == .twdDeposit {
             MetricTile(
                 title: "現金餘額",
-                value: accountDisplayCashBalance.formatted(currency: viewModel.displayCurrency),
+                value: accountFormattedAmount(accountDisplayCashBalance),
                 currency: viewModel.displayCurrency
             )
         } else {
@@ -495,12 +525,12 @@ struct AccountDetailView: View {
             ) {
                 MetricTile(
                     title: "現金餘額",
-                    value: accountDisplayCashBalance.formatted(currency: viewModel.displayCurrency),
+                    value: accountFormattedAmount(accountDisplayCashBalance),
                     currency: viewModel.displayCurrency
                 )
                 MetricTile(
                     title: "持股市值",
-                    value: accountDisplayHoldingsValue.formatted(currency: viewModel.displayCurrency),
+                    value: accountFormattedAmount(accountDisplayHoldingsValue),
                     currency: viewModel.displayCurrency
                 )
             }
@@ -1292,15 +1322,11 @@ struct AccountHoldingCardRow: View {
         Button(action: onTap) {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    CurrencyTitleLabel(
-                        title: holding.displayName,
-                        currency: displayCurrency,
-                        font: .headline,
-                        weight: .semibold,
-                        color: .primaryText,
-                        chipTint: assetAccentColor,
-                        titleLineLimit: 1
-                    )
+                    Text(holding.displayName)
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primaryText)
+                        .lineLimit(1)
                     Text(quantitySubtitle)
                         .font(.caption)
                         .foregroundColor(.secondaryText)
@@ -1310,7 +1336,7 @@ struct AccountHoldingCardRow: View {
                 
                 VStack(alignment: .trailing, spacing: 4) {
                     if let displayValue = displayMarketValue {
-                        CurrencyAmountLabel(
+                        CurrencyAmountWithChip(
                             text: displayValue.formatted(currency: displayCurrency),
                             currency: displayCurrency,
                             font: .snapAmountRow,
@@ -1327,7 +1353,7 @@ struct AccountHoldingCardRow: View {
                     if let displayGainLoss = displayGainLoss,
                        let percent = holding.unrealizedGainLossPercent {
                         HStack(spacing: 4) {
-                            Image(systemName: displayGainLoss >= 0 ? "arrow.up" : "arrow.down")
+                            Image(systemName: MarketDirectionSymbol.systemName(for: displayGainLoss))
                                 .font(.caption2)
                             Text(displayGainLoss.formatted(currency: displayCurrency, showSymbol: false))
                             Text("(\(percent.formatted(fractionDigits: 1))%)")
@@ -1367,25 +1393,14 @@ struct InfoRowWithoutIcon: View {
     
     var body: some View {
         HStack {
-            if let currency {
-                CurrencyTitleLabel(
-                    title: label,
-                    currency: currency,
-                    font: .subheadline,
-                    weight: .regular,
-                    color: .secondaryText,
-                    chipTint: valueColor
-                )
-            } else {
-                Text(label)
-                    .font(.subheadline)
-                    .foregroundColor(.secondaryText)
-            }
+            Text(label)
+                .font(.subheadline)
+                .foregroundColor(.secondaryText)
             
             Spacer()
             
             if let currency {
-                CurrencyAmountLabel(
+                CurrencyAmountWithChip(
                     text: value,
                     currency: currency,
                     font: .subheadline,

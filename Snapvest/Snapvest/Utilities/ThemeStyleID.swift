@@ -1,0 +1,37 @@
+//
+//  ThemeStyleID.swift
+//  Snapvest
+//
+//  使用者可選的資產類別配色風格（台股／美股／加密）。
+//
+
+import SwiftUI
+
+enum ThemeStyleID: String, CaseIterable, Identifiable, Codable {
+    /// 現行預設：琥珀台股、藍系美股、青綠加密
+    case steadyFinance
+    /// 對照組：青綠台股、橘系美股、紫色加密
+    case vividContrast
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .steadyFinance: return "沉穩理財"
+        case .vividContrast: return "清晰對比"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .steadyFinance: return "目前的預設配色"
+        case .vividContrast: return "台股／美股／加密改用另一組色票"
+        }
+    }
+
+    /// 設定頁色卡預覽（依目前深淺色模式）
+    func previewAssetColors(isDarkMode: Bool) -> (stockTW: Color, stockUS: Color, crypto: Color) {
+        let palette = ThemeStyleCatalog.palette(style: self, isDarkMode: isDarkMode)
+        return (palette.stockTWColor, palette.stockUSColor, palette.cryptoColor)
+    }
+}

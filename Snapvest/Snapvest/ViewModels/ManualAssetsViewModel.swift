@@ -177,6 +177,15 @@ final class ManualAssetsViewModel: ObservableObject {
         }
     }
 
+    func loadValuations(assetId: String) async -> [ManualAssetValuation] {
+        do {
+            return try await dataService.fetchManualAssetValuations(assetId: assetId)
+        } catch {
+            errorMessage = "載入現值紀錄失敗：\(error.localizedDescription)"
+            return []
+        }
+    }
+
     @discardableResult
     func createAsset(
         from formState: ManualAssetFormState,
@@ -329,7 +338,6 @@ final class ManualAssetsViewModel: ObservableObject {
                 userId: userId,
                 dataService: dataService,
                 priceService: priceService,
-                syncPortfolio: false,
                 updatePriceMetadata: false,
                 deferRemoteWork: false,
                 postsUpdateNotification: true

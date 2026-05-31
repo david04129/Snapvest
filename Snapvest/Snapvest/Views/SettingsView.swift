@@ -45,6 +45,11 @@ struct SettingsView: View {
                         Divider()
                             .padding(.leading, 56)
 
+                        themeStyleRow
+
+                        Divider()
+                            .padding(.leading, 56)
+
                         marketColorConventionRow
 
                         Divider()
@@ -260,6 +265,40 @@ struct SettingsView: View {
         }
     }
     
+    private var themeStyleRow: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 12) {
+                Image(systemName: "paintpalette.fill")
+                    .font(.system(size: 18))
+                    .foregroundColor(.appPrimary)
+                    .frame(width: 28, alignment: .center)
+
+                Text("風格")
+                    .font(.body)
+                    .foregroundColor(.primaryText)
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 13)
+            .padding(.bottom, 10)
+
+            VStack(spacing: 10) {
+                ForEach(ThemeStyleID.allCases) { style in
+                    ThemeStyleOptionCard(
+                        style: style,
+                        isSelected: theme.selectedStyle == style,
+                        isDarkMode: theme.isDarkMode
+                    ) {
+                        theme.setStyle(style)
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.bottom, 13)
+        }
+    }
+
     private var themeModeRow: some View {
         settingsPillRow(
             icon: theme.isDarkMode ? "moon.fill" : "sun.max.fill",
@@ -285,7 +324,7 @@ struct SettingsView: View {
         let upColor: Color = theme.isRedUpGreenDown ? .lossRed : .profitGreen
         
         return settingsPillRow(
-            icon: "arrow.up",
+            icon: MarketDirectionSymbol.systemName(isUp: true),
             iconColor: upColor,
             title: "漲跌配色"
         ) {
@@ -834,6 +873,75 @@ private struct BaseCurrencyPickerSheet: View {
                         .foregroundColor(.appPrimary)
                 }
             }
+        }
+    }
+}
+
+// MARK: - 配色風格選項
+
+private struct ThemeStyleOptionCard: View {
+    let style: ThemeStyleID
+    let isSelected: Bool
+    let isDarkMode: Bool
+    let action: () -> Void
+
+    private var preview: (stockTW: Color, stockUS: Color, crypto: Color) {
+        style.previewAssetColors(isDarkMode: isDarkMode)
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(style.displayName)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.primaryText)
+                    Text(style.subtitle)
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                        .multilineTextAlignment(.leading)
+                }
+
+                Spacer(minLength: 8)
+
+                HStack(spacing: 8) {
+                    ThemeStyleSwatch(color: preview.stockTW, label: "台股")
+                    ThemeStyleSwatch(color: preview.stockUS, label: "美股")
+                    ThemeStyleSwatch(color: preview.crypto, label: "加密")
+                }
+
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 20))
+                    .foregroundColor(isSelected ? .appPrimary : .tertiaryText)
+            }
+            .padding(12)
+            .background(Color.secondaryBackground.opacity(isSelected ? 0.85 : 0.45))
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(isSelected ? Color.appPrimary.opacity(0.55) : Color.separator.opacity(0.4), lineWidth: isSelected ? 1.5 : 1)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct ThemeStyleSwatch: View {
+    let color: Color
+    let label: String
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Circle()
+                .fill(color)
+                .frame(width: 22, height: 22)
+                .overlay {
+                    Circle()
+                        .stroke(Color.primaryText.opacity(0.12), lineWidth: 1)
+                }
+            Text(label)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundColor(.secondaryText)
         }
     }
 }

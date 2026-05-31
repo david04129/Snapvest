@@ -255,7 +255,6 @@ struct HomeTrendChartSection: View {
             Text(metricMode.rawValue)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundColor(AppColors.appPrimary)
-            CurrencyCodeChip(currency: currency, tint: AppColors.appPrimary)
             Spacer()
         }
         .padding(.horizontal, 16)
@@ -485,14 +484,15 @@ struct TrendChartValueInfo: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            CurrencyAmountLabel(
+            CurrencyAmountWithChip(
                 text: hideAmounts
                     ? HomeAmountPrivacyFormat.masked
                     : displayValue.formatted(currency: currency),
                 currency: currency,
                 font: .system(size: 28, weight: .bold, design: .rounded),
                 weight: .bold,
-                color: valueColor
+                color: valueColor,
+                chipTint: AppColors.appPrimary
             )
                 .contentTransition(.numericText())
                 .animation(ChartMotion.switchSpring, value: displayValue)

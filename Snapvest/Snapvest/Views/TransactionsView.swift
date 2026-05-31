@@ -7,6 +7,35 @@
 
 import SwiftUI
 
+// MARK: - 其他資產活動紀錄（紀錄分頁）
+
+fileprivate struct ManualAssetActivityRecord: Identifiable {
+    enum Kind {
+        case creation
+        case valuation
+    }
+
+    let id: String
+    let kind: Kind
+    let asset: ManualAsset
+    let value: Decimal
+    /// 紀錄列顯示的變動量（建立為 +現值；更新為新值 − 上一筆）
+    let displayDelta: Decimal
+    let currency: Currency
+    let date: Date
+    let notes: String?
+    let valuation: ManualAssetValuation?
+
+    var title: String {
+        switch kind {
+        case .creation:
+            return "建立其他資產"
+        case .valuation:
+            return "更新其他資產現值"
+        }
+    }
+}
+
 struct TransactionsView: View {
     @Binding var selectedTab: Int
     @EnvironmentObject private var portfolioViewModel: PortfolioViewModel
@@ -109,31 +138,6 @@ struct TransactionsView: View {
         var id: Date { day }
     }
 
-    private struct ManualAssetActivityRecord: Identifiable {
-        enum Kind {
-            case creation
-            case valuation
-        }
-
-        let id: String
-        let kind: Kind
-        let asset: ManualAsset
-        let value: Decimal
-        let currency: Currency
-        let date: Date
-        let notes: String?
-        let valuation: ManualAssetValuation?
-
-        var title: String {
-            switch kind {
-            case .creation:
-                return "建立其他資產"
-            case .valuation:
-                return "更新其他資產現值"
-            }
-        }
-    }
-    
     private var activityDayGroups: [ActivityDayGroup] {
         let calendar = Calendar.current
         let grouped = Dictionary(grouping: filteredActivityItems) {
@@ -374,90 +378,14 @@ struct TransactionsView: View {
     }
 
     private func manualAssetActivityRow(for record: ManualAssetActivityRecord) -> some View {
-        let accentColor = Color.stockUSColor
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 6) {
-                    CurrencyTitleLabel(
-                        title: record.title,
-                        currency: record.currency,
-                        font: .subheadline,
-                        weight: .semibold,
-                        color: .primaryText,
-                        chipTint: accentColor
-                    )
-
-                    Text("\(record.asset.name) · \(record.asset.category.displayName)")
-                        .font(.caption)
-                        .foregroundColor(.secondaryText)
-                        .lineLimit(2)
-                }
-
-                Spacer(minLength: 8)
-
-                VStack(alignment: .trailing, spacing: 4) {
-                    CurrencyAmountLabel(
-                        text: record.value.formatted(currency: record.currency),
-                        currency: record.currency,
-                        font: .system(size: 17, weight: .bold),
-                        weight: .bold,
-                        color: .primaryText,
-                        chipTint: accentColor
-                    )
-
-                    Text(record.date, style: .date)
-                        .font(.caption)
-                        .foregroundColor(.secondaryText)
-                }
-            }
-
-            if let notes = record.notes?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !notes.isEmpty {
-                Divider()
-                Text(notes)
-                    .font(.caption)
-                    .foregroundColor(.secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.cardBackground)
-        .cornerRadius(12)
-        .overlay(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 12)
-                .fill(accentColor)
-                .frame(width: 4)
-        }
-        .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 2)
-        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            Button {
+        ManualAssetActivityRowView(
+            record: record,
+            onEdit: { editingManualAssetRecord = record },
+            onDelete: {
                 manualAssetRecordPendingDelete = record
                 showingManualAssetDeleteConfirmation = true
-            } label: {
-                VStack(spacing: 4) {
-                    Image(systemName: "trash.fill")
-                        .font(.system(size: 18, weight: .medium))
-                    Text("刪除")
-                        .font(.system(size: 10, weight: .medium))
-                }
-                .foregroundColor(AppColors.actionForeground)
             }
-            .tint(AppColors.actionDestructiveBackground)
-
-            Button {
-                editingManualAssetRecord = record
-            } label: {
-                VStack(spacing: 4) {
-                    Image(systemName: "pencil")
-                        .font(.system(size: 18, weight: .medium))
-                    Text("編輯")
-                        .font(.system(size: 10, weight: .medium))
-                }
-                .foregroundColor(AppColors.actionForeground)
-            }
-            .tint(AppColors.actionEditBackground)
-        }
+        )
     }
     
     private var filteredActivityItems: [ActivityItem] {
@@ -481,35 +409,42 @@ struct TransactionsView: View {
 
     private var manualAssetActivityRecords: [ManualAssetActivityRecord] {
         viewModel.manualAssets.flatMap { asset in
-            let valuations = viewModel.manualAssetValuationsByAssetId[asset.id] ?? []
-            let creationValuation = valuations.first {
-                $0.notes == ManualAssetValuation.creationRecordNote
-            }
-            let creationRecord = ManualAssetActivityRecord(
-                id: "create-\(asset.id)",
-                kind: .creation,
-                asset: asset,
-                value: creationValuation?.value ?? asset.currentValue,
-                currency: creationValuation?.currency ?? asset.currency,
-                date: creationValuation?.valuationDate ?? asset.createdAt,
-                notes: nil,
-                valuation: creationValuation
-            )
-            let updateRecords = valuations
-                .filter { $0.notes != ManualAssetValuation.creationRecordNote }
-                .map { valuation in
+            let valuations = (viewModel.manualAssetValuationsByAssetId[asset.id] ?? [])
+                .sorted { $0.valuationDate < $1.valuationDate }
+
+            if valuations.isEmpty {
+                return [
                     ManualAssetActivityRecord(
-                        id: valuation.id,
-                        kind: .valuation,
+                        id: "create-\(asset.id)",
+                        kind: .creation,
                         asset: asset,
-                        value: valuation.value,
-                        currency: valuation.currency,
-                        date: valuation.valuationDate,
-                        notes: valuation.notes,
-                        valuation: valuation
+                        value: asset.currentValue,
+                        displayDelta: asset.currentValue,
+                        currency: asset.currency,
+                        date: asset.createdAt,
+                        notes: nil,
+                        valuation: nil
                     )
-                }
-            return [creationRecord] + updateRecords
+                ]
+            }
+
+            var previousValue: Decimal = 0
+            return valuations.map { valuation in
+                let isCreation = valuation.notes == ManualAssetValuation.creationRecordNote
+                let delta = valuation.value - previousValue
+                previousValue = valuation.value
+                return ManualAssetActivityRecord(
+                    id: isCreation ? "create-\(asset.id)" : valuation.id,
+                    kind: isCreation ? .creation : .valuation,
+                    asset: asset,
+                    value: valuation.value,
+                    displayDelta: delta,
+                    currency: valuation.currency,
+                    date: valuation.valuationDate,
+                    notes: isCreation ? nil : valuation.notes,
+                    valuation: valuation
+                )
+            }
         }
     }
 
@@ -626,15 +561,17 @@ struct TransactionsView: View {
                 loadFilterPreferences()
                 await viewModel.loadTransactions(userId: userId)
             }
-            .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { notification in
                 Task {
-                    await LaunchCoordinator.applyPersistedState(
-                        userId: userId,
-                        portfolioViewModel: portfolioViewModel,
-                        accountsViewModel: accountsViewModel,
-                        assetsViewModel: assetsViewModel,
-                        rebuildAccountDetailCache: false
-                    )
+                    if notification.userInfo?[SnapshotUpdateUserInfoKey.alreadyApplied] as? Bool != true {
+                        await LaunchCoordinator.applyPersistedState(
+                            userId: userId,
+                            portfolioViewModel: portfolioViewModel,
+                            accountsViewModel: accountsViewModel,
+                            assetsViewModel: assetsViewModel,
+                            rebuildAccountDetailCache: false
+                        )
+                    }
                     await viewModel.loadTransactions(userId: userId)
                 }
             }
@@ -812,15 +749,16 @@ struct TransactionsView: View {
     private func editManualAssetRecordSheet(record: ManualAssetActivityRecord) -> some View {
         switch record.kind {
         case .creation:
-            ManualAssetEditSheet(
-                asset: record.asset,
+            ManualAssetFormView(
                 viewModel: manualAssetsViewModel,
-                mode: .full,
-                syncCreationValuation: true
-            ) { _ in
-                editingManualAssetRecord = nil
-                Task { await viewModel.loadTransactions(userId: userId) }
-            }
+                mode: .edit(asset: record.asset, syncCreationValuation: true),
+                chrome: .sheet,
+                onCancel: { editingManualAssetRecord = nil },
+                onSaved: {
+                    editingManualAssetRecord = nil
+                    Task { await viewModel.loadTransactions(userId: userId) }
+                }
+            )
         case .valuation:
             if let valuation = record.valuation {
                 ManualAssetUpdateValueView(
@@ -1324,6 +1262,165 @@ private struct FilterSelectableRow: View {
     }
 }
 
+fileprivate struct ManualAssetActivityRowView: View {
+    let record: ManualAssetActivityRecord
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+
+    @State private var isExpanded = false
+
+    private var accentColor: Color { .manualAssetColor }
+
+    private var trimmedNotes: String? {
+        guard let notes = record.notes?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !notes.isEmpty else {
+            return nil
+        }
+        return notes
+    }
+
+    private var signedAmountText: String {
+        let absAmount = abs(record.displayDelta)
+        let formatted = absAmount.formatted(currency: record.currency, showSymbol: false)
+        if record.displayDelta > 0 { return "+ \(formatted)" }
+        if record.displayDelta < 0 { return "- \(formatted)" }
+        return formatted
+    }
+
+    private var amountColor: Color {
+        if record.displayDelta > 0 { return .profitGreen }
+        if record.displayDelta < 0 { return .lossRed }
+        return .secondaryText
+    }
+
+    var body: some View {
+        Group {
+            if trimmedNotes != nil {
+                cardContent {
+                    Button {
+                        withAnimation(ChartMotion.switchSpring) {
+                            isExpanded.toggle()
+                        }
+                    } label: {
+                        rowHeader(showsChevron: true, isExpandable: true)
+                    }
+                    .buttonStyle(.plain)
+
+                    if isExpanded, let detail = trimmedNotes {
+                        detailSection(detail)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
+                }
+            } else {
+                cardContent {
+                    rowHeader(showsChevron: true, isExpandable: false)
+                }
+            }
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button(action: onDelete) {
+                VStack(spacing: 4) {
+                    Image(systemName: "trash.fill")
+                        .font(.system(size: 18, weight: .medium))
+                    Text("刪除")
+                        .font(.system(size: 10, weight: .medium))
+                }
+                .foregroundColor(AppColors.actionForeground)
+                .frame(width: 70, height: 70)
+                .background(AppColors.actionDestructiveBackground)
+                .cornerRadius(0)
+            }
+            .tint(AppColors.actionDestructiveBackground)
+
+            Button(action: onEdit) {
+                VStack(spacing: 4) {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 18, weight: .medium))
+                    Text("編輯")
+                        .font(.system(size: 10, weight: .medium))
+                }
+                .foregroundColor(AppColors.actionForeground)
+                .frame(width: 70, height: 70)
+                .background(AppColors.actionEditBackground)
+                .cornerRadius(0)
+            }
+            .tint(AppColors.actionEditBackground)
+        }
+    }
+
+    @ViewBuilder
+    private func cardContent<C: View>(@ViewBuilder content: () -> C) -> some View {
+        content()
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.cardBackground)
+            .cornerRadius(12)
+            .overlay(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(accentColor)
+                    .frame(width: 4)
+            }
+            .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 2)
+    }
+
+    private func rowHeader(showsChevron: Bool, isExpandable: Bool) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(record.title)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primaryText)
+                    .lineLimit(2)
+
+                Text("\(record.asset.name) · \(record.asset.category.displayName)")
+                    .font(.caption)
+                    .foregroundColor(.secondaryText)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 8)
+
+            VStack(alignment: .trailing, spacing: 4) {
+                CurrencyAmountWithChip(
+                    text: signedAmountText,
+                    currency: record.currency,
+                    font: .system(size: 17, weight: .bold),
+                    weight: .bold,
+                    color: amountColor,
+                    chipTint: accentColor
+                )
+
+                Text(record.date, style: .date)
+                    .font(.caption)
+                    .foregroundColor(.secondaryText)
+            }
+
+            if showsChevron {
+                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(isExpandable ? .secondaryText : .secondaryText.opacity(0.38))
+                    .frame(width: 16)
+            }
+        }
+        .contentShape(Rectangle())
+    }
+
+    private func detailSection(_ detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Divider()
+            Text("明細")
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundColor(.secondaryText)
+            Text(detail)
+                .font(.caption)
+                .foregroundColor(.primaryText)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
 struct TransactionRowView: View {
     let transaction: Transaction
     let accountName: String
@@ -1422,14 +1519,11 @@ struct TransactionRowView: View {
     private func rowHeader(showsChevron: Bool = false, isExpandable: Bool = false) -> some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
-                CurrencyTitleLabel(
-                    title: display.primaryTitle,
-                    currency: transaction.currency,
-                    font: .subheadline,
-                    weight: .semibold,
-                    color: .primaryText,
-                    chipTint: display.typeAccentColor
-                )
+                Text(display.primaryTitle)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primaryText)
+                    .lineLimit(2)
                 
                 Text(display.detailSubtitle(accountName: accountName))
                     .font(.caption)
@@ -1440,7 +1534,7 @@ struct TransactionRowView: View {
             Spacer(minLength: 8)
             
             VStack(alignment: .trailing, spacing: 4) {
-                CurrencyAmountLabel(
+                CurrencyAmountWithChip(
                     text: transactionAmount,
                     currency: transaction.currency,
                     font: .system(size: 17, weight: .bold),
