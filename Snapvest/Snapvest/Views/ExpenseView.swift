@@ -21,7 +21,8 @@ struct ExpenseView: View {
     @State private var twdEquivalent: Decimal? = nil
     @State private var errorMessage: String? = nil
     @State private var usdToTwdRate: Decimal? = ExchangeRateSessionCache.usdToTwd
-    
+    @State private var editBaseline: CashTransactionEditBaseline?
+
     init(account: Account, viewModel: AccountDetailViewModel, editingTransaction: Transaction? = nil) {
         self.account = account
         self.viewModel = viewModel
@@ -253,6 +254,11 @@ struct ExpenseView: View {
                     notes = transaction.notes ?? ""
                     transactionDate = transaction.transactionDate
                     calculateTwdEquivalent(amount)
+                    editBaseline = CashTransactionEditBaseline(
+                        amountText: amount,
+                        notes: notes,
+                        date: transactionDate
+                    )
                 }
             }
         }
@@ -323,12 +329,22 @@ struct ExpenseView: View {
         return viewModel.cashBalance
     }
     
+    private var hasEditChanges: Bool {
+        guard editingTransaction != nil, let editBaseline else { return true }
+        return !EditFormChangeTracking.decimalStringsEqual(amount, editBaseline.amountText)
+            || EditFormChangeTracking.normalizedNote(notes) != EditFormChangeTracking.normalizedNote(editBaseline.notes)
+            || !EditFormChangeTracking.datesEqual(transactionDate, editBaseline.date)
+    }
+
     private var isValid: Bool {
         guard let amountValue = Decimal(string: amount),
               !amount.isEmpty,
               amountValue > 0,
               amountValue <= maxAllowedExpenseAmount else {
             return false
+        }
+        if editingTransaction != nil {
+            return hasEditChanges
         }
         return true
     }

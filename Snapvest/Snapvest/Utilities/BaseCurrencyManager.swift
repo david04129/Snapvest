@@ -7,6 +7,7 @@
 
 import Combine
 import Foundation
+import SwiftUI
 
 @MainActor
 final class BaseCurrencyManager: ObservableObject {
@@ -78,5 +79,18 @@ extension Currency {
     
     var settingsDisplayName: String {
         "\(displayName) \(rawValue)"
+    }
+
+    /// 設定／表單幣別 chip 色（不依賴當下圓餅圖配置）
+    var chipTintColor: Color {
+        switch self {
+        case .TWD: return .allocationTwdCash
+        case .USD: return .allocationUsdCash
+        case .EUR: return .stockUSColor
+        case .JPY: return .stockTWColor
+        case .AUD: return .cryptoColor
+        case .HKD: return .manualAssetColor
+        case .CNY: return .homeInvestmentsAccent
+        }
     }
 }

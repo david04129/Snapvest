@@ -63,16 +63,21 @@ class PortfolioViewModel: ObservableObject {
         do {
             accounts = try await dataService.fetchAccounts(userId: userId)
             liabilities = try await loadLiabilities(userId: userId)
-            homeSnapshot = try await dataService.fetchHomeDashboardSnapshot(userId: userId)
-            lastHomeSnapshot = homeSnapshot
+            let snapshot = try await dataService.fetchHomeDashboardSnapshot(userId: userId)
+            let snapshotChanged = snapshot != homeSnapshot
+            let rateChanged = lastUsdToTwdRate != usdToTwdRate
+            homeSnapshot = snapshot
+            lastHomeSnapshot = snapshot
             lastUsdToTwdRate = usdToTwdRate
             let twdPerBaseCurrency = await loadTwdPerBaseCurrency()
-            applyHomeSnapshot(
-                homeSnapshot,
-                usdToTwdRate: usdToTwdRate,
-                twdPerBaseCurrency: twdPerBaseCurrency
-            )
-            await refreshPieChartDataFromPersisted(userId: userId, usdToTwdRate: usdToTwdRate)
+            if snapshotChanged || rateChanged {
+                applyHomeSnapshot(
+                    homeSnapshot,
+                    usdToTwdRate: usdToTwdRate,
+                    twdPerBaseCurrency: twdPerBaseCurrency
+                )
+                await refreshPieChartDataFromPersisted(userId: userId, usdToTwdRate: usdToTwdRate)
+            }
         } catch {
             errorMessage = "載入資料失敗：\(error.localizedDescription)"
         }

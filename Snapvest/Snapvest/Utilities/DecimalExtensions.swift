@@ -144,6 +144,18 @@ extension Decimal {
         return formatter.string(from: self as NSDecimalNumber) ?? "\(self)"
     }
     
+    /// 匯率顯示：最多 4 位（<1）或 2 位，不強制補尾端 0
+    func formattedExchangeRateDisplay() -> String {
+        let maxFractionDigits = self < 1 ? 4 : 2
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = maxFractionDigits
+        formatter.usesGroupingSeparator = false
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        return formatter.string(from: self as NSDecimalNumber) ?? "\(self)"
+    }
+
     /// 表單數量預填：整數不帶小數；有小數則保留（最多 maxFractionDigits 位，去掉尾端 0）
     func formattedQuantityInput(maxFractionDigits: Int = 8) -> String {
         let formatter = NumberFormatter()

@@ -360,8 +360,11 @@ struct HoldingDetailView: View {
                 heroSummaryCard
                 secondaryMetricsSection
                 
-                if !aggregatedHolding.fifoLotsByAccount.isEmpty {
-                    fifoLotsSection
+                if showsTradeHistorySection {
+                    HoldingTradeHistorySection(
+                        aggregatedHolding: aggregatedHolding,
+                        currentPrice: currentPrice
+                    )
                 }
             }
             .padding(.horizontal, 20)
@@ -629,20 +632,10 @@ struct HoldingDetailView: View {
         }
     }
 
-    // MARK: - 買入批次（表格式）
-    private var fifoLotsSection: some View {
-        HoldingFIFOLotsTableSection(
-            fifoLotsByAccount: aggregatedHolding.fifoLotsByAccount,
-            assetType: aggregatedHolding.assetType,
-            currency: aggregatedHolding.currency,
-            currentPrice: currentPrice,
-            amountDisplay: .original,
-            usdToTwdRate: usdToTwdRate,
-            baseCurrency: aggregatedHolding.currency,
-            twdPerBaseCurrency: twdPerBaseCurrency
-        )
+    private var showsTradeHistorySection: Bool {
+        TradeMarket(assetType: aggregatedHolding.assetType) != nil
     }
-    
+
     private var heroQuantityDisplayText: String {
         formatShareQuantity(
             aggregatedHolding.totalQuantity,
@@ -757,11 +750,11 @@ struct HoldingDetailView: View {
                     switch sheet {
                     case .buy:
                         BuyTradeFormView(market: market, prefill: buyPrefill, onSubmit: {
-                            NotificationCenter.default.post(name: .snapshotsDidUpdate, object: nil)
+                            activeTradeSheet = nil
                         })
                     case .sell:
                         SellTradeFormView(market: market, prefill: sellPrefill, onSubmit: { _ in
-                            NotificationCenter.default.post(name: .snapshotsDidUpdate, object: nil)
+                            activeTradeSheet = nil
                         })
                     }
                 }
@@ -776,324 +769,6 @@ struct HoldingDetailView: View {
             .snapFormSheetChrome()
             .presentationDetents([.large])
         }
-    }
-}
-
-// MARK: - 買入批次表（FIFO 區塊 UI）
-private struct FIFOLotTableRow: Identifiable {
-    let id: String
-    let brokerName: String
-    let lot: FIFOLotSnapshot
-}
-
-struct HoldingFIFOLotsTableSection: View {
-    let fifoLotsByAccount: [FIFOLotsByAccountSnapshot]
-    let assetType: AssetType
-    let currency: Currency
-    let currentPrice: Decimal?
-    var amountDisplay: HoldingDetailView.MetricAmountDisplay = .original
-    var usdToTwdRate: Decimal = 0
-    var baseCurrency: Currency = .TWD
-    var twdPerBaseCurrency: Decimal = 1
-
-    @State private var buyDateSort: HoldingsMarketValueSort = .descending
-    @State private var sortByAccountFirst = false
-    
-    private var showsAccountColumn: Bool {
-        fifoLotsByAccount.count > 1
-    }
-
-    private var sectionDisplayCurrency: Currency {
-        amountDisplay == .twd ? baseCurrency : currency
-    }
-    
-    private var tableRows: [FIFOLotTableRow] {
-        let rows = fifoLotsByAccount.flatMap { group in
-            group.lots.map { lot in
-                FIFOLotTableRow(
-                    id: lot.id,
-                    brokerName: group.accountName,
-                    lot: lot
-                )
-            }
-        }
-        
-        return rows.sorted { lhs, rhs in
-            if sortByAccountFirst, showsAccountColumn {
-                let accountOrder = lhs.brokerName.localizedStandardCompare(rhs.brokerName)
-                if accountOrder != .orderedSame {
-                    return accountOrder == .orderedAscending
-                }
-            }
-            switch buyDateSort {
-            case .descending:
-                return lhs.lot.buyDate > rhs.lot.buyDate
-            case .ascending:
-                return lhs.lot.buyDate < rhs.lot.buyDate
-            }
-        }
-    }
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("買入批次")
-                            .font(.headline)
-                            .foregroundColor(.primaryText)
-                        CurrencyCodeChip(currency: sectionDisplayCurrency, tint: .appPrimary)
-                    }
-                    Text("賣出時依買入先後扣庫存")
-                        .font(.caption)
-                        .foregroundColor(.secondaryText)
-                }
-                
-                Spacer(minLength: 8)
-                
-                HStack(spacing: 8) {
-                    AssetsFilterChipButton(
-                        title: "日期",
-                        icon: buyDateSort.iconName,
-                        isActive: true
-                    ) {
-                        withAnimation(ChartMotion.switchSpring) {
-                            buyDateSort.cycle()
-                        }
-                    }
-                    
-                    if showsAccountColumn {
-                        AssetsFilterChipButton(
-                            title: "帳戶",
-                            icon: "building.columns.fill",
-                            isActive: sortByAccountFirst
-                        ) {
-                            withAnimation(ChartMotion.switchSpring) {
-                                sortByAccountFirst.toggle()
-                            }
-                        }
-                    }
-                }
-            }
-            
-            if tableRows.isEmpty {
-                Text("尚無買入批次")
-                    .font(.subheadline)
-                    .foregroundColor(.secondaryText)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 20)
-                    .background(Color.secondaryBackground)
-                    .cornerRadius(10)
-            } else {
-                VStack(spacing: 0) {
-                    tableHeaderRow
-                    Divider()
-                    ForEach(Array(tableRows.enumerated()), id: \.element.id) { index, row in
-                        FIFOLotTableDataRow(
-                            row: row,
-                            assetType: assetType,
-                            currency: currency,
-                            currentPrice: currentPrice,
-                            amountDisplay: amountDisplay,
-                            usdToTwdRate: usdToTwdRate,
-                            baseCurrency: baseCurrency,
-                            twdPerBaseCurrency: twdPerBaseCurrency,
-                            showsAccount: showsAccountColumn,
-                            isAlternate: index.isMultiple(of: 2)
-                        )
-                        if index < tableRows.count - 1 {
-                            Divider()
-                        }
-                    }
-                }
-                .background(Color.secondaryBackground)
-                .cornerRadius(10)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.separator.opacity(0.5), lineWidth: 1)
-                )
-                .animation(ChartMotion.switchSpring, value: buyDateSort)
-                .animation(ChartMotion.switchSpring, value: sortByAccountFirst)
-            }
-        }
-    }
-    
-    private var tableHeaderRow: some View {
-        HStack(spacing: 6) {
-            if showsAccountColumn {
-                headerCell("帳戶", alignment: .leading)
-                    .frame(minWidth: 52, maxWidth: 72, alignment: .leading)
-            }
-            headerCell("買入日", alignment: .leading)
-                .frame(width: 54, alignment: .leading)
-            headerCell("數量", alignment: .trailing)
-                .frame(minWidth: 44, maxWidth: .infinity, alignment: .trailing)
-            headerCell("均價", alignment: .trailing)
-                .frame(minWidth: 44, maxWidth: .infinity, alignment: .trailing)
-            headerCell("損益", alignment: .trailing)
-                .frame(minWidth: 72, maxWidth: .infinity, alignment: .trailing)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 10)
-        .background(Color.tertiaryBackground.opacity(0.6))
-    }
-    
-    private func headerCell(_ title: String, alignment: HorizontalAlignment) -> some View {
-        Text(title)
-            .font(.caption)
-            .fontWeight(.semibold)
-            .foregroundColor(.primaryText.opacity(0.75))
-            .frame(maxWidth: .infinity, alignment: Alignment(horizontal: alignment, vertical: .center))
-            .lineLimit(1)
-            .minimumScaleFactor(0.8)
-    }
-}
-
-private struct FIFOLotTableDataRow: View {
-    let row: FIFOLotTableRow
-    let assetType: AssetType
-    let currency: Currency
-    let currentPrice: Decimal?
-    let amountDisplay: HoldingDetailView.MetricAmountDisplay
-    let usdToTwdRate: Decimal
-    let baseCurrency: Currency
-    let twdPerBaseCurrency: Decimal
-    let showsAccount: Bool
-    let isAlternate: Bool
-    
-    private var useBaseDisplay: Bool {
-        amountDisplay == .twd && displayCurrency != currency
-    }
-    
-    private var displayCurrency: Currency {
-        amountDisplay == .twd ? baseCurrency : currency
-    }
-
-    private func convertedFromOriginalCurrency(_ amount: Decimal) -> Decimal {
-        guard useBaseDisplay else { return amount }
-        let twdAmount: Decimal
-        switch currency {
-        case .TWD:
-            twdAmount = amount
-        case .USD:
-            twdAmount = usdToTwdRate > 0 ? amount * usdToTwdRate : amount
-        default:
-            twdAmount = currency == baseCurrency && twdPerBaseCurrency > 0
-                ? amount * twdPerBaseCurrency
-                : amount
-        }
-        guard displayCurrency != .TWD,
-              twdPerBaseCurrency > 0 else {
-            return twdAmount
-        }
-        return twdAmount / twdPerBaseCurrency
-    }
-    
-    private var displayPrice: Decimal? {
-        guard let price = currentPrice else { return nil }
-        return convertedFromOriginalCurrency(price)
-    }
-    
-    private var displayCostPerUnit: Decimal {
-        convertedFromOriginalCurrency(row.lot.costPerUnit)
-    }
-    
-    private var marketValue: Decimal {
-        guard let price = displayPrice else { return 0 }
-        return row.lot.remainingQuantity * price
-    }
-    
-    private var totalCost: Decimal {
-        row.lot.remainingQuantity * displayCostPerUnit
-    }
-    
-    private var unrealizedGainLoss: Decimal {
-        marketValue - totalCost
-    }
-    
-    private var unrealizedGainLossPercent: Decimal {
-        guard totalCost > 0 else { return 0 }
-        return (unrealizedGainLoss / totalCost) * 100
-    }
-    
-    private var plColor: Color {
-        Color.marketColor(for: unrealizedGainLoss)
-    }
-    
-    var body: some View {
-        HStack(spacing: 6) {
-            if showsAccount {
-                dataCell(row.brokerName, alignment: .leading, weight: .regular)
-                    .frame(minWidth: 52, maxWidth: 72, alignment: .leading)
-                    .lineLimit(2)
-            }
-            dataCell(formatBuyDate(row.lot.buyDate), alignment: .leading, weight: .medium)
-                .frame(width: 54, alignment: .leading)
-            dataCell(formatLotQuantity(row.lot.remainingQuantity), alignment: .trailing, weight: .semibold)
-                .frame(minWidth: 44, maxWidth: .infinity, alignment: .trailing)
-            dataCell(
-                formattedUnitPrice(displayCostPerUnit),
-                alignment: .trailing,
-                weight: .regular
-            )
-            .frame(minWidth: 44, maxWidth: .infinity, alignment: .trailing)
-            profitLossCell
-                .frame(minWidth: 72, maxWidth: .infinity, alignment: .trailing)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 10)
-        .background(isAlternate ? Color.cardBackground.opacity(0.35) : Color.clear)
-    }
-    
-    private var profitLossCell: some View {
-        VStack(alignment: .trailing, spacing: 2) {
-            Text(unrealizedGainLoss.formatted(
-                currency: displayCurrency,
-                fractionDigits: 0,
-                showSymbol: false
-            ))
-            .font(.caption)
-            .fontWeight(.semibold)
-            .foregroundColor(plColor)
-            .monospacedDigit()
-            Text("\(unrealizedGainLossPercent.formatted(fractionDigits: 2))%")
-                .font(.caption2)
-                .foregroundColor(plColor)
-        }
-    }
-
-    private func formattedUnitPrice(_ value: Decimal) -> String {
-        let maxFractionDigits = assetType == .crypto ? 8 : 4
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.groupingSeparator = ","
-        formatter.usesGroupingSeparator = true
-        formatter.minimumFractionDigits = 0
-        formatter.maximumFractionDigits = maxFractionDigits
-        formatter.locale = Locale(identifier: "zh_TW")
-        return formatter.string(from: value as NSDecimalNumber) ?? "\(value)"
-    }
-    
-    private func dataCell(_ text: String, alignment: HorizontalAlignment, weight: Font.Weight) -> some View {
-        Text(text)
-            .font(.caption)
-            .fontWeight(weight)
-            .foregroundColor(.primaryText)
-            .frame(maxWidth: .infinity, alignment: Alignment(horizontal: alignment, vertical: .center))
-            .lineLimit(2)
-            .minimumScaleFactor(0.75)
-    }
-    
-    private func formatBuyDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yy/MM/dd"
-        formatter.locale = Locale(identifier: "zh_TW")
-        return formatter.string(from: date)
-    }
-    
-    private func formatLotQuantity(_ quantity: Decimal) -> String {
-        let maxFractionDigits = assetType == .crypto ? 8 : 4
-        return quantity.formattedQuantityInput(maxFractionDigits: maxFractionDigits)
     }
 }
 

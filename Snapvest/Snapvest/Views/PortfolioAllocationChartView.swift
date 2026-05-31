@@ -905,9 +905,10 @@ struct PortfolioDonutChart: View {
     var twdPerDisplayCurrency: Decimal = 1
     var isGroupingEnabled: Bool = false
     var allowsSelection: Bool = true
+    var chartSize: CGFloat = 228
     @Environment(\.homeAmountsHidden) private var hideHomeAmounts
-    
-    private let chartSize: CGFloat = 228
+
+    private var layoutScale: CGFloat { chartSize / 228 }
     /// 環變瘦：內徑比例越大環越細
     private let innerRadiusRatio: CGFloat = 0.78
     /// 點擊判定比視覺環更寬，方便點中
@@ -954,9 +955,9 @@ struct PortfolioDonutChart: View {
             }
             
             if let selected = selectedItem ?? data.max(by: { $0.value < $1.value }) {
-                VStack(spacing: 3) {
+                VStack(spacing: 3 * layoutScale) {
                     Text(selected.name)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: 14 * layoutScale, weight: .semibold))
                         .foregroundColor(.primaryText)
                         .multilineTextAlignment(.center)
                         .lineLimit(2)
@@ -968,7 +969,7 @@ struct PortfolioDonutChart: View {
                                 fractionDigits: displayCurrency == .TWD ? 0 : 2
                             ),
                             currency: displayCurrency,
-                            font: .system(size: 16),
+                            font: .system(size: 16 * layoutScale),
                             weight: .bold,
                             color: .primaryText,
                             chipTint: selected.color
@@ -976,7 +977,7 @@ struct PortfolioDonutChart: View {
                         .monospacedDigit()
                     }
                     Text(percentageText(for: selected))
-                        .font(.system(size: hideHomeAmounts ? 17 : 13, weight: .semibold))
+                        .font(.system(size: (hideHomeAmounts ? 17 : 13) * layoutScale, weight: .semibold))
                         .foregroundColor(selected.color)
                 }
                 .frame(width: chartSize * innerRadiusRatio * 1.2)
@@ -985,7 +986,7 @@ struct PortfolioDonutChart: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
+        .padding(.vertical, 8 * layoutScale)
         .onChange(of: chartIdentity) { _, _ in
             if allowsSelection { pickLargestSliceIfNeeded() }
         }
@@ -1031,7 +1032,7 @@ struct PortfolioDonutChart: View {
         let distance = hypot(dx, dy)
         let radius = min(size.width, size.height) / 2
         let hitInner = radius * hitInnerRadiusRatio
-        let hitOuter = radius + hitOuterPadding
+        let hitOuter = radius + hitOuterPadding * layoutScale
         guard distance >= hitInner, distance <= hitOuter else { return }
 
         let sum = data.reduce(0.0) { $0 + $1.value }

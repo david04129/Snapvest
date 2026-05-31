@@ -11,8 +11,7 @@ import SwiftUI
 
 struct ManualAssetValuationHistoryListRowView: View {
     let entry: ManualAssetValuationHistoryEntry
-    @Binding var isExpanded: Bool
-    let onEdit: () -> Void
+    let onRowTap: () -> Void
     let onDelete: (() -> Void)?
 
     private let accentColor = Color.manualAssetColor
@@ -31,27 +30,13 @@ struct ManualAssetValuationHistoryListRowView: View {
         return .secondaryText
     }
 
-    private var hasExpandableNotes: Bool {
-        entry.trimmedNotes != nil
-    }
-
     var body: some View {
-        Group {
-            if hasExpandableNotes, let detail = entry.trimmedNotes {
-                cardContent {
-                    DisclosureGroup(isExpanded: $isExpanded) {
-                        detailSection(detail)
-                    } label: {
-                        rowHeader()
-                    }
-                    .tint(.secondaryText)
-                }
-            } else {
-                cardContent {
-                    rowHeader()
-                }
+        Button(action: onRowTap) {
+            cardContent {
+                rowHeader()
             }
         }
+        .buttonStyle(.plain)
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             if let onDelete, !entry.isCreation {
                 Button(action: onDelete) {
@@ -67,19 +52,6 @@ struct ManualAssetValuationHistoryListRowView: View {
                 }
                 .tint(AppColors.actionDestructiveBackground)
             }
-
-            Button(action: onEdit) {
-                VStack(spacing: 4) {
-                    Image(systemName: "pencil")
-                        .font(.system(size: 18, weight: .medium))
-                    Text("編輯")
-                        .font(.system(size: 10, weight: .medium))
-                }
-                .foregroundColor(AppColors.actionForeground)
-                .frame(width: 70, height: 70)
-                .background(AppColors.actionEditBackground)
-            }
-            .tint(AppColors.actionEditBackground)
         }
     }
 
@@ -107,7 +79,7 @@ struct ManualAssetValuationHistoryListRowView: View {
                     .foregroundColor(.primaryText)
                     .lineLimit(2)
 
-                if !hasExpandableNotes, let notes = entry.trimmedNotes {
+                if let notes = entry.trimmedNotes {
                     Text(notes)
                         .font(.caption)
                         .foregroundColor(.secondaryText)
@@ -138,44 +110,6 @@ struct ManualAssetValuationHistoryListRowView: View {
         .contentShape(Rectangle())
     }
 
-    private func detailSection(_ detail: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Divider()
-            Text("明細")
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundColor(.secondaryText)
-            Text(detail)
-                .font(.caption)
-                .foregroundColor(.primaryText)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-}
-
-// MARK: - 詳情預覽用精簡列
-
-struct ManualAssetValuationHistoryRowView: View {
-    let entry: ManualAssetValuationHistoryEntry
-    var showsChevron: Bool = false
-    var onTap: (() -> Void)?
-
-    var body: some View {
-        Button {
-            onTap?()
-        } label: {
-            ManualAssetValuationHistoryListRowView(
-                entry: entry,
-                isExpanded: .constant(false),
-                onEdit: { onTap?() },
-                onDelete: nil
-            )
-        }
-        .buttonStyle(.plain)
-        .disabled(onTap == nil)
-        .allowsHitTesting(onTap != nil)
-    }
 }
 
 // MARK: - 完整列表
@@ -188,7 +122,6 @@ struct ManualAssetValuationHistoryView: View {
     @State private var entries: [ManualAssetValuationHistoryEntry] = []
     @State private var displayAsset: ManualAsset
     @State private var isLoading = true
-    @State private var expandedEntryId: String?
     @State private var entryPendingDelete: ManualAssetValuationHistoryEntry?
     @State private var showDeleteConfirmation = false
     @State private var deleteErrorMessage: String?
@@ -349,8 +282,7 @@ struct ManualAssetValuationHistoryView: View {
                     ForEach(group.entries) { entry in
                         ManualAssetValuationHistoryListRowView(
                             entry: entry,
-                            isExpanded: expansionBinding(for: entry),
-                            onEdit: { editingEntry = entry },
+                            onRowTap: { editingEntry = entry },
                             onDelete: entry.isCreation ? nil : {
                                 entryPendingDelete = entry
                                 showDeleteConfirmation = true
@@ -368,15 +300,6 @@ struct ManualAssetValuationHistoryView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(Color.mainBackground)
-    }
-
-    private func expansionBinding(for entry: ManualAssetValuationHistoryEntry) -> Binding<Bool> {
-        Binding(
-            get: { expandedEntryId == entry.id },
-            set: { isExpanded in
-                expandedEntryId = isExpanded ? entry.id : nil
-            }
-        )
     }
 
     @MainActor
@@ -416,6 +339,7 @@ struct ManualAssetValuationHistoryPreviewSection: View {
     let isLoading: Bool
     let onViewAll: () -> Void
     let onSelectEntry: (ManualAssetValuationHistoryEntry) -> Void
+    let onDelete: (ManualAssetValuationHistoryEntry) -> Void
 
     private static let previewLimit = 4
     private let accentColor = Color.manualAssetColor
@@ -457,19 +381,15 @@ struct ManualAssetValuationHistoryPreviewSection: View {
                         .foregroundColor(.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
-                    VStack(spacing: 10) {
+                    DetailPreviewMeasuredList(rowIDs: previewEntries.map(\.id)) {
                         ForEach(previewEntries) { entry in
-                            Button {
-                                onSelectEntry(entry)
-                            } label: {
-                                ManualAssetValuationHistoryListRowView(
-                                    entry: entry,
-                                    isExpanded: .constant(false),
-                                    onEdit: { onSelectEntry(entry) },
-                                    onDelete: nil
-                                )
-                            }
-                            .buttonStyle(.plain)
+                            ManualAssetValuationHistoryListRowView(
+                                entry: entry,
+                                onRowTap: { onSelectEntry(entry) },
+                                onDelete: entry.isCreation ? nil : { onDelete(entry) }
+                            )
+                            .detailPreviewListRowStyle()
+                            .detailPreviewMeasureRowHeight(id: entry.id)
                         }
                     }
 

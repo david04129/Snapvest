@@ -20,10 +20,9 @@ struct AccountPickerTriggerField: View {
         Button(action: action) {
             HStack(spacing: 10) {
                 if let account = selectedAccount {
-                    CurrencyCodeChip(
+                    CurrencyIconBadge(
                         currency: account.currency,
-                        tint: account.accountType.color,
-                        style: .filled
+                        tint: account.accountType.color
                     )
 
                     VStack(alignment: .leading, spacing: 4) {

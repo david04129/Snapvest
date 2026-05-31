@@ -57,6 +57,7 @@ struct AppRootView: View {
             }
         }
         .preferredColorScheme(themeManager.isDarkMode ? .dark : .light)
+        .dynamicTypeSize(.medium)
         .task(id: launchAttempt) {
             await runLaunchSequence()
         }

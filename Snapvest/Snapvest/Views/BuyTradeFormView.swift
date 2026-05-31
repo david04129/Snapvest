@@ -39,7 +39,8 @@ struct BuyTradeFormView: View {
     @State private var livePriceState: SymbolLiveReferencePrice.State = .idle
     @State private var livePriceFetchedForSymbol: String = ""
     @State private var livePriceTaskToken = 0
-    
+    @State private var editBaseline: BuyTradeEditBaseline?
+
     private let dataService: DataServiceProtocol = MockDataService.shared
     
     @Environment(\.dismiss) private var dismiss
@@ -81,6 +82,7 @@ struct BuyTradeFormView: View {
     
     private var availableAccounts: [Account] {
         accountsViewModel.accounts.filter { account in
+            guard !account.isArchived else { return false }
             switch market {
             case .stockTW:
                 return account.accountType == .twdSecurities
@@ -160,8 +162,19 @@ struct BuyTradeFormView: View {
         return false
     }
 
+    private var hasEditChanges: Bool {
+        guard let baseline = editBaseline else { return true }
+        return selectedAccountId != baseline.accountId
+            || selectedSymbol != baseline.symbol
+            || !EditFormChangeTracking.decimalStringsEqual(quantityText, baseline.quantityText)
+            || !EditFormChangeTracking.decimalStringsEqual(priceText, baseline.priceText)
+            || !EditFormChangeTracking.decimalStringsEqual(exchangeRateText, baseline.exchangeRateText)
+            || !EditFormChangeTracking.datesEqual(transactionDate, baseline.date)
+            || deductFromAccount != baseline.deductFromAccount
+    }
+
     private var canSubmit: Bool {
-        isValid && errorMessage == nil && livePriceReady
+        isValid && errorMessage == nil && livePriceReady && hasEditChanges
     }
     
     private var isValid: Bool {
@@ -185,7 +198,7 @@ struct BuyTradeFormView: View {
     
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: TradeFormLayout.scrollSpacing) {
                 if !embedInTradeFlow {
                     TradeFormCompactHeader(
                         market: market,
@@ -201,7 +214,7 @@ struct BuyTradeFormView: View {
         .snapFormScrollDismissesKeyboard()
         .background(Color.mainBackground)
         .safeAreaInset(edge: .bottom) {
-            VStack(spacing: 10) {
+            VStack(spacing: TradeFormLayout.bottomBarSpacing) {
                 buyAmountSummary
                 if isImportDraftMode {
                     HStack(spacing: 10) {
@@ -212,7 +225,7 @@ struct BuyTradeFormView: View {
                             Text("移除")
                                 .font(.headline)
                                 .frame(maxWidth: .infinity)
-                                .padding(.vertical, 16)
+                                .padding(.vertical, TradeFormLayout.submitButtonVPadding)
                         }
                         .buttonStyle(.plain)
                         .foregroundColor(.lossRed)
@@ -242,7 +255,7 @@ struct BuyTradeFormView: View {
                         .font(.headline)
                         .foregroundColor(AppColors.actionForeground)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
+                        .padding(.vertical, TradeFormLayout.submitButtonVPadding)
                         .background(canSubmit ? Color.profitGreen : AppColors.disabledBackground)
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
@@ -373,25 +386,25 @@ struct BuyTradeFormView: View {
     private var formCard: some View {
         VStack(spacing: 0) {
             symbolSection
-            Divider().padding(.horizontal, 20)
+            TradeFormCardDivider()
             quantitySection
-            Divider().padding(.horizontal, 20)
+            TradeFormCardDivider()
             priceSection
-            Divider().padding(.horizontal, 20)
+            TradeFormCardDivider()
             accountSection
-            Divider().padding(.horizontal, 20)
+            TradeFormCardDivider()
             deductFromAccountSection
             if needsExchangeRate {
-                Divider().padding(.horizontal, 20)
+                TradeFormCardDivider()
                 exchangeRateSection
             }
-            Divider().padding(.horizontal, 20)
+            TradeFormCardDivider()
             dateSection
         }
         .background(Color.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: TradeFormLayout.cardCornerRadius, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: TradeFormLayout.cardCornerRadius, style: .continuous)
                 .stroke(Color.separator.opacity(0.32), lineWidth: 1)
         }
         .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 2)
@@ -399,52 +412,105 @@ struct BuyTradeFormView: View {
     }
     
     private var accountSection: some View {
-        buyFormRow(title: "帳戶", icon: "building.columns.fill", color: market.themeColor, showsIcon: false) {
-            if isAccountLocked {
-                if let account = selectedAccount {
-                    HStack(spacing: 8) {
-                        CurrencyCodeChip(currency: account.currency, tint: account.accountType.color, style: .filled)
-                        Text(account.name)
-                            .foregroundColor(.primaryText)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                } else {
-                    ProgressView()
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            } else {
-                Picker(selection: $selectedAccountId) {
-                ForEach(availableAccounts) { account in
-                    HStack(spacing: 8) {
-                        CurrencyCodeChip(currency: account.currency, tint: account.accountType.color, style: .filled)
-                        Text(account.name)
-                    }
-                    .tag(account.id)
-                }
-            } label: {
-                HStack(spacing: 8) {
-                    if let account = selectedAccount {
-                        CurrencyCodeChip(currency: account.currency, tint: account.accountType.color, style: .filled)
-                        Text(account.name).foregroundColor(.primaryText)
-                    } else {
-                        Text("選擇帳戶").foregroundColor(.secondaryText)
-                    }
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.down")
+        TradeFormRow(title: "帳戶", icon: "building.columns.fill", color: market.themeColor, showsIcon: false) {
+            VStack(alignment: .leading, spacing: 8) {
+                if isAccountLocked {
+                    Text("已鎖定此帳戶，無法改選其他帳戶")
+                        .font(.subheadline)
                         .foregroundColor(.secondaryText)
-                        .font(.caption)
+                } else if availableAccounts.count > 1 {
+                    Text("點選下方帳戶進行買入")
+                        .font(.subheadline)
+                        .foregroundColor(.secondaryText)
                 }
-                .snapFormFieldTapTarget()
+
+                if availableAccounts.isEmpty {
+                    Text("尚無可選的\(market.title)帳戶")
+                        .font(.subheadline)
+                        .foregroundColor(.lossRed)
+                } else if isAccountLocked {
+                    if let account = selectedAccount {
+                        buyAccountPickerRow(account, isInteractionEnabled: false)
+                    } else {
+                        ProgressView()
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                } else {
+                    VStack(spacing: TradeFormLayout.accountPickerSpacing) {
+                        ForEach(availableAccounts) { account in
+                            buyAccountPickerRow(account, isInteractionEnabled: true)
+                        }
+                    }
+                }
             }
-            .pickerStyle(.menu)
-            .labelsHidden()
             .frame(maxWidth: .infinity, alignment: .leading)
-            }
         }
+    }
+
+    private func buyAccountPickerRow(_ account: Account, isInteractionEnabled: Bool) -> some View {
+        let isSelected = account.id == selectedAccountId
+
+        return Button {
+            selectBuyAccount(account)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 22))
+                    .foregroundColor(isSelected ? market.themeColor : .secondaryText)
+
+                CurrencyIconBadge(
+                    currency: account.currency,
+                    tint: account.accountType.color
+                )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(account.name)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primaryText)
+                    Text(account.accountType.displayName)
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, TradeFormLayout.accountPickerHPadding)
+            .padding(.vertical, TradeFormLayout.accountPickerVPadding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isSelected ? market.themeColor.opacity(0.12) : Color.secondaryBackground)
+            .cornerRadius(TradeFormLayout.fieldCornerRadius)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(
+                        isSelected ? market.themeColor.opacity(0.45) : Color.secondaryText.opacity(0.2),
+                        lineWidth: 1
+                    )
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isInteractionEnabled || (!isAccountLocked && availableAccounts.count == 1 && isSelected))
+    }
+
+    private func selectBuyAccount(_ account: Account) {
+        guard !isAccountLocked else { return }
+        guard selectedAccountId != account.id else { return }
+
+        selectedAccountId = account.id
+        if needsExchangeRate {
+            if exchangeRateText.isEmpty {
+                loadExchangeRate()
+            }
+        } else {
+            exchangeRateText = ""
+        }
+        loadAccountCashBalance(accountId: account.id)
+        validateInput()
     }
     
     private var symbolSection: some View {
-        buyFormRow(title: market == .crypto ? "加密貨幣" : "股票代號", icon: "tag.fill", color: market.themeColor) {
+        TradeFormRow(title: market == .crypto ? "加密貨幣" : "股票代號", icon: "tag.fill", color: market.themeColor) {
             Button(action: { showingSymbolPicker = true }) {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 8) {
@@ -504,11 +570,11 @@ struct BuyTradeFormView: View {
                         .monospacedDigit()
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
                 .background(market.themeColor.opacity(0.1))
-                .cornerRadius(10)
-                .padding(.top, 6)
+                .cornerRadius(TradeFormLayout.fieldCornerRadius)
+                .padding(.top, 4)
             case .failed(let message):
                 VStack(alignment: .leading, spacing: 6) {
                     Text(message)
@@ -525,13 +591,11 @@ struct BuyTradeFormView: View {
     }
     
     private var quantitySection: some View {
-        buyFormRow(title: "數量", icon: "number.circle.fill", color: market.themeColor) {
+        TradeFormRow(title: "數量", icon: "number.circle.fill", color: market.themeColor) {
             VStack(alignment: .leading, spacing: 4) {
                 TextField("0", text: $quantityText)
                     .keyboardType(.decimalPad)
-                    .font(.system(size: 17, weight: .semibold))
-                    .monospacedDigit()
-                    .snapFormFieldTapTarget()
+                    .tradeFormDecimalFieldStyle()
                 if market == .crypto {
                     Text("加密貨幣可輸入小數，例如 0.01")
                         .font(.caption)
@@ -542,7 +606,7 @@ struct BuyTradeFormView: View {
     }
     
     private var priceSection: some View {
-        buyFormRow(
+        TradeFormRow(
             title: TradeFormUnitPriceLabels.rowTitle(market: market, isSell: false),
             icon: "dollarsign.circle.fill",
             color: market.themeColor
@@ -554,17 +618,15 @@ struct BuyTradeFormView: View {
     @ViewBuilder
     private var exchangeRateSection: some View {
         let target = selectedAccount?.currency.rawValue ?? ""
-        buyFormRow(title: "\(priceCurrency.rawValue) 對 \(target) 匯率", icon: "arrow.triangle.2.circlepath", color: market.themeColor) {
+        TradeFormRow(title: "\(priceCurrency.rawValue) 對 \(target) 匯率", icon: "arrow.triangle.2.circlepath", color: market.themeColor) {
             TextField("0", text: $exchangeRateText)
                 .keyboardType(.decimalPad)
-                .font(.system(size: 17, weight: .semibold))
-                .monospacedDigit()
-                .snapFormFieldTapTarget()
+                .tradeFormDecimalFieldStyle()
         }
     }
     
     private var deductFromAccountSection: some View {
-        buyFormRow(title: "從帳戶扣款", icon: "creditcard.fill", color: market.themeColor) {
+        TradeFormRow(title: "從帳戶扣款", icon: "creditcard.fill", color: market.themeColor) {
             Toggle(isOn: $deductFromAccount) {
                 Text("從帳戶中扣除此筆款項")
                     .font(.subheadline)
@@ -576,7 +638,7 @@ struct BuyTradeFormView: View {
     }
     
     private var dateSection: some View {
-        buyFormRow(title: "交易日期", icon: "calendar", color: market.themeColor) {
+        TradeFormRow(title: "交易日期", icon: "calendar", color: market.themeColor) {
             TradeFormDatePicker(date: $transactionDate)
         }
     }
@@ -744,6 +806,23 @@ struct BuyTradeFormView: View {
         } else {
             exchangeRateText = ""
         }
+        captureEditBaseline()
+    }
+
+    private func captureEditBaseline() {
+        guard isEditMode else {
+            editBaseline = nil
+            return
+        }
+        editBaseline = BuyTradeEditBaseline(
+            accountId: selectedAccountId,
+            symbol: selectedSymbol,
+            quantityText: quantityText,
+            priceText: priceText,
+            exchangeRateText: exchangeRateText,
+            date: transactionDate,
+            deductFromAccount: deductFromAccount
+        )
     }
     
     private func validateInput() {
@@ -867,59 +946,6 @@ struct BuyTradeFormView: View {
     private func formattedExchangeRate(_ rate: Decimal) -> String {
         rate.formatted(fractionDigits: rate < 1 ? 4 : 2)
     }
-}
-
-// MARK: - Form Components (Buy)
-
-private struct buyFormRow<Content: View>: View {
-    let title: String
-    let icon: String
-    let color: Color
-    var showsIcon: Bool = true
-    @ViewBuilder let content: Content
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                if showsIcon {
-                    Image(systemName: icon)
-                        .font(.system(size: 16))
-                        .foregroundColor(color)
-                }
-                Text(title)
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primaryText)
-            }
-            content
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
-                .frame(minHeight: 44)
-                .contentShape(Rectangle())
-                .background(Color.secondaryBackground)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(Color.separator.opacity(0.35), lineWidth: 1)
-                }
-        }
-        .padding(16)
-    }
-}
-
-private func buyInfoRow(label: String, value: String) -> some View {
-    HStack {
-        Text(label)
-            .font(.caption)
-            .foregroundColor(.secondaryText)
-        Spacer()
-        Text(value)
-            .font(.caption)
-            .fontWeight(.semibold)
-            .foregroundColor(.primaryText)
-    }
-    .padding(.leading, 4)
-    .padding(.top, 4)
 }
 
 #Preview {

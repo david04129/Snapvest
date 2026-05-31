@@ -3,6 +3,7 @@
 //  Snapvest
 //
 //  統一字級 tokens（方向 A）
+//  全 App 字級不跟隨系統「文字大小」：見 AppRootView.dynamicTypeSize(.medium)
 //
 
 import SwiftUI

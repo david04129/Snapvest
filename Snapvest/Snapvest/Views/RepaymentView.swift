@@ -27,6 +27,7 @@ struct RepaymentView: View {
     @State private var errorMessage: String? = nil
     @State private var sourceAccountCashBalance: Decimal = 0
     @State private var showFullRepayment: Bool = false  // 全額還款選項
+    @State private var editBaseline: RepaymentEditBaseline?
     
     private let dataService: DataServiceProtocol = MockDataService.shared
     
@@ -560,13 +561,26 @@ struct RepaymentView: View {
         }
     }
     
+    private var hasEditChanges: Bool {
+        guard editingTransaction != nil, let editBaseline else { return true }
+        return !EditFormChangeTracking.decimalStringsEqual(amount, editBaseline.amountText)
+            || EditFormChangeTracking.normalizedNote(notes) != EditFormChangeTracking.normalizedNote(editBaseline.notes)
+            || !EditFormChangeTracking.datesEqual(transactionDate, editBaseline.date)
+            || deductFromTWDAccount != editBaseline.deductFromTWDAccount
+            || selectedSourceAccount?.id != editBaseline.sourceAccountId
+    }
+
     private var isValid: Bool {
         guard debtAccount != nil,
               let amountValue = Decimal(string: amount),
               amountValue > 0 else {
             return false
         }
-        
+
+        if editingTransaction != nil, !hasEditChanges {
+            return false
+        }
+
         if repaymentType == .regular, liability.remainingBalance <= 0 {
             return false
         }
@@ -648,8 +662,23 @@ struct RepaymentView: View {
                 notes = notesText
             }
         }
+        captureEditBaseline()
     }
-    
+
+    private func captureEditBaseline() {
+        guard editingTransaction != nil else {
+            editBaseline = nil
+            return
+        }
+        editBaseline = RepaymentEditBaseline(
+            amountText: amount,
+            notes: notes,
+            date: transactionDate,
+            deductFromTWDAccount: deductFromTWDAccount,
+            sourceAccountId: selectedSourceAccount?.id
+        )
+    }
+
     private func loadSourceAccountCashBalance(accountId: String, accounts: [Account]) {
         Task {
             do {

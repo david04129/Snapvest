@@ -12,7 +12,7 @@ struct TransactionHistoryView: View {
     let account: Account
     @StateObject private var viewModel = TransactionHistoryViewModel()
     @StateObject private var transactionsViewModel = TransactionsViewModel()
-    @State private var expandedTransactionId: String? = nil
+    @State private var showingRepaymentEditBlockedAlert = false
     @State private var showingEditIncome = false
     @State private var showingEditExpense = false
     @State private var showingEditRepayment = false
@@ -156,6 +156,11 @@ struct TransactionHistoryView: View {
                     Text(errorMessage)
                 }
             }
+            .alert("無法編輯", isPresented: $showingRepaymentEditBlockedAlert) {
+                Button("好", role: .cancel) {}
+            } message: {
+                Text(TransactionsViewModel.repaymentNotEditableMessage)
+            }
     }
     
     private var loadingView: some View {
@@ -229,10 +234,7 @@ struct TransactionHistoryView: View {
                                 accountId: account.id,
                                 accountCurrency: account.currency
                             ),
-                            isExpanded: expansionBinding(for: transaction),
-                            onEdit: {
-                                handleEditTransaction(transaction)
-                            },
+                            onRowTap: { attemptEditTransaction(transaction) },
                             onDelete: { transaction in
                                 transactionPendingDelete = transaction
                                 showingDeleteConfirmation = true
@@ -255,15 +257,19 @@ struct TransactionHistoryView: View {
         .background(Color.mainBackground)
     }
     
-    private func expansionBinding(for transaction: Transaction) -> Binding<Bool> {
-        Binding(
-            get: { expandedTransactionId == transaction.id },
-            set: { isExpanded in
-                expandedTransactionId = isExpanded ? transaction.id : nil
-            }
-        )
+    private func attemptEditTransaction(_ transaction: Transaction) {
+        if transaction.type == .liability {
+            return
+        }
+        if transaction.type == .repayment,
+           account.accountType == .debt,
+           !transactionsViewModel.canEditRepaymentTransaction(transaction) {
+            showingRepaymentEditBlockedAlert = true
+            return
+        }
+        handleEditTransaction(transaction)
     }
-    
+
     private func handleEditTransaction(_ transaction: Transaction) {
         if transaction.type == .liability {
             return
@@ -429,8 +435,7 @@ struct TransactionHistoryRowView: View {
     let accountId: String
     let accountCurrency: Currency
     let balance: Decimal
-    @Binding var isExpanded: Bool
-    let onEdit: () -> Void
+    let onRowTap: () -> Void
     let onDelete: ((Transaction) -> Void)?
     
     private var display: TransactionDisplayFormatter {
@@ -446,22 +451,12 @@ struct TransactionHistoryRowView: View {
     }
     
     var body: some View {
-        Group {
-            if display.shouldShowExpandedDetail, let detail = display.expandedNotes {
-                cardContent {
-                    DisclosureGroup(isExpanded: $isExpanded) {
-                        detailSection(detail)
-                    } label: {
-                        rowHeader()
-                    }
-                    .tint(.secondaryText)
-                }
-            } else {
-                cardContent {
-                    rowHeader()
-                }
+        Button(action: onRowTap) {
+            cardContent {
+                rowHeader()
             }
         }
+        .buttonStyle(.plain)
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             if let onDelete = onDelete {
                 Button {
@@ -478,23 +473,6 @@ struct TransactionHistoryRowView: View {
                     .background(AppColors.actionDestructiveBackground)
                 }
                 .tint(AppColors.actionDestructiveBackground)
-            }
-            
-            if transaction.type != .repayment && transaction.type != .liability {
-                Button {
-                    onEdit()
-                } label: {
-                    VStack(spacing: 4) {
-                        Image(systemName: "pencil")
-                            .font(.system(size: 18, weight: .medium))
-                        Text("編輯")
-                            .font(.system(size: 10, weight: .medium))
-                    }
-                    .foregroundColor(AppColors.actionForeground)
-                    .frame(width: 70, height: 70)
-                    .background(AppColors.actionEditBackground)
-                }
-                .tint(AppColors.actionEditBackground)
             }
         }
     }
@@ -552,21 +530,6 @@ struct TransactionHistoryRowView: View {
             }
         }
         .contentShape(Rectangle())
-    }
-    
-    private func detailSection(_ detail: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Divider()
-            Text("明細")
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundColor(.secondaryText)
-            Text(detail)
-                .font(.caption)
-                .foregroundColor(.primaryText)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
     }
     
     private func getBalanceChange(_ transaction: Transaction, accountId: String, accountCurrency: Currency) -> Decimal {

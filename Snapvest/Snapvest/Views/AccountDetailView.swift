@@ -174,10 +174,17 @@ struct AccountDetailView: View {
                 }
                 
                 accountHeroCard
-                
-                accountCashHoldingsMetricsRow
-                
-                accountHoldingsSection
+
+                if account.accountType == .twdDeposit {
+                    accountTransactionHistorySection
+                } else if account.accountType.showsInvestmentHoldingsOnDetail {
+                    accountCashHoldingsMetricsRow
+                    accountHoldingsSection
+                    accountTransactionHistorySection
+                } else {
+                    accountCashHoldingsMetricsRow
+                    accountHoldingsSection
+                }
             }
             .padding(.horizontal, 20)
             .padding(.top, 8)
@@ -194,8 +201,10 @@ struct AccountDetailView: View {
                             showingTransactionImport = true
                         }
                     }
-                    TransactionHistoryToolbarChip {
-                        showTransactionHistory = true
+                    if !account.accountType.showsInlineTransactionHistory {
+                        TransactionHistoryToolbarChip {
+                            showTransactionHistory = true
+                        }
                     }
                 }
             }
@@ -328,6 +337,22 @@ struct AccountDetailView: View {
         await refreshSelectedHoldingIfNeeded()
     }
     
+    private var accountTransactionHistorySection: some View {
+        AccountTransactionHistorySection(
+            account: account,
+            showFullTransactionHistory: $showTransactionHistory
+        ) {
+            await refreshRegularAccountDetail()
+        }
+    }
+
+    @MainActor
+    private func refreshRegularAccountDetail() async {
+        await loadAccountCurrencyRateIfNeeded()
+        await viewModel.refresh(accountId: account.id, account: account)
+        await accountsViewModel.loadAccounts(userId: account.userId)
+    }
+
     @ViewBuilder
     private var accountHoldingsSection: some View {
         if account.accountType != .twdDeposit {
@@ -510,11 +535,7 @@ struct AccountDetailView: View {
     @ViewBuilder
     private var accountCashHoldingsMetricsRow: some View {
         if account.accountType == .twdDeposit {
-            MetricTile(
-                title: "現金餘額",
-                value: accountFormattedAmount(accountDisplayCashBalance),
-                currency: viewModel.displayCurrency
-            )
+            EmptyView()
         } else {
             LazyVGrid(
                 columns: [
@@ -595,6 +616,13 @@ struct AccountDetailView: View {
                     debtAccountMetricsGrid(liability: liability)
                     
                     RepaymentProgressCard(liability: liability)
+
+                    AccountTransactionHistorySection(
+                        account: liveDebtAccount,
+                        showFullTransactionHistory: $showTransactionHistory
+                    ) {
+                        await loadDebtAccountData()
+                    }
                     
                     DetailsCard(
                         liability: liability,
@@ -612,14 +640,6 @@ struct AccountDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .navigationBarTitleDisplayMode(.inline)
         .tint(.appPrimary)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                TransactionHistoryToolbarChip {
-                    showTransactionHistory = true
-                }
-            }
-            .sharedBackgroundVisibility(.hidden)
-        }
         .safeAreaInset(edge: .bottom) {
             debtAccountBottomButtons
         }
@@ -881,6 +901,12 @@ struct AccountDetailView: View {
             VStack(spacing: 16) {
                 otherDebtAccountHeader
                 otherDebtMetricsGrid
+                AccountTransactionHistorySection(
+                    account: liveOtherDebtAccount,
+                    showFullTransactionHistory: $showTransactionHistory
+                ) {
+                    await loadOtherDebtAccountData()
+                }
                 OtherDebtInfoCard(account: liveOtherDebtAccount)
             }
             .padding(.horizontal, 20)
@@ -891,14 +917,6 @@ struct AccountDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .navigationBarTitleDisplayMode(.inline)
         .tint(.appPrimary)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                TransactionHistoryToolbarChip {
-                    showTransactionHistory = true
-                }
-            }
-            .sharedBackgroundVisibility(.hidden)
-        }
         .safeAreaInset(edge: .bottom) {
             otherDebtBottomButtons
         }

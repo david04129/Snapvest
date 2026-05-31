@@ -21,7 +21,8 @@ struct EditTransactionView: View {
     @State private var transactionDate: Date = Date()
     @State private var account: Account?
     @State private var liability: Liability?
-    
+    @State private var editBaseline: GenericTransactionEditBaseline?
+
     init(transaction: Transaction, viewModel: TransactionsViewModel, onEditLiability: ((Liability) -> Void)? = nil) {
         self.transaction = transaction
         self._viewModel = ObservedObject(wrappedValue: viewModel)
@@ -196,6 +197,14 @@ struct EditTransactionView: View {
                     fee = transaction.fee.formatted(fractionDigits: 2)
                     notes = transaction.notes ?? ""
                     transactionDate = transaction.transactionDate
+                    editBaseline = GenericTransactionEditBaseline(
+                        amountText: amount,
+                        quantityText: quantity,
+                        priceText: price,
+                        feeText: fee,
+                        notes: notes,
+                        date: transactionDate
+                    )
                 }
             }
         }
@@ -222,14 +231,30 @@ struct EditTransactionView: View {
         }
     }
     
-    private var isValid: Bool {
+    private var hasEditChanges: Bool {
+        guard let editBaseline else { return true }
         if transaction.type == .deposit || transaction.type == .withdraw {
-            return !amount.isEmpty && Decimal(string: amount) != nil
-        } else {
-            return !quantity.isEmpty && !price.isEmpty &&
-                   Decimal(string: quantity) != nil &&
-                   Decimal(string: price) != nil
+            return !EditFormChangeTracking.decimalStringsEqual(amount, editBaseline.amountText)
+                || EditFormChangeTracking.normalizedNote(notes) != EditFormChangeTracking.normalizedNote(editBaseline.notes)
+                || !EditFormChangeTracking.datesEqual(transactionDate, editBaseline.date)
         }
+        return !EditFormChangeTracking.decimalStringsEqual(quantity, editBaseline.quantityText)
+            || !EditFormChangeTracking.decimalStringsEqual(price, editBaseline.priceText)
+            || !EditFormChangeTracking.decimalStringsEqual(fee, editBaseline.feeText)
+            || EditFormChangeTracking.normalizedNote(notes) != EditFormChangeTracking.normalizedNote(editBaseline.notes)
+            || !EditFormChangeTracking.datesEqual(transactionDate, editBaseline.date)
+    }
+
+    private var isValid: Bool {
+        let fieldsValid: Bool
+        if transaction.type == .deposit || transaction.type == .withdraw {
+            fieldsValid = !amount.isEmpty && Decimal(string: amount) != nil
+        } else {
+            fieldsValid = !quantity.isEmpty && !price.isEmpty
+                && Decimal(string: quantity) != nil
+                && Decimal(string: price) != nil
+        }
+        return fieldsValid && hasEditChanges
     }
     
     private func saveTransaction() {

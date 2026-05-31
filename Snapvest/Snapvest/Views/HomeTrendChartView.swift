@@ -82,6 +82,168 @@ enum TrendChartDataFilter {
         )
         return points.filter { interval.contains($0.date) }
     }
+
+    static func dateInterval(
+        range: DateRangePreset,
+        now: Date = Date(),
+        customStart: Date,
+        customEnd: Date
+    ) -> DateInterval {
+        DateRangePresetCalculator.dateInterval(
+            for: range,
+            now: now,
+            customStart: customStart,
+            customEnd: customEnd
+        )
+    }
+}
+
+// MARK: - 圖表繪製用序列（固定 path + X 視窗）
+
+enum TrendChartSeries {
+    /// 一年日資料約 365 點；線性插值下全繪仍可接受，超過才降採樣。
+    static let maxRenderPoints = 366
+
+    static func sorted(_ points: [TrendChartPoint]) -> [TrendChartPoint] {
+        points.sorted { $0.date < $1.date }
+    }
+
+    /// 均勻降採樣，維持首尾；繪圖用，不影響數值讀取。
+    static func downsampled(_ points: [TrendChartPoint], maxCount: Int = maxRenderPoints) -> [TrendChartPoint] {
+        guard points.count > maxCount, maxCount >= 2 else { return points }
+        let step = Double(points.count - 1) / Double(maxCount - 1)
+        return (0..<maxCount).map { index in
+            let sourceIndex = Int((Double(index) * step).rounded())
+            return points[min(sourceIndex, points.count - 1)]
+        }
+    }
+
+    static func visibleXDomain(
+        in points: [TrendChartPoint],
+        interval: DateInterval
+    ) -> ClosedRange<Date>? {
+        let visible = points.filter { interval.contains($0.date) }
+        guard let first = visible.first?.date, let last = visible.last?.date else { return nil }
+        if first == last {
+            let pad = 86_400.0
+            let lower = Date(timeIntervalSince1970: first.timeIntervalSince1970 - pad)
+            let upper = Date(timeIntervalSince1970: last.timeIntervalSince1970 + pad)
+            return lower...upper
+        }
+        return first...last
+    }
+
+    /// 假設 `points` 已按日期遞增排序。
+    static func nearestIndex(to date: Date, in points: [TrendChartPoint]) -> Int? {
+        guard !points.isEmpty else { return nil }
+        if date <= points[0].date { return 0 }
+        if date >= points[points.count - 1].date { return points.count - 1 }
+
+        var low = 0
+        var high = points.count - 1
+        while low < high {
+            let mid = (low + high) / 2
+            if points[mid].date < date {
+                low = mid + 1
+            } else {
+                high = mid
+            }
+        }
+
+        if low == 0 { return 0 }
+        let previous = low - 1
+        let lhs = points[previous].date.timeIntervalSince(date)
+        let rhs = points[low].date.timeIntervalSince(date)
+        return abs(lhs) <= abs(rhs) ? previous : low
+    }
+
+    /// 與 LineMark `.linear` 插值一致，讓選取圓點落在可見曲線上。
+    static func interpolatedY(
+        at date: Date,
+        renderPoints: [TrendChartPoint],
+        yValuesByPointId: [String: Double]
+    ) -> Double? {
+        guard let first = renderPoints.first, let last = renderPoints.last else { return nil }
+        if date <= first.date {
+            return yValuesByPointId[first.id]
+        }
+        if date >= last.date {
+            return yValuesByPointId[last.id]
+        }
+
+        for index in 1..<renderPoints.count {
+            let left = renderPoints[index - 1]
+            let right = renderPoints[index]
+            guard date >= left.date, date <= right.date else { continue }
+
+            let y0 = yValuesByPointId[left.id] ?? 0
+            let y1 = yValuesByPointId[right.id] ?? 0
+            let t0 = left.date.timeIntervalSince1970
+            let t1 = right.date.timeIntervalSince1970
+            guard t1 > t0 else { return y0 }
+            let progress = (date.timeIntervalSince1970 - t0) / (t1 - t0)
+            return y0 + (y1 - y0) * progress
+        }
+        return nil
+    }
+}
+
+/// 走勢圖繪製快取（避免每次 body 重算排序／降採樣／Y domain）。
+private struct TrendChartRenderBundle: Equatable {
+    let renderPoints: [TrendChartPoint]
+    let yValuesByPointId: [String: Double]
+    let filteredPoints: [TrendChartPoint]
+    let yDomain: ClosedRange<Double>
+    let xDomain: ClosedRange<Date>
+    let xDomainKey: String
+
+    static func make(
+        trendPoints: [TrendChartPoint],
+        metricMode: TrendMetricMode,
+        baseDivisor: Decimal,
+        timeRange: DateRangePreset,
+        customStart: Date,
+        customEnd: Date
+    ) -> TrendChartRenderBundle? {
+        let sorted = TrendChartSeries.sorted(trendPoints)
+        guard !sorted.isEmpty else { return nil }
+
+        let interval = TrendChartDataFilter.dateInterval(
+            range: timeRange,
+            customStart: customStart,
+            customEnd: customEnd
+        )
+        let filtered = sorted.filter { interval.contains($0.date) }
+        guard !filtered.isEmpty,
+              let xDomain = TrendChartSeries.visibleXDomain(in: sorted, interval: interval) else {
+            return nil
+        }
+
+        let renderPoints = TrendChartSeries.downsampled(sorted)
+        var yValuesByPointId: [String: Double] = [:]
+        yValuesByPointId.reserveCapacity(renderPoints.count)
+        for point in renderPoints {
+            let decimalValue = point.displayValue(for: metricMode) / baseDivisor
+            yValuesByPointId[point.id] = NSDecimalNumber(decimal: decimalValue).doubleValue
+        }
+
+        let visibleValues = filtered.map { point in
+            NSDecimalNumber(decimal: point.displayValue(for: metricMode) / baseDivisor).doubleValue
+        }
+        guard let minV = visibleValues.min(), let maxV = visibleValues.max() else { return nil }
+        let padding = max((maxV - minV) * 0.08, abs(maxV) * 0.02, 1)
+        let yDomain = (minV - padding)...(maxV + padding)
+        let xDomainKey = "\(xDomain.lowerBound.timeIntervalSince1970)-\(xDomain.upperBound.timeIntervalSince1970)"
+
+        return TrendChartRenderBundle(
+            renderPoints: renderPoints,
+            yValuesByPointId: yValuesByPointId,
+            filteredPoints: filtered,
+            yDomain: yDomain,
+            xDomain: xDomain,
+            xDomainKey: xDomainKey
+        )
+    }
 }
 
 // MARK: - 首頁走勢圖區塊
@@ -106,21 +268,21 @@ struct HomeTrendChartSection: View {
         isLoading && trendPoints.isEmpty
     }
     
-    @State private var selectedPoint: TrendChartPoint?
+    @State private var pinnedSelectionIndex: Int?
+    @State private var scrubIndex: Int?
+    @State private var isScrubbing = false
     @State private var activeCustomDateField: CustomDatePickerField?
     @State private var contentPhase: CGFloat = 1
-    
+    @State private var chartBundle: TrendChartRenderBundle?
+    @State private var chartXDomain: ClosedRange<Date> = Date()...Date()
+
     private var filteredPoints: [TrendChartPoint] {
-        TrendChartDataFilter.filtered(
-            points: trendPoints,
-            range: timeRange,
-            customStart: customStartDate,
-            customEnd: customEndDate
-        )
+        chartBundle?.filteredPoints ?? []
     }
     
     private var earliestChartDate: Date {
-        trendPoints.map(\.date).min()
+        chartBundle?.renderPoints.first?.date
+            ?? trendPoints.map(\.date).min()
             ?? Calendar.current.date(byAdding: .day, value: -120, to: Date())
             ?? Date()
     }
@@ -129,8 +291,29 @@ struct HomeTrendChartSection: View {
         filteredPoints.first
     }
 
+    private var activeDisplayIndex: Int? {
+        if let scrubIndex, filteredPoints.indices.contains(scrubIndex) {
+            return scrubIndex
+        }
+        if let pinnedSelectionIndex, filteredPoints.indices.contains(pinnedSelectionIndex) {
+            return pinnedSelectionIndex
+        }
+        guard !filteredPoints.isEmpty else { return nil }
+        return filteredPoints.count - 1
+    }
+
     private var displayPoint: TrendChartPoint? {
-        selectedPoint ?? filteredPoints.last
+        guard let index = activeDisplayIndex else { return nil }
+        return filteredPoints[index]
+    }
+
+    private var isChartSelectionActive: Bool {
+        isScrubbing || pinnedSelectionIndex != nil
+    }
+
+    private var trendChartReloadToken: String {
+        let stamp = portfolioViewModel.homeSnapshot?.lastUpdated.timeIntervalSince1970 ?? 0
+        return "\(userId)-\(stamp)"
     }
     
     private var baseDivisor: Decimal {
@@ -158,9 +341,9 @@ struct HomeTrendChartSection: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
             .onChange(of: metricMode) { _, _ in
+                refreshChartBundle(animateXDomain: false)
                 animateContentSwitch()
             }
-            
             if let endPoint = displayPoint, let startPoint = rangeStartPoint {
                 TrendChartValueInfo(
                     endPoint: endPoint,
@@ -168,8 +351,9 @@ struct HomeTrendChartSection: View {
                     metricMode: metricMode,
                     currency: currency,
                     twdPerBaseCurrency: baseDivisor,
-                    isSelected: selectedPoint != nil,
-                    hideAmounts: hideHomeAmounts
+                    isSelected: isChartSelectionActive,
+                    hideAmounts: hideHomeAmounts,
+                    animateNumericTransitions: !isScrubbing
                 )
                 .padding(.horizontal, 16)
                 .padding(.bottom, 10)
@@ -180,15 +364,13 @@ struct HomeTrendChartSection: View {
                 ProgressView()
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 32)
-            } else if filteredPoints.isEmpty {
+            } else if chartBundle == nil {
                 emptyState
             } else {
                 trendChart
                     .frame(height: 220)
                     .padding(.horizontal, 8)
                     .opacity(contentPhase)
-                    .animation(ChartMotion.switchSpring, value: metricMode)
-                    .animation(ChartMotion.switchSpring, value: timeRange)
             }
             
             DateRangePresetPicker(selection: $timeRange)
@@ -196,6 +378,7 @@ struct HomeTrendChartSection: View {
                 .padding(.top, filteredPoints.isEmpty ? 8 : 4)
                 .padding(.bottom, timeRange == .custom ? 0 : 14)
                 .onChange(of: timeRange) { _, newRange in
+                    refreshChartBundle(animateXDomain: true)
                     if newRange != .custom {
                         resetSelectionToLatest()
                         animateContentSwitch()
@@ -226,6 +409,7 @@ struct HomeTrendChartSection: View {
                 onDone: {
                     normalizeCustomRange()
                     activeCustomDateField = nil
+                    refreshChartBundle(animateXDomain: true)
                     resetSelectionToLatest()
                     animateContentSwitch()
                 }
@@ -233,14 +417,29 @@ struct HomeTrendChartSection: View {
         }
         .onAppear {
             resetSelectionToLatest()
+            refreshChartBundle(animateXDomain: false)
         }
-        .task(id: userId) {
+        .task(id: trendChartReloadToken) {
             await loadLocalTrendPoints()
+            refreshChartBundle(animateXDomain: false)
         }
-        .onChange(of: portfolioViewModel.homeSnapshot) { _, _ in
-            Task { await loadLocalTrendPoints() }
+        .onChange(of: trendPoints) { _, _ in
+            refreshChartBundle(animateXDomain: false)
+            resetSelectionToLatest()
         }
-        .onChange(of: filteredPoints.count) { _, _ in resetSelectionToLatest() }
+        .onChange(of: portfolioViewModel.twdPerBaseCurrency) { _, _ in
+            refreshChartBundle(animateXDomain: false)
+        }
+        .onChange(of: customStartDate) { _, _ in
+            refreshChartBundle(animateXDomain: true)
+            resetSelectionToLatest()
+            animateContentSwitch()
+        }
+        .onChange(of: customEndDate) { _, _ in
+            refreshChartBundle(animateXDomain: true)
+            resetSelectionToLatest()
+            animateContentSwitch()
+        }
         .animation(ChartMotion.switchSpring, value: timeRange == .custom)
     }
     
@@ -262,41 +461,47 @@ struct HomeTrendChartSection: View {
     }
     
     private var trendChart: some View {
+        Group {
+            if let bundle = chartBundle {
+                trendChartContent(bundle: bundle)
+            }
+        }
+    }
+
+    private func trendChartContent(bundle: TrendChartRenderBundle) -> some View {
         Chart {
-            ForEach(filteredPoints) { point in
-                let value = chartDisplayDouble(for: point)
+            ForEach(bundle.renderPoints) { point in
+                let value = bundle.yValuesByPointId[point.id] ?? 0
                 AreaMark(
                     x: .value("日期", point.date),
-                    yStart: .value("基準", yAxisDomain.lowerBound),
+                    yStart: .value("基準", bundle.yDomain.lowerBound),
                     yEnd: .value("金額", value)
                 )
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [Color.appPrimary.opacity(0.22), Color.appPrimary.opacity(0.02)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .interpolationMethod(.catmullRom)
-                
+                .foregroundStyle(Color.appPrimary.opacity(0.14))
+                .interpolationMethod(.linear)
+
                 LineMark(
                     x: .value("日期", point.date),
                     y: .value("金額", value)
                 )
                 .foregroundStyle(Color.appPrimary)
                 .lineStyle(StrokeStyle(lineWidth: 2, lineJoin: .round))
-                .interpolationMethod(.catmullRom)
+                .interpolationMethod(.linear)
             }
-            
-            if let selected = selectedPoint ?? filteredPoints.last {
-                let selectedValue = chartDisplayDouble(for: selected)
+
+            if let selected = displayPoint,
+               let plotY = TrendChartSeries.interpolatedY(
+                   at: selected.date,
+                   renderPoints: bundle.renderPoints,
+                   yValuesByPointId: bundle.yValuesByPointId
+               ) {
                 RuleMark(x: .value("選取", selected.date))
                     .foregroundStyle(Color.secondaryText.opacity(0.45))
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                
+
                 PointMark(
                     x: .value("日期", selected.date),
-                    y: .value("金額", selectedValue)
+                    y: .value("金額", plotY)
                 )
                 .foregroundStyle(Color.appPrimary)
                 .symbolSize(64)
@@ -315,7 +520,7 @@ struct HomeTrendChartSection: View {
                 if !hideHomeAmounts {
                     AxisValueLabel {
                         if let doubleValue = value.as(Double.self) {
-                            Text(compactAxisLabel(doubleValue, domain: yAxisDomain))
+                            Text(compactAxisLabel(doubleValue, domain: bundle.yDomain))
                                 .font(.system(size: 10))
                                 .foregroundColor(.secondaryText)
                         }
@@ -330,27 +535,65 @@ struct HomeTrendChartSection: View {
                     .foregroundStyle(Color.secondaryText)
             }
         }
-        .chartYScale(domain: yAxisDomain)
+        .chartXScale(domain: chartXDomain)
+        .chartYScale(domain: bundle.yDomain)
         .chartOverlay { proxy in
             GeometryReader { geometry in
                 Rectangle()
                     .fill(Color.clear)
                     .contentShape(Rectangle())
-                    .gesture(
-                        DragGesture(minimumDistance: 0)
-                            .onChanged { gesture in
-                                updateSelection(at: gesture.location, proxy: proxy, geometry: geometry)
-                            }
-                    )
+                    .gesture(scrubGesture(proxy: proxy, geometry: geometry, filteredPoints: bundle.filteredPoints))
             }
         }
     }
+
+    private func scrubGesture(
+        proxy: ChartProxy,
+        geometry: GeometryProxy,
+        filteredPoints: [TrendChartPoint]
+    ) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { gesture in
+                if !isScrubbing {
+                    isScrubbing = true
+                }
+                updateScrubIndex(
+                    at: gesture.location,
+                    proxy: proxy,
+                    geometry: geometry,
+                    filteredPoints: filteredPoints
+                )
+            }
+            .onEnded { _ in
+                if let scrubIndex {
+                    pinnedSelectionIndex = scrubIndex
+                }
+                isScrubbing = false
+                self.scrubIndex = nil
+            }
+    }
     
-    private var yAxisDomain: ClosedRange<Double> {
-        let values = filteredPoints.map(chartDisplayDouble)
-        guard let minV = values.min(), let maxV = values.max() else { return 0...1 }
-        let padding = max((maxV - minV) * 0.08, abs(maxV) * 0.02, 1)
-        return (minV - padding)...(maxV + padding)
+    private func refreshChartBundle(animateXDomain: Bool) {
+        guard let bundle = TrendChartRenderBundle.make(
+            trendPoints: trendPoints,
+            metricMode: metricMode,
+            baseDivisor: baseDivisor,
+            timeRange: timeRange,
+            customStart: customStartDate,
+            customEnd: customEndDate
+        ) else {
+            chartBundle = nil
+            return
+        }
+
+        chartBundle = bundle
+        if animateXDomain {
+            withAnimation(ChartMotion.switchSpring) {
+                chartXDomain = bundle.xDomain
+            }
+        } else {
+            chartXDomain = bundle.xDomain
+        }
     }
     
     private var emptyState: some View {
@@ -414,19 +657,22 @@ struct HomeTrendChartSection: View {
         return sign + String(format: "%.0f", absValue)
     }
     
-    private func updateSelection(at location: CGPoint, proxy: ChartProxy, geometry: GeometryProxy) {
+    private func updateScrubIndex(
+        at location: CGPoint,
+        proxy: ChartProxy,
+        geometry: GeometryProxy,
+        filteredPoints: [TrendChartPoint]
+    ) {
         guard let plotFrame = proxy.plotFrame else { return }
         let origin = geometry[plotFrame].origin
         let xPosition = location.x - origin.x
         guard xPosition >= 0, xPosition <= geometry[plotFrame].width else { return }
-        guard let date: Date = proxy.value(atX: xPosition) else { return }
-        selectedPoint = nearestPoint(to: date, in: filteredPoints)
-    }
-    
-    private func nearestPoint(to date: Date, in points: [TrendChartPoint]) -> TrendChartPoint? {
-        points.min { lhs, rhs in
-            abs(lhs.date.timeIntervalSince(date)) < abs(rhs.date.timeIntervalSince(date))
+        guard let date: Date = proxy.value(atX: xPosition),
+              let index = TrendChartSeries.nearestIndex(to: date, in: filteredPoints),
+              scrubIndex != index else {
+            return
         }
+        scrubIndex = index
     }
     
     private func normalizeCustomRange() {
@@ -436,7 +682,9 @@ struct HomeTrendChartSection: View {
     }
     
     private func resetSelectionToLatest() {
-        selectedPoint = nil
+        pinnedSelectionIndex = nil
+        scrubIndex = nil
+        isScrubbing = false
     }
     
     private func animateContentSwitch() {
@@ -455,6 +703,8 @@ struct TrendChartValueInfo: View {
     let twdPerBaseCurrency: Decimal
     let isSelected: Bool
     var hideAmounts: Bool = false
+    /// 拖曳 scrub 時關閉數字 spring，避免每個資料點都觸發動畫。
+    var animateNumericTransitions: Bool = true
 
     private var baseDivisor: Decimal {
         guard currency != .TWD, twdPerBaseCurrency > 0 else { return 1 }
@@ -494,14 +744,18 @@ struct TrendChartValueInfo: View {
                 color: valueColor,
                 chipTint: AppColors.appPrimary
             )
-                .contentTransition(.numericText())
-                .animation(ChartMotion.switchSpring, value: displayValue)
+                .modifier(TrendChartNumericTransitionModifier(
+                    enabled: animateNumericTransitions,
+                    value: displayValue
+                ))
 
             Text(intervalChangeText)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundColor(Color.marketColor(for: changeAmount))
-                .contentTransition(.numericText())
-                .animation(ChartMotion.switchSpring, value: changeAmount)
+                .modifier(TrendChartNumericTransitionModifier(
+                    enabled: animateNumericTransitions,
+                    value: changeAmount
+                ))
 
             Text(formatDate(endPoint.date))
                 .font(.system(size: 13, weight: .semibold))
@@ -530,5 +784,20 @@ struct TrendChartValueInfo: View {
         formatter.locale = Locale(identifier: "zh_TW")
         formatter.dateFormat = "yyyy年M月d日"
         return formatter.string(from: date)
+    }
+}
+
+private struct TrendChartNumericTransitionModifier: ViewModifier {
+    let enabled: Bool
+    let value: Decimal
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content
+                .contentTransition(.numericText())
+                .animation(ChartMotion.switchSpring, value: value)
+        } else {
+            content
+        }
     }
 }

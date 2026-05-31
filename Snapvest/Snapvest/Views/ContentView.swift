@@ -189,6 +189,11 @@ struct ContentView: View {
                     dataService: MockDataService.shared
                 )
                 dataFreshness.refresh()
+                NotificationCenter.default.post(
+                    name: .snapshotsDidUpdate,
+                    object: nil,
+                    userInfo: [SnapshotUpdateUserInfoKey.alreadyApplied: true]
+                )
             }
         }
         .sheet(isPresented: $isSettingsPresented) {

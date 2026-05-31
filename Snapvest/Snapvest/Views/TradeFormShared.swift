@@ -7,6 +7,108 @@
 
 import SwiftUI
 
+// MARK: - 版面常數（買入／賣出／NewTradeFlow 內嵌表單一致）
+
+enum TradeFormLayout {
+    static let scrollSpacing: CGFloat = 10
+    static let bottomBarSpacing: CGFloat = 8
+    static let rowPadding: CGFloat = 12
+    static let rowHeaderSpacing: CGFloat = 6
+    static let fieldMinHeight: CGFloat = 40
+    static let fieldInnerHPadding: CGFloat = 10
+    static let fieldInnerVPadding: CGFloat = 8
+    static let fieldCornerRadius: CGFloat = 12
+    static let cardCornerRadius: CGFloat = 16
+    static let cardDividerInset: CGFloat = 14
+    static let submitButtonVPadding: CGFloat = 14
+    static let accountPickerSpacing: CGFloat = 6
+    static let accountPickerHPadding: CGFloat = 12
+    static let accountPickerVPadding: CGFloat = 10
+}
+
+// MARK: - 表單列與輸入容器
+
+struct TradeFormRow<Content: View>: View {
+    let title: String
+    let icon: String
+    let color: Color
+    var showsIcon: Bool = true
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: TradeFormLayout.rowHeaderSpacing) {
+            HStack(spacing: 6) {
+                if showsIcon {
+                    Image(systemName: icon)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(color)
+                }
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.primaryText)
+            }
+
+            TradeFormInputContainer {
+                content
+            }
+        }
+        .padding(TradeFormLayout.rowPadding)
+    }
+}
+
+struct TradeFormInputContainer<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, TradeFormLayout.fieldInnerHPadding)
+            .padding(.vertical, TradeFormLayout.fieldInnerVPadding)
+            .frame(minHeight: TradeFormLayout.fieldMinHeight, alignment: .leading)
+            .contentShape(Rectangle())
+            .background(Color.secondaryBackground)
+            .clipShape(RoundedRectangle(cornerRadius: TradeFormLayout.fieldCornerRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: TradeFormLayout.fieldCornerRadius, style: .continuous)
+                    .stroke(Color.separator.opacity(0.32), lineWidth: 1)
+            }
+    }
+}
+
+struct TradeFormCardDivider: View {
+    var body: some View {
+        Divider()
+            .padding(.horizontal, TradeFormLayout.cardDividerInset)
+    }
+}
+
+struct TradeFormInfoRow: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .font(.caption)
+                .foregroundColor(.secondaryText)
+            Spacer(minLength: 0)
+            Text(value)
+                .font(.caption.weight(.semibold))
+                .foregroundColor(.primaryText)
+                .multilineTextAlignment(.trailing)
+        }
+        .padding(.top, 2)
+    }
+}
+
+extension View {
+    func tradeFormDecimalFieldStyle() -> some View {
+        font(.system(size: 16, weight: .semibold))
+            .monospacedDigit()
+            .snapFormFieldTapTarget()
+    }
+}
+
 // MARK: - 單價輸入（幣別標示）
 
 enum TradeFormUnitPriceLabels {
@@ -72,9 +174,7 @@ struct TradeFormUnitPriceInput: View {
             TradeFormCurrencyBadge(currency: currency)
             TextField("0", text: $priceText)
                 .keyboardType(.decimalPad)
-                .font(.system(size: 17, weight: .semibold))
-                .monospacedDigit()
-                .snapFormFieldTapTarget()
+                .tradeFormDecimalFieldStyle()
         }
         .snapFormFieldTapTarget()
     }
@@ -88,7 +188,7 @@ struct TradeFormCompactHeader: View {
     var isEditMode: Bool = false
     
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(isEditMode ? "編輯\(actionTitle)" : actionTitle)
                     .font(.headline)
@@ -97,20 +197,20 @@ struct TradeFormCompactHeader: View {
                     .font(.caption)
                     .foregroundColor(.secondaryText)
             }
-            
+
             Spacer(minLength: 0)
 
             Text(market.title)
-                .font(.caption.weight(.semibold))
+                .font(.caption2.weight(.semibold))
                 .foregroundColor(market.themeColor)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 5)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
                 .background(market.themeColor.opacity(0.12))
                 .clipShape(Capsule())
         }
         .padding(.horizontal)
-        .padding(.top, 4)
-        .padding(.bottom, 8)
+        .padding(.top, 2)
+        .padding(.bottom, 6)
     }
 }
 
@@ -123,24 +223,22 @@ struct TradeFormAmountSummary: View {
     var footnote: String? = nil
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 3) {
             Text(label)
-                .font(.caption)
-                .fontWeight(.semibold)
+                .font(.caption.weight(.semibold))
                 .foregroundColor(.secondaryText)
-            
+
             Text(amountText)
-                .font(.title3)
-                .fontWeight(.bold)
+                .font(.headline.weight(.bold))
                 .foregroundColor(.primaryText)
                 .contentTransition(.numericText())
-            
+
             if let detailText, !detailText.isEmpty {
                 Text(detailText)
                     .font(.caption)
                     .foregroundColor(.secondaryText)
             }
-            
+
             if let footnote, !footnote.isEmpty {
                 Text(footnote)
                     .font(.caption2)
@@ -148,11 +246,12 @@ struct TradeFormAmountSummary: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
         .background(Color.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: TradeFormLayout.fieldCornerRadius, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: TradeFormLayout.fieldCornerRadius, style: .continuous)
                 .stroke(Color.separator.opacity(0.32), lineWidth: 1)
         }
         .animation(ChartMotion.switchSpring, value: amountText)
@@ -200,8 +299,8 @@ struct TradeFormMoreOptionsSection<Content: View>: View {
                         .foregroundColor(.secondaryText)
                         .rotationEffect(.degrees(isExpanded ? 180 : 0))
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 14)
+                .padding(.horizontal, TradeFormLayout.cardDividerInset)
+                .padding(.vertical, 10)
             }
             .buttonStyle(.plain)
             

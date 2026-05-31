@@ -628,6 +628,21 @@ class TransactionsViewModel: ObservableObject {
         }
     }
     
+    static let repaymentNotEditableMessage = "此筆紀錄無法編輯 請編輯最新的紀錄"
+
+    /// 債務帳戶還款僅最新一筆可編輯（與刪除規則一致，使用已載入的 `transactions`）。
+    func canEditRepaymentTransaction(_ transaction: Transaction) -> Bool {
+        guard transaction.type == .repayment else { return true }
+        guard let debtAccount = accounts.first(where: { $0.id == transaction.accountId }),
+              debtAccount.accountType == .debt else {
+            return true
+        }
+        let latest = transactions
+            .filter { $0.type == .repayment && $0.accountId == debtAccount.id }
+            .max(by: { $0.transactionDate < $1.transactionDate })
+        return latest?.id == transaction.id
+    }
+
     /// 驗證是否可以刪除還款交易（異步檢查，用於 UI 層面的驗證）
     func canDeleteRepaymentTransaction(_ transaction: Transaction, userId: String) async -> (canDelete: Bool, errorMessage: String?) {
         // 檢查是否為還款交易

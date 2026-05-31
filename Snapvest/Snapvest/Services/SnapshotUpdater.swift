@@ -365,17 +365,10 @@ enum SnapshotUpdater {
             
             let currentPrice: Decimal?
             if usesDemoData {
-                if let realPrice = await SupabasePriceService.fetchDisplayPrice(
+                currentPrice = try await priceService.fetchCurrentPrice(
                     assetType: symbolInfo.assetType,
                     symbol: symbolInfo.symbol
-                ) {
-                    currentPrice = realPrice
-                } else {
-                    currentPrice = try await priceService.fetchCurrentPrice(
-                        assetType: symbolInfo.assetType,
-                        symbol: symbolInfo.symbol
-                    )
-                }
+                )
             } else if SupabaseConfig.isConfigured, !usesDemoPrices {
                 currentPrice = await SupabasePriceService.fetchDisplayPrice(
                     assetType: symbolInfo.assetType,

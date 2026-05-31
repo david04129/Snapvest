@@ -1103,14 +1103,15 @@ private struct BaseCurrencyPickerSheet: View {
                             onSelect(currency)
                         } label: {
                             HStack(spacing: 12) {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(currency.displayName)
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundColor(.primaryText)
-                                    Text(currency.rawValue)
-                                        .font(.caption)
-                                        .foregroundColor(.secondaryText)
-                                }
+                                CurrencyCodeChip(
+                                    currency: currency,
+                                    tint: currency.chipTintColor,
+                                    style: selectedCurrency == currency ? .filled : .subtle
+                                )
+
+                                Text(currency.displayName)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundColor(.primaryText)
 
                                 Spacer()
 

@@ -199,8 +199,8 @@ class MockDataService: DataServiceProtocol {
         transactions = seed.transactionsByAccountId
         holdings = [:]
         liabilities = seed.liabilitiesByAccountId
-        manualAssets = [:]
-        manualAssetValuations = [:]
+        manualAssets = [seed.userId: seed.manualAssets]
+        manualAssetValuations = seed.manualAssetValuationsByAssetId
         accountSnapshots = [:]
         assetPriceSnapshots = Dictionary(uniqueKeysWithValues: seed.assetPriceSnapshots.map { ($0.id, $0) })
         userHoldingsSnapshots = [:]
@@ -975,7 +975,9 @@ class MockDataService: DataServiceProtocol {
 
     func saveHomeDashboardSnapshot(_ snapshot: HomeDashboardSnapshot) async throws {
         homeDashboardSnapshots[snapshot.userId] = snapshot
-        recordHomeDashboardSnapshotAsTrendPoint(snapshot, shouldPersist: false)
+        if !isDemoModeRuntimeActive {
+            recordHomeDashboardSnapshotAsTrendPoint(snapshot, shouldPersist: false)
+        }
     }
 
     func deleteHomeDashboardSnapshot(userId: String) async throws {

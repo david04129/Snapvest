@@ -1000,7 +1000,7 @@ struct ManualAssetCardView: View {
             )
 
             VStack(alignment: .leading, spacing: 6) {
-                Text(asset.name)
+                Text(AccountDisplayFormat.listName(asset.name))
                     .font(.headline)
                     .fontWeight(.semibold)
                     .foregroundColor(.primaryText)
@@ -1015,14 +1015,14 @@ struct ManualAssetCardView: View {
                     }
                 }
             }
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(0)
 
             Spacer(minLength: 8)
 
-            CurrencyAmountWithChip(
+            managementListAmountChip(
                 text: displayAmount.amount.formatted(currency: displayAmount.currency),
                 currency: displayAmount.currency,
-                font: .snapAmountRow,
-                weight: .bold,
                 color: .primaryText,
                 chipTint: accentColor
             )
@@ -1082,6 +1082,26 @@ private struct AccountListRowButton<RowContent: View>: View {
 }
 
 // MARK: - 類別總覽金額（統一字級，避免長數字被壓縮）
+
+@ViewBuilder
+private func managementListAmountChip(
+    text: String,
+    currency: Currency,
+    color: Color,
+    chipTint: Color
+) -> some View {
+    CurrencyAmountWithChip(
+        text: text,
+        currency: currency,
+        font: .snapAmountRow,
+        weight: .bold,
+        color: color,
+        chipTint: chipTint,
+        minimumScaleFactor: 1
+    )
+    .fixedSize(horizontal: true, vertical: false)
+    .layoutPriority(2)
+}
 
 @ViewBuilder
 private func categoryOverviewAmountChip(
@@ -1435,9 +1455,10 @@ struct AccountCardView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
-                        Text(account.name)
+                        Text(AccountDisplayFormat.listName(account.name))
                             .font(.headline)
                             .foregroundColor(.primaryText)
+                            .lineLimit(1)
                         if showsArchivedBadge || account.isArchived {
                             Text("已封存")
                                 .font(.caption2)
@@ -1453,12 +1474,12 @@ struct AccountCardView: View {
                         .font(.caption)
                         .foregroundColor(.secondaryText)
                 }
-                
-                Spacer()
-                
-                VStack(alignment: .trailing, spacing: 4) {
-                    amountPrimaryText
-                }
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(0)
+
+                Spacer(minLength: 8)
+
+                amountPrimaryText
             }
         }
         .padding(16)
@@ -1499,11 +1520,9 @@ struct AccountCardView: View {
                 baseCurrency: baseCurrency,
                 twdPerBaseCurrency: twdPerBaseCurrency
             )
-            CurrencyAmountWithChip(
+            managementListAmountChip(
                 text: display.amount.formatted(currency: display.currency),
                 currency: display.currency,
-                font: .snapAmountRow,
-                weight: .bold,
                 color: .lossRed,
                 chipTint: account.accountType.color
             )
@@ -1515,11 +1534,9 @@ struct AccountCardView: View {
                 baseCurrency: baseCurrency,
                 twdPerBaseCurrency: twdPerBaseCurrency
             )
-            CurrencyAmountWithChip(
+            managementListAmountChip(
                 text: display.amount.formatted(currency: display.currency),
                 currency: display.currency,
-                font: .snapAmountRow,
-                weight: .bold,
                 color: .primaryText,
                 chipTint: account.accountType.color
             )
@@ -1531,11 +1548,9 @@ struct AccountCardView: View {
                 baseCurrency: baseCurrency,
                 twdPerBaseCurrency: twdPerBaseCurrency
             )
-            CurrencyAmountWithChip(
+            managementListAmountChip(
                 text: display.amount.formatted(currency: display.currency),
                 currency: display.currency,
-                font: .snapAmountRow,
-                weight: .bold,
                 color: .primaryText,
                 chipTint: account.accountType.color
             )

@@ -138,6 +138,24 @@ enum AccountType: String, Codable, CaseIterable {
         default: return false
         }
     }
+
+    /// 詳情頁內嵌交易紀錄（取代 toolbar 另開完整列表）
+    var showsInlineTransactionHistory: Bool {
+        switch self {
+        case .twdDeposit, .twdSecurities, .usdAccount, .cryptoWallet, .debt, .otherDebt:
+            return true
+        }
+    }
+
+    /// 投資帳戶詳情：顯示持股市值與持股明細
+    var showsInvestmentHoldingsOnDetail: Bool {
+        switch self {
+        case .twdSecurities, .usdAccount, .cryptoWallet:
+            return true
+        default:
+            return false
+        }
+    }
 }
 
 

@@ -34,7 +34,7 @@ struct UsdTwdRateCaptionView: View {
     var body: some View {
         if displayRate > 0 {
             HStack(spacing: 6) {
-                Text("1 USD = \(displayRate.formatted(fractionDigits: 4)) \(displayCurrency.rawValue)")
+                Text("1 USD = \(displayRate.formattedExchangeRateDisplay()) \(displayCurrency.rawValue)")
                 if let resolvedUpdatedAt {
                     Text("·")
                     Text("更新 \(DataFreshnessFormatter.label(for: resolvedUpdatedAt))")

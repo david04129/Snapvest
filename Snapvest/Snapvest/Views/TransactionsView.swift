@@ -63,6 +63,7 @@ struct TransactionsView: View {
     @State private var transactionPendingDelete: Transaction?
     @State private var manualAssetRecordPendingDelete: ManualAssetActivityRecord?
     @State private var showingDeleteConfirmation = false
+    @State private var showingRepaymentEditBlockedAlert = false
     @State private var showingManualAssetDeleteConfirmation = false
     @State private var buyTradeEditItem: BuyTradeEditItem?
     @State private var sellTradeEditItem: SellTradeEditItem?
@@ -387,9 +388,7 @@ struct TransactionsView: View {
             accountName: accountDisplay.name,
             accountIconName: accountDisplay.icon,
             accountColor: accountDisplay.color,
-            onEdit: { transaction in
-                handleEditTransaction(transaction)
-            },
+            onRowTap: { attemptEditTransaction(transaction) },
             onDelete: { transaction in
                 transactionPendingDelete = transaction
                 showingDeleteConfirmation = true
@@ -400,7 +399,7 @@ struct TransactionsView: View {
     private func manualAssetActivityRow(for record: ManualAssetActivityRecord) -> some View {
         ManualAssetActivityRowView(
             record: record,
-            onEdit: { editingManualAssetRecord = record },
+            onRowTap: { editingManualAssetRecord = record },
             onDelete: {
                 manualAssetRecordPendingDelete = record
                 showingManualAssetDeleteConfirmation = true
@@ -689,6 +688,11 @@ struct TransactionsView: View {
             } message: {
                 Text(manualAssetDeleteAlertMessage)
             }
+            .alert("無法編輯", isPresented: $showingRepaymentEditBlockedAlert) {
+                Button("好", role: .cancel) {}
+            } message: {
+                Text(TransactionsViewModel.repaymentNotEditableMessage)
+            }
         }
         .id(navigationStackResetID)
         .resetNavigationWhenTabReappears(selectedTab: $selectedTab, resignedTab: .transactions) {
@@ -940,7 +944,7 @@ struct TransactionsView: View {
                                 FilterSelectableRow(
                                     title: account.name,
                                     subtitle: account.accountType.displayName,
-                                    icon: account.accountType.icon,
+                                    currency: account.currency,
                                     accentColor: account.accountType.color,
                                     isSelected: isSelected
                                 )
@@ -1085,6 +1089,20 @@ struct TransactionsView: View {
         }
     }
     
+    private func attemptEditTransaction(_ transaction: Transaction) {
+        if transaction.type == .liability {
+            return
+        }
+        if transaction.type == .repayment,
+           let account = viewModel.accounts.first(where: { $0.id == transaction.accountId }),
+           account.accountType == .debt,
+           !viewModel.canEditRepaymentTransaction(transaction) {
+            showingRepaymentEditBlockedAlert = true
+            return
+        }
+        handleEditTransaction(transaction)
+    }
+
     private func handleEditTransaction(_ transaction: Transaction) {
         if transaction.type == .liability {
             return
@@ -1234,12 +1252,15 @@ private struct FilterSelectableRow: View {
     let title: String
     var subtitle: String? = nil
     var icon: String? = nil
+    var currency: Currency? = nil
     var accentColor: Color = .appPrimary
     let isSelected: Bool
     
     var body: some View {
         HStack(spacing: 12) {
-            if let icon {
+            if let currency {
+                CurrencyIconBadge(currency: currency, tint: accentColor)
+            } else if let icon {
                 Image(systemName: icon)
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(accentColor)
@@ -1284,10 +1305,8 @@ private struct FilterSelectableRow: View {
 
 fileprivate struct ManualAssetActivityRowView: View {
     let record: ManualAssetActivityRecord
-    let onEdit: () -> Void
+    let onRowTap: () -> Void
     let onDelete: () -> Void
-
-    @State private var isExpanded = false
 
     private var accentColor: Color { .manualAssetColor }
 
@@ -1314,29 +1333,12 @@ fileprivate struct ManualAssetActivityRowView: View {
     }
 
     var body: some View {
-        Group {
-            if trimmedNotes != nil {
-                cardContent {
-                    Button {
-                        withAnimation(ChartMotion.switchSpring) {
-                            isExpanded.toggle()
-                        }
-                    } label: {
-                        rowHeader(showsChevron: true, isExpandable: true)
-                    }
-                    .buttonStyle(.plain)
-
-                    if isExpanded, let detail = trimmedNotes {
-                        detailSection(detail)
-                            .transition(.opacity.combined(with: .move(edge: .top)))
-                    }
-                }
-            } else {
-                cardContent {
-                    rowHeader(showsChevron: true, isExpandable: false)
-                }
+        Button(action: onRowTap) {
+            cardContent {
+                rowHeader()
             }
         }
+        .buttonStyle(.plain)
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             Button(action: onDelete) {
                 VStack(spacing: 4) {
@@ -1351,20 +1353,6 @@ fileprivate struct ManualAssetActivityRowView: View {
                 .cornerRadius(0)
             }
             .tint(AppColors.actionDestructiveBackground)
-
-            Button(action: onEdit) {
-                VStack(spacing: 4) {
-                    Image(systemName: "pencil")
-                        .font(.system(size: 18, weight: .medium))
-                    Text("編輯")
-                        .font(.system(size: 10, weight: .medium))
-                }
-                .foregroundColor(AppColors.actionForeground)
-                .frame(width: 70, height: 70)
-                .background(AppColors.actionEditBackground)
-                .cornerRadius(0)
-            }
-            .tint(AppColors.actionEditBackground)
         }
     }
 
@@ -1383,7 +1371,7 @@ fileprivate struct ManualAssetActivityRowView: View {
             .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 2)
     }
 
-    private func rowHeader(showsChevron: Bool, isExpandable: Bool) -> some View {
+    private func rowHeader() -> some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(record.title)
@@ -1396,6 +1384,13 @@ fileprivate struct ManualAssetActivityRowView: View {
                     .font(.caption)
                     .foregroundColor(.secondaryText)
                     .lineLimit(2)
+
+                if let notes = trimmedNotes {
+                    Text(notes)
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                        .lineLimit(2)
+                }
             }
 
             Spacer(minLength: 8)
@@ -1414,30 +1409,8 @@ fileprivate struct ManualAssetActivityRowView: View {
                     .font(.caption)
                     .foregroundColor(.secondaryText)
             }
-
-            if showsChevron {
-                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                    .font(.caption.weight(.semibold))
-                    .foregroundColor(isExpandable ? .secondaryText : .secondaryText.opacity(0.38))
-                    .frame(width: 16)
-            }
         }
         .contentShape(Rectangle())
-    }
-
-    private func detailSection(_ detail: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Divider()
-            Text("明細")
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundColor(.secondaryText)
-            Text(detail)
-                .font(.caption)
-                .foregroundColor(.primaryText)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
     }
 }
 
@@ -1446,43 +1419,24 @@ struct TransactionRowView: View {
     let accountName: String
     let accountIconName: String
     let accountColor: Color
-    let onEdit: (Transaction) -> Void
+    let onRowTap: () -> Void
     let onDelete: (Transaction) -> Void
-    
-    @State private var isExpanded = false
-    
+
     private var display: TransactionDisplayFormatter {
         TransactionDisplayFormatter(transaction: transaction)
     }
-    
+
     private var accentColor: Color {
         display.typeAccentColor
     }
-    
-    var body: some View {
-        Group {
-            if display.shouldShowExpandedDetail, let detail = display.expandedNotes {
-                cardContent {
-                    Button {
-                        withAnimation(ChartMotion.switchSpring) {
-                            isExpanded.toggle()
-                        }
-                    } label: {
-                        rowHeader(showsChevron: true, isExpandable: true)
-                    }
-                    .buttonStyle(.plain)
 
-                    if isExpanded {
-                        detailSection(detail)
-                            .transition(.opacity.combined(with: .move(edge: .top)))
-                    }
-                }
-            } else {
-                cardContent {
-                    rowHeader(showsChevron: true, isExpandable: false)
-                }
+    var body: some View {
+        Button(action: onRowTap) {
+            cardContent {
+                rowHeader()
             }
         }
+        .buttonStyle(.plain)
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             Button {
                 onDelete(transaction)
@@ -1499,25 +1453,6 @@ struct TransactionRowView: View {
                 .cornerRadius(0)
             }
             .tint(AppColors.actionDestructiveBackground)
-            
-            // 還款和債務交易只能刪除，不能編輯
-            if transaction.type != .repayment && transaction.type != .liability {
-                Button {
-                    onEdit(transaction)
-                } label: {
-                    VStack(spacing: 4) {
-                        Image(systemName: "pencil")
-                            .font(.system(size: 18, weight: .medium))
-                        Text("編輯")
-                            .font(.system(size: 10, weight: .medium))
-                    }
-                    .foregroundColor(AppColors.actionForeground)
-                    .frame(width: 70, height: 70)
-                    .background(AppColors.actionEditBackground)
-                    .cornerRadius(0)
-                }
-                .tint(AppColors.actionEditBackground)
-            }
         }
     }
     
@@ -1536,7 +1471,7 @@ struct TransactionRowView: View {
             .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 2)
     }
     
-    private func rowHeader(showsChevron: Bool = false, isExpandable: Bool = false) -> some View {
+    private func rowHeader() -> some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(display.primaryTitle)
@@ -1544,15 +1479,15 @@ struct TransactionRowView: View {
                     .fontWeight(.semibold)
                     .foregroundColor(.primaryText)
                     .lineLimit(2)
-                
+
                 Text(display.detailSubtitle(accountName: accountName))
                     .font(.caption)
                     .foregroundColor(.secondaryText)
                     .lineLimit(2)
             }
-            
+
             Spacer(minLength: 8)
-            
+
             VStack(alignment: .trailing, spacing: 4) {
                 CurrencyAmountWithChip(
                     text: transactionAmount,
@@ -1562,37 +1497,15 @@ struct TransactionRowView: View {
                     color: amountColor,
                     chipTint: display.typeAccentColor
                 )
-                
+
                 Text(transaction.transactionDate, style: .date)
                     .font(.caption)
                     .foregroundColor(.secondaryText)
             }
-
-            if showsChevron {
-                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                    .font(.caption.weight(.semibold))
-                    .foregroundColor(isExpandable ? .secondaryText : .secondaryText.opacity(0.38))
-                    .frame(width: 16)
-            }
         }
         .contentShape(Rectangle())
     }
-    
-    private func detailSection(_ detail: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Divider()
-            Text("明細")
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundColor(.secondaryText)
-            Text(detail)
-                .font(.caption)
-                .foregroundColor(.primaryText)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-    
+
     private var amountColor: Color {
         if transaction.type == .repayment { return .lossRed }
         return display.typeAccentColor

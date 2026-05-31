@@ -202,35 +202,35 @@ private struct OnboardingPage: Identifiable {
         OnboardingPage(
             id: "welcome",
             title: "隨手開啟，掌握資產的成長",
-            subtitle: "記錄帳戶、投資、負債與其他資產，輕鬆掌握資產走勢。",
-            visual: .dashboard
+            subtitle: "整合你的帳戶與投資，用一個畫面掌握所有資產",
+            visual: .pieChart
         ),
         OnboardingPage(
             id: "accounts",
-            title: "第一步，建立你的帳戶",
-            subtitle: "可以新增現金帳戶、台股、美股、加密錢包，也可以管理負債。",
+            title: "第一步：新增帳戶",
+            subtitle: "資產與負債，一站式管理",
             visual: .accounts
         ),
         OnboardingPage(
-            id: "records",
-            title: "用交易和估值累積你的紀錄",
-            subtitle: "買入、賣出、現金收支會影響投資與現金；房產、基金、保單等輕鬆自定義。",
-            visual: .records
+            id: "holdings",
+            title: "第二步：新增持股",
+            subtitle: "整合台股、美股、加密貨幣，清楚呈現投資績效",
+            visual: .performance
         ),
         OnboardingPage(
-            id: "backup",
-            title: "每天累積走勢，記得備份",
-            subtitle: "Walleaf 會把走勢點保存在手機。資料屬於你，建議定期備份到自己的 iCloud Drive。",
-            visual: .backup
+            id: "finale",
+            title: "讓 Walleaf 與你同行",
+            subtitle: "資產像葉子一樣持續生長，錢包般整合，一打開就能清楚看見你的財富故事",
+            visual: .finale
         )
     ]
 }
 
 private enum OnboardingVisual {
-    case dashboard
+    case pieChart
     case accounts
-    case records
-    case backup
+    case performance
+    case finale
 }
 
 private struct OnboardingPageView: View {
@@ -244,126 +244,210 @@ private struct OnboardingPageView: View {
             visual
                 .frame(height: 310)
                 .frame(maxWidth: .infinity)
+                .clipped()
 
-            VStack(spacing: 12) {
-                Text(page.title)
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
-                    .foregroundColor(.primaryText)
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(3)
-
-                Text(page.subtitle)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundColor(.secondaryText)
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(4)
-                    .padding(.horizontal, 6)
-            }
+            onboardingTextBlock
 
             Spacer(minLength: 8)
+        }
+    }
+
+    private var onboardingTextBlock: some View {
+        VStack(spacing: 12) {
+            onboardingTitle
+
+            Text(page.subtitle)
+                .font(.subheadline.weight(.medium))
+                .foregroundColor(.secondaryText)
+                .multilineTextAlignment(.center)
+                .lineSpacing(4)
+                .padding(.horizontal, 6)
+        }
+    }
+
+    @ViewBuilder
+    private var onboardingTitle: some View {
+        let titleFont = Font.system(size: 30, weight: .bold, design: .rounded)
+        if page.visual == .finale {
+            HStack(spacing: 0) {
+                Text("讓 ")
+                    .foregroundColor(.primaryText)
+                Text("Walleaf")
+                    .foregroundColor(.appPrimary)
+                Text(" 與你同行")
+                    .foregroundColor(.primaryText)
+            }
+            .font(titleFont)
+            .multilineTextAlignment(.center)
+            .lineSpacing(3)
+        } else {
+            Text(page.title)
+                .font(titleFont)
+                .foregroundColor(.primaryText)
+                .multilineTextAlignment(.center)
+                .lineSpacing(3)
         }
     }
 
     @ViewBuilder
     private var visual: some View {
         switch page.visual {
-        case .dashboard:
-            OnboardingDashboardMock(animate: animate)
+        case .pieChart:
+            OnboardingPieChartMock(animate: animate)
         case .accounts:
             OnboardingAccountListMock(animate: animate)
-        case .records:
-            OnboardingRecordsMock(animate: animate)
-        case .backup:
-            OnboardingBackupMock(animate: animate)
+        case .performance:
+            OnboardingPerformanceMock(animate: animate)
+        case .finale:
+            OnboardingFinaleMock(animate: animate)
         }
     }
 }
 
-private struct OnboardingDashboardMock: View {
+// MARK: - 第一頁：圓餅圖（對齊首頁 HomePieChartSection）
+
+private struct OnboardingPieChartMock: View {
     let animate: Bool
 
-    var body: some View {
-        VStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Text("走勢圖")
-                        .font(.headline.weight(.bold))
-                        .foregroundColor(.primaryText)
-                    Text("·")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.secondaryText)
-                    Text("淨資產")
-                        .font(.subheadline.weight(.bold))
-                        .foregroundColor(.appPrimary)
-                    CurrencyCodeChip(currency: .TWD)
-                    Spacer()
-                }
+    @State private var selectedId: String? = "twd_cash"
 
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(animate ? "1,268,420" : "0")
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
-                        .foregroundColor(.primaryText)
-                        .contentTransition(.numericText())
-                    Text(animate ? "+42,180 (+3.44%)" : "+0 (+0.00%)")
-                        .font(.subheadline.weight(.bold))
-                        .foregroundColor(.profitGreen)
-                    Text("2026年5月31日")
-                        .font(.caption.weight(.semibold))
-                        .foregroundColor(.secondaryText)
-                }
+    private static let chartSize: CGFloat = 152
+    private static let demoDenominator: Decimal = 1_268_420
 
-                ZStack(alignment: .trailing) {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(Color.appPrimary.opacity(0.06))
-                    VStack(spacing: 26) {
-                        ForEach(["130萬", "126萬", "122萬"], id: \.self) { label in
-                            HStack(spacing: 8) {
-                                Rectangle()
-                                    .fill(Color.separator.opacity(0.45))
-                                    .frame(height: 0.6)
-                                Text(label)
-                                    .font(.system(size: 9, weight: .semibold))
-                                    .foregroundColor(.secondaryText)
-                                    .frame(width: 30, alignment: .trailing)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 10)
+    private static let demoItems: [PieChartDataItem] = [
+        PieChartDataItem(
+            symbol: "twd_cash",
+            name: "台幣",
+            marketValue: 431_262,
+            color: AppColors.holdingChartColor(at: 0)
+        ),
+        PieChartDataItem(
+            symbol: "stock_us",
+            name: "美股",
+            marketValue: 279_054,
+            color: AppColors.holdingChartColor(at: 1)
+        ),
+        PieChartDataItem(
+            symbol: "stock_tw",
+            name: "台股",
+            marketValue: 329_709,
+            color: AppColors.holdingChartColor(at: 2)
+        ),
+        PieChartDataItem(
+            symbol: "crypto",
+            name: "加密貨幣",
+            marketValue: 228_395,
+            color: AppColors.holdingChartColor(at: 3)
+        )
+    ]
 
-                    OnboardingTrendArea(progress: animate ? 1 : 0)
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.appPrimary.opacity(0.24), Color.appPrimary.opacity(0.03)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .padding(.trailing, 40)
-                        .padding(.vertical, 12)
+    private var progress: Decimal {
+        animate ? 1 : 0
+    }
 
-                    OnboardingTrendLine(progress: animate ? 1 : 0)
-                        .stroke(Color.appPrimary, style: StrokeStyle(lineWidth: 3.5, lineCap: .round, lineJoin: .round))
-                        .padding(.trailing, 40)
-                        .padding(.vertical, 12)
-                }
-                .frame(height: 94)
-            }
-            .padding(16)
-            .background(
-                LinearGradient(
-                    colors: [Color.appPrimary.opacity(0.10), Color.cardBackground],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+    private var displayItems: [PieChartDataItem] {
+        Self.demoItems.map { item in
+            PieChartDataItem(
+                symbol: item.symbol,
+                name: item.name,
+                marketValue: item.marketValue * progress,
+                color: item.color
             )
-            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .shadow(color: AppColors.shadowMedium, radius: 14, x: 0, y: 5)
-
-            OnboardingNetWorthSummaryCard(animate: animate)
-            .opacity(animate ? 1 : 0)
-            .offset(y: animate ? 0 : 12)
         }
-        .animation(.easeOut(duration: 0.7), value: animate)
+    }
+
+    private var displayDenominator: Decimal {
+        let scaled = Self.demoDenominator * progress
+        return scaled > 0 ? scaled : Self.demoDenominator
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .center, spacing: 8) {
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    Text("圓餅圖")
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundColor(.primaryText)
+                    Text(" · ")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(AppColors.tertiaryText)
+                    Text(PieChartDisplayMode.totalAssets.rawValue)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(AppColors.appPrimary)
+                }
+                Spacer(minLength: 8)
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 10)
+            .padding(.bottom, 2)
+
+            PortfolioDonutChart(
+                data: displayItems,
+                denominator: displayDenominator,
+                selectedId: $selectedId,
+                displayMode: .totalAssets,
+                allowsSelection: animate,
+                chartSize: Self.chartSize
+            )
+            .padding(.vertical, 0)
+            .animation(ChartMotion.pieMorphSpring, value: animate)
+
+            OnboardingPieCompactLegend(
+                items: displayItems,
+                denominator: displayDenominator
+            )
+            .padding(.horizontal, 10)
+            .padding(.bottom, 8)
+            .allowsHitTesting(false)
+            .animation(ChartMotion.pieMorphSpring, value: animate)
+        }
+        .frame(maxWidth: .infinity, maxHeight: 310, alignment: .top)
+        .background(Color.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: AppColors.shadowMedium, radius: 8, x: 0, y: 2)
+    }
+}
+
+/// 新手教學用精簡圖例（兩欄），避免佔滿螢幕擠壓標語
+private struct OnboardingPieCompactLegend: View {
+    let items: [PieChartDataItem]
+    let denominator: Decimal
+
+    private var totalDouble: Double {
+        max(NSDecimalNumber(decimal: denominator).doubleValue, 0.001)
+    }
+
+    private var orderedItems: [PieChartDataItem] {
+        let order = ["twd_cash", "stock_us", "stock_tw", "crypto"]
+        return order.compactMap { id in items.first(where: { $0.id == id }) }
+    }
+
+    private let columns = [
+        GridItem(.flexible(), spacing: 8),
+        GridItem(.flexible(), spacing: 8)
+    ]
+
+    var body: some View {
+        LazyVGrid(columns: columns, spacing: 8) {
+            ForEach(orderedItems) { item in
+                let pct = (NSDecimalNumber(decimal: item.marketValue).doubleValue / totalDouble) * 100
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(item.color)
+                        .frame(width: 8, height: 8)
+                    Text(item.name)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.primaryText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    Spacer(minLength: 0)
+                    Text(String(format: "%.1f%%", pct))
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.secondaryText)
+                        .monospacedDigit()
+                }
+            }
+        }
     }
 }
 
@@ -408,112 +492,206 @@ private struct OnboardingAccountListMock: View {
     }
 }
 
-private struct OnboardingRecordsMock: View {
+// MARK: - 第三頁：績效圖
+
+private struct OnboardingPerformanceMock: View {
     let animate: Bool
+
+    private let rows: [(name: String, color: Color, gain: CGFloat, positive: Bool)] = [
+        ("VOO", .stockUSColor, 0.82, true),
+        ("2330", .stockTWColor, 0.58, true),
+        ("BTC", .cryptoColor, 0.44, false),
+        ("0050", .stockTWColor, 0.36, true)
+    ]
 
     var body: some View {
         VStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("今日紀錄")
-                        .font(.headline.weight(.bold))
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("績效圖")
+                        .font(.system(size: 17, weight: .bold))
                         .foregroundColor(.primaryText)
-                    Spacer()
-                    Text("3 筆")
+                    Text("·")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(AppColors.tertiaryText)
+                    Text("未實現損益")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.appPrimary)
+                    CurrencyCodeChip(currency: .TWD)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 10)
+
+                HStack(spacing: 8) {
+                    Text("未實現損益")
                         .font(.caption.weight(.bold))
+                        .foregroundColor(.appPrimary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(Color.appPrimary.opacity(0.12))
+                        .clipShape(Capsule())
+                    Text("報酬率")
+                        .font(.caption.weight(.semibold))
                         .foregroundColor(.secondaryText)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 5)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
                         .background(Color.secondaryBackground)
                         .clipShape(Capsule())
+                    Spacer(minLength: 0)
                 }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 12)
 
-                OnboardingTransactionRow(
-                    icon: "arrow.down.circle.fill",
-                    title: "買入 VOO",
-                    subtitle: "美股證券 · 投資交易",
-                    amount: animate ? "-24,360" : "0",
-                    currency: .TWD,
-                    tint: .stockUSColor
-                )
-                OnboardingTransactionRow(
-                    icon: "plus.circle.fill",
-                    title: "現金存入",
-                    subtitle: "現金帳戶 · 收入",
-                    amount: animate ? "+50,000" : "0",
-                    currency: .TWD,
-                    tint: .appPrimary
-                )
-            }
-            .padding(16)
-            .background(Color.cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .shadow(color: AppColors.shadowMedium, radius: 12, x: 0, y: 4)
-
-            HStack(spacing: 12) {
-                OnboardingAssetValueCard(
-                    icon: "house.fill",
-                    title: "房地產",
-                    value: animate ? "8,200,000" : "0",
-                    tint: .appPrimary
-                )
-                OnboardingAssetValueCard(
-                    icon: "shield.fill",
-                    title: "保單",
-                    value: animate ? "320,000" : "0",
-                    tint: .stockUSColor
-                )
-            }
-            .opacity(animate ? 1 : 0)
-            .offset(y: animate ? 0 : 18)
-        }
-        .animation(.easeOut(duration: 0.65), value: animate)
-    }
-}
-
-private struct OnboardingBackupMock: View {
-    let animate: Bool
-
-    var body: some View {
-        VStack(spacing: 18) {
-            VStack(alignment: .leading, spacing: 18) {
-                HStack {
-                    Text("走勢累積")
-                        .font(.headline.weight(.bold))
-                        .foregroundColor(.primaryText)
-                    Spacer()
-                    Image(systemName: "icloud.and.arrow.up.fill")
-                        .font(.title2.weight(.semibold))
-                        .foregroundColor(.appPrimary)
-                        .scaleEffect(animate ? 1 : 0.72)
-                }
-
-                OnboardingTrendLine(progress: animate ? 1 : 0.22)
-                    .stroke(Color.appPrimary, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
-                    .frame(height: 130)
-                    .overlay {
-                        HStack {
-                            Circle().fill(Color.appPrimary).frame(width: 10, height: 10)
-                            Spacer()
-                            Circle().fill(Color.appPrimary).frame(width: 10, height: 10).opacity(animate ? 1 : 0)
-                            Spacer()
-                            Circle().fill(Color.appPrimary).frame(width: 10, height: 10).opacity(animate ? 1 : 0)
-                        }
-                        .padding(.horizontal, 18)
-                        .offset(y: 28)
+                VStack(spacing: 10) {
+                    ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                        OnboardingPerformanceTornadoRow(
+                            name: row.name,
+                            color: row.color,
+                            normalizedWidth: animate ? row.gain : 0,
+                            isPositive: row.positive,
+                            valueText: animate ? (row.positive ? "+\(rowValue(index))" : "-\(rowValue(index))") : "0"
+                        )
+                        .opacity(animate ? 1 : 0)
+                        .offset(y: animate ? 0 : 10)
+                        .animation(.easeOut(duration: 0.42).delay(0.08 + Double(index) * 0.07), value: animate)
                     }
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 16)
             }
-            .padding(20)
             .background(Color.cardBackground)
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .shadow(color: AppColors.shadowMedium, radius: 14, x: 0, y: 5)
-
-            Text("本機資料 + iCloud Drive 備份")
-                .font(.subheadline.weight(.semibold))
-                .foregroundColor(.secondaryText)
-                .opacity(animate ? 1 : 0)
         }
         .animation(.easeOut(duration: 0.7), value: animate)
+    }
+
+    private func rowValue(_ index: Int) -> String {
+        ["128,400", "86,200", "24,600", "31,800"][index]
+    }
+}
+
+private struct OnboardingPerformanceTornadoRow: View {
+    let name: String
+    let color: Color
+    let normalizedWidth: CGFloat
+    let isPositive: Bool
+    let valueText: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(name)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(color)
+                .lineLimit(1)
+                .frame(width: 52, alignment: .leading)
+
+            GeometryReader { geo in
+                let totalW = geo.size.width
+                let barH: CGFloat = 10
+                let halfW = totalW / 2
+                let barLen = halfW * min(max(normalizedWidth, 0), 1)
+                let midY = geo.size.height / 2
+                let centerX = totalW / 2
+
+                ZStack {
+                    Rectangle()
+                        .fill(Color.primaryText.opacity(0.08))
+                        .frame(width: 1, height: barH + 6)
+                        .position(x: centerX, y: midY)
+
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .fill(color)
+                        .frame(width: max(barLen, normalizedWidth > 0 ? 3 : 0), height: barH)
+                        .position(
+                            x: isPositive ? centerX + barLen / 2 : centerX - barLen / 2,
+                            y: midY
+                        )
+                }
+            }
+            .frame(height: 22)
+
+            Text(valueText)
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundColor(isPositive ? .marketUp : .marketDown)
+                .frame(width: 72, alignment: .trailing)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+    }
+}
+
+// MARK: - 第四頁：Logo + 走勢
+
+private struct OnboardingFinaleMock: View {
+    let animate: Bool
+
+    var body: some View {
+        VStack(spacing: 16) {
+            SnapvestBrandMark(iconSize: 72, wordmarkSize: 0, spacing: 0, showsWordmark: false)
+                .scaleEffect(animate ? 1 : 0.7)
+                .opacity(animate ? 1 : 0.2)
+                .animation(.spring(response: 0.55, dampingFraction: 0.78), value: animate)
+
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text("走勢圖")
+                        .font(.headline.weight(.bold))
+                        .foregroundColor(.primaryText)
+                    Text("·")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.secondaryText)
+                    Text("淨資產")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundColor(.appPrimary)
+                    Spacer(minLength: 0)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(animate ? "1,268,420" : "0")
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .foregroundColor(.primaryText)
+                        .contentTransition(.numericText())
+                    Text(animate ? "+42,180 (+3.44%)" : "+0 (+0.00%)")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundColor(.profitGreen)
+                }
+
+                ZStack(alignment: .trailing) {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.appPrimary.opacity(0.06))
+
+                    OnboardingTrendArea(progress: animate ? 1 : 0)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.appPrimary.opacity(0.24), Color.appPrimary.opacity(0.03)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .padding(.trailing, 8)
+                        .padding(.vertical, 10)
+
+                    OnboardingTrendLine(progress: animate ? 1 : 0)
+                        .stroke(
+                            Color.appPrimary,
+                            style: StrokeStyle(lineWidth: 3.5, lineCap: .round, lineJoin: .round)
+                        )
+                        .padding(.trailing, 8)
+                        .padding(.vertical, 10)
+                }
+                .frame(height: 108)
+            }
+            .padding(18)
+            .background(Color.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .shadow(color: AppColors.shadowMedium, radius: 14, x: 0, y: 5)
+            .opacity(animate ? 1 : 0)
+            .offset(y: animate ? 0 : 16)
+            .animation(.easeOut(duration: 0.65).delay(0.1), value: animate)
+        }
     }
 }
 

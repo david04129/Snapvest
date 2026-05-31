@@ -23,6 +23,10 @@ struct ManualAssetDetailView: View {
     @State private var isLoadingValuations = false
     @State private var showValuationHistory = false
     @State private var editingValuationEntry: ManualAssetValuationHistoryEntry?
+    @State private var valuationEntryPendingDelete: ManualAssetValuationHistoryEntry?
+    @State private var showingValuationDeleteConfirmation = false
+    @State private var showingValuationDeleteError = false
+    @State private var valuationDeleteErrorMessage: String?
 
     init(
         asset: ManualAsset,
@@ -67,7 +71,8 @@ struct ManualAssetDetailView: View {
                     entries: valuationEntries,
                     isLoading: isLoadingValuations,
                     onViewAll: { showValuationHistory = true },
-                    onSelectEntry: { editingValuationEntry = $0 }
+                    onSelectEntry: { editingValuationEntry = $0 },
+                    onDelete: { valuationEntryPendingDelete = $0; showingValuationDeleteConfirmation = true }
                 )
                 detailsCard
             }
@@ -119,6 +124,21 @@ struct ManualAssetDetailView: View {
         .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { _ in
             Task { await reloadValuationEntries() }
         }
+        .alert("刪除現值紀錄？", isPresented: $showingValuationDeleteConfirmation) {
+            Button("取消", role: .cancel) { valuationEntryPendingDelete = nil }
+            Button("刪除", role: .destructive) {
+                guard let entry = valuationEntryPendingDelete else { return }
+                valuationEntryPendingDelete = nil
+                Task { await performDeleteValuationEntry(entry) }
+            }
+        } message: {
+            Text("刪除後會依最新一筆紀錄更新目前現值。")
+        }
+        .alert("無法刪除", isPresented: $showingValuationDeleteError) {
+            Button("好", role: .cancel) { valuationDeleteErrorMessage = nil }
+        } message: {
+            Text(valuationDeleteErrorMessage ?? "請稍後再試")
+        }
     }
 
     @ViewBuilder
@@ -157,6 +177,20 @@ struct ManualAssetDetailView: View {
 
         if let refreshed = viewModel.assets.first(where: { $0.id == displayAsset.id }) {
             displayAsset = refreshed
+        }
+    }
+
+    @MainActor
+    private func performDeleteValuationEntry(_ entry: ManualAssetValuationHistoryEntry) async {
+        let succeeded = await viewModel.deleteManualAssetValuation(
+            asset: displayAsset,
+            valuation: entry.valuation
+        )
+        if succeeded {
+            await reloadValuationEntries()
+        } else {
+            valuationDeleteErrorMessage = viewModel.errorMessage
+            showingValuationDeleteError = true
         }
     }
 
@@ -534,10 +568,19 @@ struct ManualAssetUpdateValueView: View {
         return newValue - asset.currentValue
     }
 
+    private var hasEditChanges: Bool {
+        guard let editingValuation else { return true }
+        let baselineValue = editingValuation.value
+        let baselineNotes = editingValuation.notes ?? ""
+        return newValue != baselineValue
+            || EditFormChangeTracking.normalizedNote(notes) != EditFormChangeTracking.normalizedNote(baselineNotes)
+            || !EditFormChangeTracking.datesEqual(valuationDate, editingValuation.valuationDate)
+    }
+
     private var isValid: Bool {
         guard let newValue else { return false }
         if editingValuation != nil {
-            return newValue >= 0 && !viewModel.isSaving
+            return newValue >= 0 && hasEditChanges && !viewModel.isSaving
         }
         return newValue >= 0 && newValue != asset.currentValue && !viewModel.isSaving
     }
