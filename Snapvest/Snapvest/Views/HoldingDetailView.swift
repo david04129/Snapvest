@@ -536,8 +536,7 @@ struct HoldingDetailView: View {
                     )
                     PriceFreshnessAnnotationView(
                         chip: annotation.chip,
-                        timestamp: annotation.timestamp,
-                        chipTint: assetAccentColor
+                        timestamp: annotation.timestamp
                     )
                 }
                 

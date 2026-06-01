@@ -553,7 +553,7 @@ struct AssetCategorySummaryCard: View {
                             assetType: assetType,
                             marketStatus: marketStatus
                         ) {
-                            PriceSessionChip(chip: chip, tint: accentColor)
+                            PriceSessionChip(chip: chip)
                         }
                     }
                     Text(countLabel)
