@@ -190,19 +190,9 @@ serve(async (req) => {
       row.previous_price_source = prior.current_price_source
     }
 
+    row.price_kind = "intraday"
     await supabase.from("asset_price_snapshots").upsert(row, { onConflict: "asset_type,symbol" })
-    await supabase.from("asset_price_history").upsert(
-      {
-        asset_type: assetType,
-        symbol,
-        price_date: closeDate,
-        close_price: price,
-        currency,
-        source: priceSource,
-        updated_at: updatedAt,
-      },
-      { onConflict: "asset_type,symbol,price_date" },
-    )
+    // 日線 history 僅由收盤 job / 加密 00:00 hourly 寫入，避免盤中價污染走勢補點。
 
     return new Response(JSON.stringify({ price, currency, source: priceSource }), { headers: { ...corsHeaders, "Content-Type": "application/json" } })
   } catch (e) {

@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """
-Snapvest 每日股價更新腳本
-- 每次股價更新前：備份 hot_stocks（保留 2 日）→ 以 hot_stocks_seed ∪ 匿名 tracked_symbols 覆寫 hot_stocks
-- 僅對 hot_stocks 清單抓價（去重，每檔只查一次）
-- 台股 FinMind、匯率 FinMind 台銀牌告（6 幣→TWD，與台股同輪）；美股 Finnhub；失敗 → 等 60s 重試 → yfinance 補洞
-- 加密 CoinGecko（曆日快照）
+Snapvest 股價／匯率更新腳本（Cloud Run / 手動）
+- 抓價範圍：僅 tracked_symbols（is_active=true，去重）
+- 台股 FinMind、匯率 FinMind 台銀牌告；美股 Finnhub；加密 CoinGecko
+- 盤中只寫 snapshots；收盤寫 snapshots + history；加密 00:00 hourly 另寫昨日 history
 """
 import json
 import math
@@ -16,9 +15,12 @@ from datetime import date, datetime, timezone, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Callable, Optional, Set
+from zoneinfo import ZoneInfo
 
-# 台灣時區 UTC+8
+# 台灣時區 UTC+8（與 market_session 的 Asia/Taipei 等價；resolve 用 ZoneInfo）
 TW_TZ = timezone(timedelta(hours=8))
+TW_ZONE = ZoneInfo("Asia/Taipei")
+NY_ZONE = ZoneInfo("America/New_York")
 
 try:
     from supabase import create_client, Client
@@ -68,6 +70,16 @@ def tw_now_local_seconds() -> str:
     return tw_now().replace(microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def tw_calendar_yesterday() -> date:
+    """台北曆日的昨日（加密 00:00 日線 history 的 price_date）。"""
+    return tw_now().astimezone(TW_ZONE).date() - timedelta(days=1)
+
+
+def is_tw_midnight_hour(at: Optional[datetime] = None) -> bool:
+    at = at or tw_now()
+    return at.astimezone(TW_ZONE).hour == 0
+
+
 def parse_close_date(value) -> Optional[date]:
     if value is None:
         return None
@@ -79,23 +91,47 @@ def parse_close_date(value) -> Optional[date]:
         return None
 
 
-def last_weekday(cal: date, max_lookback: int = 10) -> date:
-    d = cal
-    for _ in range(max_lookback):
-        if d.weekday() < 5:
-            return d
-        d -= timedelta(days=1)
-    return cal
+def _trading_day_on_or_before(
+    market: str,
+    session_date: date,
+    calendar_rows: Optional[dict[tuple[str, date], dict]],
+) -> date:
+    """若 session_date 休市，往前找最近交易日；無日曆則用週一至週五 fallback。"""
+    from market_session import _load_calendar_day
+
+    for offset in range(14):
+        candidate = session_date - timedelta(days=offset)
+        if calendar_rows is not None:
+            is_td, _ = _load_calendar_day(calendar_rows, market, candidate)
+            if is_td:
+                return candidate
+        elif candidate.weekday() < 5:
+            return candidate
+    return session_date
 
 
-def resolve_session_close_date(market: str) -> date:
-    """本輪排程宣告的收盤所屬日（不含國定假日，假日由 API 空值 → fallback）。"""
-    today = tw_now().date()
-    if market == "tw":
-        return last_weekday(today)
+def resolve_session_close_date(
+    market: str,
+    *,
+    at: Optional[datetime] = None,
+    calendar_rows: Optional[dict[tuple[str, date], dict]] = None,
+) -> date:
+    """
+    本輪報價所屬交易日（寫入 current_close_date）。
+    台股：台北曆日；美股：紐約曆日（例：週一 23:30 台北盤中 → 週一 ET，不再誤標上週五）。
+    """
+    at = at or tw_now()
+    if market == "crypto":
+        return at.astimezone(TW_ZONE).date()
+
     if market == "us":
-        return last_weekday(today - timedelta(days=1))
-    return today
+        local_date = at.astimezone(NY_ZONE).date()
+        cal_market = "us"
+    else:
+        local_date = at.astimezone(TW_ZONE).date()
+        cal_market = "tw"
+
+    return _trading_day_on_or_before(cal_market, local_date, calendar_rows)
 
 
 def is_retryable_error(msg: str) -> bool:
@@ -304,26 +340,6 @@ def _merge_symbol_row(
     )
 
 
-def collect_seed_symbols(supabase: Client) -> list[dict]:
-    """種子熱門股（hot_stocks_seed，不受每日覆寫影響）"""
-    symbols_set: set[tuple[str, str]] = set()
-    symbols_list: list[dict] = []
-    try:
-        r = supabase.table("hot_stocks_seed").select("asset_type, symbol, display_order").execute()
-        _raise_on_supabase_error(r, "hot_stocks_seed read")
-        for row in r.data or []:
-            _merge_symbol_row(
-                symbols_set,
-                symbols_list,
-                row["asset_type"],
-                row["symbol"],
-                int(row.get("display_order") or 0),
-            )
-    except Exception as e:
-        print(f"取得 hot_stocks_seed 時出錯: {e}")
-    return symbols_list
-
-
 def collect_tracked_symbols(supabase: Client) -> list[dict]:
     """匿名 tracked_symbols 大池子中的標的（不含任何 user_id / quantity / cost）"""
     symbols_set: set[tuple[str, str]] = set()
@@ -349,94 +365,9 @@ def collect_tracked_symbols(supabase: Client) -> list[dict]:
     return symbols_list
 
 
-def build_hot_stocks_catalog(supabase: Client) -> list[dict]:
-    """種子 ∪ 匿名 tracked_symbols，去重"""
-    symbols_set: set[tuple[str, str]] = set()
-    catalog: list[dict] = []
-    for row in collect_seed_symbols(supabase):
-        key = (row["asset_type"], row["symbol"])
-        if key not in symbols_set:
-            symbols_set.add(key)
-            catalog.append(row)
-    for row in collect_tracked_symbols(supabase):
-        key = (row["asset_type"], row["symbol"])
-        if key not in symbols_set:
-            symbols_set.add(key)
-            catalog.append(row)
-    return catalog
-
-
-def backup_hot_stocks(supabase: Client) -> int:
-    """將目前 hot_stocks 寫入備份表，僅保留最近 2 日"""
-    today = datetime.now(TW_TZ).date()
-    today_str = today.isoformat()
-    keep_from = (today - timedelta(days=1)).isoformat()
-
-    current = supabase.table("hot_stocks").select("asset_type, symbol, display_order").execute()
-    _raise_on_supabase_error(current, "hot_stocks read for backup")
-    rows = current.data or []
-
-    supabase.table("hot_stocks_backup").delete().eq("backup_date", today_str).execute()
-    if rows:
-        backup_rows = [
-            {
-                "backup_date": today_str,
-                "asset_type": row["asset_type"],
-                "symbol": row["symbol"],
-                "display_order": row.get("display_order") or 0,
-            }
-            for row in rows
-        ]
-        for i in range(0, len(backup_rows), 100):
-            chunk = backup_rows[i : i + 100]
-            resp = supabase.table("hot_stocks_backup").upsert(chunk).execute()
-            _raise_on_supabase_error(resp, "hot_stocks_backup upsert")
-
-    prune = supabase.table("hot_stocks_backup").delete().lt("backup_date", keep_from).execute()
-    _raise_on_supabase_error(prune, "hot_stocks_backup prune")
-
-    print(f"  hot_stocks 備份 {len(rows)} 筆（backup_date={today_str}，保留 >= {keep_from}）")
-    return len(rows)
-
-
-def rebuild_hot_stocks(supabase: Client) -> list[dict]:
-    """備份後覆寫 hot_stocks = seed ∪ tracked_symbols"""
-    backup_hot_stocks(supabase)
-    catalog = build_hot_stocks_catalog(supabase)
-
-    delete_resp = (
-        supabase.table("hot_stocks")
-        .delete()
-        .in_("asset_type", ["stock_tw", "stock_us", "crypto"])
-        .execute()
-    )
-    _raise_on_supabase_error(delete_resp, "hot_stocks delete")
-
-    if catalog:
-        for i in range(0, len(catalog), 100):
-            chunk = catalog[i : i + 100]
-            insert_resp = supabase.table("hot_stocks").upsert(
-                chunk,
-                on_conflict="asset_type,symbol",
-            ).execute()
-            _raise_on_supabase_error(insert_resp, "hot_stocks upsert")
-
-    print(f"  hot_stocks 已重建：{len(catalog)} 檔（種子 + 匿名追蹤池）")
-    return catalog
-
-
-def get_symbols_to_update(supabase: Client) -> list[dict]:
-    """讀取重建後的 hot_stocks（即今日待更新清單）"""
-    symbols_list: list[dict] = []
-    try:
-        r = supabase.table("hot_stocks").select("asset_type, symbol").execute()
-        _raise_on_supabase_error(r, "hot_stocks read")
-        for row in r.data or []:
-            sym = _normalize_symbol(row["asset_type"], row["symbol"])
-            symbols_list.append({"asset_type": row["asset_type"], "symbol": sym})
-    except Exception as e:
-        print(f"取得 hot_stocks 時出錯: {e}")
-    return symbols_list
+def get_symbols_for_job(supabase: Client) -> list[dict]:
+    """排程抓價清單：tracked_symbols（is_active=true）。"""
+    return collect_tracked_symbols(supabase)
 
 
 def _rate_limit_wait(last_request_at: float) -> float:
@@ -707,11 +638,13 @@ def fetch_crypto_prices_coingecko(symbols: list[dict]) -> dict[tuple, float]:
     return result
 
 
-def upsert_prices(supabase: Client, updates: list[dict]):
+def upsert_prices(supabase: Client, updates: list[dict], default_price_kind: Optional[str] = None):
     """寫入 asset_price_snapshots；舊 current 滾入 previous_*"""
     if not updates:
         return
     for row in updates:
+        if default_price_kind and not row.get("price_kind"):
+            row["price_kind"] = default_price_kind
         try:
             existing = (
                 supabase.table("asset_price_snapshots")
@@ -867,52 +800,11 @@ def filter_symbols_by_markets(symbols: list[dict], markets: Optional[Set[str]]) 
     return [s for s in symbols if s["asset_type"] in allowed]
 
 
-def run_price_update(markets: Optional[Set[str]] = None) -> None:
-    """更新股價。markets: {'tw','us','crypto'} 子集；None = 全部。不含匯率。"""
-    label = ",".join(sorted(markets)) if markets else "all"
-    print(f"[{tw_now().isoformat()}] 開始股價更新（markets={label}）")
-    supabase = get_supabase()
-
-    print("重建 hot_stocks 清單（seed ∪ 匿名 tracked_symbols）…")
-    rebuild_hot_stocks(supabase)
-
-    symbols = filter_symbols_by_markets(get_symbols_to_update(supabase), markets)
-    print(f"共 {len(symbols)} 檔待更新（已去重）")
-    if not symbols:
-        print("無符合條件的標的，結束")
-        return
-
-    include_tw = markets is None or "tw" in markets
-    include_us = markets is None or "us" in markets
-    include_crypto = markets is None or "crypto" in markets
-
-    quotes: dict[tuple[str, str], FetchedQuote] = {}
-    finmind_times: Optional[deque[float]] = deque() if include_tw else None
-
-    if include_tw:
-        print("更新匯率（FinMind 台銀牌告，與台股同輪）…")
-        n_rates = update_exchange_rates(supabase, finmind_times)
-        print(f"匯率: 已 upsert {n_rates} 筆（{', '.join(FINMIND_FX_CURRENCIES)} → TWD）")
-
-        tw_close = resolve_session_close_date("tw")
-        print(f"本輪台股收盤日: {tw_close.isoformat()}")
-        quotes.update(
-            fetch_stocks_for_market("stock_tw", symbols, tw_close, finmind_times)
-        )
-
-    if include_us:
-        us_close = resolve_session_close_date("us")
-        print(f"本輪美股收盤日: {us_close.isoformat()}")
-        quotes.update(fetch_stocks_for_market("stock_us", symbols, us_close))
-
-    if include_crypto:
-        crypto_close = resolve_session_close_date("crypto")
-        print(f"本輪加密快照曆日: {crypto_close.isoformat()}")
-        for key, price in fetch_crypto_prices_coingecko(symbols).items():
-            if _is_valid_price(price):
-                quotes[key] = FetchedQuote(float(price), "coingecko", crypto_close)
-
-    updated_at = tw_now_local_seconds()
+def _quotes_to_rows(
+    quotes: dict[tuple[str, str], FetchedQuote],
+    updated_at: str,
+    price_kind: str,
+) -> list[dict]:
     currency_map = {"stock_tw": "TWD", "stock_us": "USD", "crypto": "USD"}
     rows = []
     for (asset_type, symbol), q in quotes.items():
@@ -924,16 +816,141 @@ def run_price_update(markets: Optional[Set[str]] = None) -> None:
             "current_close_date": q.close_date.isoformat(),
             "current_updated_at": updated_at,
             "current_price_source": q.source,
+            "price_kind": price_kind,
         })
+    return rows
 
-    attempted_symbols = symbols
-    successful_keys = set(quotes.keys())
-    upsert_prices(supabase, rows)
-    upsert_price_history(supabase, rows)
-    mark_tracked_symbols_synced(supabase, rows, updated_at)
-    mark_tracked_symbols_failed(supabase, attempted_symbols, successful_keys, updated_at)
-    print(f"已寫入 {len(rows)} 筆至 Supabase（更新時間 {updated_at}）")
-    print("更新完成")
+
+def _crypto_history_rows_for_yesterday(snapshot_rows: list[dict]) -> list[dict]:
+    """00:00 加密 hourly 後：將剛抓到的價寫入 history，price_date = 台北昨日。"""
+    price_date = tw_calendar_yesterday().isoformat()
+    history_rows: list[dict] = []
+    for row in snapshot_rows:
+        if row.get("asset_type") != "crypto":
+            continue
+        history_rows.append({
+            **row,
+            "current_close_date": price_date,
+        })
+    return history_rows
+
+
+def _fetch_quotes_for_symbols(
+    symbols: list[dict],
+    markets: Optional[Set[str]],
+    finmind_times: Optional[deque[float]],
+    calendar_rows: Optional[dict[tuple[str, date], dict]] = None,
+) -> dict[tuple[str, str], FetchedQuote]:
+    include_tw = markets is None or "tw" in markets
+    include_us = markets is None or "us" in markets
+    include_crypto = markets is None or "crypto" in markets
+    quotes: dict[tuple[str, str], FetchedQuote] = {}
+
+    if include_tw:
+        tw_close = resolve_session_close_date("tw", calendar_rows=calendar_rows)
+        print(f"本輪台股交易日: {tw_close.isoformat()}")
+        quotes.update(
+            fetch_stocks_for_market("stock_tw", symbols, tw_close, finmind_times)
+        )
+    if include_us:
+        us_close = resolve_session_close_date("us", calendar_rows=calendar_rows)
+        print(f"本輪美股交易日: {us_close.isoformat()}")
+        quotes.update(fetch_stocks_for_market("stock_us", symbols, us_close))
+    if include_crypto:
+        crypto_close = resolve_session_close_date("crypto", calendar_rows=calendar_rows)
+        print(f"本輪加密曆日: {crypto_close.isoformat()}")
+        for key, price in fetch_crypto_prices_coingecko(symbols).items():
+            if _is_valid_price(price):
+                quotes[key] = FetchedQuote(float(price), "coingecko", crypto_close)
+    return quotes
+
+
+def run_price_job(
+    mode: str,
+    markets: Optional[Set[str]] = None,
+    skip_intraday_if_closed: bool = True,
+) -> None:
+    """
+    mode:
+      intraday — 只寫 snapshots（price_kind=intraday），不寫 history
+      close — snapshots + history（price_kind=close）
+      crypto_hourly — snapshots（intraday）；台北 00:00 另寫昨日 history
+    """
+    from market_session import fetch_calendar_from_supabase, market_status
+
+    label = ",".join(sorted(markets)) if markets else "all"
+    print(f"[{tw_now().isoformat()}] mode={mode} markets={label} symbols=tracked_symbols")
+    supabase = get_supabase()
+
+    calendar = fetch_calendar_from_supabase(supabase)
+    if skip_intraday_if_closed and mode == "intraday":
+        requested = markets if markets is not None else {"tw", "us"}
+        active = set()
+        for m in requested:
+            if m in ("tw", "us") and market_status(m, calendar_rows=calendar).is_intraday_active:
+                active.add(m)
+        if not active:
+            print("台／美皆非盤中，結束")
+            return
+        markets = active
+        print(f"盤中市場: {','.join(sorted(markets))}")
+
+    symbols = filter_symbols_by_markets(get_symbols_for_job(supabase), markets)
+    print(f"共 {len(symbols)} 檔待更新")
+    if not symbols:
+        print("無符合條件的標的，結束")
+        return
+
+    finmind_times: Optional[deque[float]] = deque()
+    include_tw = markets is None or "tw" in markets
+
+    if mode == "close" and include_tw:
+        print("更新匯率（FinMind 台銀牌告）…")
+        n_rates = update_exchange_rates(supabase, finmind_times)
+        print(f"匯率: 已 upsert {n_rates} 筆")
+
+    quotes = _fetch_quotes_for_symbols(
+        symbols,
+        markets,
+        finmind_times if include_tw else None,
+        calendar_rows=calendar,
+    )
+    updated_at = tw_now_local_seconds()
+
+    if mode in ("intraday", "crypto_hourly"):
+        price_kind = "intraday"
+        rows = _quotes_to_rows(quotes, updated_at, price_kind)
+        upsert_prices(supabase, rows, default_price_kind=price_kind)
+        mark_tracked_symbols_synced(supabase, rows, updated_at)
+        mark_tracked_symbols_failed(supabase, symbols, set(quotes.keys()), updated_at)
+        if mode == "crypto_hourly" and is_tw_midnight_hour():
+            history_rows = _crypto_history_rows_for_yesterday(rows)
+            upsert_price_history(supabase, history_rows)
+            y = tw_calendar_yesterday().isoformat()
+            print(
+                f"已寫入 {len(rows)} 筆 snapshot（{price_kind}）；"
+                f"加密 00:00 日線 history {len(history_rows)} 筆（price_date={y}）"
+            )
+        else:
+            print(f"已寫入 {len(rows)} 筆 snapshot（{price_kind}，無 history）")
+        return
+
+    if mode == "close":
+        price_kind = "close"
+        rows = _quotes_to_rows(quotes, updated_at, price_kind)
+        upsert_prices(supabase, rows, default_price_kind=price_kind)
+        upsert_price_history(supabase, rows)
+        mark_tracked_symbols_synced(supabase, rows, updated_at)
+        mark_tracked_symbols_failed(supabase, symbols, set(quotes.keys()), updated_at)
+        print(f"已寫入 {len(rows)} 筆 snapshot + history（收盤）")
+        return
+
+    raise ValueError(f"未知 mode: {mode}")
+
+
+def run_price_update(markets: Optional[Set[str]] = None) -> None:
+    """向後相容：GitHub 低頻備援（tracked_symbols 收盤價 + history）。"""
+    run_price_job("close", markets=markets, skip_intraday_if_closed=False)
 
 
 def main() -> None:
@@ -945,28 +962,51 @@ def main() -> None:
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Snapvest 每日股價／匯率更新")
-    parser.add_argument("--exchange-only", action="store_true", help="只更新匯率")
+    parser = argparse.ArgumentParser(description="Snapvest 股價／匯率更新")
     parser.add_argument(
-        "--rebuild-catalog-only",
-        action="store_true",
-        help="只備份並重建 hot_stocks（不抓外部股價）",
+        "--mode",
+        choices=[
+            "intraday",
+            "close",
+            "crypto_hourly",
+            "exchange",
+            "calendar",
+        ],
+        help="執行模式（Cloud Run / 手動）",
     )
+    parser.add_argument("--exchange-only", action="store_true", help="只更新匯率（同 --mode exchange）")
     parser.add_argument(
         "--markets",
         metavar="LIST",
-        help="只更新指定市場，逗號分隔：tw, us, crypto（不含匯率）",
+        help="市場：tw, us, crypto",
+    )
+    parser.add_argument(
+        "--no-skip-closed",
+        action="store_true",
+        help="intraday 時不因休市略過（除錯用）",
     )
     args = parser.parse_args()
 
-    if args.exchange_only:
+    if args.exchange_only or args.mode == "exchange":
         supabase = get_supabase()
         n = update_exchange_rates(supabase)
         print(f"完成：已 upsert {n} 筆匯率")
-    elif args.rebuild_catalog_only:
-        supabase = get_supabase()
-        rebuild_hot_stocks(supabase)
-        print("完成：hot_stocks 已重建")
+    elif args.mode == "calendar":
+        import sys
+        from sync_market_calendar import main as sync_cal_main
+
+        # 子腳本會再 parse argv；須清掉 --mode calendar 避免 unrecognized arguments
+        sys.argv = ["sync_market_calendar.py"]
+        raise SystemExit(sync_cal_main())
+    elif args.mode:
+        markets = parse_markets_arg(args.markets) if args.markets else None
+        if args.mode == "crypto_hourly":
+            markets = markets or {"crypto"}
+        run_price_job(
+            args.mode,
+            markets=markets,
+            skip_intraday_if_closed=not args.no_skip_closed,
+        )
     elif args.markets:
         run_price_update(markets=parse_markets_arg(args.markets))
     else:

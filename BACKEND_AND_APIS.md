@@ -7,7 +7,7 @@
 │   iOS App       │     │            Supabase                   │
 │                 │────▶│  PostgreSQL (asset_price_snapshots) │
 │  - 讀取股價     │     │  - 股價快照                           │
-│  - 新增股票時   │     │  - hot_stocks（熱門股）               │
+│  - 新增股票時   │     │  - tracked_symbols（匿名追蹤池）      │
 │    呼叫 Edge    │     └──────────────────────────────────────┘
 │    Function     │                      ▲
 └────────┬────────┘                      │
@@ -19,14 +19,29 @@
 │  - 資料庫無資料時，從外部 API 抓取並寫入                     │
 └────────────────────────────────────────────────────────────┘
          │
-         │ 每日批量更新
+         │ 讀盤中狀態
          ▼
 ┌────────────────────────────────────────────────────────────┐
-│  GitHub Actions (daily-price-update)                       │
-│  - 分時排程：週一～五 16:00 匯率+台股+加密；週六日 16:00 加密；週二～六 07:00 美股 │
-│  - backend/scripts/daily_price_update.py                   │
+│  Edge Function: market-status（台／美盤中、休市）            │
+└────────────────────────────────────────────────────────────┘
+
+         │ 盤中／收盤排程（主）
+         ▼
+┌────────────────────────────────────────────────────────────┐
+│  Cloud Run Job + Cloud Scheduler（asia-east1）              │
+│  - intraday 15 分（tracked_symbols → snapshots）          │
+│  - close / crypto_hourly（00:00 寫昨日 history）/ calendar   │
+│  - backend/scripts/daily_price_update.py --mode …           │
+└────────────────────────────────────────────────────────────┘
+
+         │ 低頻備援
+         ▼
+┌────────────────────────────────────────────────────────────┐
+│  GitHub Actions (daily-price-update, legacy 全量)          │
 └────────────────────────────────────────────────────────────┘
 ```
+
+規格詳見 [MARKET_PRICE_AND_SESSION_SPEC.md](./MARKET_PRICE_AND_SESSION_SPEC.md)、部署見 [backend/cloud-run/README.md](./backend/cloud-run/README.md)。
 
 ---
 
@@ -87,7 +102,7 @@
 │     - 台股：TWSE → Yahoo 備援                                    │
 │     - 美股：Finnhub → Yahoo 備援（遇 429 重試一次）                │
 │     - 加密：Finnhub → CoinGecko 備援                             │
-│  3. 取到價格 → 寫入 asset_price_snapshots、加入 hot_stocks         │
+│  3. 取到價格 → 寫入 asset_price_snapshots（不寫 hot_stocks）       │
 │  4. 回傳 { price, currency, source }                            │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -113,10 +128,7 @@
          ▼
 daily_price_update.py
          │
-         ├── 1. 從 Supabase 取得待更新清單
-         │      - holdings 表（使用者持有）
-         │      - hot_stocks 表（熱門股）
-         │      - 合併去重
+         ├── 1. 從 Supabase 取得待更新清單：tracked_symbols（is_active）
          │
          ├── 2. 美股 + 台股 → yfinance（Yahoo）
          │      - 逐檔抓取，每檔間隔 0.3 秒
@@ -232,7 +244,7 @@ daily_price_update.py
 
 ### 2. 每日批量更新（Python 腳本 - GitHub Actions）
 
-依排程自動更新「使用者持有 ∪ hot_stocks」的價格（非 Top 500 全量）。
+依排程自動更新 **tracked_symbols** 池內標的價格（非 Top 500 全量）。
 
 | 資產類型 | API | 備註 |
 |----------|-----|------|

@@ -2,7 +2,7 @@
 //  TodayPLCalculator.swift
 //  Snapvest
 //
-//  今日損益（持股市值相對昨收）：方案 A
+//  今日損益（持股市值相對上一交易日收盤）。
 //
 
 import Foundation
@@ -36,11 +36,15 @@ struct TodayPLSummary: Equatable {
 enum TodayPLCalculator {
     private static let categoryOrder: [AssetType] = AssetCategoryFilterSelection.displayOrder
 
-    static func calculate(from inputs: PieChartInputs?) -> TodayPLSummary {
+    static func calculate(from inputs: PieChartInputs?) async -> TodayPLSummary {
         guard let inputs else { return .empty }
 
         let rate = inputs.usdToTwdRate
         let priceMap = HoldingChartMetrics.priceMap(from: inputs.assetPriceSnapshots)
+        let symbols = inputs.aggregatedHoldings
+            .filter { $0.assetType != .cash }
+            .map { SymbolInfo(assetType: $0.assetType, symbol: $0.symbol) }
+        let historyContext = await DailyPriceHistoryCache.historyContext(for: symbols)
 
         var changeByType: [AssetType: Decimal] = [:]
         var priorByType: [AssetType: Decimal] = [:]
@@ -50,12 +54,22 @@ enum TodayPLCalculator {
 
             let key = "\(holding.assetType.rawValue)_\(holding.symbol)"
             guard let snapshot = priceMap[key],
-                  let current = snapshot.currentPrice,
-                  let previous = snapshot.previousPrice,
-                  previous > 0 else { continue }
+                  let current = snapshot.currentPrice ?? snapshot.displayPrice,
+                  current > 0 else { continue }
 
-            let changeOriginal = holding.totalQuantity * (current - previous)
-            let priorOriginal = holding.totalQuantity * previous
+            let exact = DailyPriceHistoryCache.exactHistory(
+                assetType: holding.assetType,
+                symbol: holding.symbol,
+                from: historyContext
+            )
+            guard let reference = DailyReferenceCloseResolver.effectivePreviousClose(
+                snapshot: snapshot,
+                exactHistoryByDate: exact.isEmpty ? nil : exact,
+                historyDateKeys: historyContext.dateKeys
+            ), reference.price > 0 else { continue }
+
+            let changeOriginal = holding.totalQuantity * (current - reference.price)
+            let priorOriginal = holding.totalQuantity * reference.price
 
             changeByType[holding.assetType, default: 0] += toTWD(changeOriginal, currency: holding.currency, rate: rate)
             priorByType[holding.assetType, default: 0] += toTWD(priorOriginal, currency: holding.currency, rate: rate)

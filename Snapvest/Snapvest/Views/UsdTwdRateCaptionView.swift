@@ -37,7 +37,7 @@ struct UsdTwdRateCaptionView: View {
                 Text("1 USD = \(displayRate.formattedExchangeRateDisplay()) \(displayCurrency.rawValue)")
                 if let resolvedUpdatedAt {
                     Text("·")
-                    Text("更新 \(DataFreshnessFormatter.label(for: resolvedUpdatedAt))")
+                    Text("資料 \(DataFreshnessFormatter.label(for: resolvedUpdatedAt))")
                 }
             }
             .font(.caption2)

@@ -1,25 +1,19 @@
-# 股價／匯率排程（台灣時間）
-# - 週一～五 18:00：台股 + 匯率（FinMind）+ 加密
-# - 週六、週日 18:00：僅加密
-# - 週二～六 07:00：僅美股（UTC 週一～五 23:00）
+# 股價／匯率排程 — 已改由 Cloud Run + Cloud Scheduler 負責（backend/cloud-run/README.md）
+# 定時觸發已停用，避免與 GCP 排程重複寫入 Supabase。
+# 需要一次性補跑時：Actions → Daily Price Update → Run workflow
 # Secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, FINNHUB_API_KEY, FINMIND_TOKEN
 name: Daily Price Update
 
 on:
-  schedule:
-    - cron: '0 10 * * 1-5'  # 台灣 週一～五 18:00
-    - cron: '0 10 * * 0,6'  # 台灣 週六、週日 18:00（僅加密）
-    - cron: '0 23 * * 1-5'  # 台灣 週二～六 07:00（美股）
   workflow_dispatch:
 
 concurrency:
-  group: daily-price-${{ github.event.schedule || github.run_id }}
+  group: daily-price-${{ github.run_id }}
   cancel-in-progress: true
 
 jobs:
-  weekday-afternoon:
-    name: 週一～五 18:00 台股+匯率+加密
-    if: github.event.schedule == '0 10 * * 1-5'
+  manual-full:
+    name: 手動觸發（close，全市場）
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -38,65 +32,10 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      - name: Update TW stocks, FinMind FX, and crypto
+      - name: Full update (close, all markets)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
           FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
-        run: python backend/scripts/daily_price_update.py --markets tw,crypto
-
-  weekend-crypto:
-    name: 週六日 18:00 僅加密
-    if: github.event.schedule == '0 10 * * 0,6'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.11'
-      - name: Install dependencies
-        run: pip install -r backend/scripts/requirements.txt
-      - name: Update crypto only
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python backend/scripts/daily_price_update.py --markets crypto
-
-  us-morning:
-    name: 週二～六 07:00 僅美股
-    if: github.event.schedule == '0 23 * * 1-5'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.11'
-      - name: Install dependencies
-        run: pip install -r backend/scripts/requirements.txt
-      - name: Update US stocks only
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
-          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
-        run: python backend/scripts/daily_price_update.py --markets us
-
-  manual-full:
-    name: 手動觸發（完整更新）
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.11'
-      - name: Install dependencies
-        run: pip install -r backend/scripts/requirements.txt
-      - name: Full update (exchange + all markets)
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
-          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
-        run: python backend/scripts/daily_price_update.py
+        run: python backend/scripts/daily_price_update.py --mode close

@@ -87,16 +87,18 @@ enum SnapshotUpdater {
             usdToTwdRate: usdToTwdRate,
             dataService: dataService
         )
-        let homeSnapshot = buildHomeDashboardSnapshot(
+        let homeSnapshot = await resolveHomeDashboardSnapshot(
             userId: userId,
             accounts: accounts,
             transactions: transactions,
             accountSnapshots: accountSnapshots,
             assetPriceSnapshots: assetPriceSnapshots,
+            symbolInfos: symbolInfos,
             liabilities: liabilities,
             manualAssets: manualAssets,
             usdToTwdRate: usdToTwdRate,
-            twdRateTable: twdRateTable
+            twdRateTable: twdRateTable,
+            dataService: dataService
         )
         try await dataService.saveHomeDashboardSnapshot(homeSnapshot)
         
@@ -345,18 +347,33 @@ enum SnapshotUpdater {
         priceService: PriceServiceProtocol,
         holdingsBySymbol: [String: HoldingSnapshotItem]
     ) async throws -> [AssetPriceSnapshot] {
+        var snapshotByKey: [String: AssetPriceSnapshot] = [:]
+        for symbolInfo in symbols {
+            let key = "\(symbolInfo.assetType.rawValue)_\(symbolInfo.symbol)"
+            if let existing = try? await dataService.fetchAssetPriceSnapshot(
+                assetType: symbolInfo.assetType,
+                symbol: symbolInfo.symbol
+            ) {
+                snapshotByKey[key] = existing
+            }
+        }
+
         var snapshots: [AssetPriceSnapshot] = []
         let usesDemoPrices = priceService is DemoPriceService
         let usesDemoData = (dataService as? MockDataService)?.isDemoModeActive == true
         if SupabaseConfig.isConfigured, !symbols.isEmpty, !usesDemoPrices {
             snapshots = (try? await SupabasePriceService.fetchPrices(symbols: symbols)) ?? []
         } else if !symbols.isEmpty {
-            snapshots = try await dataService.fetchAssetPriceSnapshots(symbols: symbols)
+            snapshots = (try? await dataService.fetchAssetPriceSnapshots(symbols: symbols)) ?? []
         }
-        
-        var snapshotByKey: [String: AssetPriceSnapshot] = [:]
+
         for snapshot in snapshots {
-            snapshotByKey["\(snapshot.assetType.rawValue)_\(snapshot.symbol)"] = snapshot
+            let key = "\(snapshot.assetType.rawValue)_\(snapshot.symbol)"
+            let existing = snapshotByKey[key]
+            snapshotByKey[key] = PriceSnapshotMerger.mergePreservingDailyReference(
+                incoming: snapshot,
+                existing: existing
+            )
         }
         
         for symbolInfo in symbols {
@@ -474,9 +491,12 @@ enum SnapshotUpdater {
             guard let holdings = snapshot.holdings else { continue }
             
             for holding in holdings {
-                let key = "\(holding.assetType.rawValue)_\(holding.symbol)"
-                let price = priceMap[key]?.displayPrice
-                let marketValue = (price ?? 0) * holding.quantity
+                guard let priceSnapshot = priceSnapshot(for: holding, in: priceMap),
+                      let price = priceSnapshot.displayPrice,
+                      price > 0 else {
+                    continue
+                }
+                let marketValue = price * holding.quantity
                 let cost = holding.averageCost * holding.quantity
                 totalInvestmentsTWD += amountInTWD(marketValue, currency: holding.currency, usdToTwdRate: usdToTwdRate, twdRateTable: twdRateTable)
                 totalUnrealizedGainLossTWD += amountInTWD(
@@ -560,9 +580,12 @@ enum SnapshotUpdater {
 
             guard let holdings = snapshot.holdings else { continue }
             for holding in holdings {
-                let key = "\(holding.assetType.rawValue)_\(holding.symbol)"
-                let price = priceMap[key]?.displayPrice
-                let marketValue = (price ?? 0) * holding.quantity
+                guard let priceSnapshot = priceSnapshot(for: holding, in: priceMap),
+                      let price = priceSnapshot.displayPrice,
+                      price > 0 else {
+                    continue
+                }
+                let marketValue = price * holding.quantity
                 let cost = holding.averageCost * holding.quantity
                 totalInvestmentsTWD += amountInTWD(
                     marketValue,
@@ -654,6 +677,81 @@ enum SnapshotUpdater {
             nonInvestmentAssetsTWD: assetsTWD - investmentsTWD,
             investmentGainLossTWD: investmentGainLossTWD
         )
+    }
+
+    private static func resolveHomeDashboardSnapshot(
+        userId: String,
+        accounts: [Account],
+        transactions: [Transaction],
+        accountSnapshots: [AccountSnapshot],
+        assetPriceSnapshots: [AssetPriceSnapshot],
+        symbolInfos: [SymbolInfo],
+        liabilities: [Liability],
+        manualAssets: [ManualAsset],
+        usdToTwdRate: Decimal,
+        twdRateTable: CurrencyRateTable,
+        dataService: DataServiceProtocol
+    ) async -> HomeDashboardSnapshot {
+        let built = buildHomeDashboardSnapshot(
+            userId: userId,
+            accounts: accounts,
+            transactions: transactions,
+            accountSnapshots: accountSnapshots,
+            assetPriceSnapshots: assetPriceSnapshots,
+            liabilities: liabilities,
+            manualAssets: manualAssets,
+            usdToTwdRate: usdToTwdRate,
+            twdRateTable: twdRateTable
+        )
+        guard built.totalInvestments <= 0,
+              hasPositiveQuantityHoldings(in: accountSnapshots) else {
+            return built
+        }
+
+        let localPrices = (try? await dataService.fetchAssetPriceSnapshots(symbols: symbolInfos)) ?? []
+        if !localPrices.isEmpty {
+            let retry = buildHomeDashboardSnapshot(
+                userId: userId,
+                accounts: accounts,
+                transactions: transactions,
+                accountSnapshots: accountSnapshots,
+                assetPriceSnapshots: localPrices,
+                liabilities: liabilities,
+                manualAssets: manualAssets,
+                usdToTwdRate: usdToTwdRate,
+                twdRateTable: twdRateTable
+            )
+            if retry.totalInvestments > 0 {
+                return retry
+            }
+        }
+
+        if let existing = try? await dataService.fetchHomeDashboardSnapshot(userId: userId),
+           existing.totalInvestments > 0 {
+            return existing
+        }
+        return built
+    }
+
+    private static func hasPositiveQuantityHoldings(in accountSnapshots: [AccountSnapshot]) -> Bool {
+        accountSnapshots.contains { snapshot in
+            snapshot.holdings?.contains(where: { $0.quantity > 0 }) == true
+        }
+    }
+
+    private static func priceSnapshot(
+        for holding: HoldingSnapshotItem,
+        in priceMap: [String: AssetPriceSnapshot]
+    ) -> AssetPriceSnapshot? {
+        let rawKey = "\(holding.assetType.rawValue)_\(holding.symbol)"
+        if let snapshot = priceMap[rawKey] {
+            return snapshot
+        }
+        let normalized = SupabasePriceService.normalizeSymbol(
+            assetType: holding.assetType,
+            symbol: holding.symbol
+        )
+        return priceMap["\(holding.assetType.rawValue)_\(normalized)"]
     }
 
     /// 持股市值／損益依 `holding.currency` 換算為 TWD（與帳戶 Tab、後端 daily_portfolio_snapshot 一致）

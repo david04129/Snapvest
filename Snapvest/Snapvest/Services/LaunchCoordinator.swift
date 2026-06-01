@@ -44,10 +44,12 @@ enum LaunchCoordinator {
             userId: userId,
             dataService: resolvedDataService
         )
+        let isDemoData = (resolvedDataService as? MockDataService)?.isDemoModeActive == true
+        let shouldPullCloudPrices = SupabaseConfig.isConfigured && !isDemoData
         
         var degradedNotice: String?
         
-        if needsRebuild || shouldSyncPrices {
+        if needsRebuild || shouldSyncPrices || shouldPullCloudPrices {
             let syncSucceeded = await SnapshotRefreshCoordinator.rebuildAndNotify(
                 userId: userId,
                 dataService: resolvedDataService,

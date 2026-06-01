@@ -76,7 +76,7 @@ supabase functions deploy fetch-or-create-price
 
 目前每日腳本會從 `holdings` 讀取使用者持股。若你尚未建立 accounts、transactions、holdings 等表，可先只更新熱門股：
 
-- 腳本會從 `hot_stocks` 讀取約 30 檔
+- 腳本會從 `tracked_symbols`（is_active）讀取待更新標的
 - `holdings` 若不存在會略過，不影響熱門股更新
 
 未來整合完整後端時，再補上 accounts、transactions、holdings 表結構。

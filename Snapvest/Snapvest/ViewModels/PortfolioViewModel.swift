@@ -96,7 +96,7 @@ class PortfolioViewModel: ObservableObject {
         if let pieChartInputs {
             cashByCurrency = pieChartInputs.cashByCurrency
         }
-        todayPLSummary = TodayPLCalculator.calculate(from: pieChartInputs)
+        todayPLSummary = await TodayPLCalculator.calculate(from: pieChartInputs)
     }
     
     /// 重新載入負債列表（不動首頁大數字）

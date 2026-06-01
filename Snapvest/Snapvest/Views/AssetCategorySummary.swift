@@ -431,6 +431,7 @@ struct AssetCategorySummariesSection: View {
     let ratioType: HoldingRatioType
     let currencyDisplay: AssetsCurrencyDisplay
     let selectedCategories: Set<AssetType>
+    let marketStatus: MarketStatusSnapshot?
     let onCategoryTap: (AssetType) -> Void
     
     private var categories: [AssetType] { AssetCategoryFilterSelection.displayOrder }
@@ -457,6 +458,7 @@ struct AssetCategorySummariesSection: View {
                     baseCurrency: baseCurrency,
                     twdPerBaseCurrency: twdPerBaseCurrency,
                     currencyDisplay: currencyDisplay,
+                    marketStatus: marketStatus,
                     isSelected: selectedCategories.contains(assetType),
                     onTap: { onCategoryTap(assetType) }
                 )
@@ -475,6 +477,7 @@ struct AssetCategorySummaryCard: View {
     let baseCurrency: Currency
     let twdPerBaseCurrency: Decimal
     let currencyDisplay: AssetsCurrencyDisplay
+    let marketStatus: MarketStatusSnapshot?
     let isSelected: Bool
     let onTap: () -> Void
     
@@ -541,10 +544,18 @@ struct AssetCategorySummaryCard: View {
         Button(action: onTap) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(assetType.displayName)
-                        .font(.snapOverviewText)
-                        .foregroundColor(.primaryText)
-                        .snapOverviewFittingLine()
+                    HStack(spacing: 8) {
+                        Text(assetType.displayName)
+                            .font(.snapOverviewText)
+                            .foregroundColor(.primaryText)
+                            .snapOverviewFittingLine()
+                        if let chip = MarketSessionDisplay.categorySessionChip(
+                            assetType: assetType,
+                            marketStatus: marketStatus
+                        ) {
+                            PriceSessionChip(chip: chip, tint: accentColor)
+                        }
+                    }
                     Text(countLabel)
                         .font(.caption)
                         .foregroundColor(.secondaryText)

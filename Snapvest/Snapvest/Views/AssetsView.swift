@@ -20,6 +20,7 @@ struct AssetsView: View {
     @State private var holdingsSelectedCategories: Set<AssetType> = []
     @State private var holdingsRatioType: HoldingRatioType = HoldingRatioPreference.get()
     @State private var holdingsCurrencyDisplay: AssetsCurrencyDisplay = .twd
+    @State private var marketStatus: MarketStatusSnapshot?
     
     enum SortOption: String, CaseIterable {
         case totalAssets = "總資產由高到低"
@@ -60,7 +61,7 @@ struct AssetsView: View {
                                 ratioType: $holdingsRatioType,
                                 currencyDisplay: $holdingsCurrencyDisplay
                             )
-
+                            
                             if showsHoldingsOnboardingEmpty {
                                 OnboardingEmptyStateCard(
                                     icon: "chart.bar.fill",
@@ -86,6 +87,7 @@ struct AssetsView: View {
                                 ratioType: holdingsRatioType,
                                 currencyDisplay: holdingsCurrencyDisplay,
                                 selectedCategories: holdingsSelectedCategories,
+                                marketStatus: marketStatus,
                                 onCategoryTap: { assetType in
                                     let willSelect = !holdingsSelectedCategories.contains(assetType)
                                     withAnimation(ChartMotion.switchSpring) {
@@ -129,7 +131,13 @@ struct AssetsView: View {
             .safeAreaInset(edge: .top) {
                 customHeaderBar(icon: "chart.bar.fill", title: "投資")
             }
+            .task {
+                marketStatus = await MarketStatusService.fetchIfNeeded()
+            }
             .refreshable {
+                MarketStatusService.invalidateCache()
+                DailyPriceHistoryCache.invalidate()
+                marketStatus = await MarketStatusService.fetchIfNeeded(force: true)
                 await SnapshotRefreshCoordinator.rebuildAndNotify(userId: userId)
             }
             .onAppear {

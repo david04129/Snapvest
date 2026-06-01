@@ -174,17 +174,21 @@ serve(async (req) => {
     const previous: Record<string, number | null> = {}
     const currentDates: Record<string, string | null> = {}
     const previousDates: Record<string, string | null> = {}
+    const priceKind: Record<string, string | null> = {}
+    const currentUpdatedAt: Record<string, string | null> = {}
     if (includeCurrent) {
       for (const s of symbols) {
         current[s.key] = null
         previous[s.key] = null
         currentDates[s.key] = null
         previousDates[s.key] = null
+        priceKind[s.key] = null
+        currentUpdatedAt[s.key] = null
       }
 
       const { data, error } = await supabase
         .from("asset_price_snapshots")
-        .select("asset_type,symbol,currency,current_price,previous_price,current_close_date,previous_close_date")
+        .select("asset_type,symbol,currency,current_price,previous_price,current_close_date,previous_close_date,current_updated_at,previous_updated_at,current_price_source,previous_price_source,price_kind")
         .in("asset_type", assetTypes)
         .in("symbol", symbolValues)
 
@@ -201,6 +205,8 @@ serve(async (req) => {
         previous[key] = decimalNumber(row.previous_price)
         currentDates[key] = typeof row.current_close_date === "string" ? row.current_close_date.slice(0, 10) : null
         previousDates[key] = typeof row.previous_close_date === "string" ? row.previous_close_date.slice(0, 10) : null
+        priceKind[key] = typeof row.price_kind === "string" ? row.price_kind : null
+        currentUpdatedAt[key] = typeof row.current_updated_at === "string" ? row.current_updated_at : null
         if (typeof row.currency === "string" && row.currency.length > 0) {
           currencies[key] = row.currency
         }
@@ -267,6 +273,8 @@ serve(async (req) => {
         previous,
         currentDates,
         previousDates,
+        priceKind,
+        currentUpdatedAt,
         currencies,
         fx,
       }),

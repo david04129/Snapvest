@@ -54,6 +54,7 @@ enum SnapshotRefreshCoordinator {
                 }
             }
             resolvedDataService.persistLocalStore(for: userId)
+            DailyPriceHistoryCache.invalidate()
             if postsUpdateNotification {
                 NotificationCenter.default.post(name: .snapshotsDidUpdate, object: nil)
             }

@@ -64,7 +64,7 @@ enum PriceSnapshotMerger {
                 assetType: snapshot.assetType,
                 symbol: snapshot.symbol
             )
-            merged.append(merge(incoming: snapshot, existing: existing))
+            merged.append(mergePreservingDailyReference(incoming: snapshot, existing: existing))
         }
         return merged
     }
@@ -104,7 +104,7 @@ enum PriceSnapshotMerger {
             currentPrice: candidate,
             previousPrice: existing.currentPrice ?? existing.previousPrice,
             currentCloseDate: incoming.currentCloseDate ?? existing.currentCloseDate,
-            currentUpdatedAt: Date(),
+            currentUpdatedAt: incoming.currentUpdatedAt ?? existing.currentUpdatedAt ?? Date(),
             previousCloseDate: existing.currentCloseDate ?? existing.previousCloseDate,
             previousUpdatedAt: existing.currentUpdatedAt ?? existing.previousUpdatedAt,
             currentPriceSource: incoming.currentPriceSource ?? existing.currentPriceSource,
@@ -121,7 +121,7 @@ enum PriceSnapshotMerger {
             currentPrice: candidate,
             previousPrice: incoming.previousPrice != candidate ? incoming.previousPrice : nil,
             currentCloseDate: incoming.currentCloseDate ?? incoming.currentUpdatedAt ?? Date(),
-            currentUpdatedAt: Date(),
+            currentUpdatedAt: incoming.currentUpdatedAt ?? Date(),
             previousCloseDate: incoming.previousCloseDate,
             previousUpdatedAt: incoming.previousUpdatedAt,
             currentPriceSource: incoming.currentPriceSource,
@@ -138,11 +138,47 @@ enum PriceSnapshotMerger {
             currentPrice: previous,
             previousPrice: nil,
             currentCloseDate: incoming.previousCloseDate ?? incoming.previousUpdatedAt,
-            currentUpdatedAt: Date(),
+            currentUpdatedAt: incoming.currentUpdatedAt ?? Date(),
             previousCloseDate: nil,
             previousUpdatedAt: nil,
             currentPriceSource: incoming.currentPriceSource,
             previousPriceSource: incoming.previousPriceSource
+        )
+    }
+
+    /// 合併時保留遠端 previous（昨收），僅在本地尚無有效 previous 時採用。
+    static func mergePreservingDailyReference(
+        incoming: AssetPriceSnapshot,
+        existing: AssetPriceSnapshot?
+    ) -> AssetPriceSnapshot {
+        let merged = merge(incoming: incoming, existing: existing)
+        guard let existing else { return merged }
+        guard let incomingPrevious = incoming.previousPrice, incomingPrevious > 0 else {
+            return merged
+        }
+        let useIncomingPrevious: Bool = {
+            guard let existingPrevious = existing.previousPrice, existingPrevious > 0,
+                  let existingDate = existing.previousCloseDate,
+                  let incomingDate = incoming.previousCloseDate else {
+                return true
+            }
+            return incomingDate >= existingDate
+        }()
+        guard useIncomingPrevious else { return merged }
+        return AssetPriceSnapshot(
+            assetType: merged.assetType,
+            symbol: merged.symbol,
+            name: merged.name,
+            currency: merged.currency,
+            currentPrice: merged.currentPrice,
+            previousPrice: incomingPrevious,
+            currentCloseDate: merged.currentCloseDate,
+            currentUpdatedAt: merged.currentUpdatedAt,
+            previousCloseDate: incoming.previousCloseDate ?? merged.previousCloseDate,
+            previousUpdatedAt: incoming.previousUpdatedAt ?? merged.previousUpdatedAt,
+            currentPriceSource: merged.currentPriceSource,
+            previousPriceSource: incoming.previousPriceSource ?? merged.previousPriceSource,
+            priceKind: merged.priceKind
         )
     }
 }

@@ -32,6 +32,8 @@ struct AssetPriceSnapshot: Identifiable, Codable, Equatable {
     
     var currentPriceSource: String?
     var previousPriceSource: String?
+    /// intraday＝盤中更新；close＝收盤價
+    var priceKind: AssetPriceKind?
     
     nonisolated init(
         assetType: AssetType,
@@ -45,7 +47,8 @@ struct AssetPriceSnapshot: Identifiable, Codable, Equatable {
         previousCloseDate: Date? = nil,
         previousUpdatedAt: Date? = nil,
         currentPriceSource: String? = nil,
-        previousPriceSource: String? = nil
+        previousPriceSource: String? = nil,
+        priceKind: AssetPriceKind? = nil
     ) {
         self.assetType = assetType
         self.symbol = symbol
@@ -59,6 +62,7 @@ struct AssetPriceSnapshot: Identifiable, Codable, Equatable {
         self.previousUpdatedAt = previousUpdatedAt
         self.currentPriceSource = currentPriceSource
         self.previousPriceSource = previousPriceSource
+        self.priceKind = priceKind
     }
     
     enum CodingKeys: String, CodingKey {
@@ -67,6 +71,7 @@ struct AssetPriceSnapshot: Identifiable, Codable, Equatable {
         case currentCloseDate, currentUpdatedAt
         case previousCloseDate, previousUpdatedAt
         case currentPriceSource, previousPriceSource
+        case priceKind
         case legacyCurrentPriceDate = "currentPriceDate"
         case legacyPreviousPriceDate = "previousPriceDate"
         case legacyLastUpdated = "lastUpdated"
@@ -93,6 +98,7 @@ struct AssetPriceSnapshot: Identifiable, Codable, Equatable {
         currentPriceSource = try c.decodeIfPresent(String.self, forKey: .currentPriceSource)
             ?? c.decodeIfPresent(String.self, forKey: .legacyPriceSource)
         previousPriceSource = try c.decodeIfPresent(String.self, forKey: .previousPriceSource)
+        priceKind = try c.decodeIfPresent(AssetPriceKind.self, forKey: .priceKind)
     }
     
     func encode(to encoder: Encoder) throws {
@@ -109,6 +115,7 @@ struct AssetPriceSnapshot: Identifiable, Codable, Equatable {
         try c.encodeIfPresent(previousUpdatedAt, forKey: .previousUpdatedAt)
         try c.encodeIfPresent(currentPriceSource, forKey: .currentPriceSource)
         try c.encodeIfPresent(previousPriceSource, forKey: .previousPriceSource)
+        try c.encodeIfPresent(priceKind, forKey: .priceKind)
     }
     
     var displayPrice: Decimal? {

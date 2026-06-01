@@ -113,10 +113,10 @@ flowchart TB
 | 各檔股價 | `asset_price_snapshots` | 每日腳本 + Edge Function | 顯示現價、算損益；`current_price_source` / `previous_price_source` |
 | 各檔歷史日價格 | `asset_price_history` | 每日腳本 + Edge Function | App 補齊本機走勢圖缺失日期 |
 | 全站最後更新時間 | `price_update_metadata` | 每日腳本 | 判斷要不要刷新 |
-| 匿名追蹤池 | `tracked_symbols` | App 透過 `track-symbol` 只送 asset type + symbol | 每日腳本抓價來源，不含 user_id / quantity / cost |
-| 熱門股清單 | `hot_stocks` | 每日由 `hot_stocks_seed` ∪ `tracked_symbols` 覆寫；備份 `hot_stocks_backup`（保留 2 日） | 每日腳本抓價清單 |
-| 種子熱門股 | `hot_stocks_seed` | migration 固定 ~30 檔 | 每日併入 hot_stocks，不隨覆寫消失 |
+| 匿名追蹤池 | `tracked_symbols` | App 透過 `track-symbol` 只送 asset type + symbol | **唯一**排程抓價來源（`is_active=true`） |
 | 匯率 | `exchange_rates` | 每日腳本 | 台幣／美金換算 |
+
+> `hot_stocks` / `hot_stocks_seed` / `hot_stocks_backup` 已退役（migration 021），表保留僅供查詢，程式不再讀寫。
 
 ---
 
@@ -174,6 +174,9 @@ Snapvest 用 Supabase 當「**會變動資料的倉庫**」：
 | [012_exchange_rates_previous.sql](./backend/supabase/migrations/012_exchange_rates_previous.sql) | `previous_rate`、`previous_updated_at` | 本輪抓不到時沿用上一輪 |
 | [014_tracked_symbols.sql](./backend/supabase/migrations/014_tracked_symbols.sql) | `tracked_symbols` | 匿名全站 symbol 大池子；撤銷 App 對 legacy 使用者快照表權限 |
 | [018_asset_price_history.sql](./backend/supabase/migrations/018_asset_price_history.sql) | `asset_price_history` | 公開 symbol 歷史日價格，供 App 本機補點 |
+| [019_market_calendar.sql](./backend/supabase/migrations/019_market_calendar.sql) | `market_calendar` | 台／美交易日曆（盤中判斷） |
+| [020_snapshot_price_kind.sql](./backend/supabase/migrations/020_snapshot_price_kind.sql) | `price_kind` | `intraday`／`close`，App 顯示用 |
+| [021_hot_stocks_deprecated.sql](./backend/supabase/migrations/021_hot_stocks_deprecated.sql) | — | 標記 `hot_stocks*` 退役；抓價僅 `tracked_symbols` |
 
 **`asset_price_snapshots` 欄位順序：** 代號 → 現價 → 收盤日 → 更新時間 → **現價來源** → 上次價 → 上次收盤日 → 上次更新時間 → **上次來源**。
 
@@ -232,22 +235,37 @@ App 每次產生 / 儲存 `HomeDashboardSnapshot` 都會覆蓋今天的本機 da
 
 ## 每日／每月自動排程總表
 
-以下時間皆為 **台灣時間（UTC+8）**。
+以下時間皆為 **台灣時間（UTC+8）**。  
+**盤中每 15 分鐘**、**加密每小時**由 [Cloud Run](./backend/cloud-run/README.md) 執行 `daily_price_update.py --mode …`（見 [MARKET_PRICE_AND_SESSION_SPEC.md](./MARKET_PRICE_AND_SESSION_SPEC.md)）。
 
-### 每天
+### Cloud Run（主排程）
+
+| 模式 | 頻率 | 更新範圍 | 寫入 |
+|------|------|----------|------|
+| `intraday` | 台／美盤中每 15 分 | `tracked_symbols` | 僅 `asset_price_snapshots`（`price_kind=intraday`） |
+| `close` | 台 14:00、美 07:00 | `tracked_symbols` | snapshots + **`asset_price_history`（收盤價）** |
+| `crypto_hourly` | 每小時（**00:00** 另寫昨日 history） | tracked 加密 | snapshots；00:00 另寫 **`asset_price_history`（`price_date`＝昨日）** |
+| `exchange` | 每日 1 次 | 6 幣匯率 | `exchange_rates` |
+| `calendar` | 每日 06:00 | — | `market_calendar` |
+
+### GitHub Actions（低頻備援）
 
 | 時間 | Workflow 名稱 | 做什麼 | 寫到哪 |
 |------|---------------|--------|--------|
-| **週一～五 18:00** | [Daily Price Update](./.github/workflows/daily-price-update.yml) | ① 更新匯率 ② 更新台股 ③ 更新加密 | Supabase |
-| **週六、日 18:00** | 同上 | 只更新加密（Crypto 24/7） | Supabase |
-| **週二～六 07:00** | 同上 | 只更新美股（配合美股收盤後） | Supabase |
+| **週一～五 18:00** | [Daily Price Update](./.github/workflows/daily-price-update.yml) | `close`（tracked_symbols 備援） | Supabase |
+| **週六、日 18:00** | 同上 | 只更新加密 | Supabase |
+| **週二～六 07:00** | 同上 | 只更新美股 | Supabase |
 
 #### 一天時間軸（平日）
 
 ```
-07:00  更新美股股價
-18:00  更新匯率 + 台股 + 加密
-App 啟動時用本機帳本 + 公開價格補齊缺失走勢點
+06:00  同步交易日曆（market_calendar）
+09:00–13:30  台股盤中每 15 分（tracked → snapshots）
+14:00  台股收盤價 + 匯率 → snapshots + history
+22:30–05:00  美股盤中每 15 分
+07:00  美股收盤價 → snapshots + history
+每小時  加密 snapshots；**00:00** 加密寫昨日 history
+App 啟動／下拉 → 只讀 DB（fetch-prices-batch）
 ```
 
 #### 週末
@@ -290,9 +308,9 @@ Snapvest 有 **三條抓價路線**：
 **更新哪些股票？**  
 不是全市場每一檔，而是：
 
-- 排程開始時先**備份** `hot_stocks` → 以 **`hot_stocks_seed` ∪ 匿名 `tracked_symbols`** 覆寫 `hot_stocks`
-- 只對重建後的 `hot_stocks` 抓價（每檔一次，不重複）
-- `fetch-or-create-price` **不**寫入 `hot_stocks`（僅寫 `asset_price_snapshots` 與 `asset_price_history`）
+- 僅 **`tracked_symbols`**（`is_active=true`，App 匿名 `track-symbol` 累積的全站池）
+- `fetch-or-create-price` 僅寫 `asset_price_snapshots`（單檔補價；**不**寫 history，避免盤中價污染日線）
+- **盤中 job 不寫** `asset_price_history`；台／美 history 僅 **close job**；加密 history 僅 **crypto_hourly 台北 00:00**（`price_date`＝昨日）
 
 | 資料 | API | 連結 | 備註 |
 |------|-----|------|------|
@@ -301,7 +319,7 @@ Snapvest 有 **三條抓價路線**：
 | **美股** | Finnhub `/quote` | [Finnhub](https://finnhub.io/) | 主線；失敗 → 60s 重試 → `yfinance` |
 | **加密貨幣** | CoinGecko Simple Price | [CoinGecko API 文件](https://docs.coingecko.com/reference/simple-price) | 曆日快照；需 `crypto_coingecko_map.json` |
 
-排程會印出**本輪收盤日**（`session_close_date`），寫入 `current_close_date`；`current_updated_at` 為寫入時間（到秒）。GitHub Secrets 需 **`FINNHUB_API_KEY`**、**`FINMIND_TOKEN`**。
+排程會印出**本輪交易日**（台股台北曆日、美股紐約曆日），寫入 `current_close_date`；`current_updated_at` 為寫入時間（到秒）。`price_kind`：`intraday`＝盤中快照、`close`＝收盤價（才寫 history）。GitHub Secrets 需 **`FINNHUB_API_KEY`**、**`FINMIND_TOKEN`**。
 
 **加密 symbol 對照表：** [backend/scripts/data/crypto_coingecko_map.json](./backend/scripts/data/crypto_coingecko_map.json)（由 `build_symbols_crypto.py` 產生）
 

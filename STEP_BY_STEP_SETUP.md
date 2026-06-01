@@ -61,7 +61,7 @@
 2. 應該能看到：
    - `asset_price_snapshots`
    - `price_update_metadata`
-   - `hot_stocks`（裡面有約 30 筆熱門股）
+   - `tracked_symbols`（App 匿名追蹤池；`hot_stocks` 已退役）
 
 ---
 

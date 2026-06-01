@@ -2,12 +2,14 @@
 //  LocalDailyTrendBackfillService.swift
 //  Snapvest
 //
-//  每天第一次開 App 時，將昨天與中間缺口補成日終走勢點。
+//  每天第一次開 App 時：補昨日走勢點，並將「日漲跌基準」昨收寫入各股本機快照。
 //
 
 import Foundation
 
 enum LocalDailyTrendBackfillService {
+    private static let previousCloseSource = "asset_price_history"
+
     @discardableResult
     static func runIfNeeded(
         userId: String,
@@ -26,6 +28,19 @@ enum LocalDailyTrendBackfillService {
             return false
         }
 
+        let historyStart = calendar.date(byAdding: .day, value: -14, to: yesterday) ?? yesterday
+        let context = await BackfillContext.load(
+            userId: userId,
+            dataService: dataService,
+            historyStartDate: historyStart,
+            historyEndDate: yesterday
+        )
+
+        let previousCloseUpdates = await applyDailyPreviousCloses(
+            context: context,
+            dataService: dataService
+        )
+
         let existingSnapshots = (try? await dataService.fetchLocalDailyTrendSnapshots(
             userId: userId,
             startDate: nil,
@@ -36,11 +51,10 @@ enum LocalDailyTrendBackfillService {
             .filter { $0 < today }
             .sorted()
 
-        // 第一天使用時通常只有今天點，沒有合理的前一日帳本狀態可補。
         guard let latestExistingDayBeforeToday = existingDaysBeforeToday.last else {
             dataService.updateLastDailyTrendBackfillRunDateKey(userId: userId, dateKey: todayKey)
-            debugLog("skip: first day, no prior trend point")
-            return false
+            debugLog("skip trend: first day, previousClose=\(previousCloseUpdates)")
+            return previousCloseUpdates > 0
         }
 
         let targetDates = datesToBackfill(
@@ -51,16 +65,10 @@ enum LocalDailyTrendBackfillService {
         )
         guard !targetDates.isEmpty else {
             dataService.updateLastDailyTrendBackfillRunDateKey(userId: userId, dateKey: todayKey)
-            debugLog("skip: no missing dates through yesterday")
-            return false
+            debugLog("skip trend: no missing dates, previousClose=\(previousCloseUpdates)")
+            return previousCloseUpdates > 0
         }
 
-        let context = await BackfillContext.load(
-            userId: userId,
-            dataService: dataService,
-            historyStartDate: historyLookbackStartDate(from: targetDates.first, calendar: calendar),
-            historyEndDate: targetDates.last
-        )
         var writtenCount = 0
         for date in targetDates {
             guard let snapshot = await buildSnapshot(
@@ -75,9 +83,82 @@ enum LocalDailyTrendBackfillService {
         }
 
         dataService.updateLastDailyTrendBackfillRunDateKey(userId: userId, dateKey: todayKey)
-        debugLog("completed: targets=\(targetDates.count), wrote=\(writtenCount)")
-        return writtenCount > 0
+        debugLog("completed: targets=\(targetDates.count), trend=\(writtenCount), previousClose=\(previousCloseUpdates)")
+        return writtenCount > 0 || previousCloseUpdates > 0
     }
+
+    // MARK: - 昨收寫入各股（每日一次）
+
+    private static func applyDailyPreviousCloses(
+        context: BackfillContext,
+        dataService: DataServiceProtocol
+    ) async -> Int {
+        var updatedCount = 0
+        var seenKeys = Set<String>()
+
+        for holding in context.holdings {
+            let normalized = SupabasePriceService.normalizeSymbol(
+                assetType: holding.assetType,
+                symbol: holding.symbol
+            )
+            let storageKey = "\(holding.assetType.rawValue)_\(normalized)"
+            guard !seenKeys.contains(storageKey) else { continue }
+            seenKeys.insert(storageKey)
+
+            guard let existing = context.priceSnapshotsByKey[storageKey]
+                ?? context.priceSnapshotsByKey["\(holding.assetType.rawValue)_\(holding.symbol)"],
+                existing.hasValidPrice else {
+                continue
+            }
+            let batchKey = SupabasePriceService.batchKey(
+                assetType: holding.assetType,
+                symbol: holding.symbol
+            )
+            guard let resolved = DailyReferenceCloseResolver.resolvePreviousSessionClose(
+                assetType: holding.assetType,
+                symbol: holding.symbol,
+                exactHistoryByDate: context.exactHistoricalPricesByKeyAndDate[batchKey] ?? [:],
+                historyDateKeys: context.historyDateKeys,
+                snapshot: existing
+            ) else {
+                continue
+            }
+
+            let updated = snapshotWithDailyReferenceClose(
+                existing: existing,
+                previousPrice: resolved.price,
+                previousCloseDate: resolved.closeDate
+            )
+            try? await dataService.saveAssetPriceSnapshot(updated)
+            updatedCount += 1
+        }
+
+        return updatedCount
+    }
+
+    private static func snapshotWithDailyReferenceClose(
+        existing: AssetPriceSnapshot,
+        previousPrice: Decimal,
+        previousCloseDate: Date
+    ) -> AssetPriceSnapshot {
+        AssetPriceSnapshot(
+            assetType: existing.assetType,
+            symbol: existing.symbol,
+            name: existing.name,
+            currency: existing.currency,
+            currentPrice: existing.currentPrice,
+            previousPrice: previousPrice,
+            currentCloseDate: existing.currentCloseDate,
+            currentUpdatedAt: existing.currentUpdatedAt,
+            previousCloseDate: Calendar.current.startOfDay(for: previousCloseDate),
+            previousUpdatedAt: Date(),
+            currentPriceSource: existing.currentPriceSource,
+            previousPriceSource: previousCloseSource,
+            priceKind: existing.priceKind
+        )
+    }
+
+    // MARK: - 走勢補點
 
     private static func datesToBackfill(
         from latestExistingDay: Date,
@@ -97,11 +178,6 @@ enum LocalDailyTrendBackfillService {
             cursor = next
         }
         return result
-    }
-
-    private static func historyLookbackStartDate(from firstTargetDate: Date?, calendar: Calendar) -> Date? {
-        guard let firstTargetDate else { return nil }
-        return calendar.date(byAdding: .day, value: -14, to: firstTargetDate) ?? firstTargetDate
     }
 
     private static func buildSnapshot(
@@ -204,6 +280,8 @@ private struct BackfillContext {
     let holdings: [HoldingSnapshotItem]
     let priceSnapshotsByKey: [String: AssetPriceSnapshot]
     let twdRateByCurrency: [Currency: Decimal]
+    let exactHistoricalPricesByKeyAndDate: [String: [String: Decimal]]
+    let historyDateKeys: [String]
     let historicalPricesByKeyAndDate: [String: [String: Decimal]]
     let currentHoldingsMarketValueTWD: Decimal
     let currentHoldingsUnrealizedTWD: Decimal
@@ -263,11 +341,15 @@ private struct BackfillContext {
             currentHoldingsUnrealizedTWD += (marketValue - cost) * twdRate
         }
 
+        let exactHistory = batch?.historicalPricesByKeyAndDate ?? [:]
+
         return BackfillContext(
             homeSnapshot: homeSnapshot,
             holdings: holdings,
             priceSnapshotsByKey: priceSnapshotsByKey,
             twdRateByCurrency: twdRateByCurrency,
+            exactHistoricalPricesByKeyAndDate: exactHistory,
+            historyDateKeys: batch?.dateKeys ?? [],
             historicalPricesByKeyAndDate: forwardFilledHistoricalPrices(
                 batch: batch,
                 symbols: symbols

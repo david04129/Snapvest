@@ -300,7 +300,9 @@ struct SupabasePriceService {
                     currentPrice: currentPrice,
                     previousPrice: previousPrice,
                     currentCloseDate: SupabaseRESTTimestampParser.parseCloseDate(decoded.currentDates[key]?.stringValue),
-                    previousCloseDate: SupabaseRESTTimestampParser.parseCloseDate(decoded.previousDates[key]?.stringValue)
+                    currentUpdatedAt: SupabaseRESTTimestampParser.parse(decoded.currentUpdatedAt[key]?.stringValue),
+                    previousCloseDate: SupabaseRESTTimestampParser.parseCloseDate(decoded.previousDates[key]?.stringValue),
+                    priceKind: decoded.priceKind[key]?.stringValue.flatMap(AssetPriceKind.init(rawValue:))
                 )
             )
         }
@@ -543,6 +545,7 @@ private struct SupabasePriceRow: Decodable, Sendable {
     let previous_updated_at: String?
     let current_price_source: String?
     let previous_price_source: String?
+    let price_kind: String?
     
     nonisolated static func toAssetPriceSnapshot(_ row: SupabasePriceRow) -> AssetPriceSnapshot? {
         let price = (row.current_price?.decimalValue ?? row.previous_price?.decimalValue)
@@ -560,7 +563,8 @@ private struct SupabasePriceRow: Decodable, Sendable {
             previousCloseDate: SupabaseRESTTimestampParser.parseCloseDate(row.previous_close_date),
             previousUpdatedAt: SupabaseRESTTimestampParser.parse(row.previous_updated_at),
             currentPriceSource: row.current_price_source,
-            previousPriceSource: row.previous_price_source
+            previousPriceSource: row.previous_price_source,
+            priceKind: row.price_kind.flatMap(AssetPriceKind.init(rawValue:))
         )
     }
 }
@@ -632,11 +636,14 @@ private struct SupabasePriceBatchResponse: Decodable, Sendable {
     let previous: [String: SupabaseBatchDecimal]
     let currentDates: [String: SupabaseBatchString]
     let previousDates: [String: SupabaseBatchString]
+    let priceKind: [String: SupabaseBatchString]
+    let currentUpdatedAt: [String: SupabaseBatchString]
     let currencies: [String: String]
     let fx: [String: SupabaseBatchDecimal]
 
     enum CodingKeys: String, CodingKey {
-        case dates, history, current, previous, currentDates, previousDates, currencies, fx
+        case dates, history, current, previous, currentDates, previousDates
+        case priceKind, currentUpdatedAt, currencies, fx
     }
 
     init(from decoder: Decoder) throws {
@@ -647,6 +654,8 @@ private struct SupabasePriceBatchResponse: Decodable, Sendable {
         previous = try container.decodeIfPresent([String: SupabaseBatchDecimal].self, forKey: .previous) ?? [:]
         currentDates = try container.decodeIfPresent([String: SupabaseBatchString].self, forKey: .currentDates) ?? [:]
         previousDates = try container.decodeIfPresent([String: SupabaseBatchString].self, forKey: .previousDates) ?? [:]
+        priceKind = try container.decodeIfPresent([String: SupabaseBatchString].self, forKey: .priceKind) ?? [:]
+        currentUpdatedAt = try container.decodeIfPresent([String: SupabaseBatchString].self, forKey: .currentUpdatedAt) ?? [:]
         currencies = try container.decodeIfPresent([String: String].self, forKey: .currencies) ?? [:]
         fx = try container.decodeIfPresent([String: SupabaseBatchDecimal].self, forKey: .fx) ?? [:]
     }

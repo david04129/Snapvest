@@ -19,6 +19,9 @@ struct HoldingDetailView: View {
     @State private var twdPerBaseCurrency: Decimal = 1
     @State private var activeTradeSheet: HoldingTradeSheet?
     @State private var metricAmountDisplay: MetricAmountDisplay
+    @State private var marketStatus: MarketStatusSnapshot?
+    @State private var priceHistoryExactByDate: [String: Decimal] = [:]
+    @State private var priceHistoryDateKeys: [String] = []
     
     enum MetricAmountDisplay {
         case twd
@@ -337,14 +340,16 @@ struct HoldingDetailView: View {
         }
     }
     
-    /// 單日漲跌（currentPrice 相對 previousPrice）
+    /// 單日漲跌：現價相對上一交易日收盤（history 或已對齊的 previous）
     private var dailyPriceChange: (amount: Decimal, percent: Decimal)? {
-        guard let snapshot = assetPriceSnapshot,
-              let current = snapshot.currentPrice,
-              let previous = snapshot.previousPrice,
-              previous > 0 else { return nil }
-        let change = current - previous
-        return (change, (change / previous) * 100)
+        guard let snapshot = assetPriceSnapshot else { return nil }
+        let exact = priceHistoryExactByDate.isEmpty ? nil : priceHistoryExactByDate
+        let keys = priceHistoryDateKeys.isEmpty ? nil : priceHistoryDateKeys
+        return DailyReferenceCloseResolver.dailyChange(
+            snapshot: snapshot,
+            exactHistoryByDate: exact,
+            historyDateKeys: keys
+        )
     }
     
     var body: some View {
@@ -383,6 +388,18 @@ struct HoldingDetailView: View {
             bottomActionButtons
         }
         .task {
+            marketStatus = await MarketStatusService.fetchIfNeeded()
+            let symbol = SymbolInfo(
+                assetType: aggregatedHolding.assetType,
+                symbol: aggregatedHolding.symbol
+            )
+            let context = await DailyPriceHistoryCache.historyContext(for: [symbol])
+            priceHistoryExactByDate = DailyPriceHistoryCache.exactHistory(
+                assetType: aggregatedHolding.assetType,
+                symbol: aggregatedHolding.symbol,
+                from: context
+            )
+            priceHistoryDateKeys = context.dateKeys
             if let cached = ExchangeRateSessionCache.usdToTwd, cached > 0 {
                 updateUsdToTwdRateIfNeeded(cached)
             } else if usdToTwdRate <= 0 {
@@ -511,6 +528,18 @@ struct HoldingDetailView: View {
                     .font(.caption)
                     .fontWeight(.semibold)
                     .foregroundColor(.secondaryText)
+                
+                if let snapshot = assetPriceSnapshot {
+                    let annotation = PriceFreshnessFormatter.annotation(
+                        for: snapshot,
+                        marketStatus: marketStatus
+                    )
+                    PriceFreshnessAnnotationView(
+                        chip: annotation.chip,
+                        timestamp: annotation.timestamp,
+                        chipTint: assetAccentColor
+                    )
+                }
                 
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Group {

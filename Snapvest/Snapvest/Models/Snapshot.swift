@@ -186,6 +186,10 @@ struct LocalDailyTrendSnapshot: Identifiable, Codable, Equatable {
         dayFormatter.string(from: Calendar.current.startOfDay(for: date))
     }
 
+    static func date(fromKey key: String) -> Date? {
+        dayFormatter.date(from: key).map { Calendar.current.startOfDay(for: $0) }
+    }
+
     private static let dayFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)

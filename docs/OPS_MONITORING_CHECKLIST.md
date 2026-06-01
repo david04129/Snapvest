@@ -12,7 +12,7 @@
 |------|----------|-------------|----------------|
 | **排程** `daily_price_update.py` | 見下方排程表 | 寫入 `asset_price_snapshots`、`exchange_rates` | Yahoo、CoinGecko、open.er-api.com |
 | **App 讀價** `fetchPrices` | 冷啟動／DB 有更新 | 讀 `price_update_metadata` + `asset_price_snapshots` | 否 |
-| **補價** `fetch-or-create-price` | DB 無該檔價格 | 讀+寫 snapshots、寫 `hot_stocks` | Finnhub*、TWSE、Yahoo、CoinGecko |
+| **補價** `fetch-or-create-price` | DB 無該檔價格 | 讀+寫 snapshots | Finnhub*、TWSE、Yahoo、CoinGecko |
 
 \* Finnhub 僅在 Edge Function 設定了 `FINNHUB_API_KEY` 時啟用。
 
@@ -24,7 +24,7 @@
 | 16:00 | 週六、日 | 僅加密 |
 | 07:00 | 週二～六 | 僅美股 |
 
-更新對象：**`holdings` ∪ `hot_stocks`**（不是 Top 500 全表）。
+更新對象：**`tracked_symbols`**（不是 Top 500 全表）。
 
 ---
 
@@ -83,7 +83,7 @@
 |------|----------|----------------|
 | egress 連續兩週明顯上升 | DAU 增、持倉變多、`select=*` 拉大 | 磁碟快取、精簡 select |
 | Edge Function 呼叫數 >> DAU × 5 | 每檔 `fetchCurrentPrice`、DB 常缺價 | 批量讀、減少逐檔補價 |
-| `hot_stocks` 列數持續膨脹 | 每補價都進表、從未清理 | 清理策略 |
+| `tracked_symbols` 列數持續膨脹 | 長期累積、從未清理 | 清理策略 |
 | CoinGecko 429 變多 | 排程 + 補價超免費額度 | Pro / 拉長間隔 / 減 hot |
 | 排程 job 常 > 10 分鐘 | 持倉+hot 太多 | 分批、拆 job |
 
@@ -104,7 +104,7 @@
 - Supabase REST（7 日）：___
 - Egress（7 日）：___ MB
 - Edge Function 呼叫（7 日）：___
-- hot_stocks 列數：___
+- tracked_symbols 列數：___
 - holdings 涉及標的數（估）：___
 - GitHub Actions 排程：✅ / ❌
 - 本週使用者回報股價問題：有 / 無 — 說明：___
@@ -120,7 +120,7 @@
 
 | 優先 | 項目 | 解決什麼 | 複雜度 |
 |------|------|----------|--------|
-| P1 | **`hot_stocks` 清理**（例如：僅保留 holdings 內 + 90 天內活躍） | 排程 API/DB 寫入膨脹 | 中 |
+| P1 | **`tracked_symbols` 清理**（例如：90 天未活躍停用） | 排程 API/DB 寫入膨脹 | 中 |
 | P1 | **減少逐檔 `fetchCurrentPrice`**（Portfolio 等改批量 `fetchPrices`） | Edge Function + 外部 API | 中 |
 | P2 | **App 磁碟快取股價**（冷啟動先顯示上次，背景再對 metadata 刷新） | 冷啟動 REST 次數 | 中 |
 | P2 | **REST `select` 只取必要欄位** | egress | 低 |
