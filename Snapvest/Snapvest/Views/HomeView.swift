@@ -129,7 +129,9 @@ struct HomeView: View {
             }
             .refreshable {
                 guard !pieGroupingStore.isEditingGroups else { return }
-                await SnapshotRefreshCoordinator.rebuildAndNotify(userId: userId)
+                await ManualRefreshCooldown.shared.performIfAllowed {
+                    await SnapshotRefreshCoordinator.rebuildAndNotify(userId: userId)
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { notification in
                 guard notification.userInfo?[SnapshotUpdateUserInfoKey.alreadyApplied] as? Bool != true else { return }

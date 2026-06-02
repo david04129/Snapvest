@@ -18,7 +18,7 @@ gcloud builds submit --tag gcr.io/$PROJECT_ID/snapvest-price-job .
 gcloud run jobs create snapvest-price-job \
   --image gcr.io/$PROJECT_ID/snapvest-price-job \
   --region $REGION \
-  --set-secrets=SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE_KEY=SUPABASE_SERVICE_ROLE_KEY:latest,FINNHUB_API_KEY=FINNHUB_API_KEY:latest,FINMIND_TOKEN=FINMIND_TOKEN:latest \
+  --set-secrets=SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE_KEY=SUPABASE_SERVICE_ROLE_KEY:latest,FINNHUB_API_KEY=FINNHUB_API_KEY:latest,FINMIND_TOKEN=FINMIND_TOKEN:latest,FUGLE_API_KEY=FUGLE_API_KEY:latest \
   --max-retries 1 \
   --task-timeout 15m \
   --memory 512Mi
@@ -39,6 +39,8 @@ Secret 請先在 Secret Manager 建立，並授權 Cloud Run service account。
 | snapvest-exchange | `5 14 * * 1-5` | `--mode exchange`（可併入 close-tw，二擇一） |
 
 夏令時間美股 cron 需手動微調。Job 內已用 `market_session` 在非盤中 skip。
+
+**台股（盤中／收盤）**：Fugle `intraday/quote` → `current_price_source=fugle`。需 Secret **`FUGLE_API_KEY`**。匯率／交易日曆仍用 **`FINMIND_TOKEN`**。
 
 ### 移除已退役排程（一次性）
 
@@ -73,6 +75,7 @@ export SUPABASE_URL=...
 export SUPABASE_SERVICE_ROLE_KEY=...
 export FINNHUB_API_KEY=...
 export FINMIND_TOKEN=...
+export FUGLE_API_KEY=...
 
 python daily_price_update.py --mode calendar
 python daily_price_update.py --mode intraday --markets tw --no-skip-closed

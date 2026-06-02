@@ -139,7 +139,9 @@ struct AccountsView: View {
                 accountsHeaderBar
             }
             .refreshable {
-                await SnapshotRefreshCoordinator.rebuildAndNotify(userId: userId)
+                await ManualRefreshCooldown.shared.performIfAllowed {
+                    await SnapshotRefreshCoordinator.rebuildAndNotify(userId: userId)
+                }
             }
             .sheet(isPresented: $showingAddAccount, onDismiss: {
                 loadAccountOrder()

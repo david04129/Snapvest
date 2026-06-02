@@ -118,7 +118,8 @@ class TransactionsViewModel: ObservableObject {
     /// 批次匯入 CSV 交易（依日期升序寫入，逐筆記錄失敗，結束後重建快照）
     func importValidatedTransactions(
         userId: String,
-        validation: TransactionImportValidationResult
+        validation: TransactionImportValidationResult,
+        assumePricesValidated: Bool = false
     ) async -> TransactionImportBatchResult {
         guard validation.canImport else {
             let failures = validation.rows
@@ -159,11 +160,13 @@ class TransactionsViewModel: ObservableObject {
             func importRow(_ row: TransactionImportValidatedRow) async {
                 guard let draft = row.transaction else { return }
                 do {
-                    try await SymbolPriceValidator.validatePriceAvailableOrThrow(
-                        assetType: draft.assetType,
-                        symbol: draft.symbol,
-                        transactionType: draft.type
-                    )
+                    if !assumePricesValidated {
+                        try await SymbolPriceValidator.validatePriceAvailableOrThrow(
+                            assetType: draft.assetType,
+                            symbol: draft.symbol,
+                            transactionType: draft.type
+                        )
+                    }
                     if draft.type == .sell {
                         try await importSellTransactionDuringBatch(draft)
                     } else {

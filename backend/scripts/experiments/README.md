@@ -8,6 +8,7 @@
 |------|------|
 | `finnhub_us_batch_test.py` | 200 檔美股，`/quote`，約 4 分鐘（58 次/分鐘） |
 | `finmind_tw_batch_test.py` | 台股清單（含 ETF），`TaiwanStockPrice`（58 次/分鐘，且每小時≤600） |
+| `fugle_tw_quote_test.py` | Fugle 台股 `intraday/quote`（上市／上櫃／ETF／00751B／00675L）+ 可選當日日 K |
 | `data/us_symbols_200.json` | 模擬 hot_stocks 美股清單 |
 | `data/tw_symbols_50.json` | 模擬 hot_stocks 台股清單（含 0050、006208、00675L、00751B 等） |
 | `output/` | 執行後產生的 JSON（git 可忽略） |
@@ -21,11 +22,13 @@ pip3 install requests
 ## API Key
 
 1. **Finnhub**：https://finnhub.io → 免費 API key  
-2. **FinMind**：https://finmindtrade.com → 註冊並驗證信箱後取得 token（建議，600 次/小時）
+2. **FinMind**：https://finmindtrade.com → 註冊並驗證信箱後取得 token（建議，600 次/小時）  
+3. **Fugle**：https://developer.fugle.tw/ → API Key
 
 ```bash
 export FINNHUB_API_KEY='你的_finnhub_key'
 export FINMIND_TOKEN='你的_finmind_token'
+export FUGLE_API_KEY='你的_fugle_api_key'
 ```
 
 ## 執行
@@ -38,6 +41,9 @@ python3 finnhub_us_batch_test.py
 
 # 台股清單（目前 54 檔，約 1 分鐘）
 python3 finmind_tw_batch_test.py
+
+# Fugle 台股報價（5 檔範例，含 00751B / 00675L）
+python3 fugle_tw_quote_test.py
 ```
 
 ## 限速設計（保守）

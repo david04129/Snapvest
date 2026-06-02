@@ -22,6 +22,68 @@ enum SymbolPriceValidator {
     static func needsValidation(assetType: AssetType, transactionType: TransactionType) -> Bool {
         transactionType == .buy && assetType != .cash
     }
+
+    static func priceValidationKey(assetType: AssetType, symbol: String) -> String {
+        let normalized = SupabasePriceService.normalizeSymbol(assetType: assetType, symbol: symbol)
+        return "\(assetType.rawValue)|\(normalized)"
+    }
+
+    /// 批量驗價；回傳 validation key → 錯誤訊息（成功的不在 map 內）。
+    static func validatePricesAvailable(symbols: [SymbolInfo]) async -> [String: String] {
+        let unique = SupabasePriceService.deduplicatedSymbolInfos(symbols)
+        guard !unique.isEmpty else { return [:] }
+
+        if MockDataService.shared.isDemoModeActive {
+            var failures: [String: String] = [:]
+            for info in unique {
+                if let message = await validatePriceAvailable(
+                    assetType: info.assetType,
+                    symbol: info.symbol,
+                    transactionType: .buy
+                ) {
+                    failures[priceValidationKey(assetType: info.assetType, symbol: info.symbol)] = message
+                }
+            }
+            return failures
+        }
+
+        guard SupabaseConfig.isConfigured else {
+            let message = "無法連線驗證股價，請確認網路與 Supabase 設定"
+            return Dictionary(
+                uniqueKeysWithValues: unique.map {
+                    (priceValidationKey(assetType: $0.assetType, symbol: $0.symbol), message)
+                }
+            )
+        }
+
+        var pricedKeys = Set<String>()
+        let snapshots = (try? await SupabasePriceService.fetchPrices(symbols: unique)) ?? []
+        for snapshot in snapshots {
+            if let price = snapshot.displayPrice, price > 0 {
+                pricedKeys.insert(priceValidationKey(assetType: snapshot.assetType, symbol: snapshot.symbol))
+            }
+        }
+
+        let stillMissing = unique.filter {
+            !pricedKeys.contains(priceValidationKey(assetType: $0.assetType, symbol: $0.symbol))
+        }
+        if !stillMissing.isEmpty {
+            let created = await SupabasePriceService.resolveMissingPrices(symbols: stillMissing)
+            for snapshot in created {
+                if let price = snapshot.displayPrice, price > 0 {
+                    pricedKeys.insert(priceValidationKey(assetType: snapshot.assetType, symbol: snapshot.symbol))
+                }
+            }
+        }
+
+        var failures: [String: String] = [:]
+        for info in unique {
+            let key = priceValidationKey(assetType: info.assetType, symbol: info.symbol)
+            if pricedKeys.contains(key) { continue }
+            failures[key] = failureMessage(assetType: info.assetType, symbol: info.symbol)
+        }
+        return failures
+    }
     
     /// 驗證成功回傳 `nil`；失敗回傳使用者可讀錯誤訊息。
     static func validatePriceAvailable(
@@ -37,34 +99,11 @@ enum SymbolPriceValidator {
         guard !normalized.isEmpty else {
             return "需填 symbol"
         }
-        
-        if MockDataService.shared.isDemoModeActive {
-            if let price = await SupabasePriceService.fetchDisplayPrice(
-                assetType: assetType,
-                symbol: normalized
-            ), price > 0 {
-                return nil
-            }
-            return failureMessage(assetType: assetType, symbol: normalized)
-        }
-        
-        guard SupabaseConfig.isConfigured else {
-            return "無法連線驗證股價，請確認網路與 Supabase 設定"
-        }
-        
-        let coingeckoId = assetType == .crypto
-            ? SymbolListService.coingeckoId(forCryptoSymbol: normalized)
-            : nil
-        
-        guard let price = await SupabasePriceService.fetchDisplayPrice(
-            assetType: assetType,
-            symbol: normalized,
-            coingeckoId: coingeckoId
-        ), price > 0 else {
-            return failureMessage(assetType: assetType, symbol: normalized)
-        }
-        
-        return nil
+
+        let failures = await validatePricesAvailable(
+            symbols: [SymbolInfo(assetType: assetType, symbol: normalized)]
+        )
+        return failures[priceValidationKey(assetType: assetType, symbol: normalized)]
     }
     
     static func validatePriceAvailableOrThrow(

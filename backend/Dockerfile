@@ -7,7 +7,7 @@ COPY scripts/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 變更此值可強制 Cloud Build 重跑 COPY（避免舊腳本被 layer cache 沿用）
-ARG SCRIPTS_CACHE_BUST=20260603
+ARG SCRIPTS_CACHE_BUST=20260602-fugle-tw
 COPY scripts /app/scripts
 
 WORKDIR /app/scripts

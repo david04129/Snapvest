@@ -22,17 +22,28 @@ struct DataFreshnessSnapshot: Equatable {
 }
 
 enum DataFreshnessFormatter {
-    private static let formatter: DateFormatter = {
+    private static let oneHour: TimeInterval = 3600
+
+    private static let absoluteFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_TW")
         formatter.timeZone = TimeZone(identifier: "Asia/Taipei")
         formatter.dateFormat = "yyyy/MM/dd HH:mm"
         return formatter
     }()
-    
-    static func label(for date: Date?) -> String {
+
+    /// 資料寫入時間：1 小時內為「剛剛／N 分鐘前」，超過則為 yyyy/MM/dd HH:mm（台北）。
+    static func label(for date: Date?, relativeTo now: Date = Date()) -> String {
         guard let date else { return "—" }
-        return formatter.string(from: date)
+        let elapsed = now.timeIntervalSince(date)
+        if elapsed < 60 {
+            return "剛剛"
+        }
+        if elapsed < oneHour {
+            let minutes = Int(ceil(elapsed / 60))
+            return "\(minutes) 分鐘前"
+        }
+        return absoluteFormatter.string(from: date)
     }
 }
 

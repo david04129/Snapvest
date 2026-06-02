@@ -315,11 +315,11 @@ Snapvest 有 **三條抓價路線**：
 | 資料 | API | 連結 | 備註 |
 |------|-----|------|------|
 | **匯率** | FinMind `TaiwanExchangeRate`（台銀牌告） | [FinMind 匯率](https://finmind.github.io/tutor/ExchangeRate/) | 與台股同輪更新；USD/EUR/JPY/CNY/HKD/AUD → TWD |
-| **台股** | FinMind `TaiwanStockPrice` | [FinMind](https://finmindtrade.com/) | 主線；失敗 → 60s 重試 → `yfinance` |
+| **台股** | Fugle `intraday/quote` | [Fugle 行情](https://developer.fugle.tw/) | 盤中／收盤同一 API；`source=fugle`；失敗保留 DB |
 | **美股** | Finnhub `/quote` | [Finnhub](https://finnhub.io/) | 主線；失敗 → 60s 重試 → `yfinance` |
 | **加密貨幣** | CoinGecko Simple Price | [CoinGecko API 文件](https://docs.coingecko.com/reference/simple-price) | 曆日快照；需 `crypto_coingecko_map.json` |
 
-排程會印出**本輪交易日**（台股台北曆日、美股紐約曆日），寫入 `current_close_date`；`current_updated_at` 為寫入時間（到秒）。`price_kind`：`intraday`＝盤中快照、`close`＝收盤價（才寫 history）。GitHub Secrets 需 **`FINNHUB_API_KEY`**、**`FINMIND_TOKEN`**。
+排程會印出**本輪交易日**（台股台北曆日、美股紐約曆日），寫入 `current_close_date`；`current_updated_at` 為寫入時間（到秒）。`price_kind`：`intraday`＝盤中快照、`close`＝收盤價（才寫 history）。Cloud Run Secrets 需 **`FUGLE_API_KEY`**（台股）、**`FINNHUB_API_KEY`**（美股）、**`FINMIND_TOKEN`**（匯率／台股日曆）。
 
 **加密 symbol 對照表：** [backend/scripts/data/crypto_coingecko_map.json](./backend/scripts/data/crypto_coingecko_map.json)（由 `build_symbols_crypto.py` 產生）
 
@@ -358,6 +358,8 @@ supabase functions deploy fetch-prices-batch --no-verify-jwt
 
 **程式位置：** [backend/supabase/functions/fetch-or-create-price/index.ts](./backend/supabase/functions/fetch-or-create-price/index.ts)
 
+台股／美股自 Yahoo `range=5d` 取現價與昨收（`chartPreviousClose` 或倒數第二根日 K），寫入 `previous_price` / `previous_close_date` 供新增標的日漲跌；不寫 `asset_price_history`。
+
 **什麼時候觸發？**  
 App 查 `asset_price_snapshots` 發現**沒有這檔的價格**時，會 POST 這支 Function。
 
@@ -369,7 +371,7 @@ App 查 `asset_price_snapshots` 發現**沒有這檔的價格**時，會 POST �
 
 抓到價格後會寫入 `asset_price_snapshots` 與 `asset_price_history`（`current_price_source`：`yahoo` 或 `coingecko`；不加入 `hot_stocks`）
 
-**來源欄常見值：** 排程 `finmind`／`finnhub`／`yfinance`／`coingecko`；Edge `yahoo`／`coingecko`。本輪抓失敗未 upsert 的列，**現價與 `current_*` 皆維持上一輪**。
+**來源欄常見值：** 排程 `fugle`（台股）／`finnhub`／`yfinance`（美股備援）／`coingecko`／`finmind`（匯率）；Edge `yahoo`／`coingecko`（`fetch-or-create-price` 台股仍 Yahoo）。本輪抓失敗未 upsert 的列，**現價與 `current_*` 皆維持上一輪**。
 
 **部署方式（手動，不經 GitHub Actions）：**
 
@@ -481,6 +483,8 @@ Snapvest/
 │   ├── archive_symbols.py      # 備份舊版清單
 │   └── output/                 # 建置產物 + archive/
 ├── .github/workflows/          # GitHub Actions 排程
+├── docs/
+│   └── API_ABUSE_MITIGATION_AND_PR3.md  # Edge 防濫用、PR1–PR3 規格與驗證
 ├── STEP_BY_STEP_SETUP.md       # 從零設定 Supabase 教學
 └── ENGINEERING_HANDBOOK.md     # 本文件
 ```

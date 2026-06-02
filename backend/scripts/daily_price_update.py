@@ -2,7 +2,7 @@
 """
 Snapvest 股價／匯率更新腳本（Cloud Run / 手動）
 - 抓價範圍：僅 tracked_symbols（is_active=true，去重）
-- 台股 FinMind、匯率 FinMind 台銀牌告；美股 Finnhub；加密 CoinGecko
+- 台股 Fugle intraday/quote；匯率 FinMind 台銀牌告；美股 Finnhub；加密 CoinGecko
 - 盤中只寫 snapshots；收盤寫 snapshots + history；加密 00:00 hourly 另寫昨日 history
 """
 import json
@@ -15,6 +15,7 @@ from datetime import date, datetime, timezone, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Callable, Optional, Set
+from urllib.parse import quote as url_quote
 from zoneinfo import ZoneInfo
 
 # 台灣時區 UTC+8（與 market_session 的 Asia/Taipei 等價；resolve 用 ZoneInfo）
@@ -35,10 +36,12 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY", "").strip()
 FINMIND_TOKEN = os.environ.get("FINMIND_TOKEN", "").strip() or None
+FUGLE_API_KEY = os.environ.get("FUGLE_API_KEY", "").strip()
 
 COINGECKO_BASE = "https://api.coingecko.com/api/v3"
 FINNHUB_QUOTE_URL = "https://finnhub.io/api/v1/quote"
 FINMIND_DATA_URL = "https://api.finmindtrade.com/api/v4/data"
+FUGLE_STOCK_BASE = "https://api.fugle.tw/marketdata/v1.0/stock"
 REQUESTS_PER_MINUTE = 58
 MIN_INTERVAL_SEC = 60.0 / REQUESTS_PER_MINUTE
 RETRY_PAUSE_SEC = 60
@@ -389,37 +392,42 @@ def _finmind_wait_hourly(request_times: deque[float]) -> None:
             time.sleep(sleep_sec)
 
 
-def fetch_finmind_one(
+def fetch_fugle_tw_quote(
     http: requests.Session,
-    stock_id: str,
+    symbol: str,
     session_close: date,
 ) -> tuple[Optional[FetchedQuote], str]:
-    ds = session_close.isoformat()
-    params: dict[str, str] = {
-        "dataset": "TaiwanStockPrice",
-        "data_id": stock_id,
-        "start_date": ds,
-        "end_date": ds,
-    }
-    if FINMIND_TOKEN:
-        params["token"] = FINMIND_TOKEN
+    """台股盤中／收盤皆用 Fugle intraday/quote（同一 endpoint）。"""
+    if not FUGLE_API_KEY:
+        return None, "no_fugle_key"
+    url = f"{FUGLE_STOCK_BASE}/intraday/quote/{url_quote(symbol, safe='')}"
     try:
-        resp = http.get(FINMIND_DATA_URL, params=params, timeout=30)
+        resp = http.get(
+            url,
+            headers={"X-API-KEY": FUGLE_API_KEY},
+            timeout=30,
+        )
+        if resp.status_code == 401:
+            return None, "401 Unauthorized"
+        if resp.status_code == 403:
+            return None, "403 Forbidden"
+        if resp.status_code == 404:
+            return None, f"404 Not Found ({symbol})"
         if resp.status_code == 429:
             return None, "429"
         resp.raise_for_status()
         body = resp.json()
-        if body.get("status") != 200:
-            return None, str(body.get("msg", body))
-        rows = body.get("data") or []
-        if not rows:
-            return None, "empty"
-        last = rows[-1]
-        close = last.get("close")
-        if not _is_valid_price(close):
-            return None, "invalid_close"
-        row_date = parse_close_date(last.get("date")) or session_close
-        return FetchedQuote(float(close), "finmind", row_date), ""
+        if not isinstance(body, dict):
+            return None, "invalid_json"
+        price = None
+        if _is_valid_price(body.get("lastPrice")):
+            price = float(body["lastPrice"])
+        elif _is_valid_price(body.get("closePrice")):
+            price = float(body["closePrice"])
+        if price is None:
+            return None, "invalid_quote"
+        close_date = parse_close_date(body.get("date")) or session_close
+        return FetchedQuote(price, "fugle", close_date), ""
     except Exception as e:
         return None, str(e)
 
@@ -505,24 +513,25 @@ def fetch_stocks_for_market(
     symbols: list[dict],
     session_close: date,
     finmind_times: Optional[deque[float]] = None,
+    *,
+    yfinance_fallback: bool = True,
 ) -> dict[tuple[str, str], FetchedQuote]:
-    """Primary → 等 60s → retry 可重試失敗 → yfinance 補其餘。"""
+    """Primary → 等 60s → retry 可重試失敗 →（美股可選）yfinance 補其餘。"""
     market_symbols = [s for s in symbols if s["asset_type"] == asset_type]
     if not market_symbols:
         return {}
 
-    label = "FinMind" if asset_type == "stock_tw" else "Finnhub"
     if asset_type == "stock_tw":
-        if finmind_times is None:
-            finmind_times = deque()
-    else:
+        label = "Fugle"
         finmind_times = None
-
-    if asset_type == "stock_tw":
-        if not FINMIND_TOKEN:
-            print("  未設定 FINMIND_TOKEN，台股將直接嘗試 yfinance fallback")
-        fetch_one = fetch_finmind_one
+        if not FUGLE_API_KEY:
+            print("  未設定 FUGLE_API_KEY，略過台股更新")
+            return {}
+        fetch_one = fetch_fugle_tw_quote
+        yfinance_fallback = False
     else:
+        label = "Finnhub"
+        finmind_times = None
         if not FINNHUB_API_KEY:
             print("  未設定 FINNHUB_API_KEY，美股將直接嘗試 yfinance fallback")
         fetch_one = fetch_finnhub_one
@@ -557,15 +566,24 @@ def fetch_stocks_for_market(
         if (s["asset_type"], s["symbol"]) not in ok
     ]
     if still_missing:
-        print(f"  yfinance fallback: {len(still_missing)} 檔")
-        for s in still_missing:
-            key = (s["asset_type"], s["symbol"])
-            quote, err = fetch_yahoo_one(s, session_close)
-            if quote:
-                ok[key] = quote
-            else:
-                print(f"    {s['symbol']}: {err}")
-            time.sleep(0.3)
+        if yfinance_fallback:
+            print(f"  yfinance fallback: {len(still_missing)} 檔")
+            for s in still_missing:
+                key = (s["asset_type"], s["symbol"])
+                quote, err = fetch_yahoo_one(s, session_close)
+                if quote:
+                    ok[key] = quote
+                else:
+                    print(f"    {s['symbol']}: {err}")
+                time.sleep(0.3)
+        else:
+            print(
+                f"  略過 yfinance（保留 DB 現有價，共 {len(still_missing)} 檔）"
+            )
+            for s in still_missing:
+                key = (s["asset_type"], s["symbol"])
+                reason = fail.get(key, "unknown")
+                print(f"    {s['symbol']}: {label} 失敗 ({reason})")
 
     return ok
 
@@ -838,7 +856,6 @@ def _crypto_history_rows_for_yesterday(snapshot_rows: list[dict]) -> list[dict]:
 def _fetch_quotes_for_symbols(
     symbols: list[dict],
     markets: Optional[Set[str]],
-    finmind_times: Optional[deque[float]],
     calendar_rows: Optional[dict[tuple[str, date], dict]] = None,
 ) -> dict[tuple[str, str], FetchedQuote]:
     include_tw = markets is None or "tw" in markets
@@ -848,10 +865,8 @@ def _fetch_quotes_for_symbols(
 
     if include_tw:
         tw_close = resolve_session_close_date("tw", calendar_rows=calendar_rows)
-        print(f"本輪台股交易日: {tw_close.isoformat()}")
-        quotes.update(
-            fetch_stocks_for_market("stock_tw", symbols, tw_close, finmind_times)
-        )
+        print(f"本輪台股交易日: {tw_close.isoformat()}（Fugle intraday/quote）")
+        quotes.update(fetch_stocks_for_market("stock_tw", symbols, tw_close))
     if include_us:
         us_close = resolve_session_close_date("us", calendar_rows=calendar_rows)
         print(f"本輪美股交易日: {us_close.isoformat()}")
@@ -912,7 +927,6 @@ def run_price_job(
     quotes = _fetch_quotes_for_symbols(
         symbols,
         markets,
-        finmind_times if include_tw else None,
         calendar_rows=calendar,
     )
     updated_at = tw_now_local_seconds()

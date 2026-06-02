@@ -264,40 +264,24 @@ enum TransactionImportService {
                     assetType: transaction.assetType,
                     transactionType: transaction.type
                   ) else { continue }
-            let key = priceValidationKey(assetType: transaction.assetType, symbol: transaction.symbol)
+            let key = SymbolPriceValidator.priceValidationKey(
+                assetType: transaction.assetType,
+                symbol: transaction.symbol
+            )
             if uniqueSymbols[key] == nil {
                 uniqueSymbols[key] = (transaction.assetType, transaction.symbol)
             }
         }
         
-        var priceFailures: [String: String] = [:]
-        await withTaskGroup(of: (String, String?).self) { group in
-            for (key, pair) in uniqueSymbols {
-                group.addTask {
-                    let error = await SymbolPriceValidator.validatePriceAvailable(
-                        assetType: pair.0,
-                        symbol: pair.1,
-                        transactionType: .buy
-                    )
-                    return (key, error)
-                }
-            }
-            for await (key, error) in group {
-                if let error {
-                    priceFailures[key] = error
-                }
-            }
+        let symbolInfos = uniqueSymbols.values.map {
+            SymbolInfo(assetType: $0.0, symbol: $0.1)
         }
+        let priceFailures = await SymbolPriceValidator.validatePricesAvailable(symbols: symbolInfos)
         
         let updatedRows = result.rows.map { row in
             rowWithPriceValidation(row, priceFailures: priceFailures)
         }
         return TransactionImportValidationResult(rows: updatedRows)
-    }
-    
-    private static func priceValidationKey(assetType: AssetType, symbol: String) -> String {
-        let normalized = SupabasePriceService.normalizeSymbol(assetType: assetType, symbol: symbol)
-        return "\(assetType.rawValue)|\(normalized)"
     }
     
     private static func rowWithPriceValidation(
@@ -313,7 +297,10 @@ enum TransactionImportService {
             return row
         }
         
-        let key = priceValidationKey(assetType: transaction.assetType, symbol: transaction.symbol)
+        let key = SymbolPriceValidator.priceValidationKey(
+            assetType: transaction.assetType,
+            symbol: transaction.symbol
+        )
         guard let priceError = priceFailures[key] else { return row }
         
         return TransactionImportValidatedRow(

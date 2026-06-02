@@ -95,6 +95,10 @@ struct SupabasePriceBatch {
 struct SupabasePriceService {
     
     private static let lastFetchedAtKey = "com.snapvest.priceLastFetchedAt"
+    /// 與 `fetch-prices-batch` Edge Function `maxSymbols` 對齊
+    static let maxBatchSymbols = 100
+    /// 缺價補齊時並行呼叫 `fetch-or-create-price` 上限
+    static let fetchOrCreateConcurrency = 5
     
     /// 取得後端價格最後更新時間
     static func fetchLastUpdatedAt() async -> Date? {
@@ -336,50 +340,175 @@ struct SupabasePriceService {
         )
     }
     
-    /// 批量取得目前價；優先走 Edge Function 單筆請求，失敗時保留舊 REST fallback。
+    /// 去重後的 symbol 列表（與 batch / REST key 一致）
+    static func deduplicatedSymbolInfos(_ symbols: [SymbolInfo]) -> [SymbolInfo] {
+        var seen = Set<String>()
+        var result: [SymbolInfo] = []
+        for symbol in symbols {
+            let normalized = normalizeSymbol(assetType: symbol.assetType, symbol: symbol.symbol)
+            let key = batchKey(assetType: symbol.assetType, symbol: normalized)
+            guard seen.insert(key).inserted else { continue }
+            result.append(SymbolInfo(assetType: symbol.assetType, symbol: normalized))
+        }
+        return result
+    }
+
+    private static func snapshotStorageKey(assetType: AssetType, symbol: String) -> String {
+        "\(assetType.rawValue)_\(normalizeSymbol(assetType: assetType, symbol: symbol))"
+    }
+
+    private static func hasPositiveDisplayPrice(_ snapshot: AssetPriceSnapshot?) -> Bool {
+        guard let price = snapshot?.displayPrice else { return false }
+        return price > 0
+    }
+
+    private static func symbolChunks(_ symbols: [SymbolInfo], size: Int) -> [[SymbolInfo]] {
+        guard size > 0, !symbols.isEmpty else { return symbols.isEmpty ? [] : [symbols] }
+        var chunks: [[SymbolInfo]] = []
+        var index = 0
+        while index < symbols.count {
+            let end = min(index + size, symbols.count)
+            chunks.append(Array(symbols[index..<end]))
+            index = end
+        }
+        return chunks
+    }
+
+    private static func mergeBatchFX(_ batch: SupabasePriceBatch) {
+        if let usdToTwd = batch.twdRateByCurrency[.USD] {
+            ExchangeRateSessionCache.update(usdToTwd: usdToTwd)
+        }
+    }
+
+    private static func mergeSnapshots(
+        into mergedByKey: inout [String: AssetPriceSnapshot],
+        snapshots: [AssetPriceSnapshot]
+    ) {
+        for snapshot in snapshots {
+            let key = snapshotStorageKey(assetType: snapshot.assetType, symbol: snapshot.symbol)
+            if let existing = mergedByKey[key] {
+                mergedByKey[key] = PriceSnapshotMerger.mergePreservingDailyReference(
+                    incoming: snapshot,
+                    existing: existing
+                )
+            } else {
+                mergedByKey[key] = snapshot
+            }
+        }
+    }
+
+    /// 批量取得目前價；依 chunk 呼叫 Edge batch，僅對仍缺價的 symbol REST fallback。
     static func fetchPrices(symbols: [SymbolInfo]) async throws -> [AssetPriceSnapshot] {
         guard SupabaseConfig.isConfigured,
               let baseUrl = SupabaseConfig.url,
               let key = SupabaseConfig.anonKey else { throw SupabaseError.notConfigured }
 
-        do {
-            let batch = try await fetchBatchPrices(symbols: symbols, includeCurrent: true)
-            if !batch.currentSnapshots.isEmpty {
-                #if DEBUG
-                print("[SupabasePriceService] fetchPrices using batch snapshots=\(batch.currentSnapshots.count)/\(symbols.count)")
-                #endif
-                return batch.currentSnapshots
-            }
-            #if DEBUG
-            print("[SupabasePriceService] fetchPrices batch returned no snapshots; falling back to per-symbol REST")
-            #endif
-        } catch {
-            #if DEBUG
-            print("[SupabasePriceService] fetchPrices batch failed; falling back to per-symbol REST: \(error)")
-            #endif
-        }
-        
-        let rows = await withTaskGroup(of: SupabasePriceRow?.self) { group in
-            for s in symbols {
-                group.addTask {
-                    await fetchPriceRow(baseUrl: baseUrl, key: key, symbolInfo: s)
+        let unique = deduplicatedSymbolInfos(symbols)
+        guard !unique.isEmpty else { return [] }
+
+        var mergedByKey: [String: AssetPriceSnapshot] = [:]
+        var chunksNeedingREST: [[SymbolInfo]] = []
+
+        for chunk in symbolChunks(unique, size: maxBatchSymbols) {
+            do {
+                let batch = try await fetchBatchPrices(symbols: chunk, includeCurrent: true)
+                mergeBatchFX(batch)
+                mergeSnapshots(into: &mergedByKey, snapshots: batch.currentSnapshots)
+                let missingInChunk = chunk.filter { info in
+                    !hasPositiveDisplayPrice(mergedByKey[snapshotStorageKey(assetType: info.assetType, symbol: info.symbol)])
                 }
+                if !missingInChunk.isEmpty {
+                    chunksNeedingREST.append(missingInChunk)
+                }
+                #if DEBUG
+                print("[SupabasePriceService] fetchPrices chunk batch snapshots=\(batch.currentSnapshots.count)/\(chunk.count)")
+                #endif
+            } catch {
+                #if DEBUG
+                print("[SupabasePriceService] fetchPrices chunk batch failed; will REST fallback chunk: \(error)")
+                #endif
+                chunksNeedingREST.append(chunk)
             }
-            var out: [SupabasePriceRow] = []
-            for await row in group {
-                if let r = row { out.append(r) }
-            }
-            return out
         }
-        let results = rows.compactMap { SupabasePriceRow.toAssetPriceSnapshot($0) }
-        
+
+        let restTargets = deduplicatedSymbolInfos(chunksNeedingREST.flatMap { $0 })
+        if !restTargets.isEmpty {
+            let rows = await withTaskGroup(of: SupabasePriceRow?.self) { group in
+                for symbolInfo in restTargets {
+                    group.addTask {
+                        await fetchPriceRow(baseUrl: baseUrl, key: key, symbolInfo: symbolInfo)
+                    }
+                }
+                var out: [SupabasePriceRow] = []
+                for await row in group {
+                    if let row { out.append(row) }
+                }
+                return out
+            }
+            let restSnapshots = rows.compactMap { SupabasePriceRow.toAssetPriceSnapshot($0) }
+            mergeSnapshots(into: &mergedByKey, snapshots: restSnapshots)
+            #if DEBUG
+            print("[SupabasePriceService] fetchPrices REST fallback snapshots=\(restSnapshots.count)/\(restTargets.count)")
+            #endif
+        }
+
+        let results = unique.compactMap { info in
+            mergedByKey[snapshotStorageKey(assetType: info.assetType, symbol: info.symbol)]
+        }
+
         #if DEBUG
-        if !symbols.isEmpty, results.isEmpty {
-            print("[SupabasePriceService] fetchPrices returned 0/\(symbols.count) symbols")
+        if !unique.isEmpty, results.isEmpty {
+            print("[SupabasePriceService] fetchPrices returned 0/\(unique.count) symbols")
         }
         #endif
-        
+
         return results
+    }
+
+    /// 對仍無有效報價的標的，有限並行呼叫 `fetch-or-create-price` 並組成 snapshot。
+    static func resolveMissingPrices(symbols: [SymbolInfo]) async -> [AssetPriceSnapshot] {
+        let targets = deduplicatedSymbolInfos(symbols)
+        guard SupabaseConfig.isConfigured, !targets.isEmpty else { return [] }
+
+        var created: [AssetPriceSnapshot] = []
+        for chunk in symbolChunks(targets, size: fetchOrCreateConcurrency) {
+            await withTaskGroup(of: AssetPriceSnapshot?.self) { group in
+                for symbolInfo in chunk {
+                    group.addTask {
+                        await createSnapshotViaFetchOrCreate(symbolInfo: symbolInfo)
+                    }
+                }
+                for await snapshot in group {
+                    if let snapshot {
+                        created.append(snapshot)
+                    }
+                }
+            }
+        }
+        return created
+    }
+
+    private static func createSnapshotViaFetchOrCreate(symbolInfo: SymbolInfo) async -> AssetPriceSnapshot? {
+        let coingeckoId = symbolInfo.assetType == .crypto
+            ? SymbolListService.coingeckoId(forCryptoSymbol: symbolInfo.symbol)
+            : nil
+        guard let price = try? await fetchOrCreatePrice(
+            assetType: symbolInfo.assetType,
+            symbol: symbolInfo.symbol,
+            coingeckoId: coingeckoId
+        ), price > 0 else {
+            return nil
+        }
+        let now = Date()
+        return AssetPriceSnapshot(
+            assetType: symbolInfo.assetType,
+            symbol: symbolInfo.symbol,
+            currency: symbolInfo.assetType.quoteCurrency,
+            currentPrice: price,
+            previousPrice: nil,
+            currentCloseDate: Calendar.current.startOfDay(for: now),
+            currentUpdatedAt: now
+        )
     }
     
     private static func fetchPriceRow(baseUrl: String, key: String, symbolInfo: SymbolInfo) async -> SupabasePriceRow? {

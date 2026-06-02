@@ -6,7 +6,7 @@
 import Foundation
 
 enum PriceFreshnessFormatter {
-    /// DB 寫入時間（`current_updated_at`），固定台北時間格式。
+    /// DB 寫入時間（`current_updated_at`）：1 小時內「N 分鐘前」，否則台北時間。
     static func dataTimestampLabel(updatedAt: Date?) -> String? {
         guard let updatedAt else { return nil }
         return DataFreshnessFormatter.label(for: updatedAt)

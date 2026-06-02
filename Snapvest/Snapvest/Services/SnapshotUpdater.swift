@@ -375,10 +375,45 @@ enum SnapshotUpdater {
                 existing: existing
             )
         }
+
+        if SupabaseConfig.isConfigured, !usesDemoPrices {
+            let missingAfterBatch = symbols.filter { info in
+                let key = "\(info.assetType.rawValue)_\(info.symbol)"
+                guard let snapshot = snapshotByKey[key],
+                      let price = snapshot.displayPrice,
+                      price > 0 else {
+                    return true
+                }
+                return false
+            }
+            if !missingAfterBatch.isEmpty {
+                let filled = await SupabasePriceService.resolveMissingPrices(symbols: missingAfterBatch)
+                for snapshot in filled {
+                    let key = "\(snapshot.assetType.rawValue)_\(snapshot.symbol)"
+                    let existing = snapshotByKey[key]
+                    var enriched = snapshot
+                    if enriched.name == nil, let holdingInfo = holdingsBySymbol[key] {
+                        enriched.name = SymbolListService.displayName(
+                            assetType: snapshot.assetType,
+                            symbol: snapshot.symbol,
+                            storedName: holdingInfo.name
+                        )
+                    }
+                    snapshotByKey[key] = PriceSnapshotMerger.mergePreservingDailyReference(
+                        incoming: enriched,
+                        existing: existing
+                    )
+                }
+            }
+        }
         
         for symbolInfo in symbols {
             let key = "\(symbolInfo.assetType.rawValue)_\(symbolInfo.symbol)"
-            if snapshotByKey[key] != nil { continue }
+            if let snapshot = snapshotByKey[key],
+               let price = snapshot.displayPrice,
+               price > 0 {
+                continue
+            }
             
             let currentPrice: Decimal?
             if usesDemoData {
@@ -387,10 +422,7 @@ enum SnapshotUpdater {
                     symbol: symbolInfo.symbol
                 )
             } else if SupabaseConfig.isConfigured, !usesDemoPrices {
-                currentPrice = await SupabasePriceService.fetchDisplayPrice(
-                    assetType: symbolInfo.assetType,
-                    symbol: symbolInfo.symbol
-                )
+                continue
             } else {
                 currentPrice = try await priceService.fetchCurrentPrice(
                     assetType: symbolInfo.assetType,

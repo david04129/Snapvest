@@ -20,14 +20,27 @@ const coingeckoHeaders = {
 }
 
 const TAIPEI_TZ = "Asia/Taipei"
+const NY_TZ = "America/New_York"
 
-function taipeiCloseDateString(d = new Date()): string {
+function marketTimeZone(assetType: string): string {
+  return assetType === "stock_us" ? NY_TZ : TAIPEI_TZ
+}
+
+function closeDateString(d: Date, timeZone: string): string {
   return new Intl.DateTimeFormat("en-CA", {
-    timeZone: TAIPEI_TZ,
+    timeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   }).format(d)
+}
+
+function closeDateFromUnixSeconds(sec: number, timeZone: string): string {
+  return closeDateString(new Date(sec * 1000), timeZone)
+}
+
+function marketTodayKey(assetType: string): string {
+  return closeDateString(new Date(), marketTimeZone(assetType))
 }
 
 function taipeiUpdatedAtSeconds(d = new Date()): string {
@@ -46,8 +59,103 @@ function taipeiUpdatedAtSeconds(d = new Date()): string {
 }
 
 async function fetchYahooChart(yahooSymbol: string): Promise<Response> {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1d&range=1d`
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1d&range=5d`
   return fetch(url, { headers: yahooFetchHeaders })
+}
+
+type YahooBar = { ts: number; close: number }
+
+type YahooStockQuote = {
+  currentPrice: number
+  currentCloseDate: string
+  previousPrice: number | null
+  previousCloseDate: string | null
+}
+
+function validPrice(n: unknown): n is number {
+  return typeof n === "number" && Number.isFinite(n) && n > 0
+}
+
+function parseYahooStockChart(json: Record<string, unknown>, assetType: string): YahooStockQuote | null {
+  const result = (json as {
+    chart?: {
+      result?: Array<{
+        meta?: Record<string, unknown>
+        timestamp?: number[]
+        indicators?: { quote?: Array<{ close?: (number | null)[] }> }
+      }>
+    }
+  })?.chart?.result?.[0]
+  if (!result) return null
+
+  const meta = result.meta ?? {}
+  const tz = marketTimeZone(assetType)
+  const timestamps = result.timestamp ?? []
+  const closes = result.indicators?.quote?.[0]?.close ?? []
+
+  const bars: YahooBar[] = []
+  for (let i = 0; i < closes.length; i++) {
+    const c = closes[i]
+    const ts = timestamps[i]
+    if (validPrice(c) && ts != null) bars.push({ ts, close: c })
+  }
+
+  let currentPrice: number | null = validPrice(meta.regularMarketPrice)
+    ? meta.regularMarketPrice as number
+    : null
+  if (currentPrice == null && bars.length > 0) {
+    currentPrice = bars[bars.length - 1].close
+  }
+  if (!validPrice(currentPrice)) return null
+
+  let currentCloseDate: string | null = null
+  if (typeof meta.regularMarketTime === "number") {
+    currentCloseDate = closeDateFromUnixSeconds(meta.regularMarketTime, tz)
+  } else if (bars.length > 0) {
+    currentCloseDate = closeDateFromUnixSeconds(bars[bars.length - 1].ts, tz)
+  }
+  if (!currentCloseDate) {
+    currentCloseDate = marketTodayKey(assetType)
+  }
+
+  let previousPrice: number | null = null
+  let previousCloseDate: string | null = null
+
+  if (bars.length >= 2) {
+    const prevBar = bars[bars.length - 2]
+    previousPrice = prevBar.close
+    previousCloseDate = closeDateFromUnixSeconds(prevBar.ts, tz)
+  } else {
+    const metaPrev = meta.chartPreviousClose ?? meta.regularMarketPreviousClose ?? meta.previousClose
+    if (validPrice(metaPrev) && metaPrev !== currentPrice) {
+      previousPrice = metaPrev as number
+      if (bars.length === 1) {
+        previousCloseDate = closeDateFromUnixSeconds(bars[0].ts, tz)
+        if (previousCloseDate === currentCloseDate) {
+          const d = new Date(bars[0].ts * 1000)
+          d.setDate(d.getDate() - 1)
+          previousCloseDate = closeDateString(d, tz)
+        }
+      }
+    }
+  }
+
+  const todayKey = marketTodayKey(assetType)
+  if (previousCloseDate && previousCloseDate >= todayKey) {
+    previousCloseDate = null
+    previousPrice = null
+  }
+  if (previousPrice != null && previousPrice === currentPrice) {
+    previousPrice = null
+    previousCloseDate = null
+  }
+
+  return {
+    currentPrice,
+    currentCloseDate,
+    previousPrice,
+    previousCloseDate,
+  }
 }
 
 const COINGECKO_ID_MAP: Record<string, string> = {
@@ -108,16 +216,32 @@ serve(async (req) => {
 
     const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!)
 
-    // 1. 檢查 DB 是否已有
-    const { data: existing } = await supabase.from("asset_price_snapshots").select("current_price, currency").eq("asset_type", assetType).eq("symbol", symbol).single()
+    const { data: existing } = await supabase
+      .from("asset_price_snapshots")
+      .select("current_price, previous_price, previous_close_date, currency")
+      .eq("asset_type", assetType)
+      .eq("symbol", symbol)
+      .single()
+
     if (existing?.current_price) {
-      return new Response(JSON.stringify({ price: existing.current_price, currency: existing.currency, source: "database" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } })
+      return new Response(
+        JSON.stringify({
+          price: existing.current_price,
+          currency: existing.currency,
+          source: "database",
+          previousPrice: existing.previous_price ?? null,
+          previousCloseDate: existing.previous_close_date ?? null,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      )
     }
 
-    // 2. 從外部 API 抓取
     let price: number | null = null
     let priceSource = "yahoo"
     const currency = assetType === "stock_tw" ? "TWD" : "USD"
+    let currentCloseDate = marketTodayKey(assetType)
+    let previousPrice: number | null = null
+    let previousCloseDate: string | null = null
 
     if (assetType === "crypto") {
       priceSource = "coingecko"
@@ -135,6 +259,7 @@ serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         })
       }
+      currentCloseDate = marketTodayKey(assetType)
     } else if (assetType === "stock_tw" || assetType === "stock_us") {
       const yahooSymbol = assetType === "stock_tw" ? `${symbol}.TW` : symbol
       const res = await fetchYahooChart(yahooSymbol)
@@ -153,23 +278,26 @@ serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         })
       }
-      const quote = (json as { chart?: { result?: Array<{ meta?: { regularMarketPrice?: number }; indicators?: { quote?: Array<{ close?: number[] }> } }> } })
-        ?.chart?.result?.[0]?.meta?.regularMarketPrice
-        ?? (json as { chart?: { result?: Array<{ indicators?: { quote?: Array<{ close?: number[] }> } }> } })
-        ?.chart?.result?.[0]?.indicators?.quote?.[0]?.close?.pop()
-      price = quote ? Number(quote) : null
+      const parsed = parseYahooStockChart(json, assetType)
+      if (!parsed) {
+        return new Response(JSON.stringify({ error: "Price not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } })
+      }
+      price = parsed.currentPrice
+      currentCloseDate = parsed.currentCloseDate
+      previousPrice = parsed.previousPrice
+      previousCloseDate = parsed.previousCloseDate
     }
 
     if (price == null || price <= 0) {
       return new Response(JSON.stringify({ error: "Price not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } })
     }
 
-    // 3. 寫入 DB（零散參考價；收盤日＝台北曆日，非排程 EOD）
-    const closeDate = taipeiCloseDateString()
     const updatedAt = taipeiUpdatedAtSeconds()
     const { data: prior } = await supabase
       .from("asset_price_snapshots")
-      .select("current_price, current_close_date, current_updated_at, current_price_source")
+      .select(
+        "current_price, current_close_date, current_updated_at, current_price_source, previous_updated_at, previous_price_source",
+      )
       .eq("asset_type", assetType)
       .eq("symbol", symbol)
       .maybeSingle()
@@ -179,22 +307,38 @@ serve(async (req) => {
       symbol,
       currency,
       current_price: price,
-      current_close_date: closeDate,
+      current_close_date: currentCloseDate,
       current_updated_at: updatedAt,
       current_price_source: priceSource,
+      price_kind: "intraday",
     }
-    if (prior?.current_price) {
+
+    if (previousPrice != null && previousCloseDate) {
+      row.previous_price = previousPrice
+      row.previous_close_date = previousCloseDate
+      row.previous_updated_at = updatedAt
+      row.previous_price_source = priceSource
+    } else if (prior?.current_price) {
       row.previous_price = prior.current_price
       row.previous_close_date = prior.current_close_date
       row.previous_updated_at = prior.current_updated_at
       row.previous_price_source = prior.current_price_source
     }
 
-    row.price_kind = "intraday"
     await supabase.from("asset_price_snapshots").upsert(row, { onConflict: "asset_type,symbol" })
-    // 日線 history 僅由收盤 job / 加密 00:00 hourly 寫入，避免盤中價污染走勢補點。
 
-    return new Response(JSON.stringify({ price, currency, source: priceSource }), { headers: { ...corsHeaders, "Content-Type": "application/json" } })
+    const body: Record<string, unknown> = {
+      price,
+      currency,
+      source: priceSource,
+      currentCloseDate,
+    }
+    if (previousPrice != null && previousCloseDate) {
+      body.previousPrice = previousPrice
+      body.previousCloseDate = previousCloseDate
+    }
+
+    return new Response(JSON.stringify(body), { headers: { ...corsHeaders, "Content-Type": "application/json" } })
   } catch (e) {
     return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } })
   }

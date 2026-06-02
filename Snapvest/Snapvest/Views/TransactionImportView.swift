@@ -932,7 +932,8 @@ struct TransactionImportView: View {
         isImporting = true
         let result = await viewModel.importValidatedTransactions(
             userId: account.userId,
-            validation: validation
+            validation: validation,
+            assumePricesValidated: true
         )
         isImporting = false
         

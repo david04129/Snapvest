@@ -135,10 +135,12 @@ struct AssetsView: View {
                 marketStatus = await MarketStatusService.fetchIfNeeded()
             }
             .refreshable {
-                MarketStatusService.invalidateCache()
-                DailyPriceHistoryCache.invalidate()
-                marketStatus = await MarketStatusService.fetchIfNeeded(force: true)
-                await SnapshotRefreshCoordinator.rebuildAndNotify(userId: userId)
+                await ManualRefreshCooldown.shared.performIfAllowed {
+                    MarketStatusService.invalidateCache()
+                    DailyPriceHistoryCache.invalidate()
+                    marketStatus = await MarketStatusService.fetchIfNeeded(force: true)
+                    await SnapshotRefreshCoordinator.rebuildAndNotify(userId: userId)
+                }
             }
             .onAppear {
                 holdingsCurrencyDisplay = .twd
