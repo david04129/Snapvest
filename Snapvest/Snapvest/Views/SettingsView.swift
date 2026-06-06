@@ -667,6 +667,10 @@ struct SettingsView: View {
 
     private var backupExportRow: some View {
         Button {
+            guard PlusFeatureGate.canUseBackupRestore(isPlusActive: subscriptionManager.isPlusActive) else {
+                isPaywallPresented = true
+                return
+            }
             Task { await exportBackup() }
         } label: {
             HStack(spacing: 12) {
@@ -712,6 +716,10 @@ struct SettingsView: View {
 
     private var backupRestoreRow: some View {
         Button {
+            guard PlusFeatureGate.canUseBackupRestore(isPlusActive: subscriptionManager.isPlusActive) else {
+                isPaywallPresented = true
+                return
+            }
             isBackupImporterPresented = true
         } label: {
             HStack(spacing: 12) {
@@ -892,6 +900,13 @@ struct SettingsView: View {
     #endif
     
     private func togglePrivacyLock() async {
+        if !privacyLock.isEnabled {
+            guard PlusFeatureGate.canUsePrivacyLock(isPlusActive: subscriptionManager.isPlusActive) else {
+                isPaywallPresented = true
+                return
+            }
+        }
+
         let result = await privacyLock.setEnabled(!privacyLock.isEnabled)
         if case .failure(let message) = result {
             privacyLockSettingsMessage = message

@@ -22,10 +22,13 @@ private enum AddItemScreen: Equatable {
 
 struct AddAccountView: View {
     @ObservedObject var viewModel: AccountsViewModel
+    @EnvironmentObject private var subscriptionManager: SubscriptionManager
     @Environment(\.dismiss) var dismiss
     @StateObject private var manualAssetsViewModel = ManualAssetsViewModel()
     
     @State private var screen: AddItemScreen = .hub
+    @State private var isPaywallPresented = false
+    @State private var gateAlertMessage: String?
     @State private var selectedCurrency: Currency = .TWD
     @State private var name: String = ""
     @State private var initialBalance: String = ""
@@ -96,6 +99,46 @@ struct AddAccountView: View {
         }
     }
 
+    private func attemptOpenAccountForm(_ accountType: AccountType) {
+        let snapshot = SubscriptionComplianceState.snapshot(
+            accounts: viewModel.accounts,
+            holdings: []
+        )
+        let decision = PlusFeatureGate.canCreateAccount(
+            accountType: accountType,
+            snapshot: snapshot,
+            isPlusActive: subscriptionManager.isPlusActive
+        )
+        switch decision {
+        case .allowed:
+            openAccountForm(accountType)
+        case .blocked(let reason):
+            gateAlertMessage = PlusFeatureGate.message(for: reason)
+            isPaywallPresented = true
+        }
+    }
+
+    @MainActor
+    private func validateAccountCreationGate(for accountType: AccountType) -> Bool {
+        let snapshot = SubscriptionComplianceState.snapshot(
+            accounts: viewModel.accounts,
+            holdings: []
+        )
+        let decision = PlusFeatureGate.canCreateAccount(
+            accountType: accountType,
+            snapshot: snapshot,
+            isPlusActive: subscriptionManager.isPlusActive
+        )
+        switch decision {
+        case .allowed:
+            return true
+        case .blocked(let reason):
+            gateAlertMessage = PlusFeatureGate.message(for: reason)
+            isPaywallPresented = true
+            return false
+        }
+    }
+
     private func returnToAddItemHub() {
         resetForm()
         withAnimation(.easeInOut(duration: 0.22)) {
@@ -109,7 +152,7 @@ struct AddAccountView: View {
                 switch screen {
                 case .hub:
                     AddItemHubView(
-                        onSelectAccountType: openAccountForm,
+                        onSelectAccountType: attemptOpenAccountForm,
                         onSelectManualAsset: {
                             resetForm()
                             withAnimation(.easeInOut(duration: 0.22)) {
@@ -150,6 +193,21 @@ struct AddAccountView: View {
             screen = .hub
         }
         .snapFormSheetChrome()
+        .fullScreenCover(isPresented: $isPaywallPresented) {
+            WalleafPlusPaywallView()
+        }
+        .alert(
+            "需要 Walleaf Plus",
+            isPresented: Binding(
+                get: { gateAlertMessage != nil },
+                set: { if !$0 { gateAlertMessage = nil } }
+            )
+        ) {
+            Button("了解 Plus") { isPaywallPresented = true }
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text(gateAlertMessage ?? "")
+        }
     }
 
     @ViewBuilder
@@ -200,6 +258,7 @@ struct AddAccountView: View {
     @MainActor
     private func saveAccount() async {
         guard case .accountForm(let accountType) = screen else { return }
+        guard validateAccountCreationGate(for: accountType) else { return }
         
         guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
             duplicateNameError = "請輸入帳戶名稱"
@@ -246,8 +305,9 @@ struct AddAccountView: View {
     
     @MainActor
     private func saveOtherDebtAccount() async {
-        guard case .accountForm(.otherDebt) = screen,
-              let amountValue = Decimal(string: otherDebtAmount),
+        guard case .accountForm(.otherDebt) = screen else { return }
+        guard validateAccountCreationGate(for: .otherDebt) else { return }
+        guard let amountValue = Decimal(string: otherDebtAmount),
               amountValue > 0 else { return }
         
         guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
@@ -299,8 +359,9 @@ struct AddAccountView: View {
     
     @MainActor
     private func saveDebtAccount() async {
-        guard case .accountForm(.debt) = screen,
-              let principalValue = Decimal(string: principal),
+        guard case .accountForm(.debt) = screen else { return }
+        guard validateAccountCreationGate(for: .debt) else { return }
+        guard let principalValue = Decimal(string: principal),
               let rate = Decimal(string: interestRate) else { return }
         
         // 檢查名稱是否為空

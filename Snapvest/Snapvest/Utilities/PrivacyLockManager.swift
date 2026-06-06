@@ -39,8 +39,12 @@ final class PrivacyLockManager: ObservableObject {
         guard isEnabled != enabled else {
             return .success
         }
-        
+
         if enabled {
+            guard PlusFeatureGate.canUsePrivacyLock(isPlusActive: SubscriptionManager.shared.isPlusActive) else {
+                return .failure("Face ID 隱私鎖需要 Walleaf Plus。")
+            }
+
             let result = await evaluateAuthentication(reason: "啟用 Walleaf 隱私鎖")
             switch result {
             case .success:
@@ -123,6 +127,13 @@ final class PrivacyLockManager: ObservableObject {
 
     func handleLaunchComplete() {
         // 冷啟動已在 Splash 完成驗證；此處不再切換至 PrivacyLockView，避免閃屏。
+    }
+
+    /// Plus 到期後關閉隱私鎖，避免 Free 使用者被鎖在 App 外。
+    func forceDisableForSubscriptionLapse() {
+        isEnabled = false
+        isLocked = false
+        errorMessage = nil
     }
     
     private func unlockAfterProtectedPresentation() {

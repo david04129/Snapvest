@@ -71,11 +71,16 @@ final class SubscriptionManager: ObservableObject {
     }
 
     func refreshEntitlements() async {
+        let wasPlusActive = isPlusActive
         let snapshot = await loadSubscriptionSnapshot()
         activePlusProductID = snapshot.currentProductID
         pendingPlusProductID = snapshot.pendingProductID
         plusRenewalDate = snapshot.renewalDate
         isPlusActive = snapshot.currentProductID != nil
+
+        if wasPlusActive, !isPlusActive {
+            PrivacyLockManager.shared.forceDisableForSubscriptionLapse()
+        }
     }
 
     private struct SubscriptionSnapshot {

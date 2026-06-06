@@ -17,6 +17,7 @@ struct ContentView: View {
     @EnvironmentObject private var portfolioViewModel: PortfolioViewModel
     @EnvironmentObject private var accountsViewModel: AccountsViewModel
     @EnvironmentObject private var assetsViewModel: AssetsViewModel
+    @EnvironmentObject private var subscriptionManager: SubscriptionManager
     @State private var selectedTab = 0
     @State private var privacyBlockedTab: Int?
     @State private var showsPrivacyModeTabAlert = false
@@ -29,11 +30,22 @@ struct ContentView: View {
     @State private var portfolioMutationRefreshMessage = "交易完成後會自動顯示最新結果"
     @State private var showsManualRefreshBlockedAlert = false
     @State private var manualRefreshBlockedAlertMessage = ""
+    @State private var isPaywallPresented = false
+
+    private var complianceSnapshot: PortfolioLimitSnapshot {
+        SubscriptionComplianceState.snapshot(
+            accounts: accountsViewModel.accounts,
+            holdings: assetsViewModel.aggregatedHoldings
+        )
+    }
 
     var body: some View {
         tabRootWithChrome
             .overlay(alignment: .bottomTrailing, content: demoModeBadgeOverlay)
             .overlay(content: portfolioMutationOverlay)
+            .fullScreenCover(isPresented: $isPaywallPresented) {
+                WalleafPlusPaywallView()
+            }
             .animation(.easeInOut(duration: 0.18), value: isPortfolioMutationRefreshing)
             .animation(.easeInOut(duration: 0.18), value: demoMode.isSwitching)
             .modifier(ContentViewEventModifier(
@@ -79,9 +91,17 @@ struct ContentView: View {
                 transaction.animation = nil
             }
             .safeAreaInset(edge: .top, spacing: 0) {
-                if let notice = launchSessionState.startupNotice {
-                    StartupNoticeBanner(message: notice) {
-                        launchSessionState.clearStartupNotice()
+                VStack(spacing: 0) {
+                    if let notice = launchSessionState.startupNotice {
+                        StartupNoticeBanner(message: notice) {
+                            launchSessionState.clearStartupNotice()
+                        }
+                    }
+                    if !PlusFeatureGate.shouldBypassLimits(isPlusActive: subscriptionManager.isPlusActive),
+                       complianceSnapshot.isOverFreeHoldingLimits {
+                        SubscriptionComplianceBanner(snapshot: complianceSnapshot) {
+                            isPaywallPresented = true
+                        }
                     }
                 }
             }

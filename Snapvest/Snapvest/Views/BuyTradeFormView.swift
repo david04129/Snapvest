@@ -40,9 +40,11 @@ struct BuyTradeFormView: View {
     @State private var livePriceFetchedForSymbol: String = ""
     @State private var livePriceTaskToken = 0
     @State private var editBaseline: BuyTradeEditBaseline?
+    @State private var isPaywallPresented = false
 
     private let dataService: DataServiceProtocol = MockDataService.shared
     
+    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
     @Environment(\.dismiss) private var dismiss
     
     init(
@@ -336,6 +338,9 @@ struct BuyTradeFormView: View {
             }
         } message: {
             Text(duplicateAlertMessage)
+        }
+        .fullScreenCover(isPresented: $isPaywallPresented) {
+            WalleafPlusPaywallView()
         }
     }
     
@@ -690,6 +695,34 @@ struct BuyTradeFormView: View {
                 errorMessage = "請重新選擇股票代號"
             }
             return
+        }
+
+        if !isEditMode {
+            do {
+                let snapshot = try await PlusFeatureGate.loadSnapshot(
+                    userId: userId,
+                    dataService: dataService
+                )
+                let decision = PlusFeatureGate.canBuy(
+                    assetType: assetType,
+                    symbol: selectedSymbol,
+                    snapshot: snapshot,
+                    isPlusActive: subscriptionManager.isPlusActive
+                )
+                switch decision {
+                case .allowed:
+                    break
+                case .blocked(let reason):
+                    errorMessage = PlusFeatureGate.message(for: reason)
+                    if reason != .complianceModeNoBuy {
+                        isPaywallPresented = true
+                    }
+                    return
+                }
+            } catch {
+                errorMessage = "無法驗證 Free 上限：\(error.localizedDescription)"
+                return
+            }
         }
         
         if isImportDraftMode,

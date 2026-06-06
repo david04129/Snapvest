@@ -40,8 +40,10 @@ struct AccountDetailView: View {
     @State private var showingOtherDebtRepayment = false
     @State private var showingTransactionImport = false
     @State private var showingNewTradeFlow = false
+    @State private var isPaywallPresented = false
     @State private var twdPerAccountCurrency: Decimal
     @StateObject private var importTransactionsViewModel = TransactionsViewModel()
+    @EnvironmentObject private var subscriptionManager: SubscriptionManager
     
     init(
         account: Account,
@@ -198,7 +200,11 @@ struct AccountDetailView: View {
                 HStack(spacing: 8) {
                     if account.accountType.supportsTransactionImport {
                         TransactionImportToolbarChip {
-                            showingTransactionImport = true
+                            if PlusFeatureGate.canUseImport(isPlusActive: subscriptionManager.isPlusActive) {
+                                showingTransactionImport = true
+                            } else {
+                                isPaywallPresented = true
+                            }
                         }
                     }
                     if !account.accountType.showsInlineTransactionHistory {
@@ -235,6 +241,9 @@ struct AccountDetailView: View {
                     await accountsViewModel.loadAccounts(userId: account.userId)
                 }
             }
+        }
+        .fullScreenCover(isPresented: $isPaywallPresented) {
+            WalleafPlusPaywallView()
         }
         .task {
             await loadAccountCurrencyRateIfNeeded()

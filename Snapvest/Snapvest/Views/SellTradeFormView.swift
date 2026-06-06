@@ -35,7 +35,11 @@ struct SellTradeFormView: View {
     @State private var duplicateAlertMessage = ""
     @State private var sellAccountOptions: [SellAccountOption] = []
     @State private var editBaseline: SellTradeEditBaseline?
+    @State private var limitSnapshot: PortfolioLimitSnapshot?
+    @State private var isPaywallPresented = false
     @Environment(\.dismiss) private var dismiss
+    
+    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
     
     init(
         market: TradeMarket,
@@ -134,6 +138,18 @@ struct SellTradeFormView: View {
             return base + editingTransaction.quantity
         }
         return base
+    }
+
+    private var requiresComplianceLiquidation: Bool {
+        guard let limitSnapshot else { return false }
+        return PlusFeatureGate.requiresFullLiquidationSell(
+            snapshot: limitSnapshot,
+            isPlusActive: subscriptionManager.isPlusActive
+        )
+    }
+
+    private var isQuantityLockedForCompliance: Bool {
+        requiresComplianceLiquidation && !isEditMode
     }
 
     private var showsHoldingPicker: Bool {
@@ -362,6 +378,8 @@ struct SellTradeFormView: View {
             if needsExchangeRate && exchangeRateText.isEmpty {
                 loadExchangeRate()
             }
+            await reloadLimitSnapshot()
+            applyComplianceQuantityIfNeeded()
             validateInput()
         }
         .onChange(of: selectedHoldingId) { _, _ in
@@ -371,6 +389,7 @@ struct SellTradeFormView: View {
                     await accountDetailViewModel.loadAccountData(accountId: selectedAccountId)
                     syncHoldingSelectionForScopedSymbol()
                 }
+                applyComplianceQuantityIfNeeded()
                 validateInput()
             }
         }
@@ -393,6 +412,9 @@ struct SellTradeFormView: View {
             }
         } message: {
             Text(duplicateAlertMessage)
+        }
+        .fullScreenCover(isPresented: $isPaywallPresented) {
+            WalleafPlusPaywallView()
         }
     }
     
@@ -621,9 +643,15 @@ struct SellTradeFormView: View {
     private var quantitySection: some View {
         TradeFormRow(title: "數量", icon: "number.circle.fill", color: market.themeColor) {
             VStack(alignment: .leading, spacing: 4) {
+                if isQuantityLockedForCompliance {
+                    Text("合規清倉須一次賣出全部持股")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.orange)
+                }
                 TextField("0", text: $quantityText)
                     .keyboardType(.decimalPad)
                     .tradeFormDecimalFieldStyle()
+                    .disabled(isQuantityLockedForCompliance)
                 if market == .crypto {
                     Text("加密貨幣可輸入小數，例如 0.01")
                         .font(.caption)
@@ -966,6 +994,13 @@ struct SellTradeFormView: View {
             return
         }
 
+        if isQuantityLockedForCompliance, quantityValue != maxSellQuantity {
+            let digits = market == .crypto ? 8 : 4
+            let maxLabel = maxSellQuantity.formattedQuantityInput(maxFractionDigits: digits)
+            errorMessage = "合規清倉須一次賣出全部持股（\(maxLabel)）"
+            return
+        }
+
         if showsSellAccountPicker, sellAccountOptions.isEmpty {
             errorMessage = "沒有任何帳戶持有此標的"
             return
@@ -1051,6 +1086,25 @@ struct SellTradeFormView: View {
 
     private func formattedExchangeRate(_ rate: Decimal) -> String {
         rate.formatted(fractionDigits: rate < 1 ? 4 : 2)
+    }
+
+    private func reloadLimitSnapshot() async {
+        do {
+            limitSnapshot = try await PlusFeatureGate.loadSnapshot(
+                userId: userId,
+                dataService: dataService
+            )
+        } catch {
+            limitSnapshot = SubscriptionComplianceState.snapshot(
+                accounts: accountsViewModel.accounts,
+                holdings: []
+            )
+        }
+    }
+
+    private func applyComplianceQuantityIfNeeded() {
+        guard isQuantityLockedForCompliance else { return }
+        quantityText = formatQuantity(maxSellQuantity)
     }
 }
 

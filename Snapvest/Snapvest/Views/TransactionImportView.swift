@@ -35,6 +35,9 @@ struct TransactionImportView: View {
     @State private var projectedHoldings: [ImportProjectedHolding] = []
     @State private var showingImportTutorial = false
     @State private var copyToastMessage: String?
+    @State private var isPaywallPresented = false
+    
+    @ObservedObject private var subscriptionManager = SubscriptionManager.shared
     
     private var supportsStatementPrompt: Bool {
         account.accountType != .cryptoWallet
@@ -119,6 +122,14 @@ struct TransactionImportView: View {
             .animation(.spring(response: 0.38, dampingFraction: 0.82), value: copyToastMessage)
         }
         .snapDismissKeyboardOnTap()
+        .fullScreenCover(isPresented: $isPaywallPresented) {
+            WalleafPlusPaywallView()
+        }
+        .onAppear {
+            if !PlusFeatureGate.canUseImport(isPlusActive: subscriptionManager.isPlusActive) {
+                isPaywallPresented = true
+            }
+        }
     }
     
     // MARK: - Header & Flow
@@ -906,8 +917,40 @@ struct TransactionImportView: View {
     }
     
     private func runImport() async {
+        guard PlusFeatureGate.canUseImport(isPlusActive: subscriptionManager.isPlusActive) else {
+            isPaywallPresented = true
+            return
+        }
+
         let rowsToImport = previewRows.filter(isRowScheduledForImport)
         let validation = TransactionImportValidationResult(rows: rowsToImport)
+
+        do {
+            let snapshot = try await PlusFeatureGate.loadSnapshot(userId: account.userId)
+            for row in rowsToImport {
+                guard let transaction = row.transaction, transaction.type == .buy else { continue }
+                let decision = PlusFeatureGate.canBuy(
+                    assetType: transaction.assetType,
+                    symbol: transaction.symbol,
+                    snapshot: snapshot,
+                    isPlusActive: subscriptionManager.isPlusActive
+                )
+                if case .blocked(let reason) = decision {
+                    importResultAlertTitle = "無法匯入"
+                    importResultAlertMessage = PlusFeatureGate.message(for: reason)
+                    dismissAfterImportResultAlert = false
+                    showingImportResultAlert = true
+                    return
+                }
+            }
+        } catch {
+            importResultAlertTitle = "無法匯入"
+            importResultAlertMessage = "無法驗證 Free 上限：\(error.localizedDescription)"
+            dismissAfterImportResultAlert = false
+            showingImportResultAlert = true
+            return
+        }
+
         isImporting = true
         let result = await viewModel.importValidatedTransactions(
             userId: account.userId,
