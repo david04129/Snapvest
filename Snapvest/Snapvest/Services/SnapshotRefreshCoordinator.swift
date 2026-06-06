@@ -59,6 +59,12 @@ enum SnapshotRefreshCoordinator {
                 NotificationCenter.default.post(name: .snapshotsDidUpdate, object: nil)
             }
             return true
+        } catch SupabaseError.rateLimited(let retryAfterSeconds) {
+            await MainActor.run {
+                ManualRefreshCooldown.shared.showRateLimited(retryAfterSeconds: retryAfterSeconds)
+            }
+            print("[SnapshotRefreshCoordinator] rebuild rate limited: \(retryAfterSeconds ?? -1)s")
+            return false
         } catch {
             print("[SnapshotRefreshCoordinator] rebuild failed: \(error.localizedDescription)")
             return false

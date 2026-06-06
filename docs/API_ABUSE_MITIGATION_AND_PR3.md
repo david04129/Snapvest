@@ -66,7 +66,18 @@
 
 ---
 
-## PR3（待實作）— 伺服器護欄與追蹤批量
+## Phase A：Anonymous Auth（已實作）
+
+- iOS：`SupabaseAuthService` 冷啟動 anonymous sign-in，Keychain 存 refresh token；Demo 模式不登入。
+- REST / Edge：`SupabaseConfig.applyRequestAuth` 優先帶使用者 JWT。
+- DB：`022_authenticated_rls_read_policies.sql` 允許 `authenticated` 讀公開股價表。
+- Edge：`_shared/authContext.ts`（Phase B 限流用；Phase A 不拒絕無 JWT 請求）。
+
+**驗證：** [docs/PHASE_A_ANONYMOUS_AUTH_VERIFICATION.md](./PHASE_A_ANONYMOUS_AUTH_VERIFICATION.md)
+
+---
+
+## PR3（待實作 — Phase B 起）— 伺服器護欄與追蹤批量
 
 ### 目標
 
@@ -195,3 +206,5 @@ done
 | 日期 | 內容 |
 |------|------|
 | 2026-06-02 | 建立文件；PR1／PR2 已合入 main；PR3 規格定稿待實作 |
+| 2026-06-03 | Phase A Anonymous Auth（iOS + migration 022 + authContext） |
+| 2026-06-06 | Phase B 限流 + track-symbols-batch（migration 023、iOS 429） |

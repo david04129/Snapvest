@@ -90,25 +90,24 @@ enum SupabaseExchangeRateService {
     static func fetchQuote(from: Currency, to: Currency) async -> ExchangeRateQuote? {
         guard from != to else { return ExchangeRateQuote(rate: 1, updatedAt: nil) }
         guard SupabaseConfig.isConfigured,
-              let baseUrl = SupabaseConfig.url,
-              let key = SupabaseConfig.anonKey else { return nil }
+              let baseUrl = SupabaseConfig.url else { return nil }
 
-        if let direct = await fetchDirectQuote(baseUrl: baseUrl, key: key, from: from, to: to) {
+        if let direct = await fetchDirectQuote(baseUrl: baseUrl, from: from, to: to) {
             return direct
         }
 
         // FinMind 牌告：DB 存 1 外幣 = rate TWD
-        if to == .TWD, let foreignToTwd = await fetchDirectQuote(baseUrl: baseUrl, key: key, from: from, to: .TWD) {
+        if to == .TWD, let foreignToTwd = await fetchDirectQuote(baseUrl: baseUrl, from: from, to: .TWD) {
             return foreignToTwd
         }
-        if from == .TWD, let foreignToTwd = await fetchDirectQuote(baseUrl: baseUrl, key: key, from: to, to: .TWD),
+        if from == .TWD, let foreignToTwd = await fetchDirectQuote(baseUrl: baseUrl, from: to, to: .TWD),
            foreignToTwd.rate > 0 {
             return ExchangeRateQuote(rate: 1 / foreignToTwd.rate, updatedAt: foreignToTwd.updatedAt)
         }
 
         // 交叉匯率：A→B = (A→TWD) / (B→TWD)
-        if let aToTwd = await fetchDirectQuote(baseUrl: baseUrl, key: key, from: from, to: .TWD),
-           let bToTwd = await fetchDirectQuote(baseUrl: baseUrl, key: key, from: to, to: .TWD),
+        if let aToTwd = await fetchDirectQuote(baseUrl: baseUrl, from: from, to: .TWD),
+           let bToTwd = await fetchDirectQuote(baseUrl: baseUrl, from: to, to: .TWD),
            bToTwd.rate > 0 {
             return ExchangeRateQuote(
                 rate: aToTwd.rate / bToTwd.rate,
@@ -130,7 +129,6 @@ enum SupabaseExchangeRateService {
 
     private static func fetchDirectQuote(
         baseUrl: String,
-        key: String,
         from: Currency,
         to: Currency
     ) async -> ExchangeRateQuote? {
@@ -147,8 +145,7 @@ enum SupabaseExchangeRateService {
         guard let url = components.url else { return nil }
 
         var request = URLRequest(url: url)
-        request.setValue(key, forHTTPHeaderField: "apikey")
-        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        await SupabaseConfig.applyRequestAuth(to: &request)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         do {

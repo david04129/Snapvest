@@ -484,7 +484,8 @@ Snapvest/
 │   └── output/                 # 建置產物 + archive/
 ├── .github/workflows/          # GitHub Actions 排程
 ├── docs/
-│   └── API_ABUSE_MITIGATION_AND_PR3.md  # Edge 防濫用、PR1–PR3 規格與驗證
+│   ├── API_ABUSE_MITIGATION_AND_PR3.md  # Edge 防濫用、PR1–PR3 規格
+│   └── PHASE_A_ANONYMOUS_AUTH_VERIFICATION.md  # Anonymous Auth 驗證步驟
 ├── STEP_BY_STEP_SETUP.md       # 從零設定 Supabase 教學
 └── ENGINEERING_HANDBOOK.md     # 本文件
 ```

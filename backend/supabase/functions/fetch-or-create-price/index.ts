@@ -6,6 +6,14 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { readAuthContext } from "../_shared/authContext.ts"
+import {
+  enforceRateLimits,
+  enforceWithAnonFallback,
+  FETCH_OR_CREATE_ALL_LIMITS,
+  FETCH_OR_CREATE_EXTERNAL_LIMITS,
+} from "../_shared/rateLimit.ts"
+import { allowedAssetTypes, normalizeSymbol } from "../_shared/symbolValidation.ts"
 
 const corsHeaders = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" }
 
@@ -204,17 +212,41 @@ serve(async (req) => {
       })
     }
 
-    const { assetType, symbol: rawSymbol, coingeckoId } = await req.json()
-    if (!assetType || !rawSymbol) {
-      return new Response(JSON.stringify({ error: "assetType and symbol required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } })
+    const authContext = readAuthContext(req)
+    const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!)
+
+    const allLimited = await enforceWithAnonFallback(supabase, req, authContext, FETCH_OR_CREATE_ALL_LIMITS)
+    if (allLimited) return allLimited
+
+    const body = await req.json()
+    if (Array.isArray(body)) {
+      return new Response(JSON.stringify({ error: "body must be a single symbol object" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      })
     }
 
-    const symbol =
-      assetType === "stock_us" || assetType === "crypto"
-        ? String(rawSymbol).trim().toUpperCase()
-        : String(rawSymbol).trim()
+    const { assetType, symbol: rawSymbol, coingeckoId } = body ?? {}
+    if (typeof assetType !== "string" || typeof rawSymbol !== "string") {
+      return new Response(JSON.stringify({ error: "assetType and symbol required" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      })
+    }
+    if (!allowedAssetTypes.has(assetType)) {
+      return new Response(JSON.stringify({ error: "unsupported assetType" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      })
+    }
 
-    const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!)
+    const symbol = normalizeSymbol(assetType, rawSymbol)
+    if (!symbol) {
+      return new Response(JSON.stringify({ error: "invalid symbol" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      })
+    }
 
     const { data: existing } = await supabase
       .from("asset_price_snapshots")
@@ -235,6 +267,14 @@ serve(async (req) => {
         { headers: { ...corsHeaders, "Content-Type": "application/json" } },
       )
     }
+
+    const externalLimited = await enforceRateLimits(
+      supabase,
+      req,
+      authContext,
+      FETCH_OR_CREATE_EXTERNAL_LIMITS,
+    )
+    if (externalLimited) return externalLimited
 
     let price: number | null = null
     let priceSource = "yahoo"

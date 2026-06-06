@@ -12,12 +12,27 @@ enum TrackedSymbolSync {
         guard SupabaseConfig.isConfigured else { return }
 
         let uniqueSymbols = unique(symbols)
-        for symbol in uniqueSymbols {
+        guard !uniqueSymbols.isEmpty else { return }
+
+        for chunk in symbolChunks(uniqueSymbols, size: SupabaseTrackedSymbolService.maxBatchSymbols) {
             do {
-                try await SupabaseTrackedSymbolService.track(symbol)
+                try await SupabaseTrackedSymbolService.trackBatch(chunk)
+            } catch SupabaseTrackedSymbolError.rateLimited(let retryAfterSeconds) {
+                #if DEBUG
+                print("[TrackedSymbolSync] rate limited, retryAfter=\(retryAfterSeconds ?? -1)s")
+                #endif
+                let delaySeconds = max(retryAfterSeconds ?? 5, 1)
+                try? await Task.sleep(nanoseconds: UInt64(delaySeconds) * 1_000_000_000)
+                do {
+                    try await SupabaseTrackedSymbolService.trackBatch(chunk)
+                } catch {
+                    #if DEBUG
+                    print("[TrackedSymbolSync] batch retry failed: \(error.localizedDescription)")
+                    #endif
+                }
             } catch {
                 #if DEBUG
-                print("[TrackedSymbolSync] failed \(symbol.assetType.rawValue)/\(symbol.symbol): \(error.localizedDescription)")
+                print("[TrackedSymbolSync] batch failed: \(error.localizedDescription)")
                 #endif
             }
         }
@@ -36,5 +51,17 @@ enum TrackedSymbolSync {
             result.append(SymbolInfo(assetType: symbol.assetType, symbol: normalized))
         }
         return result
+    }
+
+    private static func symbolChunks(_ symbols: [SymbolInfo], size: Int) -> [[SymbolInfo]] {
+        guard size > 0, !symbols.isEmpty else { return [] }
+        var chunks: [[SymbolInfo]] = []
+        var index = 0
+        while index < symbols.count {
+            let end = min(index + size, symbols.count)
+            chunks.append(Array(symbols[index..<end]))
+            index = end
+        }
+        return chunks
     }
 }

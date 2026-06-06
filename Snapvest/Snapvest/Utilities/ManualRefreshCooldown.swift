@@ -36,6 +36,14 @@ final class ManualRefreshCooldown: ObservableObject {
         alertMessage = nil
     }
 
+    func showRateLimited(retryAfterSeconds: Int? = nil) {
+        if let retryAfterSeconds, retryAfterSeconds > 0 {
+            alertMessage = "雲端忙碌，請 \(retryAfterSeconds) 秒後再試"
+        } else {
+            alertMessage = "雲端忙碌，請稍後再試"
+        }
+    }
+
     private func secondsUntilAllowed() -> Int? {
         guard let last = lastRefreshStartedAt else { return nil }
         let remaining = Self.minimumInterval - Date().timeIntervalSince(last)

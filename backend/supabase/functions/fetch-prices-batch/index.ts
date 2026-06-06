@@ -3,6 +3,11 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { readAuthContext } from "../_shared/authContext.ts"
+import {
+  enforceWithAnonFallback,
+  FETCH_PRICES_BATCH_LIMITS,
+} from "../_shared/rateLimit.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -104,6 +109,20 @@ serve(async (req) => {
       })
     }
 
+    // Phase B：per-user 限流（無 JWT 時 anon + 更嚴兜底）
+    const authContext = readAuthContext(req)
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    )
+    const rateLimited = await enforceWithAnonFallback(
+      supabase,
+      req,
+      authContext,
+      FETCH_PRICES_BATCH_LIMITS,
+    )
+    if (rateLimited) return rateLimited
+
     const body = await req.json()
     const rawSymbols = Array.isArray(body?.symbols) ? body.symbols as SymbolInput[] : []
     if (rawSymbols.length === 0 || rawSymbols.length > maxSymbols) {
@@ -160,11 +179,6 @@ serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       })
     }
-
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-    )
 
     const assetTypes = [...new Set(symbols.map((s) => s.assetType))]
     const symbolValues = [...new Set(symbols.map((s) => s.symbol))]

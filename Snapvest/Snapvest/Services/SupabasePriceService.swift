@@ -59,12 +59,12 @@ enum SupabaseConfig: Sendable {
     /// 選填：legacy anon JWT（`eyJ…`），供 Edge Function 的 Authorization header
     nonisolated(unsafe) static var anonJwt: String?
     
-    static var isConfigured: Bool {
+    nonisolated static var isConfigured: Bool {
         url != nil && !(url ?? "").isEmpty && anonKey != nil && !(anonKey ?? "").isEmpty
     }
     
     /// Edge Function 可用的 Bearer token。Publishable key 不是 JWT，不能放進 Authorization。
-    static var edgeFunctionAuthorizationToken: String? {
+    nonisolated static var edgeFunctionAuthorizationToken: String? {
         if let jwt = anonJwt?.trimmingCharacters(in: .whitespacesAndNewlines), jwt.hasPrefix("eyJ") {
             return jwt
         }
@@ -74,10 +74,21 @@ enum SupabaseConfig: Sendable {
         return nil
     }
     
-    static func applyEdgeFunctionAuth(to request: inout URLRequest) {
+    nonisolated static func applyEdgeFunctionAuth(to request: inout URLRequest) {
         guard let apikey = anonKey else { return }
         request.setValue(apikey, forHTTPHeaderField: "apikey")
         if let token = edgeFunctionAuthorizationToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+    }
+
+    /// Phase A：優先帶 Anonymous Auth 使用者 JWT；Demo／未登入時 fallback legacy anon JWT。
+    nonisolated static func applyRequestAuth(to request: inout URLRequest) async {
+        guard let apikey = anonKey else { return }
+        request.setValue(apikey, forHTTPHeaderField: "apikey")
+        if let userToken = await SupabaseAuthService.shared.bearerAccessToken() {
+            request.setValue("Bearer \(userToken)", forHTTPHeaderField: "Authorization")
+        } else if let token = edgeFunctionAuthorizationToken {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
     }
@@ -103,12 +114,10 @@ struct SupabasePriceService {
     /// 取得後端價格最後更新時間
     static func fetchLastUpdatedAt() async -> Date? {
         guard SupabaseConfig.isConfigured,
-              let url = URL(string: "\(SupabaseConfig.url!)/rest/v1/price_update_metadata?id=eq.global&select=last_updated_at"),
-              let key = SupabaseConfig.anonKey else { return nil }
+              let url = URL(string: "\(SupabaseConfig.url!)/rest/v1/price_update_metadata?id=eq.global&select=last_updated_at") else { return nil }
         
         var req = URLRequest(url: url)
-        req.setValue(key, forHTTPHeaderField: "apikey")
-        req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        await SupabaseConfig.applyRequestAuth(to: &req)
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("return=representation", forHTTPHeaderField: "Prefer")
         
@@ -246,7 +255,7 @@ struct SupabasePriceService {
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        SupabaseConfig.applyEdgeFunctionAuth(to: &request)
+        await SupabaseConfig.applyRequestAuth(to: &request)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.httpBody = try JSONEncoder().encode(
@@ -263,6 +272,9 @@ struct SupabasePriceService {
         #endif
 
         let (data, response) = try await URLSession.shared.data(for: request)
+        if let http = response as? HTTPURLResponse, http.statusCode == 429 {
+            throw SupabaseError.rateLimited(retryAfterSeconds: Self.parseRetryAfterSeconds(data: data, response: http))
+        }
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             #if DEBUG
             let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
@@ -400,8 +412,7 @@ struct SupabasePriceService {
     /// 批量取得目前價；依 chunk 呼叫 Edge batch，僅對仍缺價的 symbol REST fallback。
     static func fetchPrices(symbols: [SymbolInfo]) async throws -> [AssetPriceSnapshot] {
         guard SupabaseConfig.isConfigured,
-              let baseUrl = SupabaseConfig.url,
-              let key = SupabaseConfig.anonKey else { throw SupabaseError.notConfigured }
+              let baseUrl = SupabaseConfig.url else { throw SupabaseError.notConfigured }
 
         let unique = deduplicatedSymbolInfos(symbols)
         guard !unique.isEmpty else { return [] }
@@ -436,7 +447,7 @@ struct SupabasePriceService {
             let rows = await withTaskGroup(of: SupabasePriceRow?.self) { group in
                 for symbolInfo in restTargets {
                     group.addTask {
-                        await fetchPriceRow(baseUrl: baseUrl, key: key, symbolInfo: symbolInfo)
+                        await fetchPriceRow(baseUrl: baseUrl, symbolInfo: symbolInfo)
                     }
                 }
                 var out: [SupabasePriceRow] = []
@@ -489,37 +500,66 @@ struct SupabasePriceService {
     }
 
     private static func createSnapshotViaFetchOrCreate(symbolInfo: SymbolInfo) async -> AssetPriceSnapshot? {
+        for attempt in 0..<2 {
+            switch await createSnapshotViaFetchOrCreateAttempt(symbolInfo: symbolInfo) {
+            case .success(let snapshot):
+                return snapshot
+            case .rateLimited(let retryAfterSeconds):
+                guard attempt == 0 else { return nil }
+                let delaySeconds = max(retryAfterSeconds ?? 5, 1)
+                try? await Task.sleep(nanoseconds: UInt64(delaySeconds) * 1_000_000_000)
+            case .failed:
+                return nil
+            }
+        }
+        return nil
+    }
+
+    private enum FetchOrCreateAttemptResult {
+        case success(AssetPriceSnapshot)
+        case rateLimited(retryAfterSeconds: Int?)
+        case failed
+    }
+
+    private static func createSnapshotViaFetchOrCreateAttempt(symbolInfo: SymbolInfo) async -> FetchOrCreateAttemptResult {
         let coingeckoId = symbolInfo.assetType == .crypto
             ? SymbolListService.coingeckoId(forCryptoSymbol: symbolInfo.symbol)
             : nil
-        guard let price = try? await fetchOrCreatePrice(
-            assetType: symbolInfo.assetType,
-            symbol: symbolInfo.symbol,
-            coingeckoId: coingeckoId
-        ), price > 0 else {
-            return nil
+        do {
+            guard let price = try await fetchOrCreatePrice(
+                assetType: symbolInfo.assetType,
+                symbol: symbolInfo.symbol,
+                coingeckoId: coingeckoId
+            ), price > 0 else {
+                return .failed
+            }
+            let now = Date()
+            return .success(
+                AssetPriceSnapshot(
+                    assetType: symbolInfo.assetType,
+                    symbol: symbolInfo.symbol,
+                    currency: symbolInfo.assetType.quoteCurrency,
+                    currentPrice: price,
+                    previousPrice: nil,
+                    currentCloseDate: Calendar.current.startOfDay(for: now),
+                    currentUpdatedAt: now
+                )
+            )
+        } catch SupabaseError.rateLimited(let retryAfterSeconds) {
+            return .rateLimited(retryAfterSeconds: retryAfterSeconds)
+        } catch {
+            return .failed
         }
-        let now = Date()
-        return AssetPriceSnapshot(
-            assetType: symbolInfo.assetType,
-            symbol: symbolInfo.symbol,
-            currency: symbolInfo.assetType.quoteCurrency,
-            currentPrice: price,
-            previousPrice: nil,
-            currentCloseDate: Calendar.current.startOfDay(for: now),
-            currentUpdatedAt: now
-        )
     }
     
-    private static func fetchPriceRow(baseUrl: String, key: String, symbolInfo: SymbolInfo) async -> SupabasePriceRow? {
+    private static func fetchPriceRow(baseUrl: String, symbolInfo: SymbolInfo) async -> SupabasePriceRow? {
         let querySymbol = normalizeSymbol(assetType: symbolInfo.assetType, symbol: symbolInfo.symbol)
         guard let encoded = querySymbol.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
               let url = URL(string: "\(baseUrl)/rest/v1/asset_price_snapshots?asset_type=eq.\(symbolInfo.assetType.rawValue)&symbol=eq.\(encoded)&select=*") else {
             return nil
         }
         var req = URLRequest(url: url)
-        req.setValue(key, forHTTPHeaderField: "apikey")
-        req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        await SupabaseConfig.applyRequestAuth(to: &req)
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
         do {
@@ -545,12 +585,10 @@ struct SupabasePriceService {
     /// 單檔取得股價（REST 完整列）
     static func fetchSingle(assetType: AssetType, symbol: String) async throws -> Decimal? {
         guard SupabaseConfig.isConfigured,
-              let baseUrl = SupabaseConfig.url,
-              let key = SupabaseConfig.anonKey else { throw SupabaseError.notConfigured }
+              let baseUrl = SupabaseConfig.url else { throw SupabaseError.notConfigured }
         let normalized = normalizeSymbol(assetType: assetType, symbol: symbol)
         let row = await fetchPriceRow(
             baseUrl: baseUrl,
-            key: key,
             symbolInfo: SymbolInfo(assetType: assetType, symbol: normalized)
         )
         return row.flatMap { SupabasePriceRow.toAssetPriceSnapshot($0)?.displayPrice }
@@ -563,8 +601,7 @@ struct SupabasePriceService {
 
     static func fetchHistoricalPrices(assetType: AssetType, symbol: String, startDate: Date, endDate: Date) async throws -> [Price] {
         guard SupabaseConfig.isConfigured,
-              let baseUrl = SupabaseConfig.url,
-              let key = SupabaseConfig.anonKey else { throw SupabaseError.notConfigured }
+              let baseUrl = SupabaseConfig.url else { throw SupabaseError.notConfigured }
 
         let normalized = normalizeSymbol(assetType: assetType, symbol: symbol)
         let startDay = SupabaseRESTTimestampParser.closeDateString(from: startDate)
@@ -575,8 +612,7 @@ struct SupabasePriceService {
         }
 
         var request = URLRequest(url: url)
-        request.setValue(key, forHTTPHeaderField: "apikey")
-        request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        await SupabaseConfig.applyRequestAuth(to: &request)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -607,7 +643,7 @@ struct SupabasePriceService {
         
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
-        SupabaseConfig.applyEdgeFunctionAuth(to: &req)
+        await SupabaseConfig.applyRequestAuth(to: &req)
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try JSONEncoder().encode(
             FetchOrCreateBody(
@@ -619,6 +655,9 @@ struct SupabasePriceService {
         
         let (data, resp) = try await URLSession.shared.data(for: req)
         guard let http = resp as? HTTPURLResponse else { return nil }
+        if http.statusCode == 429 {
+            throw SupabaseError.rateLimited(retryAfterSeconds: parseRetryAfterSeconds(data: data, response: http))
+        }
         guard http.statusCode == 200 else {
             #if DEBUG
             let body = String(data: data, encoding: .utf8) ?? ""
@@ -637,11 +676,42 @@ struct SupabasePriceService {
         if let s = value as? String, let d = Decimal(string: s) { return d }
         return nil
     }
+
+    private static func parseRetryAfterSeconds(data: Data, response: HTTPURLResponse) -> Int? {
+        if let header = response.value(forHTTPHeaderField: "Retry-After")?.trimmingCharacters(in: .whitespacesAndNewlines),
+           let seconds = Int(header) {
+            return seconds
+        }
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let seconds = json["retryAfterSeconds"] as? Int {
+                return seconds
+            }
+            if let seconds = json["retry_after_seconds"] as? Int {
+                return seconds
+            }
+        }
+        return nil
+    }
 }
 
-enum SupabaseError: Error {
+enum SupabaseError: LocalizedError {
     case notConfigured
     case requestFailed
+    case rateLimited(retryAfterSeconds: Int?)
+
+    var errorDescription: String? {
+        switch self {
+        case .notConfigured:
+            return "Supabase 未設定"
+        case .requestFailed:
+            return "雲端請求失敗"
+        case .rateLimited(let retryAfterSeconds):
+            if let retryAfterSeconds, retryAfterSeconds > 0 {
+                return "雲端忙碌，請 \(retryAfterSeconds) 秒後再試"
+            }
+            return "雲端忙碌，請稍後再試"
+        }
+    }
 }
 
 /// 支援 Postgres 回傳數字或字串格式的價格

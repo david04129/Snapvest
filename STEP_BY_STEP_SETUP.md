@@ -55,7 +55,16 @@
 2. 複製全部內容
 3. 貼到 Supabase SQL Editor，點 **Run**
 
-### 2-4 檢查結果
+### 2-4 啟用 Anonymous Sign-In（Phase A）
+
+App 會為每台裝置建立匿名 Supabase 使用者（JWT）。
+
+1. Dashboard → **Authentication** → **Providers**
+2. **Anonymous Sign-Ins** → **Enable** → Save
+3. 在 SQL Editor 執行 `backend/supabase/migrations/022_authenticated_rls_read_policies.sql`
+4. 完整驗證：[docs/PHASE_A_ANONYMOUS_AUTH_VERIFICATION.md](./docs/PHASE_A_ANONYMOUS_AUTH_VERIFICATION.md)
+
+### 2-5 檢查結果
 
 1. 左側點 **Table Editor**
 2. 應該能看到：

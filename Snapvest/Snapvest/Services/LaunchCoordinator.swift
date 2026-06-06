@@ -38,13 +38,17 @@ enum LaunchCoordinator {
             }
             return .success
         }
+
+        let isDemoData = (resolvedDataService as? MockDataService)?.isDemoModeActive == true
+        if !isDemoData {
+            await SupabaseAuthService.shared.warmUp()
+        }
         
         let needsRebuild = await needsSnapshotRebuild(userId: userId, dataService: resolvedDataService)
         let shouldSyncPrices = await SupabasePriceService.shouldFetchPrices(
             userId: userId,
             dataService: resolvedDataService
         )
-        let isDemoData = (resolvedDataService as? MockDataService)?.isDemoModeActive == true
         let shouldPullCloudPrices = SupabaseConfig.isConfigured && !isDemoData
         
         var degradedNotice: String?

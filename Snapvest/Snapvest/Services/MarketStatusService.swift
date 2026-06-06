@@ -36,7 +36,7 @@ enum MarketStatusService {
         
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
-        SupabaseConfig.applyEdgeFunctionAuth(to: &request)
+        await SupabaseConfig.applyRequestAuth(to: &request)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         
         do {
