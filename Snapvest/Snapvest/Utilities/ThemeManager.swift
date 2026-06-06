@@ -73,18 +73,28 @@ final class ThemeManager: ObservableObject {
     private init() {
         isDarkMode = UserDefaults.standard.bool(forKey: Self.darkModeStorageKey)
         isRedUpGreenDown = UserDefaults.standard.bool(forKey: Self.redUpStorageKey)
-        if let raw = UserDefaults.standard.string(forKey: Self.styleStorageKey),
-           let style = ThemeStyleID(rawValue: raw) {
-            selectedStyle = style
+        if AppFeatureFlags.showsThemeStylePicker {
+            if let raw = UserDefaults.standard.string(forKey: Self.styleStorageKey),
+               let style = ThemeStyleID(rawValue: raw) {
+                selectedStyle = style
+            } else {
+                selectedStyle = .steadyFinance
+            }
+            isCustomThemeActive = UserDefaults.standard.bool(forKey: Self.customThemeActiveKey)
+            lightCustomOverrides = ThemeCustomColorStore.load(isDarkMode: false)
+            darkCustomOverrides = ThemeCustomColorStore.load(isDarkMode: true)
         } else {
             selectedStyle = .steadyFinance
+            isCustomThemeActive = false
+            lightCustomOverrides = ThemeCustomColorOverrides()
+            darkCustomOverrides = ThemeCustomColorOverrides()
         }
-        isCustomThemeActive = UserDefaults.standard.bool(forKey: Self.customThemeActiveKey)
-        lightCustomOverrides = ThemeCustomColorStore.load(isDarkMode: false)
-        darkCustomOverrides = ThemeCustomColorStore.load(isDarkMode: true)
     }
 
     var palette: ThemePalette {
+        guard AppFeatureFlags.showsThemeStylePicker else {
+            return ThemeStyleCatalog.palette(style: .steadyFinance, isDarkMode: isDarkMode)
+        }
         let base = ThemeStyleCatalog.palette(style: selectedStyle, isDarkMode: isDarkMode)
         guard isCustomThemeActive else { return base }
         let custom = isDarkMode ? darkCustomOverrides : lightCustomOverrides

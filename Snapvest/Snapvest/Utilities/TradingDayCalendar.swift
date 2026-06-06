@@ -8,9 +8,9 @@
 import Foundation
 
 enum TradingDayCalendar {
-    private static let posix = Locale(identifier: "en_US_POSIX")
+    nonisolated private static let posix = Locale(identifier: "en_US_POSIX")
 
-    static func timeZone(for assetType: AssetType) -> TimeZone {
+    nonisolated static func timeZone(for assetType: AssetType) -> TimeZone {
         switch assetType {
         case .stockUS:
             return TimeZone(identifier: "America/New_York") ?? .current
@@ -19,7 +19,7 @@ enum TradingDayCalendar {
         }
     }
 
-    static func dateKey(for date: Date, assetType: AssetType) -> String {
+    nonisolated static func dateKey(for date: Date, assetType: AssetType) -> String {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = posix
@@ -28,7 +28,7 @@ enum TradingDayCalendar {
         return formatter.string(from: startOfDay(date, assetType: assetType))
     }
 
-    static func date(fromKey key: String, assetType: AssetType) -> Date? {
+    nonisolated static func date(fromKey key: String, assetType: AssetType) -> Date? {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = posix
@@ -37,11 +37,11 @@ enum TradingDayCalendar {
         return formatter.date(from: key).map { startOfDay($0, assetType: assetType) }
     }
 
-    static func marketTodayKey(assetType: AssetType, now: Date = Date()) -> String {
+    nonisolated static func marketTodayKey(assetType: AssetType, now: Date = Date()) -> String {
         dateKey(for: now, assetType: assetType)
     }
 
-    static func startOfDay(_ date: Date, assetType: AssetType) -> Date {
+    nonisolated static func startOfDay(_ date: Date, assetType: AssetType) -> Date {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = timeZone(for: assetType)
         return calendar.startOfDay(for: date)

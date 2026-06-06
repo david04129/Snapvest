@@ -33,20 +33,6 @@ enum SymbolPriceValidator {
         let unique = SupabasePriceService.deduplicatedSymbolInfos(symbols)
         guard !unique.isEmpty else { return [:] }
 
-        if MockDataService.shared.isDemoModeActive {
-            var failures: [String: String] = [:]
-            for info in unique {
-                if let message = await validatePriceAvailable(
-                    assetType: info.assetType,
-                    symbol: info.symbol,
-                    transactionType: .buy
-                ) {
-                    failures[priceValidationKey(assetType: info.assetType, symbol: info.symbol)] = message
-                }
-            }
-            return failures
-        }
-
         guard SupabaseConfig.isConfigured else {
             let message = "無法連線驗證股價，請確認網路與 Supabase 設定"
             return Dictionary(

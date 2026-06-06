@@ -623,6 +623,14 @@ final class PieChartGroupingStore: ObservableObject {
         persistDisplayMode()
     }
 
+    /// 直接設定群組／明細（編輯群組進出時還原用；`persist` 為 false 時僅暫時切換）
+    func setDisplayMode(_ mode: PieChartGroupingDisplayMode, persist: Bool = true, rebuildChart: Bool = true) {
+        guard displayMode != mode else { return }
+        displayMode = mode
+        if persist { persistDisplayMode() }
+        if rebuildChart { pieChartRebuildGeneration += 1 }
+    }
+
     /// 群組 ↔ 明細：與首頁圓餅圖、績效圖共用（含切換冷卻與圓餅重建）
     func requestDisplayModeToggle() {
         guard !isGroupingTransitioning else { return }

@@ -31,11 +31,16 @@ struct SettingsView: View {
     @State private var isRestoreConfirmationPresented = false
     @State private var isRestoringBackup = false
     @State private var backupStatusMessage: String?
+    @State private var isBackupRestoreLoadingVisible = false
+    @State private var backupRestoreLoadingTitle = ""
+    @State private var backupRestoreLoadingMessage = ""
     @State private var editingCustomForDarkMode: Bool = false
     @State private var themeCustomCopyMessage: String?
     #if DEBUG
     @State private var isValidatingSnapshots = false
     @State private var snapshotValidationMessage: String?
+    @State private var isImportingPreviousClose = false
+    @State private var previousCloseImportMessage: String?
     #endif
     
     var body: some View {
@@ -47,11 +52,13 @@ struct SettingsView: View {
                     settingsSection(title: "顯示") {
                         themeModeRow
 
-                        Divider()
-                            .padding(.leading, 56)
+                        if AppFeatureFlags.showsThemeStylePicker {
+                            Divider()
+                                .padding(.leading, 56)
 
-                        themeStyleRow
-                        themeCustomSection
+                            themeStyleRow
+                            themeCustomSection
+                        }
 
                         Divider()
                             .padding(.leading, 56)
@@ -74,8 +81,15 @@ struct SettingsView: View {
                     }
 
                     #if DEBUG
-                    settingsSection(title: "開發") {
-                        snapshotConsistencyRow
+                    if AppFeatureFlags.showsDeveloperSettings {
+                        settingsSection(title: "開發") {
+                            snapshotConsistencyRow
+
+                            Divider()
+                                .padding(.leading, 56)
+
+                            importPreviousCloseRow
+                        }
                     }
                     #endif
                     
@@ -132,6 +146,17 @@ struct SettingsView: View {
                 Button("知道了", role: .cancel) {}
             } message: {
                 Text(snapshotValidationMessage ?? "")
+            }
+            .alert(
+                "匯入昨日收盤價",
+                isPresented: Binding(
+                    get: { previousCloseImportMessage != nil },
+                    set: { if !$0 { previousCloseImportMessage = nil } }
+                )
+            ) {
+                Button("知道了", role: .cancel) {}
+            } message: {
+                Text(previousCloseImportMessage ?? "")
             }
             #endif
             .sheet(isPresented: $isBaseCurrencySheetPresented) {
@@ -206,6 +231,16 @@ struct SettingsView: View {
                     editingCustomForDarkMode = theme.isDarkMode
                 }
             }
+            .overlay {
+                if isBackupRestoreLoadingVisible {
+                    OperationLoadingOverlay(
+                        title: backupRestoreLoadingTitle,
+                        message: backupRestoreLoadingMessage
+                    )
+                    .transition(.opacity)
+                }
+            }
+            .animation(.easeInOut(duration: 0.18), value: isBackupRestoreLoadingVisible)
         }
     }
     
@@ -736,7 +771,7 @@ struct SettingsView: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundColor(.primaryText)
                     
-                    Text(demoMode.isEnabled ? "目前正在使用本機沙盒資料" : "用一組示範資料體驗完整功能")
+                    Text(demoMode.isEnabled ? "示範資料僅在記憶體中，不會寫入本機" : "用一組示範資料體驗完整功能（雲端股價）")
                         .font(.caption)
                         .foregroundColor(.secondaryText)
                 }
@@ -848,6 +883,60 @@ struct SettingsView: View {
         .disabled(isValidatingSnapshots)
     }
 
+    private var importPreviousCloseRow: some View {
+        Button {
+            Task { await runPreviousCloseImport() }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "arrow.down.to.line.compact")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.appPrimary)
+                    .frame(width: 30, height: 30)
+                    .background(Color.appPrimary.opacity(0.14))
+                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("匯入昨日收盤價")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.primaryText)
+
+                    Text("從雲端 history 對齊各持股日漲跌基準昨收")
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                }
+
+                Spacer(minLength: 12)
+
+                if isImportingPreviousClose {
+                    ProgressView()
+                        .tint(.appPrimary)
+                } else {
+                    Text("執行")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.appPrimary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(Color.appPrimary.opacity(0.12))
+                        .clipShape(Capsule())
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 13)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(isImportingPreviousClose)
+    }
+
+    @MainActor
+    private func runPreviousCloseImport() async {
+        guard !isImportingPreviousClose else { return }
+        isImportingPreviousClose = true
+        let result = await PreviousCloseImportService.importForPortfolio(userId: AppUser.id)
+        isImportingPreviousClose = false
+        previousCloseImportMessage = result.summaryMessage
+    }
+
     @MainActor
     private func runSnapshotConsistencyValidation() async {
         guard !isValidatingSnapshots else { return }
@@ -878,10 +967,15 @@ struct SettingsView: View {
         defer { isPreparingBackup = false }
 
         do {
-            let backup = try BackupService.makeBackup(userId: AppUser.id)
-            backupExportDocument = BackupDocument(data: try BackupService.encode(backup))
-            backupExportFilename = BackupService.defaultFilename(createdAt: backup.createdAt)
-            isBackupExporterPresented = true
+            try await runBackupRestoreOperation(
+                title: "正在準備備份…",
+                message: "匯出帳戶、交易與偏好設定"
+            ) {
+                let backup = try BackupService.makeBackup(userId: AppUser.id)
+                backupExportDocument = BackupDocument(data: try BackupService.encode(backup))
+                backupExportFilename = BackupService.defaultFilename(createdAt: backup.createdAt)
+                isBackupExporterPresented = true
+            }
         } catch {
             backupStatusMessage = "備份失敗：\(error.localizedDescription)"
         }
@@ -900,26 +994,44 @@ struct SettingsView: View {
     private func restorePendingBackup() async {
         guard let pendingBackupRestore else { return }
         isRestoringBackup = true
-        NotificationCenter.default.post(
-            name: .portfolioMutationRefreshBegan,
-            object: nil,
-            userInfo: [
-                PortfolioMutationRefreshUserInfoKey.title: "正在還原備份…",
-                PortfolioMutationRefreshUserInfoKey.message: "完成後會自動顯示備份中的資料"
-            ]
-        )
         defer {
             isRestoringBackup = false
             self.pendingBackupRestore = nil
-            NotificationCenter.default.post(name: .portfolioMutationRefreshEnded, object: nil)
         }
 
         do {
-            try await BackupService.restore(pendingBackupRestore, to: AppUser.id)
+            try await runBackupRestoreOperation(
+                title: "正在還原備份…",
+                message: "完成後會自動顯示備份中的資料"
+            ) {
+                try await BackupService.restore(pendingBackupRestore, to: AppUser.id)
+            }
             backupStatusMessage = "還原完成。首頁、帳戶與資產資料已重新整理。"
         } catch {
             backupStatusMessage = "還原失敗：\(error.localizedDescription)"
         }
+    }
+
+    private func runBackupRestoreOperation(
+        title: String,
+        message: String,
+        operation: () async throws -> Void
+    ) async rethrows {
+        backupRestoreLoadingTitle = title
+        backupRestoreLoadingMessage = message
+        isBackupRestoreLoadingVisible = true
+        let start = ContinuousClock.now
+
+        do {
+            try await operation()
+        } catch {
+            await MinimumDurationLoading.waitIfNeeded(since: start)
+            isBackupRestoreLoadingVisible = false
+            throw error
+        }
+
+        await MinimumDurationLoading.waitIfNeeded(since: start)
+        isBackupRestoreLoadingVisible = false
     }
 
     private func formatBackupDate(_ date: Date) -> String {

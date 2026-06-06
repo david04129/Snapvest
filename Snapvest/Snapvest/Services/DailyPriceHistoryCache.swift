@@ -28,7 +28,8 @@ enum DailyPriceHistoryCache {
 
         let calendar = Calendar.current
         let end = calendar.startOfDay(for: now)
-        let start = calendar.date(byAdding: .day, value: -21, to: end) ?? end
+        let lookbackDays = DemoHistoryFetchPolicy.previousCloseLookbackDays
+        let start = calendar.date(byAdding: .day, value: -lookbackDays, to: end) ?? end
         guard let fetched = try? await SupabasePriceService.fetchBatchPrices(
             symbols: symbols,
             historyStartDate: start,

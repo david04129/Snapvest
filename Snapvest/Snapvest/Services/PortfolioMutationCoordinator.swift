@@ -145,6 +145,10 @@ enum PortfolioMutationCoordinator {
                     priceService: PriceService(dataService: dataService)
                 )
                 await TrackedSymbolSync.sync(symbols: request.affectedSymbols)
+                _ = await DailyPreviousCloseSync.apply(
+                    for: request.affectedSymbols,
+                    dataService: dataService
+                )
                 dataService.persistLocalStore(for: request.userId)
                 return
             } catch {

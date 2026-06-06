@@ -264,18 +264,29 @@ serve(async (req) => {
     }
 
     const fx: Record<string, number> = { "TWD:TWD": 1 }
+    const fxUpdatedAt: Record<string, string | null> = {}
     if (Object.values(currencies).includes("USD")) {
       const { data } = await supabase
         .from("exchange_rates")
-        .select("from_currency,to_currency,rate,previous_rate")
+        .select("from_currency,to_currency,rate,previous_rate,updated_at,previous_updated_at")
         .eq("from_currency", "USD")
         .eq("to_currency", "TWD")
         .limit(1)
         .maybeSingle()
 
+      const hasCurrentRate = decimalNumber(data?.rate) != null
       const rate = decimalNumber(data?.rate) ?? decimalNumber(data?.previous_rate)
       if (rate != null) {
         fx["USD:TWD"] = rate
+        const updatedAt =
+          hasCurrentRate && typeof data?.updated_at === "string"
+            ? data.updated_at
+            : typeof data?.previous_updated_at === "string"
+              ? data.previous_updated_at
+              : typeof data?.updated_at === "string"
+                ? data.updated_at
+                : null
+        fxUpdatedAt["USD:TWD"] = updatedAt
       }
     }
 
@@ -291,6 +302,7 @@ serve(async (req) => {
         currentUpdatedAt,
         currencies,
         fx,
+        fxUpdatedAt,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     )

@@ -26,26 +26,7 @@ enum AssetsCurrencyDisplay: String, CaseIterable, Identifiable {
 enum AssetCategoryFilterSelection {
     static let allCategories: Set<AssetType> = [.stockTW, .stockUS, .crypto]
     static let displayOrder: [AssetType] = [.stockTW, .stockUS, .crypto]
-    
-    /// 空集合或全選 → 不篩選（顯示全部）
-    static func activeFilter(from selection: Set<AssetType>) -> Set<AssetType> {
-        if selection.isEmpty || selection == allCategories {
-            return []
-        }
-        return selection
-    }
-    
-    static func toggle(_ type: AssetType, in selection: inout Set<AssetType>) {
-        if selection.contains(type) {
-            selection.remove(type)
-        } else {
-            selection.insert(type)
-        }
-        if selection == allCategories {
-            selection.removeAll()
-        }
-    }
-    
+
     static func categorySortOrder(_ type: AssetType) -> Int {
         displayOrder.firstIndex(of: type) ?? 99
     }
@@ -430,7 +411,6 @@ struct AssetCategorySummariesSection: View {
     let twdPerBaseCurrency: Decimal
     let ratioType: HoldingRatioType
     let currencyDisplay: AssetsCurrencyDisplay
-    let selectedCategories: Set<AssetType>
     let marketStatus: MarketStatusSnapshot?
     let onCategoryTap: (AssetType) -> Void
     
@@ -459,7 +439,6 @@ struct AssetCategorySummariesSection: View {
                     twdPerBaseCurrency: twdPerBaseCurrency,
                     currencyDisplay: currencyDisplay,
                     marketStatus: marketStatus,
-                    isSelected: selectedCategories.contains(assetType),
                     onTap: { onCategoryTap(assetType) }
                 )
                 }
@@ -478,7 +457,6 @@ struct AssetCategorySummaryCard: View {
     let twdPerBaseCurrency: Decimal
     let currencyDisplay: AssetsCurrencyDisplay
     let marketStatus: MarketStatusSnapshot?
-    let isSelected: Bool
     let onTap: () -> Void
     
     private var accentColor: Color {
@@ -608,7 +586,7 @@ struct AssetCategorySummaryCard: View {
             .snapCappedDynamicTypeSize()
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(isSelected ? accentColor.opacity(0.1) : Color.cardBackground)
+                    .fill(Color.cardBackground)
             )
             .overlay(alignment: .leading) {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -617,21 +595,11 @@ struct AssetCategorySummaryCard: View {
             }
             .overlay {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(
-                        isSelected ? accentColor.opacity(0.5) : Color.separator.opacity(0.35),
-                        lineWidth: isSelected ? 2 : 1
-                    )
+                    .stroke(Color.separator.opacity(0.35), lineWidth: 1)
             }
-            .shadow(
-                color: isSelected ? accentColor.opacity(0.18) : AppColors.shadowMedium,
-                radius: isSelected ? 8 : 6,
-                x: 0,
-                y: isSelected ? 3 : 2
-            )
-            .scaleEffect(isSelected ? 1.01 : 1)
+            .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 2)
         }
         .buttonStyle(.plain)
-        .animation(ChartMotion.switchSpring, value: isSelected)
         .animation(ChartMotion.switchSpring, value: currencyDisplay)
     }
 }

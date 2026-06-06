@@ -202,26 +202,11 @@ class MockDataService: DataServiceProtocol {
         manualAssets = [seed.userId: seed.manualAssets]
         manualAssetValuations = seed.manualAssetValuationsByAssetId
         accountSnapshots = [:]
-        assetPriceSnapshots = Dictionary(uniqueKeysWithValues: seed.assetPriceSnapshots.map { ($0.id, $0) })
+        assetPriceSnapshots = [:]
         userHoldingsSnapshots = [:]
         aggregatedHoldingSnapshots = [:]
         homeDashboardSnapshots = [:]
-        dailyTrendSnapshots = [
-            seed.userId: Dictionary(
-                uniqueKeysWithValues: seed.trendPoints.map { point in
-                    let snapshot = LocalDailyTrendSnapshot(
-                        userId: seed.userId,
-                        date: point.date,
-                        totalAssets: point.totalAssets,
-                        netWorth: point.netWorth,
-                        unrealizedGainLoss: point.unrealizedGainLoss,
-                        sourceHomeSnapshotUpdatedAt: now,
-                        recordedAt: now
-                    )
-                    return (snapshot.id, snapshot)
-                }
-            )
-        ]
+        dailyTrendSnapshots = [seed.userId: [:]]
         lastDailyTrendBackfillRunDateKeys = [:]
         portfolioStates = [:]
         priceSyncedAtByUserId = [seed.userId: now]
@@ -841,15 +826,19 @@ class MockDataService: DataServiceProtocol {
     
     func fetchExchangeRate(from: Currency, to: Currency, date: Date?) async throws -> ExchangeRate? {
         if to == .TWD, from != .TWD, let cached = ExchangeRateSessionCache.twdPer(from) {
-            let rateDate = from == .USD
-                ? (ExchangeRateSessionCache.usdToTwdUpdatedAt ?? date ?? Date())
-                : (date ?? Date())
-            return ExchangeRate(
-                fromCurrency: from,
-                toCurrency: to,
-                rate: cached,
-                rateDate: rateDate
-            )
+            if from == .USD, ExchangeRateSessionCache.usdToTwdUpdatedAt == nil {
+                // 快取無 DB 寫入時間，改向 exchange_rates 查詢
+            } else {
+                let rateDate = from == .USD
+                    ? (ExchangeRateSessionCache.usdToTwdUpdatedAt ?? date ?? Date())
+                    : (date ?? Date())
+                return ExchangeRate(
+                    fromCurrency: from,
+                    toCurrency: to,
+                    rate: cached,
+                    rateDate: rateDate
+                )
+            }
         }
         if let quote = await SupabaseExchangeRateService.fetchQuote(from: from, to: to) {
             if to == .TWD {

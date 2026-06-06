@@ -142,6 +142,58 @@ struct AssetPriceSnapshot: Identifiable, Codable, Equatable {
     var hasCurrentPrice: Bool {
         currentPrice != nil
     }
+
+    /// 遠端 DB 滾動的 previous 不可信；僅保留 fetch-or-create 的 bootstrap 昨收。
+    nonisolated static func fromRemote(
+        assetType: AssetType,
+        symbol: String,
+        name: String? = nil,
+        currency: Currency,
+        currentPrice: Decimal?,
+        previousPrice: Decimal?,
+        currentCloseDate: Date?,
+        currentUpdatedAt: Date?,
+        previousCloseDate: Date?,
+        previousUpdatedAt: Date?,
+        currentPriceSource: String?,
+        previousPriceSource: String?,
+        priceKind: AssetPriceKind?
+    ) -> AssetPriceSnapshot {
+        let trustedPrevious = DailyReferenceCloseResolver.isBootstrapPreviousSource(previousPriceSource)
+        return AssetPriceSnapshot(
+            assetType: assetType,
+            symbol: symbol,
+            name: name,
+            currency: currency,
+            currentPrice: currentPrice,
+            previousPrice: trustedPrevious ? previousPrice : nil,
+            currentCloseDate: currentCloseDate,
+            currentUpdatedAt: currentUpdatedAt,
+            previousCloseDate: trustedPrevious ? previousCloseDate : nil,
+            previousUpdatedAt: trustedPrevious ? previousUpdatedAt : nil,
+            currentPriceSource: currentPriceSource,
+            previousPriceSource: trustedPrevious ? previousPriceSource : nil,
+            priceKind: priceKind
+        )
+    }
+
+    func strippingUntrustedRemotePrevious() -> AssetPriceSnapshot {
+        Self.fromRemote(
+            assetType: assetType,
+            symbol: symbol,
+            name: name,
+            currency: currency,
+            currentPrice: currentPrice,
+            previousPrice: previousPrice,
+            currentCloseDate: currentCloseDate,
+            currentUpdatedAt: currentUpdatedAt,
+            previousCloseDate: previousCloseDate,
+            previousUpdatedAt: previousUpdatedAt,
+            currentPriceSource: currentPriceSource,
+            previousPriceSource: previousPriceSource,
+            priceKind: priceKind
+        )
+    }
 }
 
 /// 用於批量請求的符號資訊

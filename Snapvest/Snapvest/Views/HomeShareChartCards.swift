@@ -258,10 +258,12 @@ private struct HomeShareLabeledDonutChart: View {
     let centerTitle: String
     let showsSliceLabels: Bool
 
-    private let chartSize: CGFloat = 196
-    private let chartAreaHeight: CGFloat = 250
+    private let chartSize: CGFloat = 164
     private let innerRadiusRatio: CGFloat = 0.78
-    private let labelWidth: CGFloat = 104
+    private let minVisibleShare: Double = 0.01
+    private let sideColumnGap: CGFloat = 8
+    private let labelColumnWidth: CGFloat = 84
+    private let minLabelSpacing: CGFloat = 17
 
     private var totalDouble: Double {
         max(NSDecimalNumber(decimal: denominator).doubleValue, 0.001)
@@ -271,42 +273,86 @@ private struct HomeShareLabeledDonutChart: View {
         max(data.reduce(0.0) { $0 + $1.value }, 0.001)
     }
 
-    private var labelCandidates: [HomeSharePieSliceLabel] {
+    private var rawSliceLabels: [HomeSharePieSliceLabel] {
         var startAngle: Double = 0
-        let candidates = data.compactMap { item -> HomeSharePieSliceLabel? in
+        return data.compactMap { item -> HomeSharePieSliceLabel? in
             let pct = item.value / totalDouble
             let span = max((item.value / chartTotalDouble) * 360, 0)
             defer { startAngle += span }
 
-            guard pct > 0.05 else { return nil }
+            guard pct >= minVisibleShare else { return nil }
             return HomeSharePieSliceLabel(
                 item: item,
                 percentage: pct,
                 midAngleDegrees: startAngle + span / 2
             )
         }
+    }
 
-        return candidates
-            .sorted { $0.percentage > $1.percentage }
-            .reduce(into: [HomeSharePieSliceLabel]()) { accepted, label in
-                let sameSideLabels = accepted.filter { $0.isRightSide == label.isRightSide }
-                guard sameSideLabels.allSatisfy({ abs($0.verticalOffset - label.verticalOffset) >= 26 }) else { return }
-                accepted.append(label)
+    private var chartAreaHeight: CGFloat {
+        let rightCount = rawSliceLabels.filter(\.isRightSide).count
+        let leftCount = rawSliceLabels.count - rightCount
+        let maxSide = max(rightCount, leftCount, 1)
+        return max(268, CGFloat(maxSide) * minLabelSpacing + 96)
+    }
+
+    private var sliceLabels: [HomeSharePieSliceLabel] {
+        layoutSliceLabels(
+            rawSliceLabels,
+            verticalLimit: chartAreaHeight / 2 - 26
+        )
+    }
+
+    private func layoutSliceLabels(
+        _ candidates: [HomeSharePieSliceLabel],
+        verticalLimit: CGFloat
+    ) -> [HomeSharePieSliceLabel] {
+        func layoutSide(_ sideLabels: [HomeSharePieSliceLabel]) -> [HomeSharePieSliceLabel] {
+            let sorted = sideLabels.sorted { $0.idealVerticalOffset < $1.idealVerticalOffset }
+            var laidOut: [HomeSharePieSliceLabel] = []
+            var previousY: CGFloat?
+
+            for var label in sorted {
+                var y = label.idealVerticalOffset
+                if let previousY, y - previousY < minLabelSpacing {
+                    y = previousY + minLabelSpacing
+                }
+                y = min(max(y, -verticalLimit), verticalLimit)
+                label.layoutVerticalOffset = y
+                laidOut.append(label)
+                previousY = y
             }
-            .sorted { $0.midAngleDegrees < $1.midAngleDegrees }
+            return laidOut
+        }
+
+        let right = layoutSide(candidates.filter(\.isRightSide))
+        let left = layoutSide(candidates.filter { !$0.isRightSide })
+        return (right + left).sorted { $0.midAngleDegrees < $1.midAngleDegrees }
     }
 
     var body: some View {
         ZStack {
+            if showsSliceLabels {
+                GeometryReader { geometry in
+                    let center = CGPoint(x: geometry.size.width / 2, y: geometry.size.height / 2)
+                    ForEach(sliceLabels) { label in
+                        leaderLine(for: label, center: center)
+                    }
+                }
+            }
+
             chart
                 .frame(width: chartSize, height: chartSize)
 
             centerSummary
-                .frame(width: chartSize * innerRadiusRatio * 1.18)
+                .frame(width: chartSize * innerRadiusRatio * 1.15)
 
             if showsSliceLabels {
-                ForEach(labelCandidates) { label in
-                    labelCallout(label)
+                GeometryReader { geometry in
+                    let center = CGPoint(x: geometry.size.width / 2, y: geometry.size.height / 2)
+                    ForEach(sliceLabels) { label in
+                        labelCallout(label, center: center)
+                    }
                 }
             }
         }
@@ -321,7 +367,7 @@ private struct HomeShareLabeledDonutChart: View {
                     angle: .value("配置", item.value),
                     innerRadius: .ratio(innerRadiusRatio),
                     outerRadius: .ratio(1.0),
-                    angularInset: 2.0
+                    angularInset: 1.6
                 )
                 .foregroundStyle(item.color)
             }
@@ -334,76 +380,137 @@ private struct HomeShareLabeledDonutChart: View {
 
     @ViewBuilder
     private var centerSummary: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 3) {
             Text(centerTitle)
-                .font(.system(size: 14, weight: .bold))
+                .font(.system(size: 13, weight: .bold))
                 .foregroundColor(.primaryText)
                 .lineLimit(1)
                 .minimumScaleFactor(0.78)
             Text("配置")
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundColor(.secondaryText)
         }
     }
 
-    private func labelCallout(_ label: HomeSharePieSliceLabel) -> some View {
-        GeometryReader { geometry in
-            let center = CGPoint(x: geometry.size.width / 2, y: geometry.size.height / 2)
-            let textX = label.isRightSide
-                ? center.x + chartSize / 2 + 28
-                : center.x - chartSize / 2 - 28
-            let textY = min(max(center.y + label.verticalOffset, 30), chartAreaHeight - 30)
-
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(label.item.color)
-                    .frame(width: 6, height: 6)
-
-                Text(labelText(for: label))
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.primaryText)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-            }
-            .padding(.horizontal, 7)
-            .padding(.vertical, 5)
-            .frame(width: labelWidth, alignment: label.isRightSide ? .leading : .trailing)
-            .background(Color.cardBackground.opacity(0.94))
-            .clipShape(Capsule())
-            .position(x: textX, y: textY)
+    private func labelAnchorX(for label: HomeSharePieSliceLabel, center: CGPoint) -> CGFloat {
+        let halfColumn = labelColumnWidth / 2
+        if label.isRightSide {
+            return center.x + chartSize / 2 + sideColumnGap + halfColumn
         }
+        return center.x - chartSize / 2 - sideColumnGap - halfColumn
+    }
+
+    private func dotAnchor(for label: HomeSharePieSliceLabel, center: CGPoint) -> CGPoint {
+        let columnX = labelAnchorX(for: label, center: center)
+        let dotX = label.isRightSide
+            ? columnX - labelColumnWidth / 2 + 4
+            : columnX + labelColumnWidth / 2 - 4
+        return CGPoint(x: dotX, y: center.y + label.layoutVerticalOffset)
+    }
+
+    private func leaderLine(for label: HomeSharePieSliceLabel, center: CGPoint) -> some View {
+        let angleRad = label.midAngleDegrees * Double.pi / 180
+        let rim = Double(chartSize / 2 + 1)
+        let slicePoint = CGPoint(
+            x: center.x + CGFloat(sin(angleRad) * rim),
+            y: center.y - CGFloat(cos(angleRad) * rim)
+        )
+        let dotPoint = dotAnchor(for: label, center: center)
+        let elbowX = label.isRightSide
+            ? slicePoint.x + 10
+            : slicePoint.x - 10
+
+        return Path { path in
+            path.move(to: slicePoint)
+            path.addLine(to: CGPoint(x: elbowX, y: slicePoint.y))
+            path.addLine(to: dotPoint)
+        }
+        .stroke(
+            label.item.color.opacity(0.42),
+            style: StrokeStyle(lineWidth: 0.9, lineCap: .round, lineJoin: .round)
+        )
         .allowsHitTesting(false)
     }
 
-    private func labelText(for label: HomeSharePieSliceLabel) -> String {
-        "\(shortName(label.item.name)) \(percentText(label.percentage, fractionDigits: 0))"
+    private func labelCallout(_ label: HomeSharePieSliceLabel, center: CGPoint) -> some View {
+        let anchorX = labelAnchorX(for: label, center: center)
+        let anchorY = center.y + label.layoutVerticalOffset
+
+        return HStack(spacing: 0) {
+            if label.isRightSide {
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(label.item.color)
+                        .frame(width: 7, height: 7)
+                    labelText(for: label)
+                }
+                .frame(width: labelColumnWidth, alignment: .leading)
+            } else {
+                HStack(spacing: 5) {
+                    labelText(for: label)
+                    Circle()
+                        .fill(label.item.color)
+                        .frame(width: 7, height: 7)
+                }
+                .frame(width: labelColumnWidth, alignment: .trailing)
+            }
+        }
+        .position(x: anchorX, y: anchorY)
+        .allowsHitTesting(false)
     }
 
-    private func shortName(_ name: String) -> String {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count > 6 else { return trimmed }
-        return String(trimmed.prefix(6))
+    private func labelText(for label: HomeSharePieSliceLabel) -> some View {
+        HStack(spacing: 3) {
+            Text(displayTitle(for: label.item))
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(.primaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+            Text(percentText(label.percentage))
+                .font(.system(size: 10, weight: .bold))
+                .foregroundColor(.secondaryText)
+                .lineLimit(1)
+        }
     }
 
-    private func percentText(_ value: Double, fractionDigits: Int) -> String {
-        String(format: "%.\(fractionDigits)f%%", value * 100)
+    private func displayTitle(for item: PieChartDataItem) -> String {
+        let name = item.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return item.symbol }
+        if name.count <= 8 {
+            return name
+        }
+        return String(name.prefix(7)) + "…"
     }
 
+    private func percentText(_ value: Double) -> String {
+        if value >= 0.01 {
+            return String(format: "%.0f%%", value * 100)
+        }
+        return String(format: "%.1f%%", value * 100)
+    }
 }
 
 private struct HomeSharePieSliceLabel: Identifiable {
     let item: PieChartDataItem
     let percentage: Double
     let midAngleDegrees: Double
+    let idealVerticalOffset: CGFloat
+    var layoutVerticalOffset: CGFloat
 
     var id: String { item.id }
 
-    var isRightSide: Bool {
-        midAngleDegrees < 180
+    init(item: PieChartDataItem, percentage: Double, midAngleDegrees: Double) {
+        self.item = item
+        self.percentage = percentage
+        self.midAngleDegrees = midAngleDegrees
+        let angleRad = midAngleDegrees * Double.pi / 180
+        let ideal = CGFloat(-cos(angleRad) * 82)
+        self.idealVerticalOffset = ideal
+        self.layoutVerticalOffset = ideal
     }
 
-    var verticalOffset: CGFloat {
-        CGFloat(-cos(midAngleDegrees * .pi / 180)) * 88
+    var isRightSide: Bool {
+        sin(midAngleDegrees * Double.pi / 180) >= 0
     }
 }
 

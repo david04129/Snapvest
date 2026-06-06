@@ -33,6 +33,8 @@ struct TransactionImportView: View {
     @State private var duplicateMatches: [Int: TransactionDuplicateMatch] = [:]
     @State private var duplicateImportOverrides: Set<Int> = []
     @State private var projectedHoldings: [ImportProjectedHolding] = []
+    @State private var showingImportTutorial = false
+    @State private var copyToastMessage: String?
     
     private var supportsStatementPrompt: Bool {
         account.accountType != .cryptoWallet
@@ -100,9 +102,21 @@ struct TransactionImportView: View {
             .sheet(item: $importSellDraftItem) { item in
                 importSellDraftSheet(item: item)
             }
+            .sheet(isPresented: $showingImportTutorial) {
+                TransactionImportTutorialView(account: account)
+            }
             .task {
                 await viewModel.loadTransactions(userId: account.userId)
             }
+            .overlay(alignment: .bottom) {
+                if let copyToastMessage {
+                    ClipboardCopyToast(message: copyToastMessage)
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 28)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(.spring(response: 0.38, dampingFraction: 0.82), value: copyToastMessage)
         }
         .snapDismissKeyboardOnTap()
     }
@@ -129,9 +143,10 @@ struct TransactionImportView: View {
             
             Spacer()
             
-            Image(systemName: account.accountType.icon)
-                .font(.title2)
-                .foregroundColor(account.accountType.color)
+            CurrencyIconBadge(
+                currency: account.currency,
+                tint: account.accountType.color
+            )
         }
         .padding(16)
         .background(Color.cardBackground)
@@ -141,37 +156,18 @@ struct TransactionImportView: View {
     
     private var flowStepsCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("怎麼做？")
-                .font(.subheadline)
-                .fontWeight(.semibold)
-                .foregroundColor(.primaryText)
-            
-            importFlowStep(
-                number: 1,
-                title: "複製提示詞",
-                detail: supportsStatementPrompt
-                    ? "請依你手上的資料選一種。按下後會自動複製對應提示詞。"
-                    : "加密貨幣帳戶目前支援用持倉截圖或明細建立持倉。按下後會自動複製提示詞。",
-                isHighlighted: false
-            )
+            HStack(alignment: .center, spacing: 12) {
+                Text("複製提示詞")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primaryText)
+                
+                Spacer(minLength: 8)
+                
+                importTutorialButton
+            }
             
             copyPromptOptions
-                .padding(.leading, 36)
-            
-            importFlowStep(
-                number: 2,
-                title: "到外部 AI 轉成 CSV",
-                detail: "把剛剛複製的提示詞貼到 ChatGPT、Gemini 等工具，再附上檔案或截圖。",
-                footnote: "可用 ChatGPT、Gemini…",
-                isHighlighted: true
-            )
-            
-            importFlowStep(
-                number: 3,
-                title: "貼回並匯入",
-                detail: "貼在下方 → 解析預覽 → 確認匯入。",
-                isHighlighted: false
-            )
         }
         .padding(16)
         .background(Color.cardBackground)
@@ -179,54 +175,35 @@ struct TransactionImportView: View {
         .shadow(color: AppColors.shadowMedium, radius: 8, x: 0, y: 2)
     }
     
-    private func importFlowStep(
-        number: Int,
-        title: String,
-        detail: String? = nil,
-        footnote: String? = nil,
-        isHighlighted: Bool
-    ) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Text("\(number)")
-                .font(.caption)
-                .fontWeight(.bold)
-                .foregroundColor(isHighlighted ? .white : .appPrimary)
-                .frame(width: 24, height: 24)
-                .background(isHighlighted ? Color.appPrimary : Color.appPrimary.opacity(0.12))
-                .clipShape(Circle())
-            
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primaryText)
-                if let detail {
-                    Text(detail)
-                        .font(.caption)
-                        .foregroundColor(.secondaryText)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if let footnote {
-                    Text(footnote)
-                        .font(.caption2)
-                        .foregroundColor(.tertiaryText)
-                }
+    private var importTutorialButton: some View {
+        Button {
+            showingImportTutorial = true
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "questionmark.circle.fill")
+                    .font(.body.weight(.semibold))
+                Text("圖文教學")
+                    .font(.subheadline.weight(.semibold))
+            }
+            .foregroundColor(.appPrimary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .background(Color.appPrimary.opacity(0.14))
+            .clipShape(Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(Color.appPrimary.opacity(0.32), lineWidth: 1)
             }
         }
-        .padding(isHighlighted ? 12 : 0)
-        .background {
-            if isHighlighted {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.appPrimary.opacity(0.08))
-            }
-        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("匯入圖文教學")
     }
     
     private var copyPromptOptions: some View {
         VStack(spacing: 8) {
             if supportsStatementPrompt {
                 copyPromptOptionButton(
-                    title: "成交明細檔案或截圖",
+                    title: "成交明細",
                     subtitle: "適合券商匯出的成交紀錄、對帳單、PDF、Excel 或截圖",
                     isCopied: didCopyStatementPrompt,
                     systemImage: "list.bullet.rectangle"
@@ -237,10 +214,10 @@ struct TransactionImportView: View {
             }
             
             copyPromptOptionButton(
-                title: account.accountType == .cryptoWallet ? "加密貨幣持倉截圖或明細" : "持倉截圖或明細",
+                title: "持有倉位",
                 subtitle: account.accountType == .cryptoWallet
-                    ? "適合交易所資產頁、現貨帳戶截圖或幣種持倉列表"
-                    : "適合只有目前庫存、持股明細或資產列表，沒有完整成交流水",
+                    ? "需含幣種、持有數量與成本價；僅現價無法匯入"
+                    : "需含代號、持有數量與成本價；僅現價無法匯入",
                 isCopied: didCopyHoldingsPrompt,
                 systemImage: "photo.on.rectangle"
             ) {
@@ -295,7 +272,11 @@ struct TransactionImportView: View {
     }
     
     private func flashCopiedPrompt(_ kind: CopiedPromptKind) {
+        #if canImport(UIKit)
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        #endif
         withAnimation(.easeInOut(duration: 0.2)) {
+            copyToastMessage = "已複製到剪貼簿"
             switch kind {
             case .statement:
                 didCopyStatementPrompt = true
@@ -304,7 +285,13 @@ struct TransactionImportView: View {
             }
         }
         Task {
-            try? await Task.sleep(for: .seconds(2.5))
+            try? await Task.sleep(for: .seconds(2))
+            await MainActor.run {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    copyToastMessage = nil
+                }
+            }
+            try? await Task.sleep(for: .seconds(0.5))
             await MainActor.run {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     switch kind {
@@ -318,18 +305,10 @@ struct TransactionImportView: View {
     
     private var pasteSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Text("3")
-                    .font(.caption2.weight(.bold))
-                    .foregroundColor(.appPrimary)
-                    .frame(width: 20, height: 20)
-                    .background(Color.appPrimary.opacity(0.12))
-                    .clipShape(Circle())
-                Text("貼回並匯入")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primaryText)
-            }
+            Text("貼回並匯入")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundColor(.primaryText)
             
             ZStack(alignment: .topLeading) {
                 TextEditor(text: $csvText)
@@ -1078,5 +1057,25 @@ struct TransactionImportView: View {
 
         User image / data:
         """
+    }
+}
+
+private struct ClipboardCopyToast: View {
+    let message: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "doc.on.clipboard.fill")
+                .font(.subheadline.weight(.semibold))
+            Text(message)
+                .font(.subheadline.weight(.semibold))
+        }
+        .foregroundColor(.primaryText)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
+        .background(.ultraThinMaterial)
+        .clipShape(Capsule())
+        .shadow(color: AppColors.shadowMedium, radius: 10, x: 0, y: 4)
+        .accessibilityLabel(message)
     }
 }

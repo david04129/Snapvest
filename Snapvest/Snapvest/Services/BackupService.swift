@@ -83,6 +83,7 @@ enum BackupService {
         let resolvedDataService = dataService ?? MockDataService.shared
         try validate(backup)
         let restoredData = backup.data.normalizedForRestore(userId: userId)
+        SnapshotRefreshCoordinator.invalidateInFlightRebuild()
         try resolvedDataService.replaceLocalStoreForRestore(restoredData, userId: userId)
         backup.preferences.apply(to: userId)
         let backupTrendSnapshots = Array(restoredData.valuation.dailyTrendSnapshotsByDate.values)
@@ -90,13 +91,19 @@ enum BackupService {
         _ = await SnapshotRefreshCoordinator.rebuildAndNotify(
             userId: userId,
             dataService: resolvedDataService,
+            syncPortfolioPreviousCloses: true,
             updatePriceMetadata: false,
             deferRemoteWork: false,
             postsUpdateNotification: false
         )
+        _ = await LocalDailyTrendBackfillService.runIfNeeded(
+            userId: userId,
+            dataService: resolvedDataService
+        )
         for snapshot in backupTrendSnapshots {
             try await resolvedDataService.upsertLocalDailyTrendSnapshot(snapshot)
         }
+        resolvedDataService.persistLocalStore(for: userId)
         NotificationCenter.default.post(name: .snapshotsDidUpdate, object: nil)
     }
 

@@ -359,9 +359,7 @@ enum SnapshotUpdater {
         }
 
         var snapshots: [AssetPriceSnapshot] = []
-        let usesDemoPrices = priceService is DemoPriceService
-        let usesDemoData = (dataService as? MockDataService)?.isDemoModeActive == true
-        if SupabaseConfig.isConfigured, !symbols.isEmpty, !usesDemoPrices {
+        if SupabaseConfig.isConfigured, !symbols.isEmpty {
             snapshots = (try? await SupabasePriceService.fetchPrices(symbols: symbols)) ?? []
         } else if !symbols.isEmpty {
             snapshots = (try? await dataService.fetchAssetPriceSnapshots(symbols: symbols)) ?? []
@@ -376,7 +374,7 @@ enum SnapshotUpdater {
             )
         }
 
-        if SupabaseConfig.isConfigured, !usesDemoPrices {
+        if SupabaseConfig.isConfigured {
             let missingAfterBatch = symbols.filter { info in
                 let key = "\(info.assetType.rawValue)_\(info.symbol)"
                 guard let snapshot = snapshotByKey[key],
@@ -416,12 +414,7 @@ enum SnapshotUpdater {
             }
             
             let currentPrice: Decimal?
-            if usesDemoData {
-                currentPrice = try await priceService.fetchCurrentPrice(
-                    assetType: symbolInfo.assetType,
-                    symbol: symbolInfo.symbol
-                )
-            } else if SupabaseConfig.isConfigured, !usesDemoPrices {
+            if SupabaseConfig.isConfigured {
                 continue
             } else {
                 currentPrice = try await priceService.fetchCurrentPrice(

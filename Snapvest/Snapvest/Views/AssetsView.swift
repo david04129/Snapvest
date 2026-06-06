@@ -16,11 +16,12 @@ struct AssetsView: View {
     @State private var userId: String = AppUser.id
     @State private var selectedSort: SortOption = .totalAssets
     @State private var selectedHolding: HoldingNavigationItem?
+    @State private var selectedCategoryDetail: AssetCategoryNavigationItem?
     @State private var navigationStackResetID = UUID()
-    @State private var holdingsSelectedCategories: Set<AssetType> = []
     @State private var holdingsRatioType: HoldingRatioType = HoldingRatioPreference.get()
     @State private var holdingsCurrencyDisplay: AssetsCurrencyDisplay = .twd
     @State private var marketStatus: MarketStatusSnapshot?
+    @State private var showingAddInvestmentTutorial = false
     
     enum SortOption: String, CaseIterable {
         case totalAssets = "總資產由高到低"
@@ -44,9 +45,8 @@ struct AssetsView: View {
     
     var body: some View {
         NavigationStack {
-            ScrollViewReader { scrollProxy in
-                ScrollView {
-                    VStack(spacing: 20) {
+            ScrollView {
+                VStack(spacing: 20) {
                         if viewModel.isLoading && !viewModel.hasLoadedOnce {
                             VStack(spacing: 16) {
                                 ProgressView()
@@ -67,12 +67,9 @@ struct AssetsView: View {
                                     icon: "chart.bar.fill",
                                     title: "還沒有持股",
                                     message: "在管理分頁建立投資帳戶並記錄買賣後，持股會出現在這裡。",
-                                    actionTitle: "去新增帳戶"
+                                    actionTitle: "如何新增持股"
                                 ) {
-                                    selectedTab = AppTab.accounts.rawValue
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                                        NotificationCenter.default.post(name: .openAddAccountSheet, object: nil)
-                                    }
+                                    showingAddInvestmentTutorial = true
                                 }
                             }
                             
@@ -86,25 +83,16 @@ struct AssetsView: View {
                                 twdPerBaseCurrency: portfolioViewModel.twdPerBaseCurrency,
                                 ratioType: holdingsRatioType,
                                 currencyDisplay: holdingsCurrencyDisplay,
-                                selectedCategories: holdingsSelectedCategories,
                                 marketStatus: marketStatus,
                                 onCategoryTap: { assetType in
-                                    let willSelect = !holdingsSelectedCategories.contains(assetType)
-                                    withAnimation(ChartMotion.switchSpring) {
-                                        AssetCategoryFilterSelection.toggle(
-                                            assetType,
-                                            in: &holdingsSelectedCategories
-                                        )
-                                    }
-                                    guard willSelect else { return }
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                                        withAnimation(ChartMotion.switchQuick) {
-                                            scrollProxy.scrollTo("allHoldings", anchor: .top)
-                                        }
-                                    }
+                                    selectedCategoryDetail = AssetCategoryNavigationItem(
+                                        assetType: assetType,
+                                        ratioType: holdingsRatioType,
+                                        currencyDisplay: holdingsCurrencyDisplay
+                                    )
                                 }
                             )
-                            
+
                             AllHoldingsSection(
                                 aggregatedHoldings: viewModel.aggregatedHoldings,
                                 assetPriceSnapshots: viewModel.assetPriceSnapshots,
@@ -115,16 +103,12 @@ struct AssetsView: View {
                                 twdPerBaseCurrency: portfolioViewModel.twdPerBaseCurrency,
                                 ratioType: holdingsRatioType,
                                 currencyDisplay: holdingsCurrencyDisplay,
-                                selectedCategories: $holdingsSelectedCategories,
                                 onHoldingTap: navigateToHoldingDetail
                             )
                             .id("allHoldings")
-                            
-                            DataFreshnessFooterView(style: .valuationTabs)
                         }
                     }
                     .padding()
-                }
             }
             .background(Color.mainBackground)
             .navigationBarBackButtonHidden(true)
@@ -164,6 +148,15 @@ struct AssetsView: View {
             .onReceive(NotificationCenter.default.publisher(for: .transactionsDidChange)) { _ in
                 Task { await refreshSelectedHoldingIfNeeded() }
             }
+            .navigationDestination(item: $selectedCategoryDetail) { item in
+                AssetCategoryDetailView(
+                    assetType: item.assetType,
+                    ratioType: item.ratioType,
+                    currencyDisplay: item.currencyDisplay,
+                    marketStatus: marketStatus,
+                    onHoldingTap: navigateToHoldingDetail
+                )
+            }
             .navigationDestination(item: $selectedHolding) { item in
                 HoldingDetailView(
                     aggregatedHolding: item.aggregatedHolding,
@@ -180,7 +173,16 @@ struct AssetsView: View {
         .resetNavigationWhenTabReappears(selectedTab: $selectedTab, resignedTab: .assets) {
             holdingsCurrencyDisplay = .twd
             selectedHolding = nil
+            selectedCategoryDetail = nil
             navigationStackResetID = UUID()
+        }
+        .sheet(isPresented: $showingAddInvestmentTutorial) {
+            AddInvestmentTutorialView {
+                selectedTab = AppTab.accounts.rawValue
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    NotificationCenter.default.post(name: .openAddAccountSheet, object: nil)
+                }
+            }
         }
     }
     
@@ -245,6 +247,7 @@ struct AssetsView: View {
 
 // MARK: - 所有持股區塊（Phase 3）
 struct AllHoldingsSection: View {
+    var sectionTitle: String = "所有持股"
     let aggregatedHoldings: [AggregatedHoldingSnapshot]
     let assetPriceSnapshots: [AssetPriceSnapshot]
     let totalAssets: Decimal
@@ -254,33 +257,20 @@ struct AllHoldingsSection: View {
     let twdPerBaseCurrency: Decimal
     let ratioType: HoldingRatioType
     let currencyDisplay: AssetsCurrencyDisplay
-    @Binding var selectedCategories: Set<AssetType>
+    var categoryFilter: AssetType? = nil
+    var showsCategorySort: Bool = true
     let onHoldingTap: (AggregatedHoldingSnapshot) -> Void
-    
+
     @State private var marketValueSort: HoldingsMarketValueSort = .descending
     @State private var sortByCategoryFirst: Bool = false
-    
-    private var activeCategoryFilter: Set<AssetType> {
-        AssetCategoryFilterSelection.activeFilter(from: selectedCategories)
-    }
-    
+
     private var showOriginalCurrency: Bool {
         currencyDisplay == .original
     }
-    
-    private var filteredHoldings: [AggregatedHoldingSnapshot] {
-        let active = activeCategoryFilter
-        guard !active.isEmpty else { return aggregatedHoldings }
-        return aggregatedHoldings.filter { active.contains($0.assetType) }
-    }
-    
-    private var filterSummaryText: String? {
-        let active = activeCategoryFilter
-        guard !active.isEmpty else { return nil }
-        return AssetCategoryFilterSelection.displayOrder
-            .filter { active.contains($0) }
-            .map(\.displayName)
-            .joined(separator: "、")
+
+    private var displayedHoldings: [AggregatedHoldingSnapshot] {
+        guard let categoryFilter else { return aggregatedHoldings }
+        return aggregatedHoldings.filter { $0.assetType == categoryFilter }
     }
     
     // 計算所有持股的市值（台幣）
@@ -295,7 +285,7 @@ struct AllHoldingsSection: View {
             priceMap[key] = snapshot
         }
         
-        for holding in filteredHoldings {
+        for holding in displayedHoldings {
             let key = "\(holding.assetType.rawValue)_\(holding.symbol)"
             guard let priceSnapshot = priceMap[key],
                   let currentPrice = priceSnapshot.displayPrice else { continue }
@@ -379,7 +369,7 @@ struct AllHoldingsSection: View {
     }
     
     private var listRefreshToken: String {
-        let filterKey = activeCategoryFilter.map(\.rawValue).sorted().joined(separator: ",")
+        let filterKey = categoryFilter?.rawValue ?? "all"
         return "\(ratioType.rawValue)_\(currencyDisplay.rawValue)_\(filterKey)_\(marketValueSort)_\(sortByCategoryFirst)"
     }
     
@@ -402,7 +392,7 @@ struct AllHoldingsSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Text("所有持股")
+                Text(sectionTitle)
                     .font(.headline)
                     .foregroundColor(.primaryText)
                 
@@ -418,44 +408,25 @@ struct AllHoldingsSection: View {
                             marketValueSort.cycle()
                         }
                     }
-                    
-                    AssetsFilterChipButton(
-                        title: "類別",
-                        icon: "square.grid.2x2",
-                        isActive: sortByCategoryFirst
-                    ) {
-                        withAnimation(ChartMotion.switchSpring) {
-                            sortByCategoryFirst.toggle()
+
+                    if showsCategorySort {
+                        AssetsFilterChipButton(
+                            title: "類別",
+                            icon: "square.grid.2x2",
+                            isActive: sortByCategoryFirst
+                        ) {
+                            withAnimation(ChartMotion.switchSpring) {
+                                sortByCategoryFirst.toggle()
+                            }
                         }
                     }
                 }
             }
             .padding(.horizontal)
-            
-            if let filterSummaryText {
-                HStack(spacing: 8) {
-                    Text("篩選：\(filterSummaryText)")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundColor(.primaryText)
-                    Button {
-                        withAnimation(ChartMotion.switchSpring) {
-                            selectedCategories.removeAll()
-                        }
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 18))
-                            .foregroundColor(.secondaryText)
-                    }
-                    .buttonStyle(.plain)
-                    Spacer()
-                }
-                .padding(.horizontal)
-            }
-            
+
             VStack(spacing: 12) {
                 if allHoldingsData.isEmpty {
-                    Text(activeCategoryFilter.isEmpty ? "尚無持股" : "此篩選尚無持股")
+                    Text("尚無持股")
                         .font(.subheadline)
                         .foregroundColor(.secondaryText)
                         .frame(maxWidth: .infinity)

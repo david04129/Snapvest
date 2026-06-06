@@ -7,50 +7,6 @@
 
 import Foundation
 
-/// PostgreSQL / Supabase REST 回傳的 ISO8601 時間（含微秒）
-private enum SupabaseRESTTimestampParser {
-    nonisolated static func parse(_ string: String?) -> Date? {
-        guard let string else { return nil }
-        let withFraction = ISO8601DateFormatter()
-        withFraction.formatOptions = [
-            .withInternetDateTime,
-            .withFractionalSeconds,
-            .withColonSeparatorInTime
-        ]
-        withFraction.timeZone = TimeZone(identifier: "UTC")
-        let withoutFraction = ISO8601DateFormatter()
-        withoutFraction.formatOptions = [.withInternetDateTime, .withColonSeparatorInTime]
-        withoutFraction.timeZone = TimeZone(identifier: "UTC")
-        if let parsed = withFraction.date(from: string) ?? withoutFraction.date(from: string) {
-            return parsed
-        }
-
-        let taipeiLocal = DateFormatter()
-        taipeiLocal.locale = Locale(identifier: "en_US_POSIX")
-        taipeiLocal.timeZone = TimeZone(identifier: "Asia/Taipei")
-        taipeiLocal.dateFormat = string.contains("T") ? "yyyy-MM-dd'T'HH:mm:ss" : "yyyy-MM-dd HH:mm:ss"
-        return taipeiLocal.date(from: String(string.prefix(19)))
-    }
-    
-    /// PostgreSQL DATE（yyyy-MM-dd）
-    nonisolated static func parseCloseDate(_ string: String?) -> Date? {
-        guard let string, string.count >= 10 else { return nil }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(identifier: "Asia/Taipei")
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.date(from: String(string.prefix(10)))
-    }
-
-    nonisolated static func closeDateString(from date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(identifier: "Asia/Taipei")
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
-    }
-}
-
 /// Supabase 連線設定（請在 App 啟動時設定）
 enum SupabaseConfig: Sendable {
     nonisolated(unsafe) static var url: String?
@@ -100,6 +56,7 @@ struct SupabasePriceBatch {
     let historicalPricesByKeyAndDate: [String: [String: Decimal]]
     let currentSnapshots: [AssetPriceSnapshot]
     let twdRateByCurrency: [Currency: Decimal]
+    let usdToTwdUpdatedAt: Date?
 }
 
 /// 從 Supabase 讀取股價與更新時間
@@ -239,7 +196,8 @@ struct SupabasePriceService {
                 dates: [],
                 historicalPricesByKeyAndDate: [:],
                 currentSnapshots: [],
-                twdRateByCurrency: [.TWD: 1]
+                twdRateByCurrency: [.TWD: 1],
+                usdToTwdUpdatedAt: nil
             )
         }
 
@@ -309,7 +267,7 @@ struct SupabasePriceService {
             let previousPrice = decoded.previous[key]?.decimalValue
             guard currentPrice != nil || previousPrice != nil else { continue }
             currentSnapshots.append(
-                AssetPriceSnapshot(
+                AssetPriceSnapshot.fromRemote(
                     assetType: assetType,
                     symbol: symbol.symbol,
                     currency: currency,
@@ -318,6 +276,9 @@ struct SupabasePriceService {
                     currentCloseDate: SupabaseRESTTimestampParser.parseCloseDate(decoded.currentDates[key]?.stringValue),
                     currentUpdatedAt: SupabaseRESTTimestampParser.parse(decoded.currentUpdatedAt[key]?.stringValue),
                     previousCloseDate: SupabaseRESTTimestampParser.parseCloseDate(decoded.previousDates[key]?.stringValue),
+                    previousUpdatedAt: nil,
+                    currentPriceSource: nil,
+                    previousPriceSource: nil,
                     priceKind: decoded.priceKind[key]?.stringValue.flatMap(AssetPriceKind.init(rawValue:))
                 )
             )
@@ -336,7 +297,10 @@ struct SupabasePriceService {
             twdRates[currency] = rate
         }
         if let usdToTwd = twdRates[.USD] {
-            ExchangeRateSessionCache.update(usdToTwd: usdToTwd)
+            ExchangeRateSessionCache.update(
+                usdToTwd: usdToTwd,
+                updatedAt: decoded.fxUpdatedAt["USD:TWD"]?.stringValue.flatMap(SupabaseRESTTimestampParser.parse)
+            )
         }
 
         #if DEBUG
@@ -348,7 +312,8 @@ struct SupabasePriceService {
             dates: dates,
             historicalPricesByKeyAndDate: historyByKeyAndDate,
             currentSnapshots: currentSnapshots,
-            twdRateByCurrency: twdRates
+            twdRateByCurrency: twdRates,
+            usdToTwdUpdatedAt: decoded.fxUpdatedAt["USD:TWD"]?.stringValue.flatMap(SupabaseRESTTimestampParser.parse)
         )
     }
     
@@ -388,7 +353,7 @@ struct SupabasePriceService {
 
     private static func mergeBatchFX(_ batch: SupabasePriceBatch) {
         if let usdToTwd = batch.twdRateByCurrency[.USD] {
-            ExchangeRateSessionCache.update(usdToTwd: usdToTwd)
+            ExchangeRateSessionCache.update(usdToTwd: usdToTwd, updatedAt: batch.usdToTwdUpdatedAt)
         }
     }
 
@@ -404,7 +369,7 @@ struct SupabasePriceService {
                     existing: existing
                 )
             } else {
-                mergedByKey[key] = snapshot
+                mergedByKey[key] = snapshot.strippingUntrustedRemotePrevious()
             }
         }
     }
@@ -750,7 +715,7 @@ private struct SupabasePriceRow: Decodable, Sendable {
         let price = (row.current_price?.decimalValue ?? row.previous_price?.decimalValue)
         guard let _ = price, let curr = Currency(rawValue: row.currency),
               let at = AssetType(rawValue: row.asset_type) else { return nil }
-        return AssetPriceSnapshot(
+        return AssetPriceSnapshot.fromRemote(
             assetType: at,
             symbol: row.symbol,
             name: row.name,
@@ -839,10 +804,11 @@ private struct SupabasePriceBatchResponse: Decodable, Sendable {
     let currentUpdatedAt: [String: SupabaseBatchString]
     let currencies: [String: String]
     let fx: [String: SupabaseBatchDecimal]
+    let fxUpdatedAt: [String: SupabaseBatchString]
 
     enum CodingKeys: String, CodingKey {
         case dates, history, current, previous, currentDates, previousDates
-        case priceKind, currentUpdatedAt, currencies, fx
+        case priceKind, currentUpdatedAt, currencies, fx, fxUpdatedAt
     }
 
     init(from decoder: Decoder) throws {
@@ -857,5 +823,6 @@ private struct SupabasePriceBatchResponse: Decodable, Sendable {
         currentUpdatedAt = try container.decodeIfPresent([String: SupabaseBatchString].self, forKey: .currentUpdatedAt) ?? [:]
         currencies = try container.decodeIfPresent([String: String].self, forKey: .currencies) ?? [:]
         fx = try container.decodeIfPresent([String: SupabaseBatchDecimal].self, forKey: .fx) ?? [:]
+        fxUpdatedAt = try container.decodeIfPresent([String: SupabaseBatchString].self, forKey: .fxUpdatedAt) ?? [:]
     }
 }

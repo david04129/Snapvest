@@ -567,12 +567,6 @@ struct TransactionsView: View {
             .safeAreaInset(edge: .top) {
                 customHeaderBar(icon: "clock.fill", title: "所有紀錄")
             }
-            .safeAreaInset(edge: .bottom) {
-                DataFreshnessFooterView(style: .transactions)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(Color.mainBackground)
-            }
             .refreshable {
                 await viewModel.loadTransactions(userId: userId)
             }

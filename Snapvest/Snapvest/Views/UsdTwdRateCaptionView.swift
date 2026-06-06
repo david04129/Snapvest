@@ -35,9 +35,9 @@ struct UsdTwdRateCaptionView: View {
         if displayRate > 0 {
             HStack(spacing: 6) {
                 Text("1 USD = \(displayRate.formattedExchangeRateDisplay()) \(displayCurrency.rawValue)")
-                if let resolvedUpdatedAt {
+                if let timestamp = PriceFreshnessFormatter.dataTimestampLabel(updatedAt: resolvedUpdatedAt) {
                     Text("·")
-                    Text("更新於 \(DataFreshnessFormatter.label(for: resolvedUpdatedAt))")
+                    Text(timestamp)
                 }
             }
             .font(.caption2)

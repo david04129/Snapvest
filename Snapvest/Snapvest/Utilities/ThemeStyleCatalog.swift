@@ -14,6 +14,16 @@ enum ThemeStyleCatalog {
             return isDarkMode ? steadyFinanceDark : steadyFinanceLight
         case .vividContrast:
             return isDarkMode ? vividContrastDark : vividContrastLight
+        case .forestMint:
+            return isDarkMode ? forestMintDark : forestMintLight
+        case .sunsetGlow:
+            return isDarkMode ? sunsetGlowDark : sunsetGlowLight
+        case .oceanCool:
+            return isDarkMode ? oceanCoolDark : oceanCoolLight
+        case .jewelTone:
+            return isDarkMode ? jewelToneDark : jewelToneLight
+        case .auroraVivid:
+            return isDarkMode ? auroraVividDark : auroraVividLight
         }
     }
 
@@ -241,6 +251,261 @@ enum ThemeStyleCatalog {
         pickerAccentTW: Color(hex: "#2DD4BF"),
         pickerAccentUS: Color(hex: "#FB923C")
     )
+
+    // MARK: - 森林薄荷（翡翠台股、天藍美股、萊姆加密 + 薄荷底與品牌色）
+
+    static let forestMintLight = fullStylePalette(
+        base: steadyFinanceLight,
+        isDark: false,
+        tokens: FullStyleTokens(
+            mainBackground: "#F0FAF4",
+            cardBackground: "#FFFFFF",
+            secondaryBackground: "#E3F2EA",
+            appPrimary: "#059669",
+            stockTW: ("#059669", "#047857", ["#059669", "#10B981", "#34D399", "#047857", "#065F46", "#6EE7B7"]),
+            stockUS: ("#0284C7", "#0369A1", ["#0284C7", "#0EA5E9", "#38BDF8", "#0369A1", "#075985", "#BAE6FD"]),
+            crypto: ("#65A30D", "#4D7C0F", ["#65A30D", "#84CC16", "#A3E635", "#4D7C0F", "#3F6212", "#D9F99D"]),
+            homeNetWorth: "#059669",
+            homeInvestments: "#0284C7",
+            homeCash: "#5B7C6B",
+            holdingAccent: (tw: 2, us: 0, crypto: 1)
+        )
+    )
+
+    static let forestMintDark = fullStylePalette(
+        base: steadyFinanceDark,
+        isDark: true,
+        tokens: FullStyleTokens(
+            mainBackground: "#0A1410",
+            cardBackground: "#152820",
+            secondaryBackground: "#1E3D30",
+            appPrimary: "#34D399",
+            stockTW: ("#34D399", "#6EE7B7", ["#34D399", "#6EE7B7", "#10B981", "#059669", "#047857", "#A7F3D0"]),
+            stockUS: ("#38BDF8", "#7DD3FC", ["#38BDF8", "#7DD3FC", "#0EA5E9", "#0284C7", "#0369A1", "#E0F2FE"]),
+            crypto: ("#A3E635", "#BEF264", ["#A3E635", "#BEF264", "#84CC16", "#65A30D", "#4D7C0F", "#ECFCCB"]),
+            homeNetWorth: "#34D399",
+            homeInvestments: "#38BDF8",
+            homeCash: "#7D9B8E",
+            holdingAccent: (tw: 2, us: 6, crypto: 3)
+        )
+    )
+
+    // MARK: - 暮色暖彩（玫瑰台股、紫系美股、琥珀加密 + 暖色底）
+
+    static let sunsetGlowLight = fullStylePalette(
+        base: steadyFinanceLight,
+        isDark: false,
+        tokens: FullStyleTokens(
+            mainBackground: "#FFF8F5",
+            cardBackground: "#FFFFFF",
+            secondaryBackground: "#FEECF0",
+            appPrimary: "#E11D48",
+            stockTW: ("#E11D48", "#BE123C", ["#E11D48", "#F43F5E", "#FB7185", "#BE123C", "#9F1239", "#FECDD3"]),
+            stockUS: ("#7C3AED", "#6D28D9", ["#7C3AED", "#8B5CF6", "#A78BFA", "#6D28D9", "#5B21B6", "#DDD6FE"]),
+            crypto: ("#D97706", "#B45309", ["#D97706", "#F59E0B", "#FBBF24", "#B45309", "#92400E", "#FDE68A"]),
+            homeNetWorth: "#E11D48",
+            homeInvestments: "#7C3AED",
+            homeCash: "#B45309",
+            holdingAccent: (tw: 3, us: 0, crypto: 1)
+        )
+    )
+
+    static let sunsetGlowDark = fullStylePalette(
+        base: steadyFinanceDark,
+        isDark: true,
+        tokens: FullStyleTokens(
+            mainBackground: "#140A0E",
+            cardBackground: "#261820",
+            secondaryBackground: "#352430",
+            appPrimary: "#FB7185",
+            stockTW: ("#FB7185", "#FDA4AF", ["#FB7185", "#FDA4AF", "#F43F5E", "#E11D48", "#BE123C", "#FFE4E6"]),
+            stockUS: ("#A78BFA", "#C4B5FD", ["#A78BFA", "#C4B5FD", "#8B5CF6", "#7C3AED", "#6D28D9", "#EDE9FE"]),
+            crypto: ("#FBBF24", "#FCD34D", ["#FBBF24", "#FCD34D", "#F59E0B", "#D97706", "#B45309", "#FEF3C7"]),
+            homeNetWorth: "#FB7185",
+            homeInvestments: "#A78BFA",
+            homeCash: "#D4A574",
+            holdingAccent: (tw: 2, us: 6, crypto: 4)
+        )
+    )
+
+    // MARK: - 海洋清涼（青藍台股、深藍美股、靛紫加密 + 海藍底）
+
+    static let oceanCoolLight = fullStylePalette(
+        base: steadyFinanceLight,
+        isDark: false,
+        tokens: FullStyleTokens(
+            mainBackground: "#F0F9FC",
+            cardBackground: "#FFFFFF",
+            secondaryBackground: "#E0F2FE",
+            appPrimary: "#0891B2",
+            stockTW: ("#0891B2", "#0E7490", ["#0891B2", "#06B6D4", "#22D3EE", "#0E7490", "#155E75", "#A5F3FC"]),
+            stockUS: ("#1E40AF", "#1E3A8A", ["#1E40AF", "#2563EB", "#3B82F6", "#1E3A8A", "#172554", "#BFDBFE"]),
+            crypto: ("#6366F1", "#4F46E5", ["#6366F1", "#818CF8", "#A5B4FC", "#4F46E5", "#4338CA", "#E0E7FF"]),
+            homeNetWorth: "#0891B2",
+            homeInvestments: "#1E40AF",
+            homeCash: "#64748B",
+            holdingAccent: (tw: 2, us: 0, crypto: 1)
+        )
+    )
+
+    static let oceanCoolDark = fullStylePalette(
+        base: steadyFinanceDark,
+        isDark: true,
+        tokens: FullStyleTokens(
+            mainBackground: "#081018",
+            cardBackground: "#122030",
+            secondaryBackground: "#1A3048",
+            appPrimary: "#22D3EE",
+            stockTW: ("#22D3EE", "#67E8F9", ["#22D3EE", "#67E8F9", "#06B6D4", "#0891B2", "#0E7490", "#CFFAFE"]),
+            stockUS: ("#60A5FA", "#93C5FD", ["#60A5FA", "#93C5FD", "#3B82F6", "#2563EB", "#1D4ED8", "#DBEAFE"]),
+            crypto: ("#818CF8", "#A5B4FC", ["#818CF8", "#A5B4FC", "#6366F1", "#4F46E5", "#4338CA", "#EEF2FF"]),
+            homeNetWorth: "#22D3EE",
+            homeInvestments: "#60A5FA",
+            homeCash: "#94A3B8",
+            holdingAccent: (tw: 2, us: 6, crypto: 3)
+        )
+    )
+
+    // MARK: - 寶石質感（紅寶台股、藍寶美股、祖母綠加密 + 紫調底）
+
+    static let jewelToneLight = fullStylePalette(
+        base: steadyFinanceLight,
+        isDark: false,
+        tokens: FullStyleTokens(
+            mainBackground: "#F8F6FA",
+            cardBackground: "#FFFFFF",
+            secondaryBackground: "#EEEAF5",
+            appPrimary: "#7C3AED",
+            stockTW: ("#BE123C", "#9F1239", ["#BE123C", "#E11D48", "#F43F5E", "#9F1239", "#881337", "#FECDD3"]),
+            stockUS: ("#1D4ED8", "#1E40AF", ["#1D4ED8", "#2563EB", "#3B82F6", "#1E40AF", "#1E3A8A", "#BFDBFE"]),
+            crypto: ("#047857", "#065F46", ["#047857", "#059669", "#10B981", "#065F46", "#064E3B", "#A7F3D0"]),
+            homeNetWorth: "#BE123C",
+            homeInvestments: "#1D4ED8",
+            homeCash: "#64748B",
+            holdingAccent: (tw: 3, us: 0, crypto: 1)
+        )
+    )
+
+    static let jewelToneDark = fullStylePalette(
+        base: steadyFinanceDark,
+        isDark: true,
+        tokens: FullStyleTokens(
+            mainBackground: "#0C0A14",
+            cardBackground: "#1A1630",
+            secondaryBackground: "#262040",
+            appPrimary: "#A78BFA",
+            stockTW: ("#F43F5E", "#FB7185", ["#F43F5E", "#FB7185", "#E11D48", "#BE123C", "#9F1239", "#FFE4E6"]),
+            stockUS: ("#3B82F6", "#60A5FA", ["#3B82F6", "#60A5FA", "#2563EB", "#1D4ED8", "#1E40AF", "#DBEAFE"]),
+            crypto: ("#10B981", "#34D399", ["#10B981", "#34D399", "#059669", "#047857", "#065F46", "#D1FAE5"]),
+            homeNetWorth: "#F43F5E",
+            homeInvestments: "#3B82F6",
+            homeCash: "#94A3B8",
+            holdingAccent: (tw: 2, us: 6, crypto: 4)
+        )
+    )
+
+    // MARK: - 極光靛紫（紫系台股、青綠美股、橘系加密 + 極光底）
+
+    static let auroraVividLight = fullStylePalette(
+        base: steadyFinanceLight,
+        isDark: false,
+        tokens: FullStyleTokens(
+            mainBackground: "#F5F3FF",
+            cardBackground: "#FFFFFF",
+            secondaryBackground: "#EDE9FE",
+            appPrimary: "#9333EA",
+            stockTW: ("#9333EA", "#7E22CE", ["#9333EA", "#A855F7", "#C084FC", "#7E22CE", "#6B21A8", "#E9D5FF"]),
+            stockUS: ("#0D9488", "#0F766E", ["#0D9488", "#14B8A6", "#2DD4BF", "#0F766E", "#115E59", "#99F6E4"]),
+            crypto: ("#EA580C", "#C2410C", ["#EA580C", "#F97316", "#FB923C", "#C2410C", "#9A3412", "#FED7AA"]),
+            homeNetWorth: "#9333EA",
+            homeInvestments: "#0D9488",
+            homeCash: "#64748B",
+            holdingAccent: (tw: 1, us: 2, crypto: 0)
+        )
+    )
+
+    static let auroraVividDark = fullStylePalette(
+        base: steadyFinanceDark,
+        isDark: true,
+        tokens: FullStyleTokens(
+            mainBackground: "#0C0A18",
+            cardBackground: "#181530",
+            secondaryBackground: "#252040",
+            appPrimary: "#C084FC",
+            stockTW: ("#C084FC", "#D8B4FE", ["#C084FC", "#D8B4FE", "#A855F7", "#9333EA", "#7E22CE", "#F3E8FF"]),
+            stockUS: ("#2DD4BF", "#5EEAD4", ["#2DD4BF", "#5EEAD4", "#14B8A6", "#0D9488", "#0F766E", "#CCFBF1"]),
+            crypto: ("#FB923C", "#FDBA74", ["#FB923C", "#FDBA74", "#F97316", "#EA580C", "#C2410C", "#FFEDD5"]),
+            homeNetWorth: "#C084FC",
+            homeInvestments: "#2DD4BF",
+            homeCash: "#94A3B8",
+            holdingAccent: (tw: 3, us: 2, crypto: 6)
+        )
+    )
+
+    // MARK: - 完整風格（背景、品牌、首頁強調、台股／美股／加密）
+
+    private struct FullStyleTokens {
+        let mainBackground: String
+        let cardBackground: String
+        let secondaryBackground: String
+        let appPrimary: String
+        let stockTW: (main: String, deep: String, pie: [String])
+        let stockUS: (main: String, deep: String, pie: [String])
+        let crypto: (main: String, deep: String, pie: [String])
+        let homeNetWorth: String
+        let homeInvestments: String
+        let homeCash: String
+        let holdingAccent: (tw: Int, us: Int, crypto: Int)
+    }
+
+    private static func fullStylePalette(
+        base: ThemePalette,
+        isDark: Bool,
+        tokens: FullStyleTokens
+    ) -> ThemePalette {
+        let twColor = Color(hex: tokens.stockTW.main)
+        let usColor = Color(hex: tokens.stockUS.main)
+        let cryptoColor = Color(hex: tokens.crypto.main)
+        let twLightOpacity: CGFloat = isDark ? 0.24 : 0.22
+        let usLightOpacity: CGFloat = isDark ? 0.22 : 0.16
+        let cryptoLightOpacity: CGFloat = isDark ? 0.22 : 0.22
+
+        return base
+            .withBackgroundColors(
+                main: Color(hex: tokens.mainBackground),
+                card: Color(hex: tokens.cardBackground),
+                secondary: Color(hex: tokens.secondaryBackground)
+            )
+            .withBrandPrimary(Color(hex: tokens.appPrimary), isDarkMode: isDark)
+            .withMarketAssetColors(
+                stockTW: twColor,
+                stockTWDeep: Color(hex: tokens.stockTW.deep),
+                stockTWLight: twColor.opacity(twLightOpacity),
+                stockUS: usColor,
+                stockUSDeep: Color(hex: tokens.stockUS.deep),
+                stockUSLight: usColor.opacity(usLightOpacity),
+                crypto: cryptoColor,
+                cryptoDeep: Color(hex: tokens.crypto.deep),
+                cryptoLight: cryptoColor.opacity(cryptoLightOpacity),
+                pieChartTW: tokens.stockTW.pie.map { Color(hex: $0) },
+                pieChartUS: tokens.stockUS.pie.map { Color(hex: $0) },
+                pieChartCrypto: tokens.crypto.pie.map { Color(hex: $0) },
+                allocationStockTW: twColor,
+                allocationStockUS: usColor,
+                allocationCrypto: cryptoColor,
+                holdingChartAccentIndices: tokens.holdingAccent,
+                holdingChartTW: twColor,
+                holdingChartUS: usColor,
+                holdingChartCrypto: cryptoColor,
+                pickerAccentTW: twColor,
+                pickerAccentUS: usColor
+            )
+            .withHomeAccents(
+                netWorth: Color(hex: tokens.homeNetWorth),
+                investments: Color(hex: tokens.homeInvestments),
+                cash: Color(hex: tokens.homeCash)
+            )
+    }
 }
 
 // MARK: - 僅覆寫資產類別色（其餘沿用 base 風格）

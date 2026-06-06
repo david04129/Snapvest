@@ -219,6 +219,8 @@ struct HomePieChartSection: View {
     /// 方案 C：點群組標題 ＋ 後，勾選群組外個股再「加入」
     @State private var addToGroupId: UUID?
     @State private var selectionEditCategory: PieChartGroupEditCategory?
+    @State private var modeBeforeGroupEdit: PieChartDisplayMode?
+    @State private var displayModeBeforeGroupEdit: PieChartGroupingDisplayMode?
     private var supportsGrouping: Bool {
         PieChartGroupingModeSupport.supportsGroupingUI(mode: mode)
     }
@@ -313,7 +315,7 @@ struct HomePieChartSection: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 32)
             } else {
-                Group {
+                VStack(alignment: .leading, spacing: 0) {
                     Group {
                         PortfolioDonutChart(
                             data: displayItems,
@@ -331,11 +333,11 @@ struct HomePieChartSection: View {
                     .opacity(groupingStore.isGroupingTransitioning ? 0.88 : 1)
                     .padding(.vertical, 4)
                     .animation(ChartMotion.switchQuick, value: groupingStore.isGroupingTransitioning)
-                    
-                    if isGroupingEnabled {
+
+                    if supportsGrouping {
                         pieGroupingToolbar
                     }
-                    
+
                     PortfolioGroupedAllocationLegend(
                         rows: legendRows,
                         displayMode: mode,
@@ -399,6 +401,9 @@ struct HomePieChartSection: View {
             syncSelectionAfterDisplayChange()
         }
         .onDisappear {
+            if isEditingGroups {
+                restoreGroupEditContextIfNeeded()
+            }
             groupingStore.cancelGroupingToggleTasks()
             groupingStore.setEditingGroups(false)
         }
@@ -444,30 +449,39 @@ struct HomePieChartSection: View {
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
 
-            AssetsFilterChipButton(
-                title: isEditingGroups ? "結束編輯" : "編輯群組",
-                icon: isEditingGroups ? "checkmark" : "square.and.pencil",
-                isActive: true
-            ) {
-                withAnimation(ChartMotion.switchSpring) {
-                    let entering = !isEditingGroups
-                    if entering {
-                        groupingStore.setEditingGroups(true)
-                        expandAllGroups()
-                        selectedMemberIds.removeAll()
-                        addToGroupId = nil
-                        selectionEditCategory = nil
-                    } else {
-                        guard canExitGroupEdit else { return }
-                        groupingStore.setEditingGroups(false)
-                        selectedMemberIds.removeAll()
-                        addToGroupId = nil
-                        selectionEditCategory = nil
+            HStack(spacing: 8) {
+                if isEditingGroups {
+                    AssetsFilterChipButton(
+                        title: "結束編輯",
+                        icon: "checkmark",
+                        isActive: true
+                    ) {
+                        endGroupEdit()
+                    }
+                    .disabled(hasPendingGroupSelection)
+                    .opacity(hasPendingGroupSelection ? 0.45 : 1)
+                } else if isGroupingEnabled {
+                    AssetsFilterChipButton(
+                        title: "編輯群組",
+                        icon: "square.and.pencil",
+                        isActive: true
+                    ) {
+                        beginGroupEdit()
                     }
                 }
+
+                AssetsFilterChipButton(
+                    title: groupingStore.displayMode.label,
+                    icon: groupingStore.displayMode.chipIcon,
+                    isActive: true
+                ) {
+                    groupingStore.requestDisplayModeToggle()
+                }
+                .disabled(groupingStore.isGroupingTransitioning || isEditingGroups)
+                .opacity(groupingStore.isGroupingTransitioning || isEditingGroups ? 0.45 : 1)
+                .animation(ChartMotion.switchQuick, value: groupingStore.isGroupingTransitioning)
+                .animation(ChartMotion.switchQuick, value: isEditingGroups)
             }
-            .disabled(isEditingGroups && hasPendingGroupSelection)
-            .opacity(isEditingGroups && hasPendingGroupSelection ? 0.45 : 1)
 
             if isEditingGroups {
                 groupSelectionActionBar
@@ -476,6 +490,41 @@ struct HomePieChartSection: View {
         .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
+    }
+
+    private func beginGroupEdit() {
+        modeBeforeGroupEdit = mode
+        displayModeBeforeGroupEdit = groupingStore.displayMode
+        mode = .allDetails
+        groupingStore.setEditingGroups(true)
+        expandAllGroups()
+        selectedMemberIds.removeAll()
+        addToGroupId = nil
+        selectionEditCategory = nil
+        refreshGroupingState()
+        pickLargest()
+    }
+
+    private func endGroupEdit() {
+        guard canExitGroupEdit else { return }
+        groupingStore.setEditingGroups(false)
+        selectedMemberIds.removeAll()
+        addToGroupId = nil
+        selectionEditCategory = nil
+        restoreGroupEditContextIfNeeded()
+        refreshGroupingState()
+        pickLargest()
+    }
+
+    private func restoreGroupEditContextIfNeeded() {
+        if let savedMode = modeBeforeGroupEdit {
+            mode = savedMode
+        }
+        if let savedDisplayMode = displayModeBeforeGroupEdit {
+            groupingStore.setDisplayMode(savedDisplayMode)
+        }
+        modeBeforeGroupEdit = nil
+        displayModeBeforeGroupEdit = nil
     }
     
     private var groupEditStatusHint: String {
@@ -631,13 +680,15 @@ struct HomePieChartSection: View {
         )
         var updated = activeGroups
         updated.append(group)
-        groupingStore.updateGroups(updated)
-        selectedMemberIds.removeAll()
-        addToGroupId = nil
-        selectionEditCategory = nil
-        selectedId = PieChartGroupingEngine.groupSliceId(group.id)
-        expandAllGroups()
-        refreshGroupingState()
+        withAnimation(ChartMotion.pieMorphSpring) {
+            groupingStore.updateGroups(updated)
+            selectedMemberIds.removeAll()
+            addToGroupId = nil
+            selectionEditCategory = nil
+            selectedId = PieChartGroupingEngine.groupSliceId(group.id)
+            expandAllGroups()
+            refreshGroupingState()
+        }
     }
     
     private func toggleAddToGroup(_ groupId: UUID) {
@@ -759,19 +810,6 @@ struct HomePieChartSection: View {
                     .foregroundColor(AppColors.appPrimary)
             }
             Spacer(minLength: 8)
-            if supportsGrouping {
-                AssetsFilterChipButton(
-                    title: groupingStore.displayMode.label,
-                    icon: groupingStore.displayMode.chipIcon,
-                    isActive: true
-                ) {
-                    groupingStore.requestDisplayModeToggle()
-                }
-                .disabled(groupingStore.isGroupingTransitioning || isEditingGroups)
-                .opacity(groupingStore.isGroupingTransitioning || isEditingGroups ? 0.45 : 1)
-                .animation(ChartMotion.switchQuick, value: groupingStore.isGroupingTransitioning)
-                .animation(ChartMotion.switchQuick, value: isEditingGroups)
-            }
         }
         .padding(.horizontal, 16)
         .padding(.top, 16)

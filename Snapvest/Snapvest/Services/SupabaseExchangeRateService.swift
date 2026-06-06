@@ -44,10 +44,10 @@ private struct SupabaseExchangeRateRow: Decodable {
 
     var displayUpdatedAt: Date? {
         if rate != nil, (rate ?? 0) > 0 {
-            return ExchangeRateRESTTimestampParser.parse(updated_at)
+            return SupabaseRESTTimestampParser.parse(updated_at)
         }
-        return ExchangeRateRESTTimestampParser.parse(previous_updated_at)
-            ?? ExchangeRateRESTTimestampParser.parse(updated_at)
+        return SupabaseRESTTimestampParser.parse(previous_updated_at)
+            ?? SupabaseRESTTimestampParser.parse(updated_at)
     }
 
     private static func decodePositiveDecimal(
@@ -62,23 +62,6 @@ private struct SupabaseExchangeRateRow: Decodable {
             return Decimal(number)
         }
         return nil
-    }
-}
-
-private enum ExchangeRateRESTTimestampParser {
-    nonisolated static func parse(_ string: String?) -> Date? {
-        guard let string else { return nil }
-        let withFraction = ISO8601DateFormatter()
-        withFraction.formatOptions = [
-            .withInternetDateTime,
-            .withFractionalSeconds,
-            .withColonSeparatorInTime
-        ]
-        withFraction.timeZone = TimeZone(identifier: "UTC")
-        let withoutFraction = ISO8601DateFormatter()
-        withoutFraction.formatOptions = [.withInternetDateTime, .withColonSeparatorInTime]
-        withoutFraction.timeZone = TimeZone(identifier: "UTC")
-        return withFraction.date(from: string) ?? withoutFraction.date(from: string)
     }
 }
 

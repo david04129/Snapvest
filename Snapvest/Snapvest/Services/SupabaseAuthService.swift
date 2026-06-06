@@ -40,17 +40,21 @@ actor SupabaseAuthService {
     private var inFlightEnsure: Task<SupabaseAuthSession?, Never>?
 
     func warmUp() async {
-        _ = await ensureSession()
+        guard await shouldUseAuth() else {
+            authDebugLog("warmUp skipped (demo mode or Supabase not configured)")
+            return
+        }
+        _ = await ensureSession(preferRefresh: true)
     }
 
     func bearerAccessToken() async -> String? {
         guard await shouldUseAuth() else { return nil }
-        return await ensureSession()?.accessToken
+        return await ensureSession(preferRefresh: false)?.accessToken
     }
 
     func currentUserId() async -> String? {
         guard await shouldUseAuth() else { return nil }
-        return await ensureSession()?.userId
+        return await ensureSession(preferRefresh: false)?.userId
     }
 
     /// 清除 session（除錯／登出用；Phase A 一般使用者不需呼叫）
@@ -59,7 +63,7 @@ actor SupabaseAuthService {
         SupabaseAuthKeychain.delete()
     }
 
-    func ensureSession() async -> SupabaseAuthSession? {
+    func ensureSession(preferRefresh: Bool = false) async -> SupabaseAuthSession? {
         guard await shouldUseAuth() else { return nil }
 
         if let inFlightEnsure {
@@ -67,39 +71,46 @@ actor SupabaseAuthService {
         }
 
         let task = Task<SupabaseAuthSession?, Never> {
-            await self.ensureSessionUnlocked()
+            await self.ensureSessionUnlocked(preferRefresh: preferRefresh)
         }
         inFlightEnsure = task
         defer { inFlightEnsure = nil }
         return await task.value
     }
 
-    private func ensureSessionUnlocked() async -> SupabaseAuthSession? {
-        if let cachedSession, !shouldRefresh(cachedSession) {
+    private func ensureSessionUnlocked(preferRefresh: Bool) async -> SupabaseAuthSession? {
+        if let cachedSession, !shouldRefresh(cachedSession), !preferRefresh {
             return cachedSession
         }
 
         if let stored = SupabaseAuthKeychain.load() {
-            if !shouldRefresh(stored) {
+            if preferRefresh || shouldRefresh(stored) {
+                do {
+                    let refreshed = try await refreshSession(refreshToken: stored.refreshToken)
+                    cachedSession = refreshed
+                    persist(refreshed)
+                    authDebugLog("session refreshed userId=\(refreshed.userId.prefix(8))…")
+                    return refreshed
+                } catch {
+                    authDebugLog("session refresh failed: \(error.localizedDescription)")
+                }
+                authDebugLog("clearing invalid keychain session")
+                SupabaseAuthKeychain.delete()
+            } else {
                 let session = SupabaseAuthSession(stored: stored)
                 cachedSession = session
+                authDebugLog("session restored from keychain userId=\(session.userId.prefix(8))…")
                 return session
             }
-            if let refreshed = try? await refreshSession(refreshToken: stored.refreshToken) {
-                cachedSession = refreshed
-                persist(refreshed)
-                return refreshed
-            }
-            SupabaseAuthKeychain.delete()
+        } else {
+            authDebugLog("no keychain session; creating anonymous user")
         }
 
         do {
             let created = try await signInAnonymously()
             cachedSession = created
             persist(created)
-            #if DEBUG
-            print("[SupabaseAuthService] anonymous sign-in userId=\(created.userId.prefix(8))…")
-            #endif
+            authDebugLog("anonymous sign-in userId=\(created.userId.prefix(8))…")
             return created
         } catch {
             print("[SupabaseAuthService] ensureSession failed: \(error.localizedDescription)")
@@ -108,9 +119,7 @@ actor SupabaseAuthService {
     }
 
     private func shouldUseAuth() async -> Bool {
-        guard SupabaseConfig.isConfigured else { return false }
-        let demoEnabled = await MainActor.run { DemoModeManager.shared.isEnabled }
-        return !demoEnabled
+        SupabaseConfig.isConfigured
     }
 
     private func shouldRefresh(_ session: SupabaseAuthSession) -> Bool {
@@ -237,6 +246,12 @@ actor SupabaseAuthService {
     private struct AuthUserResponse: Decodable {
         let id: String?
         let is_anonymous: Bool?
+    }
+
+    private func authDebugLog(_ message: String) {
+        #if DEBUG
+        print("[SupabaseAuthService] \(message)")
+        #endif
     }
 }
 

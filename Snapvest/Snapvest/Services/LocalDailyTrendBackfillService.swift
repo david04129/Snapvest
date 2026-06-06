@@ -8,14 +8,17 @@
 import Foundation
 
 enum LocalDailyTrendBackfillService {
-    private static let previousCloseSource = "asset_price_history"
-
     @discardableResult
     static func runIfNeeded(
         userId: String,
         dataService: DataServiceProtocol,
         now: Date = Date()
     ) async -> Bool {
+        if (dataService as? MockDataService)?.isDemoModeActive == true {
+            debugLog("skip: demo mode uses offline trend template")
+            return false
+        }
+
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: now)
         guard let yesterday = calendar.date(byAdding: .day, value: -1, to: today) else {
@@ -40,7 +43,6 @@ enum LocalDailyTrendBackfillService {
             context: context,
             dataService: dataService
         )
-
         let existingSnapshots = (try? await dataService.fetchLocalDailyTrendSnapshots(
             userId: userId,
             startDate: nil,
@@ -93,68 +95,14 @@ enum LocalDailyTrendBackfillService {
         context: BackfillContext,
         dataService: DataServiceProtocol
     ) async -> Int {
-        var updatedCount = 0
-        var seenKeys = Set<String>()
-
-        for holding in context.holdings {
-            let normalized = SupabasePriceService.normalizeSymbol(
-                assetType: holding.assetType,
-                symbol: holding.symbol
-            )
-            let storageKey = "\(holding.assetType.rawValue)_\(normalized)"
-            guard !seenKeys.contains(storageKey) else { continue }
-            seenKeys.insert(storageKey)
-
-            guard let existing = context.priceSnapshotsByKey[storageKey]
-                ?? context.priceSnapshotsByKey["\(holding.assetType.rawValue)_\(holding.symbol)"],
-                existing.hasValidPrice else {
-                continue
-            }
-            let batchKey = SupabasePriceService.batchKey(
-                assetType: holding.assetType,
-                symbol: holding.symbol
-            )
-            guard let resolved = DailyReferenceCloseResolver.resolvePreviousSessionClose(
-                assetType: holding.assetType,
-                symbol: holding.symbol,
-                exactHistoryByDate: context.exactHistoricalPricesByKeyAndDate[batchKey] ?? [:],
-                historyDateKeys: context.historyDateKeys,
-                snapshot: existing
-            ) else {
-                continue
-            }
-
-            let updated = snapshotWithDailyReferenceClose(
-                existing: existing,
-                previousPrice: resolved.price,
-                previousCloseDate: resolved.closeDate
-            )
-            try? await dataService.saveAssetPriceSnapshot(updated)
-            updatedCount += 1
+        let symbols = context.holdings.map {
+            SymbolInfo(assetType: $0.assetType, symbol: $0.symbol)
         }
-
-        return updatedCount
-    }
-
-    private static func snapshotWithDailyReferenceClose(
-        existing: AssetPriceSnapshot,
-        previousPrice: Decimal,
-        previousCloseDate: Date
-    ) -> AssetPriceSnapshot {
-        AssetPriceSnapshot(
-            assetType: existing.assetType,
-            symbol: existing.symbol,
-            name: existing.name,
-            currency: existing.currency,
-            currentPrice: existing.currentPrice,
-            previousPrice: previousPrice,
-            currentCloseDate: existing.currentCloseDate,
-            currentUpdatedAt: existing.currentUpdatedAt,
-            previousCloseDate: Calendar.current.startOfDay(for: previousCloseDate),
-            previousUpdatedAt: Date(),
-            currentPriceSource: existing.currentPriceSource,
-            previousPriceSource: previousCloseSource,
-            priceKind: existing.priceKind
+        return await DailyPreviousCloseSync.apply(
+            for: symbols,
+            dataService: dataService,
+            historyByKey: context.exactHistoricalPricesByKeyAndDate,
+            historyDateKeys: context.historyDateKeys
         )
     }
 

@@ -116,21 +116,21 @@ struct ContentView: View {
     private func demoModeBadgeOverlay() -> some View {
         if demoMode.isEnabled {
             DemoModeFloatingBadge { showsExitDemoModeAlert = true }
-                .padding(.trailing, 14)
-                .padding(.bottom, 58)
+                .padding(.trailing, 12)
+                .padding(.bottom, 52)
         }
     }
 
     @ViewBuilder
     private func portfolioMutationOverlay() -> some View {
         if isPortfolioMutationRefreshing {
-            PortfolioMutationLoadingOverlay(
+            OperationLoadingOverlay(
                 title: portfolioMutationRefreshTitle,
                 message: portfolioMutationRefreshMessage
             )
             .transition(.opacity)
         } else if demoMode.isSwitching {
-            PortfolioMutationLoadingOverlay(
+            OperationLoadingOverlay(
                 title: "正在準備示範資料…",
                 message: "會載入一組範例帳戶、持股與走勢"
             )
@@ -302,49 +302,28 @@ private struct DemoModeFloatingBadge: View {
     
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 Image(systemName: "play.rectangle.fill")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.system(size: 17, weight: .bold))
                 
                 Text("示範模式")
-                    .font(.caption.weight(.bold))
+                    .font(.subheadline.weight(.bold))
             }
             .foregroundColor(.white)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(Color.lossRed.opacity(0.94))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 11)
+            .background(Color.lossRed.opacity(0.96))
             .clipShape(Capsule())
-            .shadow(color: AppColors.shadowLow, radius: 4, x: 0, y: 2)
+            .overlay {
+                Capsule()
+                    .strokeBorder(Color.white.opacity(0.35), lineWidth: 1)
+            }
+            .shadow(color: Color.lossRed.opacity(0.35), radius: 10, x: 0, y: 4)
+            .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 2)
         }
         .buttonStyle(.plain)
-    }
-}
-
-private struct PortfolioMutationLoadingOverlay: View {
-    let title: String
-    let message: String
-
-    var body: some View {
-        ZStack {
-            Color.black.opacity(0.18)
-                .ignoresSafeArea()
-
-            VStack(spacing: 12) {
-                ProgressView()
-                    .tint(.appPrimary)
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(.primaryText)
-                Text(message)
-                    .font(.caption)
-                    .foregroundColor(.secondaryText)
-            }
-            .padding(.horizontal, 22)
-            .padding(.vertical, 18)
-            .background(Color.cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .shadow(color: AppColors.shadowMedium, radius: 12, x: 0, y: 4)
-        }
+        .accessibilityLabel("示範模式")
+        .accessibilityHint("點一下可結束示範模式")
     }
 }
 

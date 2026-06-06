@@ -115,8 +115,6 @@ struct HomeView: View {
                             .snapHomeSummaryMetricStyle()
                         }
                     }
-                    
-                    DataFreshnessFooterView(style: .valuationTabs)
                 }
                 .padding()
                 .animation(.easeInOut(duration: 0.22), value: homePrivacy.isAmountHidden)
