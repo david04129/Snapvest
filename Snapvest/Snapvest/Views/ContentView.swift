@@ -32,13 +32,6 @@ struct ContentView: View {
     @State private var manualRefreshBlockedAlertMessage = ""
     @State private var isPaywallPresented = false
 
-    private var complianceSnapshot: PortfolioLimitSnapshot {
-        SubscriptionComplianceState.snapshot(
-            accounts: accountsViewModel.accounts,
-            holdings: assetsViewModel.aggregatedHoldings
-        )
-    }
-
     var body: some View {
         tabRootWithChrome
             .overlay(alignment: .bottomTrailing, content: demoModeBadgeOverlay)
@@ -90,21 +83,6 @@ struct ContentView: View {
             .transaction { transaction in
                 transaction.animation = nil
             }
-            .safeAreaInset(edge: .top, spacing: 0) {
-                VStack(spacing: 0) {
-                    if let notice = launchSessionState.startupNotice {
-                        StartupNoticeBanner(message: notice) {
-                            launchSessionState.clearStartupNotice()
-                        }
-                    }
-                    if !PlusFeatureGate.shouldBypassLimits(isPlusActive: subscriptionManager.isPlusActive),
-                       complianceSnapshot.isOverFreeHoldingLimits {
-                        SubscriptionComplianceBanner(snapshot: complianceSnapshot) {
-                            isPaywallPresented = true
-                        }
-                    }
-                }
-            }
     }
 
     private var mainTabView: some View {
@@ -130,6 +108,7 @@ struct ContentView: View {
                 .tabItem { Label("紀錄", systemImage: "clock.fill") }
                 .tag(AppTab.transactions.rawValue)
         }
+        .environment(\.openPlusPaywall, { isPaywallPresented = true })
     }
 
     @ViewBuilder

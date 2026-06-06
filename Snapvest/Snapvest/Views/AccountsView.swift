@@ -134,7 +134,9 @@ struct AccountsView: View {
             .environment(\.managementShareDisplayMode, managementShareDisplayMode)
             .environment(\.editMode, .constant(isEditingOrder ? .active : .inactive))
             .safeAreaInset(edge: .top) {
-                accountsHeaderBar
+                AppTabTopChrome {
+                    accountsHeaderBar
+                }
             }
             .refreshable {
                 await ManualRefreshCooldown.shared.performIfAllowed {

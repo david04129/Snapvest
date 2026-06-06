@@ -123,7 +123,9 @@ struct HomeView: View {
             .background(Color.mainBackground)
             .navigationBarBackButtonHidden(true)
             .safeAreaInset(edge: .top) {
-                customHeaderBar(icon: "house.fill", title: "首頁")
+                AppTabTopChrome {
+                    customHeaderBar(icon: "house.fill", title: "首頁")
+                }
             }
             .refreshable {
                 guard !pieGroupingStore.isEditingGroups else { return }

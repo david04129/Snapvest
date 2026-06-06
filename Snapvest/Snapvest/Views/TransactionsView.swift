@@ -565,7 +565,9 @@ struct TransactionsView: View {
             .background(Color.mainBackground)
             .navigationBarBackButtonHidden(true)
             .safeAreaInset(edge: .top) {
-                customHeaderBar(icon: "clock.fill", title: "所有紀錄")
+                AppTabTopChrome {
+                    customHeaderBar(icon: "clock.fill", title: "所有紀錄")
+                }
             }
             .refreshable {
                 await viewModel.loadTransactions(userId: userId)

@@ -40,7 +40,7 @@ struct SubscriptionComplianceBanner: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .padding(.horizontal, 16)
-        .padding(.top, 8)
+        .padding(.vertical, 8)
         .accessibilityElement(children: .combine)
     }
 

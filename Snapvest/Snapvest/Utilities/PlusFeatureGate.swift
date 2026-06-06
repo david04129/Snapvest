@@ -26,6 +26,7 @@ enum PlusGateDecision: Equatable {
     }
 }
 
+@MainActor
 enum PlusFeatureGate {
     static func shouldBypassLimits(isPlusActive: Bool) -> Bool {
         isPlusActive || DemoModeManager.shared.isEnabled
@@ -99,9 +100,13 @@ enum PlusFeatureGate {
         return .allowed
     }
 
+    static func loadSnapshot(userId: String) async throws -> PortfolioLimitSnapshot {
+        try await loadSnapshot(userId: userId, dataService: MockDataService.shared)
+    }
+
     static func loadSnapshot(
         userId: String,
-        dataService: DataServiceProtocol = MockDataService.shared
+        dataService: DataServiceProtocol
     ) async throws -> PortfolioLimitSnapshot {
         async let accounts = dataService.fetchAccounts(userId: userId)
         async let holdings = dataService.fetchAggregatedHoldingSnapshots(userId: userId, assetType: nil)

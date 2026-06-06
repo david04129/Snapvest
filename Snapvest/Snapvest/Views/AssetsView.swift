@@ -113,7 +113,9 @@ struct AssetsView: View {
             .background(Color.mainBackground)
             .navigationBarBackButtonHidden(true)
             .safeAreaInset(edge: .top) {
-                customHeaderBar(icon: "chart.bar.fill", title: "投資")
+                AppTabTopChrome {
+                    customHeaderBar(icon: "chart.bar.fill", title: "投資")
+                }
             }
             .task {
                 marketStatus = await MarketStatusService.fetchIfNeeded()
