@@ -14,16 +14,20 @@ import Foundation
 enum SupabaseConfigLoader {
     /// 在 App 啟動時呼叫
     static func configure() {
-        #if DEBUG
-        SupabaseConfig.url = stringFromPlist("SUPABASE_URL")
-            ?? "https://eqtbyusegarvdfplcorq.supabase.co"
-        SupabaseConfig.anonKey = stringFromPlist("SUPABASE_ANON_KEY")
-            ?? "sb_publishable__E7HewKbHnA47_P1Z6mkOg_qMxiC3os"
-        #else
         SupabaseConfig.url = stringFromPlist("SUPABASE_URL")
         SupabaseConfig.anonKey = stringFromPlist("SUPABASE_ANON_KEY")
-        #endif
-        
+
+        // Retired 2026-06-06：DEBUG 硬編碼 fallback 已停用（確認全專案僅此處；Info.plist 已含設定）。
+        // #if DEBUG
+        // SupabaseConfig.url = stringFromPlist("SUPABASE_URL")
+        //     ?? "https://eqtbyusegarvdfplcorq.supabase.co"
+        // SupabaseConfig.anonKey = stringFromPlist("SUPABASE_ANON_KEY")
+        //     ?? "sb_publishable__E7HewKbHnA47_P1Z6mkOg_qMxiC3os"
+        // #else
+        // SupabaseConfig.url = stringFromPlist("SUPABASE_URL")
+        // SupabaseConfig.anonKey = stringFromPlist("SUPABASE_ANON_KEY")
+        // #endif
+
         SupabaseConfig.anonJwt = stringFromPlist("SUPABASE_ANON_JWT")
     }
     

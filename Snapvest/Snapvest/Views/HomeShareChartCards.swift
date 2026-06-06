@@ -160,7 +160,7 @@ struct HomePieChartShareCard: View {
     private var isGroupingEnabled: Bool {
         config.pieIsGroupingEnabled
     }
-    
+
     private var baseItems: [PieChartDataItem] {
         guard let inputs else { return [] }
         return PieChartGroupingModeSupport.effectiveBaseItems(
@@ -169,7 +169,7 @@ struct HomePieChartShareCard: View {
             isGroupingEnabled: isGroupingEnabled
         )
     }
-    
+
     private var displayItems: [PieChartDataItem] {
         PieChartGroupingEngine.applyGroups(
             baseItems: baseItems,
@@ -178,7 +178,7 @@ struct HomePieChartShareCard: View {
             isGroupingEnabled: isGroupingEnabled
         )
     }
-    
+
     private var legendRows: [PieChartLegendRow] {
         PieChartGroupingEngine.legendRows(
             baseItems: baseItems,
@@ -188,7 +188,7 @@ struct HomePieChartShareCard: View {
             isGroupingEnabled: isGroupingEnabled
         )
     }
-    
+
     private var denominator: Decimal {
         guard let inputs else { return config.totalAssets }
         return PortfolioPieChartBuilder.denominator(

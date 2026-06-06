@@ -413,6 +413,8 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Snapvest/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Walleaf;
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Walleaf 需要使用 Face ID 來保護您的資產與交易資訊。";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Walleaf 需要將分享圖儲存到您的相簿。";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -421,7 +423,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.EggHsu.Snapvest;
+				PRODUCT_BUNDLE_IDENTIFIER = com.EggHsu.Walleaf;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -445,6 +447,8 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Snapvest/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Walleaf;
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Walleaf 需要使用 Face ID 來保護您的資產與交易資訊。";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Walleaf 需要將分享圖儲存到您的相簿。";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -453,7 +457,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.EggHsu.Snapvest;
+				PRODUCT_BUNDLE_IDENTIFIER = com.EggHsu.Walleaf;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;

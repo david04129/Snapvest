@@ -27,7 +27,8 @@ final class PrivacyLockManager: ObservableObject {
     
     private init() {
         isEnabled = UserDefaults.standard.bool(forKey: Self.enabledStorageKey)
-        isLocked = isEnabled
+        // 冷啟動在 Splash 完成驗證，不在此預設鎖定，避免切主畫面時閃 PrivacyLockView。
+        isLocked = false
     }
     
     var statusText: String {
@@ -99,10 +100,29 @@ final class PrivacyLockManager: ObservableObject {
         }
     }
     
+    @discardableResult
+    func authenticateForLaunch() async -> Bool {
+        guard isEnabled else {
+            isLocked = false
+            return true
+        }
+
+        errorMessage = nil
+        let result = await evaluateAuthentication(reason: "解鎖 Walleaf")
+        switch result {
+        case .success:
+            isLocked = false
+            errorMessage = nil
+            return true
+        case .failure(let message):
+            isLocked = true
+            errorMessage = message
+            return false
+        }
+    }
+
     func handleLaunchComplete() {
-        guard isEnabled else { return }
-        isLocked = true
-        unlockAfterProtectedPresentation()
+        // 冷啟動已在 Splash 完成驗證；此處不再切換至 PrivacyLockView，避免閃屏。
     }
     
     private func unlockAfterProtectedPresentation() {

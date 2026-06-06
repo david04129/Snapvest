@@ -15,11 +15,12 @@ import UIKit
 struct SettingsView: View {
     @ObservedObject private var theme = ThemeManager.shared
     @ObservedObject private var privacyLock = PrivacyLockManager.shared
-    @ObservedObject private var demoMode = DemoModeManager.shared
     @ObservedObject private var baseCurrency = BaseCurrencyManager.shared
+    @EnvironmentObject private var subscriptionManager: SubscriptionManager
     @Environment(\.dismiss) private var dismiss
     
     @State private var comingSoonFeature: SettingsComingSoonFeature?
+    @State private var isPaywallPresented = false
     @State private var privacyLockSettingsMessage: String?
     @State private var isBaseCurrencySheetPresented = false
     @State private var isPreparingBackup = false
@@ -71,13 +72,14 @@ struct SettingsView: View {
                         baseCurrencyRow
                     }
                     
-                    settingsSection(title: "體驗") {
-                        demoModeRow
-
-                        Divider()
-                            .padding(.leading, 56)
-
-                        onboardingReplayRow
+                    settingsSection(title: "使用教學") {
+                        NavigationLink {
+                            UsageTutorialsHubView(onDismissSettings: { dismiss() })
+                        } label: {
+                            usageTutorialsEntryRow
+                        }
+                        .buttonStyle(.plain)
+                        .tint(.primaryText)
                     }
 
                     #if DEBUG
@@ -123,6 +125,9 @@ struct SettingsView: View {
                     message: Text(feature.message),
                     dismissButton: .default(Text("知道了"))
                 )
+            }
+            .fullScreenCover(isPresented: $isPaywallPresented) {
+                WalleafPlusPaywallView()
             }
             .alert(
                 "隱私鎖",
@@ -188,11 +193,11 @@ struct SettingsView: View {
             ) { result in
                 handleBackupImport(result)
             }
-            .alert("還原備份？", isPresented: $isRestoreConfirmationPresented) {
+            .alert("還原將取代目前資料？", isPresented: $isRestoreConfirmationPresented) {
                 Button("取消", role: .cancel) {
                     pendingBackupRestore = nil
                 }
-                Button("還原", role: .destructive) {
+                Button("仍要還原", role: .destructive) {
                     Task { await restorePendingBackup() }
                 }
             } message: {
@@ -246,7 +251,7 @@ struct SettingsView: View {
     
     private var plusCard: some View {
         Button {
-            comingSoonFeature = .subscription
+            isPaywallPresented = true
         } label: {
             VStack(alignment: .leading, spacing: 18) {
                 HStack(alignment: .top) {
@@ -264,20 +269,22 @@ struct SettingsView: View {
                                 .clipShape(Capsule())
                         }
                         
-                        Text("解鎖更多投資追蹤、分享與進階設定功能")
+                        Text(subscriptionManager.isPlusActive
+                            ? WalleafPlusPaywallL10n.settingsCardDescriptionSubscribed
+                            : WalleafPlusPaywallL10n.settingsCardDescription)
                             .font(.subheadline.weight(.semibold))
                             .foregroundColor(.primaryText.opacity(0.78))
                     }
                     
                     Spacer(minLength: 12)
                     
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 20, weight: .semibold))
+                    Image(systemName: subscriptionManager.isPlusActive ? "checkmark.seal.fill" : "sparkles")
+                        .font(.system(size: subscriptionManager.isPlusActive ? 22 : 20, weight: .semibold))
                         .foregroundColor(.white.opacity(0.88))
                 }
                 
                 HStack {
-                    Text("訂閱功能即將推出")
+                    Text(subscriptionManager.isPlusActive ? WalleafPlusPaywallL10n.settingsCardSubscribed : WalleafPlusPaywallL10n.settingsCardSubtitle)
                         .font(.caption.weight(.semibold))
                         .foregroundColor(.primaryText.opacity(0.7))
                     Spacer()
@@ -720,7 +727,7 @@ struct SettingsView: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundColor(.primaryText)
 
-                    Text("選取備份檔，確認後覆蓋目前本機資料")
+                    Text("選取備份檔；還原會完全取代目前本機資料")
                         .font(.caption)
                         .foregroundColor(.secondaryText)
                 }
@@ -748,93 +755,30 @@ struct SettingsView: View {
         .disabled(isPreparingBackup || isRestoringBackup)
     }
     
-    private var demoModeRow: some View {
-        Button {
-            Task {
-                if demoMode.isEnabled {
-                    await demoMode.exitDemoMode()
-                } else {
-                    await demoMode.enterDemoMode()
-                }
+    private var usageTutorialsEntryRow: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "book.fill")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(.appPrimary)
+                .frame(width: 30, height: 30)
+                .background(Color.appPrimary.opacity(0.14))
+                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("教學與示範模式")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.primaryText)
+
+                Text("功能導覽、操作教學與沙盒體驗")
+                    .font(.caption)
+                    .foregroundColor(.secondaryText)
             }
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "play.rectangle.fill")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.appPrimary)
-                    .frame(width: 30, height: 30)
-                    .background(Color.appPrimary.opacity(0.14))
-                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-                
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("示範模式")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.primaryText)
-                    
-                    Text(demoMode.isEnabled ? "示範資料僅在記憶體中，不會寫入本機" : "用一組示範資料體驗完整功能（雲端股價）")
-                        .font(.caption)
-                        .foregroundColor(.secondaryText)
-                }
-                
-                Spacer(minLength: 12)
-                
-                if demoMode.isSwitching {
-                    ProgressView()
-                        .tint(.appPrimary)
-                } else {
-                    Text(demoMode.isEnabled ? "退出" : "進入")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(demoMode.isEnabled ? .lossRed : .appPrimary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .background((demoMode.isEnabled ? Color.lossRed : Color.appPrimary).opacity(0.12))
-                        .clipShape(Capsule())
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 13)
-            .contentShape(Rectangle())
+
+            Spacer(minLength: 12)
         }
-        .buttonStyle(.plain)
-        .disabled(demoMode.isSwitching)
-    }
-
-    private var onboardingReplayRow: some View {
-        Button {
-            dismiss()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                OnboardingManager.shared.presentManually()
-            }
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "book.fill")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.appPrimary)
-                    .frame(width: 30, height: 30)
-                    .background(Color.appPrimary.opacity(0.14))
-                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("重新觀看新手教學")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.primaryText)
-
-                    Text("再次瀏覽帳戶、紀錄與備份說明")
-                        .font(.caption)
-                        .foregroundColor(.secondaryText)
-                }
-
-                Spacer(minLength: 12)
-
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(.secondaryText.opacity(0.7))
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 13)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 13)
+        .contentShape(Rectangle())
     }
 
     #if DEBUG
@@ -956,9 +900,17 @@ struct SettingsView: View {
 
     private var restoreConfirmationMessage: String {
         guard let pendingBackupRestore else {
-            return "這會覆蓋目前本機資料，請先確認你已保留需要的備份。"
+            return "還原後，這台裝置上的現有資料會被移除，並以備份檔內容完全取代（不會合併）。若你仍需要目前的資料，請先匯出一份新備份。"
         }
-        return "備份建立時間：\(formatBackupDate(pendingBackupRestore.createdAt))\n\n這會覆蓋目前本機資料，包含帳戶、交易、其他資產、走勢點與偏好。"
+        return """
+        備份建立時間：\(formatBackupDate(pendingBackupRestore.createdAt))
+
+        還原後，這台裝置上的現有資料會被移除，並以備份檔內容完全取代（不會合併）。
+
+        將被取代的內容包含：帳戶、交易、持股、其他資產、走勢圖與偏好設定。
+
+        若你仍需要目前的資料，請先「匯出備份」再繼續。
+        """
     }
 
     private func exportBackup() async {

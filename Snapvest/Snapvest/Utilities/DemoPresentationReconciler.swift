@@ -28,25 +28,16 @@ enum DemoPresentationReconciler {
                 continue
             }
 
-            if calendar.isDate(date, inSameDayAs: today) {
-                let todaySnap = LocalDailyTrendSnapshot(
-                    userId: userId,
-                    date: today,
-                    totalAssets: home.totalAssets,
-                    netWorth: home.netWorth,
-                    unrealizedGainLoss: unrealized,
-                    sourceHomeSnapshotUpdatedAt: home.lastUpdated,
-                    recordedAt: now
-                )
-                try? await dataService.upsertLocalDailyTrendSnapshot(todaySnap)
-                continue
-            }
+            let netWorth = home.netWorth * decimalRatio(point.netWorthRatio)
+            let liabilities = home.totalLiabilities * decimalRatio(point.liabilityRatio)
+            // 總資產 = 淨資產 + 負債，與首頁卡片一致，避免今日點與昨日脫鉤。
+            let totalAssets = netWorth + liabilities
 
             let snap = LocalDailyTrendSnapshot(
                 userId: userId,
                 date: date,
-                totalAssets: home.totalAssets * decimalRatio(point.totalAssetsRatio),
-                netWorth: home.netWorth * decimalRatio(point.netWorthRatio),
+                totalAssets: totalAssets,
+                netWorth: netWorth,
                 unrealizedGainLoss: unrealized * decimalRatio(point.unrealizedRatio),
                 sourceHomeSnapshotUpdatedAt: home.lastUpdated,
                 recordedAt: now

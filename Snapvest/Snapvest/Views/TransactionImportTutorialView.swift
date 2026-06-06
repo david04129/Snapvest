@@ -10,6 +10,19 @@ import SwiftUI
 struct TransactionImportTutorialView: View {
     let account: Account
 
+    init(account: Account) {
+        self.account = account
+    }
+
+    /// 設定頁等無特定帳戶時，以代表帳戶類型展示通用匯入教學。
+    init(accountType: AccountType) {
+        self.account = Account(
+            userId: AppUser.id,
+            name: "示範",
+            accountType: accountType
+        )
+    }
+
     @Environment(\.dismiss) private var dismiss
     @State private var pageIndex = 0
     @State private var animate = false
@@ -36,7 +49,7 @@ struct TransactionImportTutorialView: View {
                 footer
             }
             .background(Color.mainBackground)
-            .navigationTitle("匯入教學")
+            .navigationTitle("如何批量匯入持倉")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {

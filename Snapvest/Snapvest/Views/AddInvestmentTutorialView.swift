@@ -2,7 +2,7 @@
 //  AddInvestmentTutorialView.swift
 //  Snapvest
 //
-//  投資分頁空白狀態：如何新增持股圖文教學
+//  投資分頁空白狀態：如何新增持倉圖文教學
 //
 
 import SwiftUI
@@ -34,7 +34,7 @@ struct AddInvestmentTutorialView: View {
                 footer
             }
             .background(Color.mainBackground)
-            .navigationTitle("如何新增持股")
+            .navigationTitle("如何新增持倉")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -128,7 +128,7 @@ private struct InvestmentTutorialPage: Identifiable {
         InvestmentTutorialPage(
             id: "create",
             title: "建立投資帳戶",
-            subtitle: "持股會彙總在投資分頁，但需先到管理分頁建立投資帳戶（示範：台股證券）。",
+            subtitle: "持倉會彙總在投資分頁，但需先到管理分頁建立投資帳戶（示範：台股證券）。",
             detailBullets: [
                 [.normal("點選底部「"), .strong("管理"), .normal("」分頁")],
                 [.normal("按右上角「"), .strong("新增項目"), .normal("」")],
@@ -143,13 +143,13 @@ private struct InvestmentTutorialPage: Identifiable {
         ),
         InvestmentTutorialPage(
             id: "trade",
-            title: "記錄交易、查看持股",
-            subtitle: "進入帳戶記錄買賣後，持股會出現在投資分頁。",
+            title: "記錄交易、查看持倉",
+            subtitle: "進入帳戶記錄買賣後，持倉會出現在投資分頁。",
             detailBullets: [
                 [.normal("在管理分頁點擊剛建立的帳戶")],
                 [.normal("按底部「"), .strong("新增交易"), .normal("」")],
                 [.normal("填寫代號、數量與價格後確認")],
-                [.normal("返回投資分頁即可看到持股")],
+                [.normal("返回投資分頁即可看到持倉")],
             ],
             visual: .tradeFlow
         ),
@@ -157,10 +157,13 @@ private struct InvestmentTutorialPage: Identifiable {
 }
 
 private enum InvestmentTutorialLayout {
+    /// 高亮框外擴空間，避免被 phone chrome 裁切
+    static let highlightGutter: CGFloat = 10
+
     static func visualHeight(for visual: InvestmentTutorialVisual) -> CGFloat {
         switch visual {
-        case .createAccountFlow: return 460
-        case .tradeFlow: return 460
+        case .createAccountFlow: return 480
+        case .tradeFlow: return 480
         }
     }
 }
@@ -173,6 +176,8 @@ private struct InvestmentTutorialPageView: View {
         ScrollView {
             VStack(spacing: 8) {
                 visual
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, InvestmentTutorialLayout.highlightGutter)
                     .frame(maxWidth: .infinity, alignment: .top)
                     .frame(
                         height: InvestmentTutorialLayout.visualHeight(for: page.visual),
@@ -263,16 +268,20 @@ private struct InvestmentTutorialPhoneChrome<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        content
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .background(Color.mainBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(Color.separator.opacity(0.35), lineWidth: 1)
-            }
-            .shadow(color: AppColors.shadowMedium, radius: 10, x: 0, y: 3)
-            .clipped()
+        ZStack(alignment: .top) {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.mainBackground)
+
+            content
+                .padding(10)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.separator.opacity(0.35), lineWidth: 1)
+        }
+        .shadow(color: AppColors.shadowMedium, radius: 10, x: 0, y: 3)
     }
 }
 
@@ -291,25 +300,26 @@ private struct InvestmentTutorialHighlightModifier: ViewModifier {
 
     @State private var pulseExpanded = false
 
-    private var outerPadding: CGFloat { prominent ? -9 : -6 }
-    private var strokeWidth: CGFloat { prominent ? 3.5 : 3 }
-    private var glowRadius: CGFloat { prominent ? 14 : 10 }
+    private var strokeWidth: CGFloat { prominent ? 3 : 2.5 }
+    private var glowRadius: CGFloat { prominent ? 10 : 8 }
 
     func body(content: Content) -> some View {
         content
+            .padding(InvestmentTutorialLayout.highlightGutter)
             .overlay {
                 if active {
-                    RoundedRectangle(cornerRadius: cornerRadius + 5, style: .continuous)
-                        .stroke(Color.appPrimary.opacity(0.22), lineWidth: prominent ? 6 : 5)
-                        .padding(outerPadding - 3)
-                        .scaleEffect(pulseExpanded ? 1.06 : 1)
+                    RoundedRectangle(cornerRadius: cornerRadius + 4, style: .continuous)
+                        .stroke(Color.appPrimary.opacity(0.22), lineWidth: prominent ? 5 : 4)
+                        .padding(InvestmentTutorialLayout.highlightGutter - 2)
+                        .scaleEffect(pulseExpanded ? 1.04 : 1)
 
-                    RoundedRectangle(cornerRadius: cornerRadius + 3, style: .continuous)
+                    RoundedRectangle(cornerRadius: cornerRadius + 2, style: .continuous)
                         .stroke(Color.appPrimary, lineWidth: strokeWidth)
-                        .padding(outerPadding)
-                        .shadow(color: Color.appPrimary.opacity(0.55), radius: glowRadius, x: 0, y: 0)
+                        .padding(InvestmentTutorialLayout.highlightGutter - 1)
+                        .shadow(color: Color.appPrimary.opacity(0.45), radius: glowRadius, x: 0, y: 0)
                 }
             }
+            .padding(-InvestmentTutorialLayout.highlightGutter)
             .scaleEffect(active ? 0.985 : 1)
             .animation(InvestmentTutorialMotion.highlightSpring, value: active)
             .onChange(of: active) { _, isActive in
@@ -1391,7 +1401,7 @@ private struct InvestmentTutorialTradeFlowMock: View {
 }
 
 #if DEBUG
-#Preview("如何新增持股教學") {
+#Preview("如何新增持倉教學") {
     AddInvestmentTutorialView(onStartAdding: {})
 }
 #endif

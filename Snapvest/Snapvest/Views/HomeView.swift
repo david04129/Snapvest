@@ -145,7 +145,7 @@ struct HomeView: View {
             }
         }
         .environment(\.homeAmountsHidden, homePrivacy.isAmountHidden)
-        .sheet(isPresented: $isShareSheetPresented) {
+        .fullScreenCover(isPresented: $isShareSheetPresented) {
             HomeShareSheet(
                 trendPoints: $trendPoints,
                 trendMetricMode: trendMetricMode,

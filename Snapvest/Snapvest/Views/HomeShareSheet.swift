@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct HomeShareSheet: View {
     @Binding var trendPoints: [TrendChartPoint]
@@ -32,6 +33,7 @@ struct HomeShareSheet: View {
     @State private var isUpdatingPreview = false
     @State private var previewFade: CGFloat = 1
     @State private var previewRenderGeneration = 0
+    @State private var previewZoomResetToken = 0
     @State private var isSaving = false
     @State private var showActivitySheet = false
     @State private var alertTitle = ""
@@ -163,75 +165,109 @@ struct HomeShareSheet: View {
         ].joined(separator: "|")
     }
 
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
-                        selectionSection
-                        privacyHint
-                        previewSection
-                    }
-                    .padding()
-                }
+    private static let settingsPanelMaxHeight: CGFloat = 240
+    private static let panelCornerRadius: CGFloat = 16
 
-                actionButtons
-                    .padding(.horizontal, 16)
-                    .padding(.top, 12)
-                    .padding(.bottom, 16)
-                    .background(Color.mainBackground)
-            }
-            .background(Color.mainBackground)
-            .navigationTitle("分享投資組合")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") { dismiss() }
+    var body: some View {
+        VStack(spacing: 12) {
+            shareTopBar
+
+            previewSection
+                .homeSharePanelChrome(cornerRadius: Self.panelCornerRadius)
+                .padding(.horizontal, 16)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            chartSelectionPanel
+                .homeSharePanelChrome(cornerRadius: Self.panelCornerRadius)
+                .padding(.horizontal, 16)
+
+            shareActionBar
+                .padding(.horizontal, 16)
+        }
+        .safeAreaPadding(.top, 4)
+        .safeAreaPadding(.bottom, 8)
+        .background(Color.mainBackground.ignoresSafeArea())
+        .onAppear {
+            loadSharePreferencesIfNeeded()
+            syncSelectionToAvailable()
+            refreshPreview()
+        }
+        .onChange(of: selectedKinds) { _, newValue in
+            HomeSharePreferences.saveSelectedKinds(newValue)
+        }
+        .onChange(of: previewRefreshToken) { _, _ in
+            syncSelectionToAvailable()
+            refreshPreview()
+        }
+        .sheet(isPresented: $showActivitySheet) {
+            if let config = renderConfig {
+                HomeShareActivityView(
+                    image: HomeShareImageBuilder.render(config: config) ?? previewImage ?? UIImage(),
+                    shareText: HomeShareMessageBuilder.shareText(config: config)
+                ) {
+                    showActivitySheet = false
                 }
             }
-            .onAppear {
-                loadSharePreferencesIfNeeded()
-                syncSelectionToAvailable()
-                refreshPreview()
-            }
-            .onChange(of: selectedKinds) { _, newValue in
-                HomeSharePreferences.saveSelectedKinds(newValue)
-            }
-            .onChange(of: previewRefreshToken) { _, _ in
-                syncSelectionToAvailable()
-                refreshPreview()
-            }
-            .sheet(isPresented: $showActivitySheet) {
-                if let previewImage, let config = renderConfig {
-                    HomeShareActivityView(
-                        image: previewImage,
-                        shareText: HomeShareMessageBuilder.shareText(config: config)
-                    ) {
-                        showActivitySheet = false
-                    }
+        }
+        .sheet(item: $activeShareCustomDateField) { field in
+            WheelDatePickerSheet(
+                title: field.title,
+                selection: field == .start ? $shareTrendCustomStart : $shareTrendCustomEnd,
+                earliestDate: earliestShareTrendDate,
+                onDone: {
+                    normalizeShareCustomRange()
+                    activeShareCustomDateField = nil
                 }
-            }
-            .sheet(item: $activeShareCustomDateField) { field in
-                WheelDatePickerSheet(
-                    title: field.title,
-                    selection: field == .start ? $shareTrendCustomStart : $shareTrendCustomEnd,
-                    earliestDate: earliestShareTrendDate,
-                    onDone: {
-                        normalizeShareCustomRange()
-                        activeShareCustomDateField = nil
-                    }
-                )
-            }
-            .alert(alertTitle, isPresented: $showAlert) {
-                Button("好", role: .cancel) {}
-            } message: {
-                Text(alertMessage)
-            }
+            )
+        }
+        .alert(alertTitle, isPresented: $showAlert) {
+            Button("好", role: .cancel) {}
+        } message: {
+            Text(alertMessage)
         }
     }
 
-    private var actionButtons: some View {
-        VStack(spacing: 14) {
+    private var shareTopBar: some View {
+        HStack {
+            Spacer(minLength: 0)
+            closeButton
+        }
+        .padding(.horizontal, 16)
+    }
+
+    private var closeButton: some View {
+        Button {
+            dismiss()
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(.secondaryText)
+                .frame(width: 34, height: 34)
+                .background(.ultraThinMaterial)
+                .clipShape(Circle())
+        }
+        .accessibilityLabel("關閉")
+    }
+
+    private var chartSelectionPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("選擇要分享的圖表")
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(.primaryText)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    privacyHint
+                    chartSelectionList
+                }
+            }
+            .frame(maxHeight: Self.settingsPanelMaxHeight)
+        }
+        .padding(12)
+    }
+
+    private var shareActionBar: some View {
+        HStack(spacing: 10) {
             shareActionButton(
                 title: "儲存到相簿",
                 systemImage: "square.and.arrow.down",
@@ -242,7 +278,7 @@ struct HomeShareSheet: View {
             }
 
             shareActionButton(
-                title: "分享到其他 App",
+                title: "分享",
                 systemImage: "square.and.arrow.up",
                 isPrimary: false,
                 showsProgress: false
@@ -260,24 +296,26 @@ struct HomeShareSheet: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            HStack(spacing: 10) {
+            HStack(spacing: 6) {
                 if showsProgress {
                     ProgressView()
                         .tint(isPrimary ? .white : .appPrimary)
                 } else {
                     Image(systemName: systemImage)
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.system(size: 15, weight: .semibold))
                 }
                 Text(title)
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.system(size: 15, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
             }
-            .frame(maxWidth: .infinity, minHeight: 52)
-            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
         .foregroundColor(isPrimary ? .white : (canUseImage ? .appPrimary : .secondaryText))
         .background {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(
                     isPrimary
                         ? (canUseImage ? Color.appPrimary : Color.secondaryText.opacity(0.35))
@@ -286,66 +324,84 @@ struct HomeShareSheet: View {
         }
         .overlay {
             if !isPrimary {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .stroke(canUseImage ? Color.appPrimary.opacity(0.45) : Color.separator, lineWidth: 1)
             }
         }
         .disabled(!canUseImage || isSaving || isRendering)
     }
 
-    private var selectionSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("選擇要分享的圖表")
-                .font(.headline)
-                .foregroundColor(.primaryText)
-
+    private var chartSelectionList: some View {
+        VStack(alignment: .leading, spacing: 6) {
             ForEach(HomeShareChartKind.allCases) { kind in
                 let available = baseConfig.isAvailable(kind)
-                VStack(spacing: 8) {
+                VStack(spacing: 0) {
                     Button {
                         guard available else { return }
                         toggle(kind)
                     } label: {
-                        HStack(spacing: 12) {
+                        HStack(spacing: 8) {
                             Image(systemName: kind.iconName)
-                                .font(.system(size: 18))
+                                .font(.system(size: 15))
                                 .foregroundColor(available ? .appPrimary : .secondaryText)
-                                .frame(width: 28)
+                                .frame(width: 20)
 
-                            VStack(alignment: .leading, spacing: 2) {
+                            VStack(alignment: .leading, spacing: 0) {
                                 Text(kind.rawValue)
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
+                                    .font(.caption.weight(.semibold))
                                     .foregroundColor(available ? .primaryText : .secondaryText)
                                 Text(available ? baseConfig.subtitle(for: kind) : "尚無資料")
-                                    .font(.caption)
+                                    .font(.caption2)
                                     .foregroundColor(.secondaryText)
                             }
 
-                            Spacer()
+                            Spacer(minLength: 6)
 
                             Image(systemName: selectedKinds.contains(kind) ? "checkmark.circle.fill" : "circle")
-                                .font(.system(size: 22))
+                                .font(.system(size: 18))
                                 .foregroundColor(
                                     available
                                         ? (selectedKinds.contains(kind) ? .appPrimary : .secondaryText)
                                         : .secondaryText.opacity(0.35)
                                 )
                         }
-                        .padding(14)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                     .disabled(!available)
 
                     if available, selectedKinds.contains(kind) {
+                        Divider()
+                            .padding(.horizontal, 10)
+
                         shareOptions(for: kind)
-                            .padding(.horizontal, 14)
-                            .padding(.bottom, 14)
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.appPrimary.opacity(0.07))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .stroke(Color.appPrimary.opacity(0.24), lineWidth: 1)
+                            }
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .padding(.horizontal, 8)
+                            .padding(.bottom, 8)
                             .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.cardBackground)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay {
+                    if available, selectedKinds.contains(kind) {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(Color.appPrimary.opacity(0.32), lineWidth: 1)
+                    }
+                }
             }
         }
     }
@@ -369,7 +425,8 @@ struct HomeShareSheet: View {
             }
         }
         .buttonStyle(.plain)
-        .padding(12)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.appPrimary.opacity(0.08))
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -377,7 +434,7 @@ struct HomeShareSheet: View {
 
     @ViewBuilder
     private func shareOptions(for kind: HomeShareChartKind) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             switch kind {
             case .trend:
                 shareOptionLabel("指標")
@@ -452,7 +509,7 @@ struct HomeShareSheet: View {
     }
 
     private var shareCustomDateRangeControls: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             CustomDateRangeBar(
                 startDate: shareTrendCustomStart,
                 endDate: shareTrendCustomEnd,
@@ -470,43 +527,40 @@ struct HomeShareSheet: View {
     private var previewSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("預覽")
-                .font(.headline)
+                .font(.subheadline.weight(.semibold))
                 .foregroundColor(.primaryText)
 
             ZStack {
+                Color.secondaryBackground.opacity(0.45)
+
                 if let previewImage {
-                    Image(uiImage: previewImage)
-                        .resizable()
-                        .aspectRatio(
-                            HomeShareImageBuilder.canvasWidth / HomeShareImageBuilder.canvasHeight,
-                            contentMode: .fit
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 2)
+                    HomeShareZoomableImageView(image: previewImage)
+                        .id(previewZoomResetToken)
                         .opacity(previewFade)
+                        .animation(.easeInOut(duration: 0.28), value: previewFade)
 
                     if isUpdatingPreview {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Color.mainBackground.opacity(0.42))
+                        Color.mainBackground.opacity(0.42)
                         ProgressView()
                             .controlSize(.regular)
                             .tint(.appPrimary)
                     }
                 } else if isRendering {
                     ProgressView("產生分享圖…")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 40)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     Text("請至少選擇一項有資料的圖表")
                         .font(.subheadline)
                         .foregroundColor(.secondaryText)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 32)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 16)
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .animation(.easeInOut(duration: 0.28), value: isUpdatingPreview)
-            .animation(.easeInOut(duration: 0.28), value: previewFade)
         }
+        .padding(12)
     }
 
     private var canShare: Bool {
@@ -564,6 +618,7 @@ struct HomeShareSheet: View {
         guard let config = renderConfig, canShare else {
             previewRenderGeneration += 1
             previewImage = nil
+            previewZoomResetToken += 1
             isRendering = false
             isUpdatingPreview = false
             previewFade = 1
@@ -593,10 +648,11 @@ struct HomeShareSheet: View {
             await Task.yield()
             guard generation == previewRenderGeneration else { return }
 
-            let image = HomeShareImageBuilder.render(config: config)
+            let image = HomeShareImageBuilder.renderPreview(config: config)
             guard generation == previewRenderGeneration else { return }
 
             previewImage = image
+            previewZoomResetToken += 1
             withAnimation(.easeInOut(duration: 0.3)) {
                 previewFade = 1
             }
@@ -606,12 +662,18 @@ struct HomeShareSheet: View {
     }
 
     private func saveToPhotoLibrary() {
-        guard let previewImage else { return }
+        guard let config = renderConfig else { return }
         isSaving = true
         Task { @MainActor in
             defer { isSaving = false }
+            guard let exportImage = HomeShareImageBuilder.render(config: config) else {
+                alertTitle = "無法儲存"
+                alertMessage = "分享圖產生失敗，請稍後再試。"
+                showAlert = true
+                return
+            }
             do {
-                try await PhotoLibrarySaver.saveImage(previewImage)
+                try await PhotoLibrarySaver.saveImage(exportImage)
                 alertTitle = "已儲存"
                 alertMessage = "分享圖已加入相簿。"
                 showAlert = true
@@ -624,7 +686,7 @@ struct HomeShareSheet: View {
     }
 
     private func openSystemShare() {
-        guard previewImage != nil else { return }
+        guard canUseImage else { return }
         showActivitySheet = true
     }
 }
@@ -645,5 +707,139 @@ struct HomeShareButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("分享圖表")
+    }
+}
+
+// MARK: - 面板外框
+
+private struct HomeSharePanelChromeModifier: ViewModifier {
+    let cornerRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .background(Color.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(Color.separator.opacity(0.42), lineWidth: 1)
+            }
+            .overlay(alignment: .leading) {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(Color.appPrimary)
+                    .frame(width: 4)
+            }
+            .shadow(color: AppColors.shadowMedium, radius: 8, x: 0, y: 2)
+    }
+}
+
+private extension View {
+    func homeSharePanelChrome(cornerRadius: CGFloat) -> some View {
+        modifier(HomeSharePanelChromeModifier(cornerRadius: cornerRadius))
+    }
+}
+
+// MARK: - 預覽縮放（雙指 pinch，與相簿看照片相同）
+
+private struct HomeShareZoomableImageView: UIViewRepresentable {
+    let image: UIImage
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIView(context: Context) -> HomeShareZoomScrollView {
+        let scrollView = HomeShareZoomScrollView()
+        scrollView.delegate = context.coordinator
+        scrollView.bouncesZoom = true
+        scrollView.showsHorizontalScrollIndicator = false
+        scrollView.showsVerticalScrollIndicator = false
+        scrollView.backgroundColor = .clear
+        scrollView.contentInsetAdjustmentBehavior = .never
+        scrollView.clipsToBounds = true
+        scrollView.isMultipleTouchEnabled = true
+        scrollView.pinchGestureRecognizer?.isEnabled = true
+
+        let imageView = UIImageView(image: image)
+        imageView.contentMode = .scaleAspectFit
+        imageView.isUserInteractionEnabled = true
+        scrollView.addSubview(imageView)
+
+        context.coordinator.scrollView = scrollView
+        context.coordinator.imageView = imageView
+        scrollView.onBoundsChange = { [weak coordinator = context.coordinator] size in
+            coordinator?.updateImageLayout(for: size)
+        }
+
+        return scrollView
+    }
+
+    func updateUIView(_ scrollView: HomeShareZoomScrollView, context: Context) {
+        context.coordinator.imageView?.image = image
+    }
+
+    final class Coordinator: NSObject, UIScrollViewDelegate {
+        weak var scrollView: HomeShareZoomScrollView?
+        weak var imageView: UIImageView?
+        private var lastLayoutKey: String?
+
+        func viewForZooming(in scrollView: UIScrollView) -> UIView? {
+            imageView
+        }
+
+        func scrollViewDidZoom(_ scrollView: UIScrollView) {
+            centerImage(in: scrollView)
+        }
+
+        func updateImageLayout(for boundsSize: CGSize) {
+            guard let scrollView, let imageView, let image = imageView.image else { return }
+            guard boundsSize.width > 0, boundsSize.height > 0,
+                  image.size.width > 0, image.size.height > 0 else { return }
+
+            let layoutKey = "\(Int(boundsSize.width))x\(Int(boundsSize.height))-\(Int(image.size.width))x\(Int(image.size.height))"
+            guard layoutKey != lastLayoutKey else { return }
+            lastLayoutKey = layoutKey
+
+            imageView.transform = .identity
+            imageView.frame = CGRect(origin: .zero, size: image.size)
+
+            let widthScale = boundsSize.width / image.size.width
+            let heightScale = boundsSize.height / image.size.height
+            let minScale = min(widthScale, heightScale)
+
+            scrollView.minimumZoomScale = minScale
+            scrollView.maximumZoomScale = max(minScale * 4, minScale + 0.01)
+            scrollView.setZoomScale(minScale, animated: false)
+            scrollView.contentOffset = .zero
+            centerImage(in: scrollView)
+        }
+
+        private func centerImage(in scrollView: UIScrollView) {
+            guard let imageView else { return }
+
+            let boundsSize = scrollView.bounds.size
+            var frame = imageView.frame
+
+            frame.origin.x = frame.width < boundsSize.width
+                ? (boundsSize.width - frame.width) / 2
+                : 0
+            frame.origin.y = frame.height < boundsSize.height
+                ? (boundsSize.height - frame.height) / 2
+                : 0
+
+            imageView.frame = frame
+        }
+    }
+}
+
+private final class HomeShareZoomScrollView: UIScrollView {
+    var onBoundsChange: ((CGSize) -> Void)?
+    private var lastNotifiedBoundsSize: CGSize = .zero
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let size = bounds.size
+        guard size.width > 0, size.height > 0, size != lastNotifiedBoundsSize else { return }
+        lastNotifiedBoundsSize = size
+        onBoundsChange?(size)
     }
 }

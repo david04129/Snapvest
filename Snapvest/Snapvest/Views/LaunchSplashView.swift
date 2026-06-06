@@ -215,4 +215,7 @@ enum LaunchSplashTiming {
     static let minimumDuration: Duration = .seconds(2.2)
     /// 灌完資料後、切入主畫面前的短暫停留
     static let preTransitionHold: Duration = .milliseconds(400)
+    /// 主畫面掛載後，等待一帧完成排版再淡出 Splash
+    static let contentLayoutHold: Duration = .milliseconds(120)
+    static let fadeOutAnimation: Animation = .easeOut(duration: 0.32)
 }

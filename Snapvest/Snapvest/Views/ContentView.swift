@@ -332,6 +332,8 @@ private struct DemoModeFloatingBadge: View {
         .environmentObject(PortfolioViewModel())
         .environmentObject(AccountsViewModel())
         .environmentObject(AssetsViewModel())
+        .environmentObject(ThemeManager.shared)
+        .environmentObject(SubscriptionManager.shared)
         .environmentObject(LaunchSessionState.shared)
         .environmentObject(DataFreshnessStore.shared)
 }

@@ -67,7 +67,7 @@ struct AssetsView: View {
                                     icon: "chart.bar.fill",
                                     title: "還沒有持股",
                                     message: "在管理分頁建立投資帳戶並記錄買賣後，持股會出現在這裡。",
-                                    actionTitle: "如何新增持股"
+                                    actionTitle: "如何新增持倉"
                                 ) {
                                     showingAddInvestmentTutorial = true
                                 }

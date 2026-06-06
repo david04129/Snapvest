@@ -21,9 +21,9 @@ enum DataServiceError: LocalizedError {
 
 /// 資料服務協議
 protocol DataServiceProtocol {
-    // 使用者
-    func fetchUser(userId: String) async throws -> User?
-    func updateUser(_ user: User) async throws
+    // Retired 2026-06-06：早期雲端 User 模型，全專案無引用。
+    // func fetchUser(userId: String) async throws -> User?
+    // func updateUser(_ user: User) async throws
     
     // 帳戶
     func fetchAccounts(userId: String) async throws -> [Account]
@@ -103,9 +103,9 @@ protocol DataServiceProtocol {
     func fetchLastDailyTrendBackfillRunDateKey(userId: String) -> String?
     func updateLastDailyTrendBackfillRunDateKey(userId: String, dateKey: String?)
     
-    // 投資組合狀態（同步至後端）
-    func syncPortfolioState(_ payload: PortfolioStateSyncPayload) async throws
-    func fetchLatestPortfolioState(userId: String) async throws -> PortfolioStateSyncPayload?
+    // Retired 2026-06-06：雲端 portfolio 同步，全專案無引用。
+    // func syncPortfolioState(_ payload: PortfolioStateSyncPayload) async throws
+    // func fetchLatestPortfolioState(userId: String) async throws -> PortfolioStateSyncPayload?
     
     /// 將本機帳戶／交易／快照寫入 JSON（MockDataService 實作；其他實作可為空操作）
     func persistLocalStore(for userId: String)
@@ -147,7 +147,7 @@ class MockDataService: DataServiceProtocol {
     private var homeDashboardSnapshots: [String: HomeDashboardSnapshot] = [:] // userId: HomeDashboardSnapshot
     private var dailyTrendSnapshots: [String: [String: LocalDailyTrendSnapshot]] = [:] // userId: yyyy-MM-dd snapshot
     private var lastDailyTrendBackfillRunDateKeys: [String: String] = [:] // userId: yyyy-MM-dd
-    private var portfolioStates: [String: PortfolioStateSyncPayload] = [:] // userId: latest state
+    // private var portfolioStates: [String: PortfolioStateSyncPayload] = [:] // Retired：legacy 雲端 portfolio
     private var priceSyncedAtByUserId: [String: Date] = [:]
     private var priceSourceUpdatedAtByUserId: [String: Date] = [:]
     private var valuationUpdatedAtByUserId: [String: Date] = [:]
@@ -176,7 +176,7 @@ class MockDataService: DataServiceProtocol {
         var homeDashboardSnapshots: [String: HomeDashboardSnapshot]
         var dailyTrendSnapshots: [String: [String: LocalDailyTrendSnapshot]]
         var lastDailyTrendBackfillRunDateKeys: [String: String]
-        var portfolioStates: [String: PortfolioStateSyncPayload]
+        // var portfolioStates: [String: PortfolioStateSyncPayload] // Retired
         var priceSyncedAtByUserId: [String: Date]
         var priceSourceUpdatedAtByUserId: [String: Date]
         var valuationUpdatedAtByUserId: [String: Date]
@@ -208,7 +208,7 @@ class MockDataService: DataServiceProtocol {
         homeDashboardSnapshots = [:]
         dailyTrendSnapshots = [seed.userId: [:]]
         lastDailyTrendBackfillRunDateKeys = [:]
-        portfolioStates = [:]
+        // portfolioStates = [:]
         priceSyncedAtByUserId = [seed.userId: now]
         priceSourceUpdatedAtByUserId = [seed.userId: now]
         valuationUpdatedAtByUserId = [seed.userId: now]
@@ -239,7 +239,7 @@ class MockDataService: DataServiceProtocol {
             homeDashboardSnapshots: homeDashboardSnapshots,
             dailyTrendSnapshots: dailyTrendSnapshots,
             lastDailyTrendBackfillRunDateKeys: lastDailyTrendBackfillRunDateKeys,
-            portfolioStates: portfolioStates,
+            // portfolioStates: portfolioStates,
             priceSyncedAtByUserId: priceSyncedAtByUserId,
             priceSourceUpdatedAtByUserId: priceSourceUpdatedAtByUserId,
             valuationUpdatedAtByUserId: valuationUpdatedAtByUserId,
@@ -261,7 +261,7 @@ class MockDataService: DataServiceProtocol {
         homeDashboardSnapshots = store.homeDashboardSnapshots
         dailyTrendSnapshots = store.dailyTrendSnapshots
         lastDailyTrendBackfillRunDateKeys = store.lastDailyTrendBackfillRunDateKeys
-        portfolioStates = store.portfolioStates
+        // portfolioStates = store.portfolioStates
         priceSyncedAtByUserId = store.priceSyncedAtByUserId
         priceSourceUpdatedAtByUserId = store.priceSourceUpdatedAtByUserId
         valuationUpdatedAtByUserId = store.valuationUpdatedAtByUserId
@@ -459,7 +459,7 @@ class MockDataService: DataServiceProtocol {
         homeDashboardSnapshots.removeValue(forKey: userId)
         dailyTrendSnapshots.removeValue(forKey: userId)
         lastDailyTrendBackfillRunDateKeys.removeValue(forKey: userId)
-        portfolioStates.removeValue(forKey: userId)
+        // portfolioStates.removeValue(forKey: userId)
         priceSyncedAtByUserId.removeValue(forKey: userId)
         priceSourceUpdatedAtByUserId.removeValue(forKey: userId)
         valuationUpdatedAtByUserId.removeValue(forKey: userId)
@@ -527,13 +527,14 @@ class MockDataService: DataServiceProtocol {
         return nil
     }
     
-    func fetchUser(userId: String) async throws -> User? {
-        User(id: userId, email: "", displayName: nil)
-    }
-    
-    func updateUser(_ user: User) async throws {
-        // Mock 實作
-    }
+    // Retired 2026-06-06：早期雲端 User stub，全專案無引用。
+    // func fetchUser(userId: String) async throws -> User? {
+    //     User(id: userId, email: "", displayName: nil)
+    // }
+    //
+    // func updateUser(_ user: User) async throws {
+    //     // Mock 實作
+    // }
     
     func fetchAccounts(userId: String) async throws -> [Account] {
         if accounts[userId] == nil {
@@ -1280,13 +1281,14 @@ class MockDataService: DataServiceProtocol {
     }
     #endif
     
-    func syncPortfolioState(_ payload: PortfolioStateSyncPayload) async throws {
-        // Privacy: portfolio state stays local. Remote writes are replaced by anonymous tracked symbol sync.
-        portfolioStates[payload.userId] = payload
-    }
-    
-    func fetchLatestPortfolioState(userId: String) async throws -> PortfolioStateSyncPayload? {
-        return portfolioStates[userId]
-    }
+    // Retired 2026-06-06：legacy 雲端 portfolio 本機 stub，全專案無引用。
+    // func syncPortfolioState(_ payload: PortfolioStateSyncPayload) async throws {
+    //     // Privacy: portfolio state stays local. Remote writes are replaced by anonymous tracked symbol sync.
+    //     portfolioStates[payload.userId] = payload
+    // }
+    //
+    // func fetchLatestPortfolioState(userId: String) async throws -> PortfolioStateSyncPayload? {
+    //     return portfolioStates[userId]
+    // }
 }
 

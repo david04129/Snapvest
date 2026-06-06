@@ -29,6 +29,7 @@ Pods/
 # Backup files
 *.backup
 *.bak
+Walleaf-Backup*.json
 
 # Scripts output（僅保留 symbols 建置產物供版控；其餘仍忽略）
 scripts/output/*

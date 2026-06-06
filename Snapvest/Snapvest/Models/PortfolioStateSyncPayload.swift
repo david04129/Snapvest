@@ -2,10 +2,12 @@
 //  PortfolioStateSyncPayload.swift
 //  Snapvest
 //
-//  同步至後端的投資組合狀態（現金、持股、負債），供每日淨資產/總資產計算
+//  Retired 2026-06-06：雲端 user_portfolio_state 同步已移除；全專案無引用，保留供參考。
 //
 
 import Foundation
+
+#if false
 
 struct PortfolioStateSyncPayload: Codable, Equatable {
     let userId: String
@@ -146,3 +148,5 @@ enum PortfolioStateSyncBuilder {
         NSDecimalNumber(decimal: value).stringValue
     }
 }
+
+#endif

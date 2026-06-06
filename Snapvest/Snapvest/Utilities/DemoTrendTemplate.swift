@@ -9,7 +9,8 @@ import Foundation
 
 struct DemoTrendShapePoint {
     let netWorthRatio: Double
-    let totalAssetsRatio: Double
+    /// 相對今日負債的比例；過去略高（車貸等逐步償還），終點為 1.0。
+    let liabilityRatio: Double
     let unrealizedRatio: Double
 }
 
@@ -43,16 +44,16 @@ enum DemoTrendTemplate {
         let scale = (1.0 - rawStart) / max(0.001, rawEnd - rawStart)
 
         return rawNetWorths.enumerated().map { index, raw in
-            let progress = Double(index) / Double(dayCount - 1)
             let netRatio = rawStart + (raw - rawStart) * scale
-            let liabilityShare = 0.088 - progress * 0.012
-            let totalAssetsRatio = netRatio + liabilityShare
+            // 過去負債略高、隨淨值成長逐步償還；終點 1.0 對齊 rebuild 快照。
+            let debtPaydown = max(0, 1.0 - netRatio)
+            let liabilityRatio = 1.0 + debtPaydown * 1.15
             let unrealizedBase = 0.72 + (netRatio - rawStart) * 0.35
             let unrealizedRatio = unrealizedBase + seededNoise(index, salt: 701) * 0.06
 
             return DemoTrendShapePoint(
                 netWorthRatio: netRatio,
-                totalAssetsRatio: totalAssetsRatio,
+                liabilityRatio: liabilityRatio,
                 unrealizedRatio: max(0.55, unrealizedRatio)
             )
         }
