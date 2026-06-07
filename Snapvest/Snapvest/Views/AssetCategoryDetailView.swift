@@ -474,11 +474,6 @@ private struct AssetCategoryRealizedPLSection: View {
         .padding(16)
         .background(Color.cardBackground)
         .cornerRadius(16)
-        .overlay(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 16)
-                .fill(accentColor)
-                .frame(width: 4)
-        }
         .overlay(
             RoundedRectangle(cornerRadius: 16)
                 .stroke(Color.separator.opacity(0.45), lineWidth: 1)

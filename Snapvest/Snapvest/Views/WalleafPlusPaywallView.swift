@@ -11,6 +11,7 @@ import SwiftUI
 @MainActor
 struct WalleafPlusPaywallView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @EnvironmentObject private var subscriptionManager: SubscriptionManager
     @ObservedObject private var theme = ThemeManager.shared
 
@@ -86,27 +87,33 @@ struct WalleafPlusPaywallView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            ScrollView {
-                VStack(spacing: 22) {
-                    heroSection
+        GeometryReader { proxy in
+            let isCompact = proxy.size.height < 800
+            let rawDetailsContentWidth = proxy.size.width - 40
+            let detailsContentWidth = rawDetailsContentWidth.isFinite && rawDetailsContentWidth > 1
+                ? rawDetailsContentWidth
+                : 1
 
-                    if subscriptionManager.isPlusActive {
-                        subscribedBanner
+            ZStack(alignment: .topTrailing) {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        firstScreenContent(compact: isCompact)
+                            .frame(minHeight: proxy.size.height, alignment: .top)
+
+                        subscriptionDetailsSection(contentWidth: detailsContentWidth)
+                            .padding(.horizontal, 20)
+                            .padding(.top, -84)
+                            .padding(.bottom, 120)
                     }
-
-                    comparisonSection
-
-                    planPickerSection
-                    purchaseSection
+                    .frame(width: proxy.size.width)
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 56)
-                .padding(.bottom, 32)
-            }
-            .background(paywallPageBackground.ignoresSafeArea())
+                .scrollIndicators(.hidden)
+                .background(paywallPageBackground.ignoresSafeArea())
 
-            closeButton
+                fixedContinueButton(compact: isCompact)
+
+                closeButton(compact: isCompact)
+            }
         }
         .task {
             await subscriptionManager.loadProducts()
@@ -132,19 +139,45 @@ struct WalleafPlusPaywallView: View {
         }
     }
 
-    private var closeButton: some View {
+    private func firstScreenContent(compact: Bool) -> some View {
+        VStack(spacing: 0) {
+            heroSection(compact: compact)
+
+            Spacer(minLength: compact ? 5 : 8)
+
+            if subscriptionManager.isPlusActive {
+                subscribedBanner(compact: compact)
+                Spacer(minLength: compact ? 8 : 14)
+            }
+
+            comparisonSection(compact: compact)
+
+            Spacer(minLength: compact ? 6 : 10)
+
+            planPickerSection(compact: compact)
+
+            Spacer(minLength: compact ? 4 : 8)
+
+            Color.clear
+                .frame(height: compact ? 104 : 116)
+        }
+        .padding(.horizontal, compact ? 16 : 20)
+        .padding(.top, compact ? 28 : 34)
+    }
+
+    private func closeButton(compact: Bool) -> some View {
         Button {
             dismiss()
         } label: {
             Image(systemName: "xmark")
-                .font(.system(size: 14, weight: .bold))
+                .font(.system(size: compact ? 12 : 14, weight: .bold))
                 .foregroundColor(.secondaryText)
-                .frame(width: 34, height: 34)
+                .frame(width: compact ? 30 : 34, height: compact ? 30 : 34)
                 .background(.ultraThinMaterial)
                 .clipShape(Circle())
         }
-        .padding(.top, 14)
-        .padding(.trailing, 20)
+        .padding(.top, compact ? 10 : 14)
+        .padding(.trailing, compact ? 14 : 20)
         .accessibilityLabel(
             subscriptionManager.isPlusActive
                 ? WalleafPlusPaywallL10n.done
@@ -171,43 +204,47 @@ struct WalleafPlusPaywallView: View {
 
     // MARK: - Hero
 
-    private var heroSection: some View {
-        VStack(spacing: 18) {
-            logoWithPlusBadge
-                .padding(.top, 4)
+    private func heroSection(compact: Bool) -> some View {
+        VStack(spacing: compact ? 7 : 9) {
+            logoWithPlusBadge(compact: compact)
+                .padding(.top, compact ? 0 : 2)
 
-            VStack(spacing: 10) {
-                HStack(spacing: 10) {
+            VStack(spacing: compact ? 4 : 6) {
+                HStack(spacing: 9) {
                     Text("Walleaf")
-                        .font(.system(size: 34, weight: .heavy, design: .rounded))
+                        .font(.system(size: compact ? 29 : 34, weight: .heavy, design: .rounded))
                         .foregroundColor(.primaryText)
-                    plusChip
+                    plusChip(compact: compact)
                 }
 
                 Text(WalleafPlusPaywallL10n.heroSubtitle)
-                    .font(.body.weight(.medium))
+                    .font((compact ? Font.callout : Font.callout).weight(.medium))
                     .foregroundColor(.secondaryText)
                     .multilineTextAlignment(.center)
-                    .lineSpacing(3)
-                    .padding(.horizontal, 12)
+                    .lineSpacing(compact ? 1 : 2)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.82)
+                    .padding(.horizontal, compact ? 6 : 10)
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.bottom, 6)
     }
 
-    private var logoWithPlusBadge: some View {
+    private func logoWithPlusBadge(compact: Bool) -> some View {
         ZStack(alignment: .topTrailing) {
-            appIconView
+            appIconView(compact: compact)
 
-            logoPlusBadge
-                .offset(x: 6, y: -6)
+            logoPlusBadge(compact: compact)
+                .offset(x: compact ? 4 : 6, y: compact ? -4 : -6)
         }
     }
 
-    private var logoPlusBadge: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
+    private func logoPlusBadge(compact: Bool) -> some View {
+        let badgeSize: CGFloat = compact ? 25 : 29
+        let cornerRadius: CGFloat = compact ? 8 : 9
+
+        return ZStack {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(
                     LinearGradient(
                         colors: [Color(hex: "#8BE06A"), Color.appPrimary],
@@ -215,36 +252,43 @@ struct WalleafPlusPaywallView: View {
                         endPoint: .bottomTrailing
                     )
                 )
-                .frame(width: 28, height: 28)
+                .frame(width: badgeSize, height: badgeSize)
 
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.mainBackground, lineWidth: 2.5)
-                .frame(width: 28, height: 28)
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .stroke(Color.mainBackground, lineWidth: compact ? 2 : 2.5)
+                .frame(width: badgeSize, height: badgeSize)
 
-            PaywallRoundedPlusMark(color: .white, armLength: 10, armThickness: 2.2)
+            PaywallRoundedPlusMark(
+                color: .white,
+                armLength: compact ? 9 : 10,
+                armThickness: compact ? 2 : 2.2
+            )
         }
-        .shadow(color: Color.appPrimary.opacity(0.28), radius: 6, x: 0, y: 3)
+        .shadow(color: Color.appPrimary.opacity(0.28), radius: compact ? 4 : 6, x: 0, y: 3)
     }
 
-    private var appIconView: some View {
-        Image(SnapvestBrand.logoImageName)
+    private func appIconView(compact: Bool) -> some View {
+        let size: CGFloat = compact ? 58 : 68
+        let cornerRadius: CGFloat = compact ? 16 : 18
+
+        return Image(SnapvestBrand.logoImageName)
             .resizable()
             .aspectRatio(1, contentMode: .fit)
-            .frame(width: 68, height: 68)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .frame(width: size, height: size)
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .stroke(Color.secondaryBackground.opacity(0.8), lineWidth: 1)
             }
-            .shadow(color: AppColors.shadowMedium.opacity(0.25), radius: 8, x: 0, y: 4)
+            .shadow(color: AppColors.shadowMedium.opacity(0.25), radius: compact ? 5 : 8, x: 0, y: 4)
     }
 
-    private var plusChip: some View {
+    private func plusChip(compact: Bool = false) -> some View {
         Text("PLUS")
-            .font(.system(size: 12, weight: .black))
+            .font(.system(size: compact ? 11 : 12, weight: .black))
             .foregroundColor(.white)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
+            .padding(.horizontal, compact ? 9 : 10)
+            .padding(.vertical, compact ? 5 : 6)
             .background(
                 LinearGradient(
                     colors: [Color(hex: "#7ED957"), Color.appPrimary],
@@ -253,13 +297,13 @@ struct WalleafPlusPaywallView: View {
                 )
             )
             .clipShape(Capsule())
-            .shadow(color: Color.appPrimary.opacity(0.35), radius: 6, x: 0, y: 3)
+            .shadow(color: Color.appPrimary.opacity(0.35), radius: compact ? 4 : 6, x: 0, y: 3)
     }
 
-    private var subscribedBanner: some View {
-        HStack(spacing: 14) {
+    private func subscribedBanner(compact: Bool) -> some View {
+        HStack(spacing: compact ? 10 : 12) {
             Image(systemName: "checkmark.seal.fill")
-                .font(.system(size: 28))
+                .font(.system(size: compact ? 20 : 24))
                 .foregroundStyle(
                     LinearGradient(
                         colors: [Color(hex: "#7ED957"), Color.appPrimary],
@@ -270,55 +314,55 @@ struct WalleafPlusPaywallView: View {
 
             HStack(spacing: 6) {
                 Text("Walleaf")
-                    .font(.headline)
+                    .font((compact ? Font.subheadline : Font.headline).weight(.semibold))
                     .foregroundColor(.primaryText)
-                plusChip
+                plusChip(compact: compact)
                 Text(WalleafPlusPaywallL10n.plusActiveEnabled)
-                    .font(.headline)
+                    .font((compact ? Font.subheadline : Font.headline).weight(.semibold))
                     .foregroundColor(.primaryText)
             }
 
             Spacer(minLength: 0)
         }
-        .padding(16)
+        .padding(compact ? 10 : 13)
         .background(Color.appPrimary.opacity(0.10))
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: compact ? 14 : 16, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: compact ? 14 : 16, style: .continuous)
                 .stroke(Color.appPrimary.opacity(0.28), lineWidth: 1)
         }
     }
 
     // MARK: - Comparison
 
-    private var comparisonSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
+    private func comparisonSection(compact: Bool) -> some View {
+        VStack(alignment: .leading, spacing: compact ? 7 : 9) {
             Text(WalleafPlusPaywallL10n.comparisonTitle)
-                .font(.headline)
+                .font((compact ? Font.headline : Font.headline).weight(.bold))
                 .foregroundColor(.primaryText)
 
             VStack(spacing: 0) {
-                comparisonHeaderRow
+                comparisonHeaderRow(compact: compact)
 
                 ForEach(Array(comparisonRows.enumerated()), id: \.element.id) { index, row in
                     if index > 0 {
                         Divider()
-                            .padding(.leading, 46)
+                            .padding(.leading, compact ? 38 : 46)
                             .opacity(theme.isDarkMode ? 0.22 : 0.35)
                     }
-                    comparisonDataRow(row)
+                    comparisonDataRow(row, compact: compact)
                 }
             }
             .background(Color.cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: compact ? 16 : 18, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                RoundedRectangle(cornerRadius: compact ? 16 : 18, style: .continuous)
                     .stroke(Color.secondaryBackground, lineWidth: 1)
             }
         }
     }
 
-    private var comparisonHeaderRow: some View {
+    private func comparisonHeaderRow(compact: Bool) -> some View {
         HStack(spacing: 0) {
             Text(WalleafPlusPaywallL10n.comparisonFeature)
                 .font(.caption.weight(.semibold))
@@ -328,53 +372,53 @@ struct WalleafPlusPaywallView: View {
             Text(WalleafPlusPaywallL10n.comparisonFree)
                 .font(.caption.weight(.semibold))
                 .foregroundColor(.tertiaryText)
-                .frame(width: 68, alignment: .center)
+                .frame(maxWidth: .infinity, alignment: .center)
 
             Text(WalleafPlusPaywallL10n.comparisonPlus)
                 .font(.caption.weight(.bold))
                 .foregroundColor(.appPrimary)
-                .frame(width: 72, alignment: .center)
+                .frame(maxWidth: .infinity, alignment: .center)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 13)
+        .padding(.horizontal, compact ? 10 : 14)
+        .padding(.vertical, compact ? 7 : 9)
         .background(Color.secondaryBackground.opacity(theme.isDarkMode ? 0.35 : 0.45))
     }
 
-    private func comparisonDataRow(_ row: ComparisonRow) -> some View {
+    private func comparisonDataRow(_ row: ComparisonRow, compact: Bool) -> some View {
         HStack(spacing: 0) {
-            HStack(spacing: 10) {
+            HStack(spacing: compact ? 7 : 9) {
                 Image(systemName: row.systemImage)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: compact ? 13 : 15, weight: .semibold))
                     .foregroundColor(.appPrimary.opacity(0.9))
-                    .frame(width: 20, alignment: .center)
+                    .frame(width: compact ? 17 : 20, alignment: .center)
 
                 Text(row.title)
-                    .font(.subheadline.weight(.medium))
+                    .font((compact ? Font.subheadline : Font.subheadline).weight(.semibold))
                     .foregroundColor(.primaryText)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.9)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
             comparisonFreeCell(row)
-                .frame(width: 68, alignment: .center)
+                .frame(maxWidth: .infinity, alignment: .center)
 
             comparisonPlusCell(row)
-                .frame(width: 72, alignment: .center)
+                .frame(maxWidth: .infinity, alignment: .center)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 13)
+        .padding(.horizontal, compact ? 10 : 14)
+        .padding(.vertical, compact ? 7 : 9)
     }
 
     @ViewBuilder
     private func comparisonFreeCell(_ row: ComparisonRow) -> some View {
         if row.freeValue == WalleafPlusPaywallL10n.notIncluded {
             Text("—")
-                .font(.subheadline.weight(.medium))
+                .font(.caption.weight(.semibold))
                 .foregroundColor(.tertiaryText.opacity(0.55))
         } else {
             Text(row.freeValue)
-                .font(.caption.weight(.medium))
+                .font(.caption.weight(.semibold))
                 .foregroundColor(.tertiaryText)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
@@ -386,11 +430,11 @@ struct WalleafPlusPaywallView: View {
     private func comparisonPlusCell(_ row: ComparisonRow) -> some View {
         if row.plusValue == WalleafPlusPaywallL10n.included {
             Image(systemName: "checkmark")
-                .font(.system(size: 14, weight: .bold))
+                .font(.system(size: 18, weight: .black))
                 .foregroundColor(.appPrimary)
         } else {
             Text(row.plusValue)
-                .font(.caption.weight(.semibold))
+                .font(.caption.weight(.black))
                 .foregroundColor(.appPrimary)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
@@ -400,10 +444,10 @@ struct WalleafPlusPaywallView: View {
 
     // MARK: - Plans
 
-    private var planPickerSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+    private func planPickerSection(compact: Bool) -> some View {
+        VStack(alignment: .leading, spacing: compact ? 7 : 9) {
             Text(WalleafPlusPaywallL10n.choosePlan)
-                .font(.headline)
+                .font((compact ? Font.headline : Font.headline).weight(.bold))
                 .foregroundColor(.primaryText)
 
             if subscriptionManager.isLoadingProducts {
@@ -413,16 +457,16 @@ struct WalleafPlusPaywallView: View {
                         .font(.subheadline)
                         .foregroundColor(.secondaryText)
                 }
-                .padding(.vertical, 8)
+                .padding(.vertical, compact ? 4 : 8)
             } else {
                 ForEach(PaywallPlan.allCases) { plan in
-                    planCard(for: plan)
+                    planCard(for: plan, compact: compact)
                 }
             }
         }
     }
 
-    private func planCard(for plan: PaywallPlan) -> some View {
+    private func planCard(for plan: PaywallPlan, compact: Bool) -> some View {
         let product = product(for: plan)
         let isSelected = selectedPlan == plan
         let isYearly = plan == .yearly
@@ -434,79 +478,55 @@ struct WalleafPlusPaywallView: View {
                 selectedPlan = plan
             }
         } label: {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    ZStack {
+            HStack(alignment: .center, spacing: compact ? 10 : 12) {
+                ZStack {
+                    Circle()
+                        .stroke(isSelected ? Color.appPrimary : Color.tertiaryText.opacity(0.5), lineWidth: 2)
+                        .frame(width: compact ? 22 : 24, height: compact ? 22 : 24)
+                    if isSelected {
                         Circle()
-                            .stroke(isSelected ? Color.appPrimary : Color.tertiaryText.opacity(0.5), lineWidth: 2)
-                            .frame(width: 22, height: 22)
-                        if isSelected {
-                            Circle()
-                                .fill(Color.appPrimary)
-                                .frame(width: 12, height: 12)
+                            .fill(Color.appPrimary)
+                            .frame(width: compact ? 12 : 13, height: compact ? 12 : 13)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: compact ? 5 : 6) {
+                    HStack(spacing: 6) {
+                        Text(planTitle(for: plan, product: product))
+                            .font((compact ? Font.headline : Font.headline).weight(.bold))
+                            .foregroundColor(.primaryText)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+
+                        if isCurrentPlan {
+                            planStatusBadge(WalleafPlusPaywallL10n.currentPlanBadge, filled: false, compact: compact)
+                        } else if isScheduled {
+                            planStatusBadge(WalleafPlusPaywallL10n.scheduledPlanBadge, filled: true, compact: compact)
                         }
                     }
-                    .alignmentGuide(.firstTextBaseline) { dimensions in
-                        dimensions[VerticalAlignment.center]
-                    }
 
-                    Text(planTitle(for: plan, product: product))
-                        .font(.headline)
-                        .foregroundColor(.primaryText)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
-                        .layoutPriority(1)
-
-                    if isCurrentPlan {
-                        Text(WalleafPlusPaywallL10n.currentPlanBadge)
-                            .font(.caption2.weight(.bold))
+                    if plan == .yearly, yearlyHasIntroOffer && !subscriptionManager.isPlusActive {
+                        Text(WalleafPlusPaywallL10n.freeTrial7Days)
+                            .font((compact ? Font.subheadline : Font.callout).weight(.bold))
                             .foregroundColor(.appPrimary)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.appPrimary.opacity(0.14))
-                            .clipShape(Capsule())
                             .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: false)
-                    } else if isScheduled {
-                        Text(WalleafPlusPaywallL10n.scheduledPlanBadge)
-                            .font(.caption2.weight(.bold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(Color.appPrimary.opacity(0.85))
-                            .clipShape(Capsule())
-                            .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: false)
                     }
-
-                    Spacer(minLength: 4)
-
-                    Text(product?.displayPrice ?? "—")
-                        .font(.title3.weight(.bold))
-                        .foregroundColor(.primaryText)
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-                let subtitle = planSubtitle(for: plan)
-                if !subtitle.isEmpty {
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundColor(.secondaryText)
-                        .multilineTextAlignment(.leading)
-                        .lineLimit(2)
-                        .padding(.leading, 34)
-                }
-
-                if isYearly {
-                    yearlyPlanMetaLine
-                }
+                Text(product?.displayPrice ?? "—")
+                    .font((compact ? Font.title3 : Font.title3).weight(.bold))
+                    .foregroundColor(.primaryText)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
             }
-            .padding(16)
+            .padding(.horizontal, compact ? 13 : 15)
+            .padding(.vertical, compact ? 12 : 14)
+            .frame(minHeight: compact ? 78 : 84)
             .background(isSelected ? Color.appPrimary.opacity(0.08) : Color.cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: compact ? 14 : 16, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: compact ? 14 : 16, style: .continuous)
                     .stroke(
                         isCurrentPlan || isScheduled
                             ? Color.appPrimary.opacity(0.45)
@@ -520,75 +540,159 @@ struct WalleafPlusPaywallView: View {
         .disabled(product == nil && !subscriptionManager.isLoadingProducts)
     }
 
-    private var yearlyPlanMetaLine: some View {
-        HStack(spacing: 6) {
-            if yearlyHasIntroOffer && !subscriptionManager.isPlusActive {
-                Label(WalleafPlusPaywallL10n.freeTrial7Days, systemImage: "gift.fill")
-                    .font(.caption.weight(.semibold))
-                    .foregroundColor(.appPrimary)
-                    .lineLimit(1)
-            }
-
-            Text(WalleafPlusPaywallL10n.perMonth(yearlyEquivalentMonthlyPriceText))
-                .font(.caption.weight(.medium))
-                .foregroundColor(.secondaryText)
-                .lineLimit(1)
-
-            Text("·")
-                .font(.caption)
-                .foregroundColor(.tertiaryText)
-
-            Text(monthlyAnnualTotalText)
-                .font(.caption.weight(.medium))
-                .foregroundColor(.tertiaryText)
-                .strikethrough(true, color: .tertiaryText)
-                .lineLimit(1)
-        }
-        .padding(.leading, 34)
+    private func planStatusBadge(_ title: String, filled: Bool, compact: Bool) -> some View {
+        Text(title)
+            .font(.caption2.weight(.bold))
+            .foregroundColor(filled ? .white : .appPrimary)
+            .padding(.horizontal, compact ? 6 : 8)
+            .padding(.vertical, compact ? 3 : 4)
+            .background(filled ? Color.appPrimary.opacity(0.85) : Color.appPrimary.opacity(0.14))
+            .clipShape(Capsule())
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
     }
 
-    private var purchaseSection: some View {
-        VStack(spacing: 12) {
-            Button {
-                Task { await purchaseSelectedPlan() }
-            } label: {
-                Group {
-                    if subscriptionManager.isPurchasing {
-                        ProgressView().tint(.white)
-                    } else {
-                        Text(purchaseButtonTitle)
-                            .font(.headline)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .frame(minHeight: 54)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(.appPrimary)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .shadow(color: Color.appPrimary.opacity(0.28), radius: 10, x: 0, y: 5)
-            .disabled(isPurchaseDisabled)
+    private func fixedContinueButton(compact: Bool) -> some View {
+        VStack {
+            Spacer()
 
-            if !subscriptionManager.isPlusActive {
+            VStack(spacing: 0) {
                 Button {
-                    Task { await subscriptionManager.restorePurchases() }
+                    Task { await purchaseSelectedPlan() }
                 } label: {
                     Group {
-                        if subscriptionManager.isRestoring {
-                            ProgressView()
+                        if subscriptionManager.isPurchasing {
+                            ProgressView().tint(.white)
                         } else {
-                            Text(WalleafPlusPaywallL10n.restorePurchases)
-                                .font(.subheadline.weight(.semibold))
+                            Text("繼續")
+                                .font(.headline.weight(.bold))
                         }
                     }
+                    .foregroundColor(AppColors.actionForeground)
                     .frame(maxWidth: .infinity)
-                    .frame(minHeight: 44)
+                    .frame(minHeight: compact ? 54 : 58)
                 }
                 .buttonStyle(.plain)
-                .foregroundColor(.appPrimary)
-                .disabled(subscriptionManager.isRestoring || subscriptionManager.isPurchasing)
+                .background(Color.appPrimary)
+                .clipShape(Capsule())
+                .shadow(color: Color.appPrimary.opacity(0.28), radius: 14, x: 0, y: 7)
+                .disabled(isPurchaseDisabled)
+                .padding(.horizontal, compact ? 20 : 24)
+                .padding(.top, 14)
+                .padding(.bottom, compact ? 18 : 24)
             }
+            .background(paywallBottomBarBackground)
         }
+        .ignoresSafeArea(.keyboard)
+    }
+
+    private var paywallBottomBarBackground: some View {
+        ZStack(alignment: .top) {
+            Color.mainBackground
+                .opacity(0.98)
+                .ignoresSafeArea(edges: .bottom)
+
+            LinearGradient(
+                colors: [
+                    Color.mainBackground.opacity(0),
+                    Color.mainBackground.opacity(0.96),
+                    Color.mainBackground
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 34)
+            .offset(y: -34)
+        }
+    }
+
+    private func subscriptionDetailsSection(contentWidth: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("訂閱說明")
+                    .font(.headline.weight(.bold))
+                    .foregroundColor(.primaryText)
+                    .frame(width: contentWidth, alignment: .leading)
+
+                subscriptionExplanationText(width: contentWidth)
+            }
+            .frame(width: contentWidth, alignment: .leading)
+
+            Button {
+                Task { await subscriptionManager.restorePurchases() }
+            } label: {
+                HStack(spacing: 8) {
+                    if subscriptionManager.isRestoring {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "arrow.clockwise.circle.fill")
+                            .font(.system(size: 15, weight: .semibold))
+                        Text(WalleafPlusPaywallL10n.restorePurchases)
+                            .font(.subheadline.weight(.semibold))
+                    }
+                }
+                .foregroundColor(.appPrimary)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: 46)
+                .background(Color.appPrimary.opacity(0.10))
+                .clipShape(Capsule())
+                .overlay {
+                    Capsule()
+                        .stroke(Color.appPrimary.opacity(0.22), lineWidth: 1)
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(subscriptionManager.isRestoring || subscriptionManager.isPurchasing)
+
+            HStack(spacing: 8) {
+                detailsLinkButton("服務條款") {}
+                separatorDot
+                detailsLinkButton("隱私政策") {}
+                separatorDot
+                detailsLinkButton("聯絡我們") {
+                    openSupportEmail()
+                }
+                separatorDot
+                detailsLinkButton("訂閱管理") {
+                    Task { await subscriptionManager.showManageSubscriptions() }
+                }
+            }
+            .font(.caption.weight(.semibold))
+            .frame(maxWidth: .infinity, alignment: .center)
+        }
+        .frame(width: contentWidth, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+
+    private func detailsLinkButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(title, action: action)
+            .buttonStyle(.plain)
+            .foregroundColor(.secondaryText)
+            .underline()
+    }
+
+    private var separatorDot: some View {
+        Text("·")
+            .foregroundColor(.tertiaryText)
+    }
+
+    private func openSupportEmail() {
+        guard let url = URL(string: "mailto:support@walleafapp.com") else { return }
+        openURL(url)
+    }
+
+    private func subscriptionExplanationText(width: CGFloat) -> some View {
+        Text("""
+        完成確認後，Apple 會透過您的 App Store 帳戶處理付款。
+        訂閱會依所選週期自動續訂，續訂費用通常會在到期前 24 小時內扣款。
+        您可以隨時到 App Store 的訂閱管理取消；取消後，既有資料仍會保留。
+        若遇到訂閱或恢復購買問題，請透過 App 內支援聯繫我們。
+        """)
+            .font(.footnote.weight(.medium))
+            .foregroundColor(.secondaryText)
+            .lineSpacing(4)
+            .multilineTextAlignment(.leading)
+            .frame(width: width, alignment: .leading)
     }
 
     private var isPurchaseDisabled: Bool {
@@ -744,35 +848,6 @@ struct WalleafPlusPaywallView: View {
         switch plan {
         case .yearly: return WalleafPlusPaywallL10n.planYearly
         case .monthly: return WalleafPlusPaywallL10n.planMonthly
-        }
-    }
-
-    private func planSubtitle(for plan: PaywallPlan) -> String {
-        if isScheduledPlan(plan) {
-            if let renewalDate = subscriptionManager.plusRenewalDate {
-                return WalleafPlusPaywallL10n.scheduledPlanSubtitle(on: renewalDate)
-            }
-            return WalleafPlusPaywallL10n.scheduledPlanSubtitle
-        }
-
-        if isActivePlan(plan) {
-            return WalleafPlusPaywallL10n.currentPlanSubtitle
-        }
-
-        switch plan {
-        case .yearly:
-            if subscriptionManager.isPlusActive, isActivePlan(.monthly) {
-                return WalleafPlusPaywallL10n.switchToYearlyHint
-            }
-            if yearlyHasIntroOffer {
-                return WalleafPlusPaywallL10n.yearlySubtitleTrial
-            }
-            return ""
-        case .monthly:
-            if subscriptionManager.isPlusActive, isActivePlan(.yearly) {
-                return WalleafPlusPaywallL10n.switchToMonthlyHint
-            }
-            return WalleafPlusPaywallL10n.monthlySubtitle
         }
     }
 

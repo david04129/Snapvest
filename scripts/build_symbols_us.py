@@ -9,7 +9,7 @@ import urllib.request
 from datetime import date
 from pathlib import Path
 
-from symbols_paths import OUTPUT_DIR, next_version
+from symbols_paths import OUTPUT_DIR, catalog_document, read_catalog_meta
 NASDAQ_URL = "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqtraded.txt"
 
 
@@ -48,27 +48,27 @@ def parse_nasdaq_content(content: str) -> list[dict]:
     return items
 
 
-def build_symbols_us(version: int = 1) -> dict:
+def build_symbols_us() -> dict:
     """建立 symbols_us.json 內容"""
     content = fetch_nasdaq_file()
     items = parse_nasdaq_content(content)
-    return {
-        "version": version,
-        "updatedAt": str(date.today()),
-        "items": items,
-    }
+    epoch, minor = read_catalog_meta("symbols_us.json")
+    return catalog_document(
+        epoch=epoch,
+        minor=minor,
+        items=items,
+        updated_at=str(date.today()),
+    )
 
 
 def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     output_path = OUTPUT_DIR / "symbols_us.json"
-    version = next_version("symbols_us.json")
-
-    data = build_symbols_us(version=version)
+    data = build_symbols_us()
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-    print(f"✅ symbols_us.json: {len(data['items'])} 筆, version={data['version']}")
+    print(f"✅ symbols_us.json: {len(data['items'])} 筆, {data['epoch']}.{data['minor']}")
 
 
 if __name__ == "__main__":

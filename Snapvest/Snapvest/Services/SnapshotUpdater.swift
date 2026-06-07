@@ -20,6 +20,42 @@ enum SnapshotUpdater {
         dataService: DataServiceProtocol,
         priceService: PriceServiceProtocol
     ) async throws -> SnapshotBundle {
+        try await rebuildSnapshots(
+            userId: userId,
+            deletedAccountIds: [],
+            localPricesOnly: false,
+            dataService: dataService,
+            priceService: priceService
+        )
+    }
+
+    /// 帳戶刪除／封存：重算結構，股價只用本機快照，不呼叫雲端 batch。
+    static func rebuildSnapshotsUsingLocalPricesOnly(
+        userId: String,
+        deletedAccountIds: Set<String> = [],
+        dataService: DataServiceProtocol,
+        priceService: PriceServiceProtocol
+    ) async throws -> SnapshotBundle {
+        try await rebuildSnapshots(
+            userId: userId,
+            deletedAccountIds: deletedAccountIds,
+            localPricesOnly: true,
+            dataService: dataService,
+            priceService: priceService
+        )
+    }
+
+    private static func rebuildSnapshots(
+        userId: String,
+        deletedAccountIds: Set<String>,
+        localPricesOnly: Bool,
+        dataService: DataServiceProtocol,
+        priceService: PriceServiceProtocol
+    ) async throws -> SnapshotBundle {
+        for accountId in deletedAccountIds {
+            try? await dataService.deleteAccountSnapshot(accountId: accountId)
+        }
+
         let accounts = try await dataService.fetchAccounts(userId: userId)
         let transactions = try await dataService.fetchAllTransactions(userId: userId)
         
@@ -44,7 +80,10 @@ enum SnapshotUpdater {
             symbols: symbolInfos,
             dataService: dataService,
             priceService: priceService,
-            holdingsBySymbol: holdingsBySymbol(from: accountSnapshots)
+            holdingsBySymbol: holdingsBySymbol(from: accountSnapshots),
+            userId: userId,
+            preferLocalPrices: localPricesOnly,
+            localPricesOnly: localPricesOnly
         )
         
         for snapshot in assetPriceSnapshots {
@@ -141,12 +180,14 @@ enum SnapshotUpdater {
             } else if let snapshot = try await dataService.fetchAccountSnapshot(accountId: account.id) {
                 snapshotsByAccountId[account.id] = snapshot
             } else {
-                // Missing persisted snapshots means the cache is incomplete; fall back to the safe path.
-                return try await rebuildSnapshots(
-                    userId: userId,
-                    dataService: dataService,
-                    priceService: priceService
+                let accountTransactions = try await dataService.fetchTransactions(accountId: account.id)
+                let snapshot = calculateAccountSnapshot(
+                    account: account,
+                    accountTransactions: accountTransactions,
+                    accounts: accounts
                 )
+                try await dataService.saveAccountSnapshot(snapshot)
+                snapshotsByAccountId[account.id] = snapshot
             }
         }
 
@@ -164,7 +205,9 @@ enum SnapshotUpdater {
             symbols: affectedSymbols,
             dataService: dataService,
             priceService: priceService,
-            holdingsBySymbol: holdingsMap
+            holdingsBySymbol: holdingsMap,
+            userId: userId,
+            preferLocalPrices: true
         )
         for snapshot in updatedPriceSnapshots {
             try await dataService.saveAssetPriceSnapshot(snapshot)
@@ -345,7 +388,10 @@ enum SnapshotUpdater {
         symbols: [SymbolInfo],
         dataService: DataServiceProtocol,
         priceService: PriceServiceProtocol,
-        holdingsBySymbol: [String: HoldingSnapshotItem]
+        holdingsBySymbol: [String: HoldingSnapshotItem],
+        userId: String? = nil,
+        preferLocalPrices: Bool = false,
+        localPricesOnly: Bool = false
     ) async throws -> [AssetPriceSnapshot] {
         var snapshotByKey: [String: AssetPriceSnapshot] = [:]
         for symbolInfo in symbols {
@@ -358,11 +404,43 @@ enum SnapshotUpdater {
             }
         }
 
+        var symbolsNeedingCloud: [SymbolInfo] = []
+        for symbolInfo in symbols {
+            let key = "\(symbolInfo.assetType.rawValue)_\(symbolInfo.symbol)"
+            guard let snapshot = snapshotByKey[key],
+                  let price = snapshot.displayPrice,
+                  price > 0 else {
+                symbolsNeedingCloud.append(symbolInfo)
+                continue
+            }
+        }
+
+        let shouldFetchAllFromRemote: Bool
+        if let userId, !preferLocalPrices {
+            shouldFetchAllFromRemote = await SupabasePriceService.shouldFetchPrices(
+                userId: userId,
+                dataService: dataService
+            )
+        } else {
+            shouldFetchAllFromRemote = false
+        }
+
+        let cloudTargets: [SymbolInfo]
+        if localPricesOnly {
+            cloudTargets = []
+        } else if preferLocalPrices {
+            cloudTargets = symbolsNeedingCloud
+        } else if shouldFetchAllFromRemote {
+            cloudTargets = symbols
+        } else {
+            cloudTargets = symbolsNeedingCloud
+        }
+
         var snapshots: [AssetPriceSnapshot] = []
-        if SupabaseConfig.isConfigured, !symbols.isEmpty {
-            snapshots = (try? await SupabasePriceService.fetchPrices(symbols: symbols)) ?? []
-        } else if !symbols.isEmpty {
-            snapshots = (try? await dataService.fetchAssetPriceSnapshots(symbols: symbols)) ?? []
+        if SupabaseConfig.isConfigured, !cloudTargets.isEmpty {
+            snapshots = (try? await SupabasePriceService.fetchPrices(symbols: cloudTargets)) ?? []
+        } else if !cloudTargets.isEmpty {
+            snapshots = (try? await dataService.fetchAssetPriceSnapshots(symbols: cloudTargets)) ?? []
         }
 
         for snapshot in snapshots {
@@ -375,7 +453,7 @@ enum SnapshotUpdater {
         }
 
         if SupabaseConfig.isConfigured {
-            let missingAfterBatch = symbols.filter { info in
+            let missingAfterBatch = cloudTargets.filter { info in
                 let key = "\(info.assetType.rawValue)_\(info.symbol)"
                 guard let snapshot = snapshotByKey[key],
                       let price = snapshot.displayPrice,

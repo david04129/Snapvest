@@ -41,10 +41,6 @@ enum TodayPLCalculator {
 
         let rate = inputs.usdToTwdRate
         let priceMap = HoldingChartMetrics.priceMap(from: inputs.assetPriceSnapshots)
-        let symbols = inputs.aggregatedHoldings
-            .filter { $0.assetType != .cash }
-            .map { SymbolInfo(assetType: $0.assetType, symbol: $0.symbol) }
-        let historyContext = await DailyPriceHistoryCache.historyContext(for: symbols)
 
         var changeByType: [AssetType: Decimal] = [:]
         var priorByType: [AssetType: Decimal] = [:]
@@ -57,15 +53,8 @@ enum TodayPLCalculator {
                   let current = snapshot.currentPrice ?? snapshot.displayPrice,
                   current > 0 else { continue }
 
-            let exact = DailyPriceHistoryCache.exactHistory(
-                assetType: holding.assetType,
-                symbol: holding.symbol,
-                from: historyContext
-            )
             guard let reference = DailyReferenceCloseResolver.effectivePreviousClose(
-                snapshot: snapshot,
-                exactHistoryByDate: exact.isEmpty ? nil : exact,
-                historyDateKeys: historyContext.dateKeys
+                snapshot: snapshot
             ), reference.price > 0 else { continue }
 
             let changeOriginal = holding.totalQuantity * (current - reference.price)

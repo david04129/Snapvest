@@ -11,7 +11,7 @@ import urllib.request
 from datetime import date
 from pathlib import Path
 
-from symbols_paths import BACKEND_CRYPTO_MAP, OUTPUT_DIR, next_version
+from symbols_paths import BACKEND_CRYPTO_MAP, OUTPUT_DIR, catalog_document, read_catalog_meta
 COINGECKO_MARKETS_BASE = "https://api.coingecko.com/api/v3/coins/markets"
 TOP_N = 500
 PER_PAGE = 100  # 免費 API 單次上限通常為 100
@@ -75,25 +75,26 @@ def build_coingecko_map(items: list[dict]) -> dict[str, str]:
     return {item["symbol"].upper(): item["coingeckoId"] for item in items}
 
 
-def build_symbols_crypto(version: int = 1) -> dict:
+def build_symbols_crypto() -> dict:
     """建立 symbols_crypto.json 內容"""
     markets = fetch_coingecko_top_markets()
     items = transform_to_items(markets)
-    return {
-        "version": version,
-        "updatedAt": str(date.today()),
-        "source": f"coingecko_markets_top_{TOP_N}",
-        "items": items,
-    }
+    epoch, minor = read_catalog_meta("symbols_crypto.json")
+    doc = catalog_document(
+        epoch=epoch,
+        minor=minor,
+        items=items,
+        updated_at=str(date.today()),
+        source=f"coingecko_markets_top_{TOP_N}",
+    )
+    return doc
 
 
 def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     output_path = OUTPUT_DIR / "symbols_crypto.json"
-    version = next_version("symbols_crypto.json")
-
     print(f"加密貨幣：正在取得 CoinGecko 市值 Top {TOP_N}...")
-    data = build_symbols_crypto(version=version)
+    data = build_symbols_crypto()
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
@@ -103,7 +104,7 @@ def main():
         json.dump(cg_map, f, ensure_ascii=False, indent=2, sort_keys=True)
 
     unique_symbols = len(data["items"])
-    print(f"✅ symbols_crypto.json: {unique_symbols} 筆（去重後）, version={data['version']}")
+    print(f"✅ symbols_crypto.json: {unique_symbols} 筆（去重後）, {data['epoch']}.{data['minor']}")
     print(f"✅ crypto_coingecko_map.json: {len(cg_map)} 筆 → {BACKEND_CRYPTO_MAP.relative_to(Path(__file__).parent.parent)}")
     if unique_symbols < TOP_N - 50:
         print(f"   ⚠️ 筆數少於預期，可能 API 限流或回應不完整")

@@ -182,6 +182,149 @@ async function fetchCoinGeckoUsdPrice(cgId: string): Promise<number | null> {
   return price != null && Number(price) > 0 ? Number(price) : null
 }
 
+function acceptableCloseDateKeys(assetType: string, now = new Date()): Set<string> {
+  const tz = marketTimeZone(assetType)
+  const keys = new Set<string>()
+  for (let offset = 0; offset <= 3; offset++) {
+    const d = new Date(now.getTime() - offset * 86_400_000)
+    keys.add(closeDateString(d, tz))
+  }
+  return keys
+}
+
+function isSnapshotCloseDateStale(
+  currentCloseDate: string | null | undefined,
+  assetType: string,
+): boolean {
+  if (assetType === "crypto") return false
+  if (!currentCloseDate) return true
+  return !acceptableCloseDateKeys(assetType).has(currentCloseDate)
+}
+
+async function upsertHistoryClose(
+  supabase: ReturnType<typeof createClient>,
+  assetType: string,
+  symbol: string,
+  priceDate: string,
+  closePrice: number,
+  currency: string,
+  source: string,
+  updatedAt: string,
+): Promise<void> {
+  await supabase.from("asset_price_history").upsert(
+    {
+      asset_type: assetType,
+      symbol,
+      price_date: priceDate,
+      close_price: closePrice,
+      currency,
+      source,
+      updated_at: updatedAt,
+    },
+    { onConflict: "asset_type,symbol,price_date" },
+  )
+}
+
+async function hasPriorHistoryClose(
+  supabase: ReturnType<typeof createClient>,
+  assetType: string,
+  symbol: string,
+  beforeDate: string,
+): Promise<boolean> {
+  const { data } = await supabase
+    .from("asset_price_history")
+    .select("price_date")
+    .eq("asset_type", assetType)
+    .eq("symbol", symbol)
+    .lt("price_date", beforeDate)
+    .order("price_date", { ascending: false })
+    .limit(1)
+  return (data?.length ?? 0) > 0
+}
+
+async function backfillPreviousHistoryIfMissing(
+  supabase: ReturnType<typeof createClient>,
+  assetType: string,
+  symbol: string,
+  currentCloseDate: string,
+  existingPreviousPrice: number | null,
+  existingPreviousCloseDate: string | null,
+  currency: string,
+): Promise<{ previousPrice: number | null; previousCloseDate: string | null }> {
+  const updatedAt = taipeiUpdatedAtSeconds()
+  if (await hasPriorHistoryClose(supabase, assetType, symbol, currentCloseDate)) {
+    return {
+      previousPrice: existingPreviousPrice,
+      previousCloseDate: existingPreviousCloseDate,
+    }
+  }
+
+  if (validPrice(existingPreviousPrice) && existingPreviousCloseDate) {
+    await upsertHistoryClose(
+      supabase,
+      assetType,
+      symbol,
+      existingPreviousCloseDate,
+      existingPreviousPrice as number,
+      currency,
+      "snapshot_bootstrap",
+      updatedAt,
+    )
+    return {
+      previousPrice: existingPreviousPrice,
+      previousCloseDate: existingPreviousCloseDate,
+    }
+  }
+
+  if (assetType !== "stock_tw" && assetType !== "stock_us") {
+    return { previousPrice: null, previousCloseDate: null }
+  }
+
+  const yahooSymbol = assetType === "stock_tw" ? `${symbol}.TW` : symbol
+  const res = await fetchYahooChart(yahooSymbol)
+  if (!res.ok) {
+    return { previousPrice: null, previousCloseDate: null }
+  }
+  let json: Record<string, unknown>
+  try {
+    json = await res.json()
+  } catch {
+    return { previousPrice: null, previousCloseDate: null }
+  }
+  const parsed = parseYahooStockChart(json, assetType)
+  if (!parsed?.previousPrice || !parsed.previousCloseDate) {
+    return { previousPrice: null, previousCloseDate: null }
+  }
+
+  await upsertHistoryClose(
+    supabase,
+    assetType,
+    symbol,
+    parsed.previousCloseDate,
+    parsed.previousPrice,
+    currency,
+    "yahoo",
+    updatedAt,
+  )
+
+  const snapshotPatch: Record<string, unknown> = {
+    previous_price: parsed.previousPrice,
+    previous_close_date: parsed.previousCloseDate,
+    previous_updated_at: updatedAt,
+    previous_price_source: "yahoo",
+  }
+  await supabase
+    .from("asset_price_snapshots")
+    .update(snapshotPatch)
+    .eq("asset_type", assetType)
+    .eq("symbol", symbol)
+
+  return {
+    previousPrice: parsed.previousPrice,
+    previousCloseDate: parsed.previousCloseDate,
+  }
+}
+
 async function resolveCoinGeckoId(symbol: string, hint?: string): Promise<string | null> {
   const trimmedHint = hint?.trim()
   if (trimmedHint) return trimmedHint
@@ -250,22 +393,51 @@ serve(async (req) => {
 
     const { data: existing } = await supabase
       .from("asset_price_snapshots")
-      .select("current_price, previous_price, previous_close_date, currency")
+      .select("current_price, current_close_date, previous_price, previous_close_date, currency")
       .eq("asset_type", assetType)
       .eq("symbol", symbol)
       .single()
 
     if (existing?.current_price) {
-      return new Response(
-        JSON.stringify({
-          price: existing.current_price,
-          currency: existing.currency,
-          source: "database",
-          previousPrice: existing.previous_price ?? null,
-          previousCloseDate: existing.previous_close_date ?? null,
-        }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      )
+      const currentCloseDate = existing.current_close_date ?? marketTodayKey(assetType)
+      const currency = existing.currency ?? (assetType === "stock_tw" ? "TWD" : "USD")
+
+      if (!isSnapshotCloseDateStale(currentCloseDate, assetType)) {
+        const needsExternalBackfill =
+          !(await hasPriorHistoryClose(supabase, assetType, symbol, currentCloseDate))
+          && !(validPrice(existing.previous_price) && existing.previous_close_date)
+          && (assetType === "stock_tw" || assetType === "stock_us")
+        if (needsExternalBackfill) {
+          const externalLimited = await enforceRateLimits(
+            supabase,
+            req,
+            authContext,
+            FETCH_OR_CREATE_EXTERNAL_LIMITS,
+          )
+          if (externalLimited) return externalLimited
+        }
+        const backfilled = await backfillPreviousHistoryIfMissing(
+          supabase,
+          assetType,
+          symbol,
+          currentCloseDate,
+          existing.previous_price ?? null,
+          existing.previous_close_date ?? null,
+          currency,
+        )
+        return new Response(
+          JSON.stringify({
+            price: existing.current_price,
+            currency,
+            source: "database",
+            currentCloseDate,
+            previousPrice: backfilled.previousPrice,
+            previousCloseDate: backfilled.previousCloseDate,
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        )
+      }
+      // current_close_date 過期 →  fall through，從 Yahoo 重新抓取並覆寫
     }
 
     const externalLimited = await enforceRateLimits(
@@ -365,20 +537,47 @@ serve(async (req) => {
       row.previous_price_source = prior.current_price_source
     }
 
-    await supabase.from("asset_price_snapshots").upsert(row, { onConflict: "asset_type,symbol" })
+    const { error: snapshotError } = await supabase.from("asset_price_snapshots").upsert(row, { onConflict: "asset_type,symbol" })
+    if (snapshotError) {
+      return new Response(JSON.stringify({ error: `snapshot upsert failed: ${snapshotError.message}` }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      })
+    }
 
-    const body: Record<string, unknown> = {
+    if (previousPrice != null && previousCloseDate) {
+      const { error: historyError } = await supabase.from("asset_price_history").upsert(
+        {
+          asset_type: assetType,
+          symbol,
+          price_date: previousCloseDate,
+          close_price: previousPrice,
+          currency,
+          source: priceSource,
+          updated_at: updatedAt,
+        },
+        { onConflict: "asset_type,symbol,price_date" },
+      )
+      if (historyError) {
+        return new Response(JSON.stringify({ error: `history upsert failed: ${historyError.message}` }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        })
+      }
+    }
+
+    const responseBody: Record<string, unknown> = {
       price,
       currency,
       source: priceSource,
       currentCloseDate,
     }
     if (previousPrice != null && previousCloseDate) {
-      body.previousPrice = previousPrice
-      body.previousCloseDate = previousCloseDate
+      responseBody.previousPrice = previousPrice
+      responseBody.previousCloseDate = previousCloseDate
     }
 
-    return new Response(JSON.stringify(body), { headers: { ...corsHeaders, "Content-Type": "application/json" } })
+    return new Response(JSON.stringify(responseBody), { headers: { ...corsHeaders, "Content-Type": "application/json" } })
   } catch (e) {
     return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } })
   }

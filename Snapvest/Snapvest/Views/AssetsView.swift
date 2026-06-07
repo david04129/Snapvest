@@ -123,9 +123,13 @@ struct AssetsView: View {
             .refreshable {
                 await ManualRefreshCooldown.shared.performIfAllowed {
                     MarketStatusService.invalidateCache()
-                    DailyPriceHistoryCache.invalidate()
                     marketStatus = await MarketStatusService.fetchIfNeeded(force: true)
-                    await SnapshotRefreshCoordinator.rebuildAndNotify(userId: userId)
+                    await SnapshotRefreshCoordinator.refreshOnUserPull(
+                        userId: userId,
+                        portfolioViewModel: portfolioViewModel,
+                        accountsViewModel: accountsViewModel,
+                        assetsViewModel: viewModel
+                    )
                 }
             }
             .onAppear {

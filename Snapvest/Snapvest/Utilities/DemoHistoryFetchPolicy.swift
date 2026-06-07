@@ -8,7 +8,7 @@
 import Foundation
 
 enum DemoHistoryFetchPolicy {
-    /// 一般模式沿用較長 lookback；示範模式只補最近 2 個交易日。
+    /// 一般模式：僅 HoldingDetail／DailyPreviousCloseSync（demo／備份）用；冷啟／下拉不拉 21 天。
     static var previousCloseLookbackDays: Int {
         MockDataService.shared.isDemoModeActive ? 2 : 21
     }

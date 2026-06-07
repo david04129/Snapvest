@@ -23,9 +23,14 @@ struct OtherDebtRepaymentView: View {
     @State private var isSaving = false
     @State private var showingAccountPicker = false
     @State private var sourceAccountCashBalance: Decimal = 0
+    @State private var isDeductInfoAlertPresented = false
     
     private let dataService: DataServiceProtocol = MockDataService.shared
     private let themeColor: Color = .appPrimary
+
+    private var deductInfoMessage: String {
+        "還款會記錄到債務帳戶。勾選此選項時，系統會同時扣除還款金額；未勾選則僅記錄還款，不影響帳戶餘額。債務帳戶只能從同幣別帳戶扣款。"
+    }
     
     private var remainingBalance: Decimal {
         OtherDebtCalculator.remainingBalance(
@@ -138,6 +143,11 @@ struct OtherDebtRepaymentView: View {
                     loadSourceAccountCashBalance(accountId: account.id)
                 }
             }
+            .alert("從同幣別帳戶扣款說明", isPresented: $isDeductInfoAlertPresented) {
+                Button("知道了", role: .cancel) {}
+            } message: {
+                Text(deductInfoMessage)
+            }
         }
         .snapFormSheetChrome()
     }
@@ -174,8 +184,27 @@ struct OtherDebtRepaymentView: View {
     
     private var deductFromAccountSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Toggle(isOn: $deductFromTWDAccount) {
+            HStack(spacing: 6) {
+                Image(systemName: "creditcard.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(themeColor)
                 Text("從同幣別帳戶扣款")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.primaryText)
+                Button {
+                    isDeductInfoAlertPresented = true
+                } label: {
+                    Image(systemName: "questionmark.circle.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(themeColor.opacity(0.9))
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("從同幣別帳戶扣款說明")
+            }
+
+            Toggle(isOn: $deductFromTWDAccount) {
+                Text("從同幣別帳戶中扣除此筆款項")
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundColor(.primaryText)

@@ -101,7 +101,6 @@ struct AccountsView: View {
                 VStack(spacing: 12) {
                     AccountsCurrencyControlsBar(
                         currencyDisplay: $accountsCurrencyDisplay,
-                        shareDisplayMode: $managementShareDisplayMode,
                         showsEditControl: true,
                         isEditingOrder: isEditingOrder,
                         isEditDisabled: orderedVisibleManagementSections.isEmpty && !showsManagementOnboardingEmpty,
@@ -140,7 +139,12 @@ struct AccountsView: View {
             }
             .refreshable {
                 await ManualRefreshCooldown.shared.performIfAllowed {
-                    await SnapshotRefreshCoordinator.rebuildAndNotify(userId: userId)
+                    await SnapshotRefreshCoordinator.refreshOnUserPull(
+                        userId: userId,
+                        portfolioViewModel: portfolioViewModel,
+                        accountsViewModel: viewModel,
+                        assetsViewModel: assetsViewModel
+                    )
                 }
             }
             .sheet(isPresented: $showingAddAccount, onDismiss: {
@@ -291,7 +295,6 @@ struct AccountsView: View {
     private func sortableManagementSectionView(for sectionID: ManagementSectionID) -> some View {
         if isEditingOrder {
             managementSectionView(for: sectionID)
-                .opacity(draggedManagementSection == sectionID ? 0.35 : 1)
                 .scaleEffect(draggedManagementSection == sectionID ? 0.985 : 1)
                 .animation(ChartMotion.switchSpring, value: draggedManagementSection)
                 .onDrag {
@@ -358,6 +361,7 @@ struct AccountsView: View {
                 isBalanceLoading: isLoading,
                 isExpanded: expandedBinding(for: accountType),
                 isEditingOrder: isEditingOrder,
+                onToggleShareDisplay: toggleManagementShareDisplay,
                 onMove: { source, destination in
                     moveAccounts(from: source, to: destination, for: accountType)
                 },
@@ -396,6 +400,7 @@ struct AccountsView: View {
                 baseCurrency: portfolioViewModel.viewCurrency,
                 twdPerBaseCurrency: portfolioViewModel.twdPerBaseCurrency,
                 isEditingOrder: isEditingOrder,
+                onToggleShareDisplay: toggleManagementShareDisplay,
                 onRequestDelete: { account in
                     presentDeleteConfirmation(for: account)
                 },
@@ -421,6 +426,7 @@ struct AccountsView: View {
                 twdRateByCurrency: portfolioViewModel.pieChartInputs?.twdRateByCurrency ?? [.TWD: 1],
                 isExpanded: manualAssetExpandedBinding(for: category),
                 isEditingOrder: isEditingOrder,
+                onToggleShareDisplay: toggleManagementShareDisplay,
                 onOpenAsset: openManualAssetDetail,
                 onDeleteAsset: { asset in
                     presentManualAssetDeleteConfirmation(for: asset)
@@ -532,7 +538,9 @@ struct AccountsView: View {
             portfolioViewModel: portfolioViewModel,
             accountsViewModel: viewModel,
             assetsViewModel: assetsViewModel,
-            forceFullRebuild: true,
+            forceFullRebuild: false,
+            localStructureOnly: true,
+            deletedAccountIds: [account.id],
             operation: {
                 if let error = await viewModel.deleteAccount(account) {
                     deleteErrorMessage = error
@@ -602,6 +610,16 @@ struct AccountsView: View {
         order.insert(moved, at: targetIndex)
         withAnimation(ChartMotion.switchSpring) {
             managementSectionOrder = order
+        }
+    }
+
+    private func toggleManagementShareDisplay() {
+        guard !isEditingOrder else { return }
+        withAnimation(ChartMotion.switchSpring) {
+            let next: ManagementShareDisplayMode =
+                managementShareDisplayMode == .shareRing ? .currencyIcon : .shareRing
+            managementShareDisplayMode = next
+            ManagementShareDisplayPreference.set(next)
         }
     }
     
@@ -726,6 +744,7 @@ struct ArchivedDebtAccountsSection: View {
     let baseCurrency: Currency
     let twdPerBaseCurrency: Decimal
     let isEditingOrder: Bool
+    let onToggleShareDisplay: () -> Void
     let onRequestDelete: (Account) -> Void
     let onOpenAccount: (Account) -> Void
     @State private var isExpanded = false
@@ -781,7 +800,8 @@ struct ArchivedDebtAccountsSection: View {
                                 baseCurrency: baseCurrency,
                                 twdPerBaseCurrency: twdPerBaseCurrency,
                                 isBalanceLoading: false,
-                                showsArchivedBadge: true
+                                showsArchivedBadge: true,
+                                onToggleShareDisplay: onToggleShareDisplay
                             )
                         }
                     }
@@ -808,6 +828,7 @@ struct ManualAssetCategorySection: View {
     let twdRateByCurrency: [Currency: Decimal]
     @Binding var isExpanded: Bool
     let isEditingOrder: Bool
+    let onToggleShareDisplay: () -> Void
     let onOpenAsset: (ManualAsset) -> Void
     let onDeleteAsset: (ManualAsset) -> Void
 
@@ -864,6 +885,13 @@ struct ManualAssetCategorySection: View {
                     TotalAssetsShareRingView(
                         sharePercent: categorySharePercent,
                         accentColor: accentColor
+                    )
+                    .contentShape(Rectangle())
+                    .highPriorityGesture(
+                        TapGesture().onEnded {
+                            guard !isEditingOrder else { return }
+                            onToggleShareDisplay()
+                        }
                     )
 
                     VStack(alignment: .leading, spacing: 2) {
@@ -922,7 +950,8 @@ struct ManualAssetCategorySection: View {
                                 currencyDisplay: currencyDisplay,
                                 baseCurrency: baseCurrency,
                                 twdPerBaseCurrency: twdPerBaseCurrency,
-                                twdRateByCurrency: twdRateByCurrency
+                                twdRateByCurrency: twdRateByCurrency,
+                                onToggleShareDisplay: onToggleShareDisplay
                             )
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(Rectangle())
@@ -968,6 +997,7 @@ struct ManualAssetCardView: View {
     let baseCurrency: Currency
     let twdPerBaseCurrency: Decimal
     let twdRateByCurrency: [Currency: Decimal]
+    var onToggleShareDisplay: (() -> Void)? = nil
 
     private var accentColor: Color { .manualAssetColor }
 
@@ -998,7 +1028,8 @@ struct ManualAssetCardView: View {
             ManagementRowLeadingIndicator(
                 currency: asset.currency,
                 accentColor: accentColor,
-                sharePercent: sharePercent
+                sharePercent: sharePercent,
+                onToggleDisplayMode: onToggleShareDisplay
             )
 
             VStack(alignment: .leading, spacing: 6) {
@@ -1271,6 +1302,7 @@ struct ExpandableAccountCategorySection: View {
     let isBalanceLoading: Bool
     @Binding var isExpanded: Bool
     let isEditingOrder: Bool
+    let onToggleShareDisplay: () -> Void
     let onMove: (IndexSet, Int) -> Void
     let onRequestDelete: (Account) -> Void
     let onOpenAccount: (Account) -> Void
@@ -1316,6 +1348,13 @@ struct ExpandableAccountCategorySection: View {
                     TotalAssetsShareRingView(
                         sharePercent: categorySharePercent,
                         accentColor: accountType == .debt || accountType == .otherDebt ? .lossRed : accountType.color
+                    )
+                    .contentShape(Rectangle())
+                    .highPriorityGesture(
+                        TapGesture().onEnded {
+                            guard !isEditingOrder else { return }
+                            onToggleShareDisplay()
+                        }
                     )
 
                     VStack(alignment: .leading, spacing: 2) {
@@ -1389,7 +1428,8 @@ struct ExpandableAccountCategorySection: View {
                                 currencyDisplay: currencyDisplay,
                                 baseCurrency: baseCurrency,
                                 twdPerBaseCurrency: twdPerBaseCurrency,
-                                isBalanceLoading: isBalanceLoading
+                                isBalanceLoading: isBalanceLoading,
+                                onToggleShareDisplay: onToggleShareDisplay
                             )
                         }
                     }
@@ -1429,6 +1469,7 @@ struct AccountCardView: View {
     let twdPerBaseCurrency: Decimal
     let isBalanceLoading: Bool
     var showsArchivedBadge: Bool = false
+    var onToggleShareDisplay: (() -> Void)? = nil
     
     private var showLoadingPlaceholder: Bool {
         isBalanceLoading && balance == nil
@@ -1452,7 +1493,8 @@ struct AccountCardView: View {
                 ManagementRowLeadingIndicator(
                     currency: account.currency,
                     accentColor: account.accountType.color,
-                    sharePercent: sharePercent
+                    sharePercent: sharePercent,
+                    onToggleDisplayMode: onToggleShareDisplay
                 )
 
                 VStack(alignment: .leading, spacing: 4) {

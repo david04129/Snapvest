@@ -78,10 +78,7 @@ struct AppRootView: View {
     private var onboardingRootView: some View {
         OnboardingView(
             onFinish: { onboardingManager.complete() },
-            onDemoMode: {
-                await DemoModeManager.shared.enterDemoMode()
-                onboardingManager.complete()
-            }
+            onDemoMode: { await enterDemoModeFromOnboarding() }
         )
     }
 
@@ -98,12 +95,23 @@ struct AppRootView: View {
             .fullScreenCover(isPresented: $onboardingManager.isPresented) {
                 OnboardingView(
                     onFinish: { onboardingManager.complete() },
-                    onDemoMode: {
-                        await DemoModeManager.shared.enterDemoMode()
-                        onboardingManager.complete()
-                    }
+                    onDemoMode: { await enterDemoModeFromOnboarding() }
                 )
             }
+    }
+
+    /// 新手教學進示範：先 rebuild 再灌入 ViewModel，避免 ContentView 首次掛載時 onChange 不觸發而顯示 0。
+    private func enterDemoModeFromOnboarding() async {
+        await DemoModeManager.shared.enterDemoMode(userId: userId)
+        await LaunchCoordinator.applyPersistedState(
+            userId: userId,
+            portfolioViewModel: portfolioViewModel,
+            accountsViewModel: accountsViewModel,
+            assetsViewModel: assetsViewModel,
+            dataService: MockDataService.shared
+        )
+        DataFreshnessStore.shared.refresh(userId: userId)
+        onboardingManager.complete()
     }
     
     private func runLaunchSequence() async {

@@ -41,11 +41,15 @@ struct BuyTradeFormView: View {
     @State private var livePriceTaskToken = 0
     @State private var editBaseline: BuyTradeEditBaseline?
     @State private var isPaywallPresented = false
+    @State private var buyGateAlertMessage: String?
+    @State private var shouldDismissAfterBuyGateAlert = false
+    @State private var isDeductInfoAlertPresented = false
 
     private let dataService: DataServiceProtocol = MockDataService.shared
     
     @ObservedObject private var subscriptionManager = SubscriptionManager.shared
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openPlusPaywall) private var openPlusPaywall
     
     init(
         market: TradeMarket,
@@ -167,7 +171,6 @@ struct BuyTradeFormView: View {
     private var hasEditChanges: Bool {
         guard let baseline = editBaseline else { return true }
         return selectedAccountId != baseline.accountId
-            || selectedSymbol != baseline.symbol
             || !EditFormChangeTracking.decimalStringsEqual(quantityText, baseline.quantityText)
             || !EditFormChangeTracking.decimalStringsEqual(priceText, baseline.priceText)
             || !EditFormChangeTracking.decimalStringsEqual(exchangeRateText, baseline.exchangeRateText)
@@ -293,7 +296,7 @@ struct BuyTradeFormView: View {
             }
             validateInput()
             if needsLiveReferencePrice, !normalizedSelectedSymbol.isEmpty {
-                await prefetchLiveReferencePrice()
+                await validateSelectedSymbolAndPrefetch(shouldDismissOnBlock: true)
             }
         }
         .onChange(of: selectedAccountId) { _, newValue in
@@ -320,15 +323,17 @@ struct BuyTradeFormView: View {
             if newSymbol.isEmpty {
                 resetLiveReferencePrice()
             } else {
-                Task { await prefetchLiveReferencePrice() }
+                Task { await validateSelectedSymbolAndPrefetch(shouldDismissOnBlock: true) }
             }
         }
-        .sheet(isPresented: $showingSymbolPicker) {
+        .sheet(isPresented: Binding(
+            get: { showingSymbolPicker && !isSymbolLocked },
+            set: { showingSymbolPicker = $0 }
+        )) {
             SymbolPickerView(market: market) { symbol, name in
-                selectedSymbol = market == .crypto
-                    ? SymbolListService.normalizedCryptoSymbol(symbol)
-                    : symbol
-                selectedSymbolName = name
+                Task {
+                    await handlePickedSymbol(symbol, name: name)
+                }
             }
         }
         .alert("可能重複的交易", isPresented: $showingDuplicateAlert) {
@@ -338,6 +343,36 @@ struct BuyTradeFormView: View {
             }
         } message: {
             Text(duplicateAlertMessage)
+        }
+        .alert("需要 Walleaf Plus", isPresented: Binding(
+            get: { buyGateAlertMessage != nil },
+            set: { if !$0 { buyGateAlertMessage = nil } }
+        )) {
+            Button("了解 Plus") {
+                buyGateAlertMessage = nil
+                let shouldDismiss = shouldDismissAfterBuyGateAlert
+                shouldDismissAfterBuyGateAlert = false
+                if shouldDismiss {
+                    dismiss()
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    openPlusPaywall()
+                }
+            }
+            Button("知道了", role: .cancel) {
+                buyGateAlertMessage = nil
+                if shouldDismissAfterBuyGateAlert {
+                    shouldDismissAfterBuyGateAlert = false
+                    dismiss()
+                }
+            }
+        } message: {
+            Text(buyGateAlertMessage ?? "")
+        }
+        .alert("從帳戶扣款說明", isPresented: $isDeductInfoAlertPresented) {
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text("買入的股票或加密貨幣都會加入帳戶。勾選此選項時，系統會同時扣除買入金額；未勾選則僅新增資產，不影響帳戶餘額。")
         }
         .fullScreenCover(isPresented: $isPaywallPresented) {
             WalleafPlusPaywallView()
@@ -516,38 +551,65 @@ struct BuyTradeFormView: View {
     
     private var symbolSection: some View {
         TradeFormRow(title: market == .crypto ? "加密貨幣" : "股票代號", icon: "tag.fill", color: market.themeColor) {
-            Button(action: { showingSymbolPicker = true }) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
-                        if !selectedSymbol.isEmpty {
-                            Text(selectedSymbol)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.primaryText)
-                            if market != .crypto, !selectedSymbolName.isEmpty {
-                                Text("—")
+            VStack(alignment: .leading, spacing: 4) {
+                if isSymbolLocked {
+                    lockedSymbolDisplay
+                } else {
+                    Button(action: { showingSymbolPicker = true }) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 8) {
+                                if !selectedSymbol.isEmpty {
+                                    Text(selectedSymbol)
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(.primaryText)
+                                    if market != .crypto, !selectedSymbolName.isEmpty {
+                                        Text("—")
+                                            .foregroundColor(.secondaryText)
+                                        Text(selectedSymbolName)
+                                            .font(.subheadline)
+                                            .foregroundColor(.secondaryText)
+                                            .lineLimit(1)
+                                    }
+                                } else {
+                                    Text("點擊選擇")
+                                        .foregroundColor(.secondaryText)
+                                }
+                                Spacer(minLength: 0)
+                                Image(systemName: "chevron.right")
                                     .foregroundColor(.secondaryText)
-                                Text(selectedSymbolName)
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondaryText)
-                                    .lineLimit(1)
+                                    .font(.caption)
                             }
-                        } else {
-                            Text("點擊選擇")
-                                .foregroundColor(.secondaryText)
+                            .snapFormFieldTapTarget()
                         }
-                        Spacer(minLength: 0)
-                        Image(systemName: "chevron.right")
-                            .foregroundColor(.secondaryText)
-                            .font(.caption)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                     }
-                    .snapFormFieldTapTarget()
+                    .buttonStyle(.plain)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+                liveReferencePriceStatus
             }
-            .buttonStyle(.plain)
-            liveReferencePriceStatus
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private var lockedSymbolDisplay: some View {
+        HStack(spacing: 8) {
+            if !selectedSymbol.isEmpty {
+                Text(selectedSymbol)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primaryText)
+                if market != .crypto, !selectedSymbolName.isEmpty {
+                    Text("—")
+                        .foregroundColor(.secondaryText)
+                    Text(selectedSymbolName)
+                        .font(.subheadline)
+                        .foregroundColor(.secondaryText)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
@@ -631,7 +693,13 @@ struct BuyTradeFormView: View {
     }
     
     private var deductFromAccountSection: some View {
-        TradeFormRow(title: "從帳戶扣款", icon: "creditcard.fill", color: market.themeColor) {
+        TradeFormRow(
+            title: "從帳戶扣款",
+            icon: "creditcard.fill",
+            color: market.themeColor,
+            helpAction: { isDeductInfoAlertPresented = true },
+            helpAccessibilityLabel: "從帳戶扣款說明"
+        ) {
             Toggle(isOn: $deductFromAccount) {
                 Text("從帳戶中扣除此筆款項")
                     .font(.subheadline)
@@ -949,6 +1017,73 @@ struct BuyTradeFormView: View {
     }
 
     @MainActor
+    private func handlePickedSymbol(_ symbol: String, name: String) async {
+        let normalizedSymbol = market == .crypto
+            ? SymbolListService.normalizedCryptoSymbol(symbol)
+            : symbol
+
+        guard await canProceedWithBuy(symbol: normalizedSymbol, shouldDismissOnBlock: true) else {
+            resetLiveReferencePrice()
+            return
+        }
+
+        let symbolChanged = selectedSymbol != normalizedSymbol
+        selectedSymbol = normalizedSymbol
+        selectedSymbolName = name
+        validateInput()
+
+        if !symbolChanged {
+            await validateSelectedSymbolAndPrefetch(shouldDismissOnBlock: true)
+        }
+    }
+
+    @MainActor
+    private func validateSelectedSymbolAndPrefetch(shouldDismissOnBlock: Bool) async {
+        guard needsLiveReferencePrice, !selectedSymbol.isEmpty else {
+            resetLiveReferencePrice()
+            return
+        }
+
+        guard await canProceedWithBuy(symbol: selectedSymbol, shouldDismissOnBlock: shouldDismissOnBlock) else {
+            resetLiveReferencePrice()
+            return
+        }
+
+        await prefetchLiveReferencePrice()
+    }
+
+    @MainActor
+    private func canProceedWithBuy(symbol: String, shouldDismissOnBlock: Bool) async -> Bool {
+        guard !isEditMode else { return true }
+
+        do {
+            let snapshot = try await PlusFeatureGate.loadSnapshot(
+                userId: userId,
+                dataService: dataService
+            )
+            let decision = PlusFeatureGate.canBuy(
+                assetType: assetType,
+                symbol: symbol,
+                snapshot: snapshot,
+                isPlusActive: subscriptionManager.isPlusActive
+            )
+
+            switch decision {
+            case .allowed:
+                return true
+            case .blocked(let reason):
+                buyGateAlertMessage = PlusFeatureGate.message(for: reason)
+                shouldDismissAfterBuyGateAlert = shouldDismissOnBlock
+                return false
+            }
+        } catch {
+            buyGateAlertMessage = "無法驗證 Free 上限：\(error.localizedDescription)"
+            shouldDismissAfterBuyGateAlert = shouldDismissOnBlock
+            return false
+        }
+    }
+
+    @MainActor
     private func prefetchLiveReferencePrice() async {
         let key = normalizedSelectedSymbol
         guard needsLiveReferencePrice, !key.isEmpty else {
@@ -963,11 +1098,15 @@ struct BuyTradeFormView: View {
 
         let result = await SymbolLiveReferencePrice.prefetch(
             assetType: assetType,
-            symbol: selectedSymbol
+            symbol: selectedSymbol,
+            dataService: dataService
         )
 
         guard token == livePriceTaskToken, normalizedSelectedSymbol == key else { return }
         livePriceState = result
+        if case .ready = result {
+            dataService.persistLocalStore(for: userId)
+        }
     }
 
     private func applySymbolPrefill() {

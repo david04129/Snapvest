@@ -238,4 +238,56 @@ struct PriceSnapshotMergerTests {
         #expect(merged.previousPrice == 418)
         #expect(merged.previousPriceSource == DailyReferenceCloseResolver.historyPreviousCloseSource)
     }
+
+    @Test func merge_keepsHistoryBackedPreviousOnFirstAccept() {
+        let incoming = AssetPriceSnapshot(
+            assetType: .stockUS,
+            symbol: "AAPL",
+            currency: .USD,
+            currentPrice: 200,
+            previousPrice: 195,
+            currentCloseDate: TradingDayCalendar.date(fromKey: "2026-05-29", assetType: .stockUS),
+            previousCloseDate: TradingDayCalendar.date(fromKey: "2026-05-28", assetType: .stockUS),
+            currentPriceSource: "database",
+            previousPriceSource: DailyReferenceCloseResolver.historyPreviousCloseSource,
+            priceKind: .intraday
+        )
+
+        let merged = PriceSnapshotMerger.merge(incoming: incoming, existing: nil)
+
+        #expect(merged.currentPrice == 200)
+        #expect(merged.previousPrice == 195)
+        #expect(merged.previousCloseDate == TradingDayCalendar.date(fromKey: "2026-05-28", assetType: .stockUS))
+        #expect(merged.previousPriceSource == DailyReferenceCloseResolver.historyPreviousCloseSource)
+    }
+
+    @Test func merge_keepsIncomingHistoryBackedPreviousWhenExistingHasOnlyCurrent() {
+        let existing = AssetPriceSnapshot(
+            assetType: .stockUS,
+            symbol: "MSFT",
+            currency: .USD,
+            currentPrice: 450,
+            currentCloseDate: TradingDayCalendar.date(fromKey: "2026-05-29", assetType: .stockUS),
+            currentPriceSource: "database"
+        )
+        let incoming = AssetPriceSnapshot(
+            assetType: .stockUS,
+            symbol: "MSFT",
+            currency: .USD,
+            currentPrice: 452,
+            previousPrice: 449,
+            currentCloseDate: TradingDayCalendar.date(fromKey: "2026-05-30", assetType: .stockUS),
+            previousCloseDate: TradingDayCalendar.date(fromKey: "2026-05-29", assetType: .stockUS),
+            currentPriceSource: "database",
+            previousPriceSource: DailyReferenceCloseResolver.historyPreviousCloseSource,
+            priceKind: .intraday
+        )
+
+        let merged = PriceSnapshotMerger.merge(incoming: incoming, existing: existing)
+
+        #expect(merged.currentPrice == 452)
+        #expect(merged.previousPrice == 449)
+        #expect(merged.previousCloseDate == TradingDayCalendar.date(fromKey: "2026-05-29", assetType: .stockUS))
+        #expect(merged.previousPriceSource == DailyReferenceCloseResolver.historyPreviousCloseSource)
+    }
 }

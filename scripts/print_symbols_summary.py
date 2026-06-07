@@ -14,7 +14,7 @@ def main() -> None:
         path = ROOT / "scripts" / "output" / f"symbols_{name}.json"
         data = json.loads(path.read_text(encoding="utf-8"))
         lines.append(
-            f"- **{path.name}**: version={data.get('version')}, "
+            f"- **{path.name}**: {data.get('epoch', 1)}.{data.get('minor', data.get('version'))}, "
             f"items={len(data.get('items', []))}, updatedAt={data.get('updatedAt')}"
         )
 

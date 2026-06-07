@@ -13,6 +13,8 @@ final class PortfolioMutationRefreshRequest: NSObject {
     let affectedAccountIds: Set<String>
     let affectedSymbols: [SymbolInfo]
     let forceFullRebuild: Bool
+    let localStructureOnly: Bool
+    let deletedAccountIds: Set<String>
     let realizedGainLossDeltaByCurrency: [Currency: Decimal]
     let showsLoadingOverlay: Bool
     let loadingTitle: String
@@ -23,6 +25,8 @@ final class PortfolioMutationRefreshRequest: NSObject {
         affectedAccountIds: Set<String> = [],
         affectedSymbols: [SymbolInfo] = [],
         forceFullRebuild: Bool = false,
+        localStructureOnly: Bool = false,
+        deletedAccountIds: Set<String> = [],
         realizedGainLossDeltaByCurrency: [Currency: Decimal] = [:],
         showsLoadingOverlay: Bool = true,
         loadingTitle: String = "正在更新資料…",
@@ -32,6 +36,8 @@ final class PortfolioMutationRefreshRequest: NSObject {
         self.affectedAccountIds = affectedAccountIds
         self.affectedSymbols = affectedSymbols
         self.forceFullRebuild = forceFullRebuild
+        self.localStructureOnly = localStructureOnly
+        self.deletedAccountIds = deletedAccountIds
         self.realizedGainLossDeltaByCurrency = realizedGainLossDeltaByCurrency
         self.showsLoadingOverlay = showsLoadingOverlay
         self.loadingTitle = loadingTitle
@@ -98,6 +104,8 @@ enum PortfolioMutationCoordinator {
         dataService: DataServiceProtocol? = nil,
         affectedAccountIds: Set<String> = [],
         forceFullRebuild: Bool = true,
+        localStructureOnly: Bool = false,
+        deletedAccountIds: Set<String> = [],
         operation: () async -> Bool
     ) async -> Bool {
         postRefreshBegan(title: loading.title, message: loading.message)
@@ -109,6 +117,8 @@ enum PortfolioMutationCoordinator {
             userId: userId,
             affectedAccountIds: affectedAccountIds,
             forceFullRebuild: forceFullRebuild,
+            localStructureOnly: localStructureOnly,
+            deletedAccountIds: deletedAccountIds,
             showsLoadingOverlay: false
         )
         await performRefresh(
@@ -134,6 +144,25 @@ enum PortfolioMutationCoordinator {
         request: PortfolioMutationRefreshRequest,
         dataService: DataServiceProtocol
     ) async {
+        let priceService = PriceService(dataService: dataService)
+
+        if request.localStructureOnly {
+            do {
+                _ = try await SnapshotUpdater.rebuildSnapshotsUsingLocalPricesOnly(
+                    userId: request.userId,
+                    deletedAccountIds: request.deletedAccountIds,
+                    dataService: dataService,
+                    priceService: priceService
+                )
+                dataService.persistLocalStore(for: request.userId)
+                return
+            } catch {
+                #if DEBUG
+                print("[PortfolioMutationCoordinator] local structure refresh failed: \(error.localizedDescription)")
+                #endif
+            }
+        }
+
         if !request.forceFullRebuild, !request.affectedAccountIds.isEmpty {
             do {
                 _ = try await SnapshotUpdater.updateSnapshotsIncrementally(
@@ -142,13 +171,9 @@ enum PortfolioMutationCoordinator {
                     affectedSymbols: request.affectedSymbols,
                     realizedGainLossDeltaByCurrency: request.realizedGainLossDeltaByCurrency,
                     dataService: dataService,
-                    priceService: PriceService(dataService: dataService)
+                    priceService: priceService
                 )
                 await TrackedSymbolSync.sync(symbols: request.affectedSymbols)
-                _ = await DailyPreviousCloseSync.apply(
-                    for: request.affectedSymbols,
-                    dataService: dataService
-                )
                 dataService.persistLocalStore(for: request.userId)
                 return
             } catch {

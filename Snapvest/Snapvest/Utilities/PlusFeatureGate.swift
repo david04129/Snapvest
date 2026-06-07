@@ -84,17 +84,37 @@ enum PlusFeatureGate {
             return .blocked(.complianceModeNoBuy)
         }
 
-        let key = SubscriptionComplianceState.holdingKey(assetType: assetType, symbol: symbol)
-        let isNewDistinctHolding = !snapshot.holdingKeys.contains(key)
+        let holdingKey = SubscriptionComplianceState.holdingKey(assetType: assetType, symbol: symbol)
+        let isExistingHolding = snapshot.holdingKeys.contains(holdingKey)
 
-        if isNewDistinctHolding {
-            if snapshot.distinctHoldingCount >= PlusFreeLimits.maxDistinctHoldings {
-                return .blocked(.holdingLimitReached)
-            }
-            if !snapshot.holdingAssetTypes.isEmpty,
-               !snapshot.holdingAssetTypes.contains(assetType) {
-                return .blocked(.singleHoldingMarketRequired)
-            }
+        if !snapshot.holdingAssetTypes.isEmpty,
+           !snapshot.holdingAssetTypes.contains(assetType) {
+            return .blocked(.singleHoldingMarketRequired)
+        }
+
+        if !isExistingHolding,
+           snapshot.distinctHoldingCount >= PlusFreeLimits.maxDistinctHoldings {
+            return .blocked(.holdingLimitReached)
+        }
+
+        return .allowed
+    }
+
+    static func canOpenBuyFlow(
+        assetType: AssetType?,
+        snapshot: PortfolioLimitSnapshot,
+        isPlusActive: Bool
+    ) -> PlusGateDecision {
+        guard !shouldBypassLimits(isPlusActive: isPlusActive) else { return .allowed }
+
+        if snapshot.isOverFreeHoldingLimits {
+            return .blocked(.complianceModeNoBuy)
+        }
+
+        if let assetType,
+           !snapshot.holdingAssetTypes.isEmpty,
+           !snapshot.holdingAssetTypes.contains(assetType) {
+            return .blocked(.singleHoldingMarketRequired)
         }
 
         return .allowed
@@ -110,9 +130,11 @@ enum PlusFeatureGate {
     ) async throws -> PortfolioLimitSnapshot {
         async let accounts = dataService.fetchAccounts(userId: userId)
         async let holdings = dataService.fetchAggregatedHoldingSnapshots(userId: userId, assetType: nil)
+        async let manualAssets = dataService.fetchManualAssets(userId: userId)
         return SubscriptionComplianceState.snapshot(
             accounts: try await accounts,
-            holdings: try await holdings
+            holdings: try await holdings,
+            manualAssets: try await manualAssets
         )
     }
 
@@ -121,11 +143,11 @@ enum PlusFeatureGate {
         case .plusFeatureRequired:
             return "此功能需要 Walleaf Plus。"
         case .accountLimitReached:
-            return "Free 方案最多 \(PlusFreeLimits.maxAccounts) 個帳戶。訂閱 Plus 可建立更多帳戶。"
+            return "Free 方案最多 \(PlusFreeLimits.maxAccounts) 個帳戶／其他資產。訂閱 Plus 可建立更多項目。"
         case .singleInvestmentMarketRequired:
             return "Free 方案投資帳戶只能使用一種市場（台股、美股或加密擇一）。訂閱 Plus 可開啟多種市場。"
         case .holdingLimitReached:
-            return "Free 方案最多 \(PlusFreeLimits.maxDistinctHoldings) 檔持股。訂閱 Plus 可持有更多標的。"
+            return "Free 方案最多 \(PlusFreeLimits.maxDistinctHoldings) 檔持股。你仍可加碼既有標的；若要新增第 \(PlusFreeLimits.maxDistinctHoldings + 1) 檔，請訂閱 Plus。"
         case .singleHoldingMarketRequired:
             return "Free 方案持股需在同一投資市場。訂閱 Plus 可跨市場持有。"
         case .complianceModeNoBuy:

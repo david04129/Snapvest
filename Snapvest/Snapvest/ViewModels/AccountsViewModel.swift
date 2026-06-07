@@ -120,18 +120,31 @@ class AccountsViewModel: ObservableObject {
         try await dataService.createLiability(liability)
     }
 
-    /// 寫入帳戶／交易／負債後一次重建快照；`isSaving` 期間按鈕顯示建立中。
-    func runAccountSave(userId: String, _ work: () async throws -> Void) async -> Bool {
+    /// 寫入帳戶／交易／負債後重建快照；`structureOnly` 僅重算結構、不拉雲端股價。
+    func runAccountSave(
+        userId: String,
+        structureOnly: Bool = false,
+        affectedAccountId: String? = nil,
+        _ work: () async throws -> Void
+    ) async -> Bool {
         guard !isSaving else { return false }
         isSaving = true
         errorMessage = nil
         defer { isSaving = false }
         do {
             try await work()
-            await SnapshotRefreshCoordinator.rebuildAndNotify(
-                userId: userId,
-                dataService: dataService
-            )
+            if structureOnly, let affectedAccountId {
+                try await AccountSnapshotRefresh.afterCashAccountChange(
+                    userId: userId,
+                    affectedAccountId: affectedAccountId,
+                    dataService: dataService
+                )
+            } else {
+                await SnapshotRefreshCoordinator.rebuildAndNotify(
+                    userId: userId,
+                    dataService: dataService
+                )
+            }
             return true
         } catch {
             errorMessage = "建立帳戶失敗：\(error.localizedDescription)"
@@ -139,8 +152,12 @@ class AccountsViewModel: ObservableObject {
         }
     }
 
-    func createAccount(_ account: Account) async {
-        _ = await runAccountSave(userId: account.userId) {
+    func createAccount(_ account: Account, structureOnly: Bool = false) async {
+        _ = await runAccountSave(
+            userId: account.userId,
+            structureOnly: structureOnly,
+            affectedAccountId: structureOnly ? account.id : nil
+        ) {
             try await createAccountRecord(account)
         }
     }
@@ -204,7 +221,7 @@ class AccountsViewModel: ObservableObject {
         do {
             try await dataService.archiveDebtAccount(account)
             await loadAccounts(userId: account.userId)
-            await SnapshotRefreshCoordinator.rebuildAndNotify(
+            try await AccountSnapshotRefresh.afterAccountRemovedOrArchived(
                 userId: account.userId,
                 dataService: dataService
             )
@@ -285,7 +302,7 @@ class AccountsViewModel: ObservableObject {
             try await dataService.updateAccount(updated)
             
             await loadAccounts(userId: account.userId)
-            await SnapshotRefreshCoordinator.rebuildAndNotify(
+            try await AccountSnapshotRefresh.afterAccountRemovedOrArchived(
                 userId: account.userId,
                 dataService: dataService
             )

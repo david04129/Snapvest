@@ -9,7 +9,7 @@ import Foundation
 
 enum PlusFreeLimits {
     static let maxAccounts = 3
-    static let maxDistinctHoldings = 5
+    static let maxDistinctHoldings = 3
 }
 
 struct PortfolioLimitSnapshot: Equatable {
@@ -23,7 +23,7 @@ struct PortfolioLimitSnapshot: Equatable {
         activeAccountCount > PlusFreeLimits.maxAccounts
     }
 
-    /// 持股 >5 檔，或跨多種投資市場
+    /// 持股超過 Free 上限，或跨多種投資市場
     var isOverFreeHoldingLimits: Bool {
         distinctHoldingCount > PlusFreeLimits.maxDistinctHoldings
             || holdingAssetTypes.count > 1
@@ -37,7 +37,8 @@ struct PortfolioLimitSnapshot: Equatable {
 enum SubscriptionComplianceState {
     static func snapshot(
         accounts: [Account],
-        holdings: [AggregatedHoldingSnapshot]
+        holdings: [AggregatedHoldingSnapshot],
+        manualAssets: [ManualAsset] = []
     ) -> PortfolioLimitSnapshot {
         let activeAccounts = accounts.filter { !$0.isArchived }
         let activeHoldings = holdings.filter {
@@ -54,7 +55,7 @@ enum SubscriptionComplianceState {
         let holdingKeys = Set(activeHoldings.map { holdingKey(assetType: $0.assetType, symbol: $0.symbol) })
 
         return PortfolioLimitSnapshot(
-            activeAccountCount: activeAccounts.count,
+            activeAccountCount: activeAccounts.count + manualAssets.count,
             distinctHoldingCount: activeHoldings.count,
             investmentAccountTypes: investmentTypes,
             holdingAssetTypes: holdingTypes,

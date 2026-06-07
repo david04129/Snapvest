@@ -109,18 +109,34 @@ struct ManagementRowLeadingIndicator: View {
     let currency: Currency
     let accentColor: Color
     let sharePercent: Decimal
+    var onToggleDisplayMode: (() -> Void)? = nil
 
     @Environment(\.managementShareDisplayMode) private var displayMode
 
     var body: some View {
-        Group {
-            switch displayMode {
-            case .currencyIcon:
-                CurrencyIconBadge(currency: currency, tint: accentColor)
-            case .shareRing:
-                TotalAssetsShareRingView(sharePercent: sharePercent, accentColor: accentColor)
-            }
+        if let onToggleDisplayMode {
+            indicator
+                .frame(minWidth: 44, alignment: .center)
+                .contentShape(Rectangle())
+                .highPriorityGesture(
+                    TapGesture().onEnded {
+                        onToggleDisplayMode()
+                    }
+                )
+                .accessibilityAddTraits(.isButton)
+        } else {
+            indicator
+                .frame(minWidth: 44, alignment: .center)
         }
-        .frame(minWidth: 44, alignment: .center)
+    }
+
+    @ViewBuilder
+    private var indicator: some View {
+        switch displayMode {
+        case .currencyIcon:
+            CurrencyIconBadge(currency: currency, tint: accentColor)
+        case .shareRing:
+            TotalAssetsShareRingView(sharePercent: sharePercent, accentColor: accentColor)
+        }
     }
 }

@@ -33,6 +33,8 @@ struct TradeFormRow<Content: View>: View {
     let icon: String
     let color: Color
     var showsIcon: Bool = true
+    var helpAction: (() -> Void)?
+    var helpAccessibilityLabel: String = "說明"
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -46,6 +48,16 @@ struct TradeFormRow<Content: View>: View {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
                     .foregroundColor(.primaryText)
+                if let helpAction {
+                    Button(action: helpAction) {
+                        Image(systemName: "questionmark.circle.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(color.opacity(0.9))
+                            .frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(helpAccessibilityLabel)
+                }
             }
 
             TradeFormInputContainer {

@@ -89,7 +89,7 @@ enum WalleafPlusPaywallL10n {
         )
     }
 
-    static var comparisonTitle: String { t("Free 與 Plus 比較", "Free vs Plus") }
+    static var comparisonTitle: String { t("Free vs Plus 功能表", "Free vs Plus Features") }
     static var comparisonFeature: String { t("功能", "Feature") }
     static var comparisonFree: String { "Free" }
     static var comparisonPlus: String { "Plus" }
@@ -102,7 +102,7 @@ enum WalleafPlusPaywallL10n {
     static var rowFaceID: String { t("Face ID 隱私鎖", "Face ID Lock") }
 
     static var freeAccounts: String { t("最多 3 個", "Up to 3") }
-    static var freeHoldings: String { t("最多 5 檔", "Up to 5") }
+    static var freeHoldings: String { t("最多 3 檔", "Up to 3") }
     static var freeMarkets: String { t("僅一種", "One market") }
     static var plusUnlimited: String { t("無上限", "Unlimited") }
     static var plusMarkets: String { t("台股・美股・加密", "TW · US · Crypto") }
@@ -162,6 +162,6 @@ enum WalleafPlusPaywallL10n {
     }
 
     static var settingsCardSubscribed: String {
-        t("管理訂閱 · 切換方案", "Manage subscription · Switch plan")
+        t("Plus 已啟用 · 感謝支持", "Plus active · Thanks for supporting")
     }
 }

@@ -2,7 +2,7 @@
 //  LaunchCoordinator.swift
 //  Snapvest
 //
-//  Splash 冷啟動：對齊 price_update_metadata、必要時 rebuild，灌入各 Tab。
+//  Splash 冷啟動：依 CloudSnapshotRefreshPolicy 決定是否拉雲端，灌入各 Tab。
 //
 
 import Foundation
@@ -22,6 +22,7 @@ enum LaunchCoordinator {
         let canUseLocal = LocalLaunchReadiness.canEnterApp(userId: userId)
         
         guard SupabaseConfig.isConfigured else {
+            _ = SymbolCatalogStore.ensureBootstrappedFromBundleIfNeeded()
             await LocalDailyTrendBackfillService.runIfNeeded(
                 userId: userId,
                 dataService: resolvedDataService
@@ -40,23 +41,41 @@ enum LaunchCoordinator {
         }
 
         await SupabaseAuthService.shared.warmUp()
-        
-        let needsRebuild = await needsSnapshotRebuild(userId: userId, dataService: resolvedDataService)
-        let shouldSyncPrices = await SupabasePriceService.shouldFetchPrices(
+        _ = SymbolCatalogStore.ensureBootstrappedFromBundleIfNeeded()
+        async let catalogSyncTask = SymbolCatalogSyncService.syncIfNeeded()
+
+        if (resolvedDataService as? MockDataService)?.isDemoModeActive == true {
+            await LocalDailyTrendBackfillService.runIfNeeded(
+                userId: userId,
+                dataService: resolvedDataService
+            )
+            await applyPersistedState(
+                userId: userId,
+                portfolioViewModel: portfolioViewModel,
+                accountsViewModel: accountsViewModel,
+                assetsViewModel: assetsViewModel,
+                dataService: resolvedDataService
+            )
+            _ = await catalogSyncTask
+            return .success
+        }
+
+        let refreshEvaluation = await CloudSnapshotRefreshPolicy.evaluate(
             userId: userId,
             dataService: resolvedDataService
         )
-        let shouldPullCloudPrices = SupabaseConfig.isConfigured
-        
+
         var degradedNotice: String?
-        
-        if needsRebuild || shouldSyncPrices || shouldPullCloudPrices {
+
+        if refreshEvaluation.shouldRunSnapshotRebuild {
             let syncSucceeded = await SnapshotRefreshCoordinator.rebuildAndNotify(
                 userId: userId,
                 dataService: resolvedDataService,
-                priceService: resolvedPriceService
+                priceService: resolvedPriceService,
+                updatePriceMetadata: refreshEvaluation.shouldFetchCloudPrices,
+                localPricesOnly: refreshEvaluation.preferLocalPricesOnly
             )
-            
+
             if !syncSucceeded {
                 if canUseLocal, LocalLaunchReadiness.hasValuationSnapshot(userId: userId) {
                     degradedNotice = "無法同步最新股價，已使用本機資料。"
@@ -70,6 +89,10 @@ enum LaunchCoordinator {
                     )
                 }
             }
+        } else {
+            #if DEBUG
+            print("[LaunchCoordinator] skip cloud rebuild: metadata aligned, local snapshots ready")
+            #endif
         }
         
         await LocalDailyTrendBackfillService.runIfNeeded(
@@ -84,6 +107,8 @@ enum LaunchCoordinator {
             assetsViewModel: assetsViewModel,
             dataService: resolvedDataService
         )
+
+        _ = await catalogSyncTask
         
         if let degradedNotice {
             return .degraded(notice: degradedNotice)
@@ -189,58 +214,5 @@ enum LaunchCoordinator {
             }
         }
         return allLiabilities
-    }
-
-    @MainActor
-    private static func needsSnapshotRebuild(userId: String, dataService: DataServiceProtocol) async -> Bool {
-        let accounts = (try? await dataService.fetchAccounts(userId: userId)) ?? []
-        let activeAssetAccounts = accounts.filter {
-            !$0.accountType.isLiabilityAccount && !$0.isArchived
-        }
-        let manualAssets = (try? await dataService.fetchManualAssets(userId: userId)) ?? []
-        let hasIncludedManualAssets = manualAssets.contains { $0.isIncludedInTotalAssets }
-
-        guard let home = try? await dataService.fetchHomeDashboardSnapshot(userId: userId) else {
-            return !accounts.isEmpty || hasIncludedManualAssets
-        }
-
-        if activeAssetAccounts.isEmpty && !hasIncludedManualAssets {
-            return false
-        }
-
-        if home.totalAssets <= 0 {
-            return true
-        }
-
-        if hasIncludedManualAssets,
-           let structureUpdatedAt = dataService.fetchStructureUpdatedAt(userId: userId),
-           structureUpdatedAt > home.lastUpdated {
-            return true
-        }
-
-        if manualAssets.contains(where: { $0.isIncludedInTotalAssets && !$0.isIncludedInInvestments }),
-           home.totalInvestments == home.totalAssets - home.totalCash {
-            return true
-        }
-
-        for account in activeAssetAccounts {
-            if (try? await dataService.fetchAccountSnapshot(accountId: account.id)) == nil {
-                return true
-            }
-        }
-
-        let aggregated = (try? await dataService.fetchAggregatedHoldingSnapshots(userId: userId, assetType: nil)) ?? []
-        if !aggregated.isEmpty {
-            for holding in aggregated {
-                if (try? await dataService.fetchAssetPriceSnapshot(
-                    assetType: holding.assetType,
-                    symbol: holding.symbol
-                )) == nil {
-                    return true
-                }
-            }
-        }
-
-        return false
     }
 }

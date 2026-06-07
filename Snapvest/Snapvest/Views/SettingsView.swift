@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import StoreKit
 import UniformTypeIdentifiers
 #if canImport(UIKit)
 import UIKit
@@ -18,6 +19,7 @@ struct SettingsView: View {
     @ObservedObject private var baseCurrency = BaseCurrencyManager.shared
     @EnvironmentObject private var subscriptionManager: SubscriptionManager
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     
     @State private var comingSoonFeature: SettingsComingSoonFeature?
     @State private var isPaywallPresented = false
@@ -37,6 +39,7 @@ struct SettingsView: View {
     @State private var backupRestoreLoadingMessage = ""
     @State private var editingCustomForDarkMode: Bool = false
     @State private var themeCustomCopyMessage: String?
+    @State private var isAboutSheetPresented = false
     #if DEBUG
     @State private var isValidatingSnapshots = false
     @State private var snapshotValidationMessage: String?
@@ -107,6 +110,20 @@ struct SettingsView: View {
 
                         backupRestoreRow
                     }
+
+                    settingsSection(title: "其他") {
+                        aboutAppRow
+
+                        Divider()
+                            .padding(.leading, 56)
+
+                        contactSupportRow
+
+                        Divider()
+                            .padding(.leading, 56)
+
+                        fiveStarReviewRow
+                    }
                 }
                 .padding(20)
             }
@@ -172,6 +189,9 @@ struct SettingsView: View {
                         isBaseCurrencySheetPresented = false
                     }
                 )
+            }
+            .sheet(isPresented: $isAboutSheetPresented) {
+                AboutAppSheet(version: appVersionText)
             }
             .fileExporter(
                 isPresented: $isBackupExporterPresented,
@@ -253,44 +273,38 @@ struct SettingsView: View {
         Button {
             isPaywallPresented = true
         } label: {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: subscriptionManager.isPlusActive ? 14 : 18) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 8) {
                             Text("Walleaf Plus")
                                 .font(.system(size: 26, weight: .bold))
-                                .foregroundColor(.primaryText)
-                            Text("PLUS")
-                                .font(.system(size: 11, weight: .black))
-                                .foregroundColor(.appPrimary)
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 4)
-                                .background(Color.appPrimary.opacity(0.16))
-                                .clipShape(Capsule())
+                                .foregroundColor(plusCardForeground)
+                            plusCardBadge
                         }
                         
                         Text(subscriptionManager.isPlusActive
                             ? WalleafPlusPaywallL10n.settingsCardDescriptionSubscribed
                             : WalleafPlusPaywallL10n.settingsCardDescription)
                             .font(.subheadline.weight(.semibold))
-                            .foregroundColor(.primaryText.opacity(0.78))
+                            .foregroundColor(plusCardSecondaryForeground)
                     }
                     
                     Spacer(minLength: 12)
                     
-                    Image(systemName: subscriptionManager.isPlusActive ? "checkmark.seal.fill" : "sparkles")
-                        .font(.system(size: subscriptionManager.isPlusActive ? 22 : 20, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.88))
+                    plusCardIcon
                 }
                 
-                HStack {
-                    Text(subscriptionManager.isPlusActive ? WalleafPlusPaywallL10n.settingsCardSubscribed : WalleafPlusPaywallL10n.settingsCardSubtitle)
-                        .font(.caption.weight(.semibold))
-                        .foregroundColor(.primaryText.opacity(0.7))
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(.primaryText.opacity(0.55))
+                if !subscriptionManager.isPlusActive {
+                    HStack {
+                        Text(WalleafPlusPaywallL10n.settingsCardSubtitle)
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(plusCardSecondaryForeground)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(plusCardChevronColor)
+                    }
                 }
             }
             .padding(22)
@@ -305,17 +319,125 @@ struct SettingsView: View {
         }
         .buttonStyle(.plain)
     }
+
+    @ViewBuilder
+    private var plusCardBadge: some View {
+        if subscriptionManager.isPlusActive {
+            Text("PLUS")
+            .font(.system(size: 11, weight: .black))
+            .foregroundColor(.white)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(Color.white.opacity(0.18))
+            .clipShape(Capsule())
+        } else {
+            Text("PLUS")
+                .font(.system(size: 11, weight: .black))
+                .foregroundColor(.appPrimary)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
+                .background(Color.appPrimary.opacity(0.16))
+                .clipShape(Capsule())
+        }
+    }
+
+    private var plusCardIcon: some View {
+        Group {
+            if subscriptionManager.isPlusActive {
+                settingsPlusLogo
+            } else {
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.16))
+                        .frame(width: 34, height: 34)
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.88))
+                }
+            }
+        }
+    }
+
+    private var settingsPlusLogo: some View {
+        ZStack(alignment: .topTrailing) {
+            Image(SnapvestBrand.logoImageName)
+                .resizable()
+                .aspectRatio(1, contentMode: .fit)
+                .frame(width: 54, height: 54)
+                .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 15, style: .continuous)
+                        .stroke(Color.white.opacity(0.45), lineWidth: 1)
+                }
+                .shadow(color: Color.black.opacity(0.22), radius: 8, x: 0, y: 4)
+
+            settingsLogoPlusBadge
+                .offset(x: 5, y: -5)
+        }
+    }
+
+    private var settingsLogoPlusBadge: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [Color(hex: "#8BE06A"), Color.appPrimary],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .frame(width: 24, height: 24)
+
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .stroke(Color.white.opacity(0.95), lineWidth: 2)
+                .frame(width: 24, height: 24)
+
+            SettingsRoundedPlusMark(color: .white, armLength: 9, armThickness: 2)
+        }
+        .shadow(color: Color.black.opacity(0.18), radius: 5, x: 0, y: 2)
+    }
     
     private var plusCardBackground: some ShapeStyle {
-        LinearGradient(
-            colors: [
-                Color(hex: "#B7E99A"),
-                Color(hex: "#7ED957"),
-                Color(hex: "#F2C078")
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
+        if subscriptionManager.isPlusActive {
+            return AnyShapeStyle(
+                LinearGradient(
+                    colors: [
+                        Color(hex: "#17324A"),
+                        Color(hex: "#2F6F73"),
+                        Color(hex: "#79D2B6")
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+        }
+        return AnyShapeStyle(
+            LinearGradient(
+                colors: [
+                    Color(hex: "#B7E99A"),
+                    Color(hex: "#7ED957"),
+                    Color(hex: "#F2C078")
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
         )
+    }
+
+    private var plusCardForeground: Color {
+        subscriptionManager.isPlusActive ? .white : .primaryText
+    }
+
+    private var plusCardSecondaryForeground: Color {
+        subscriptionManager.isPlusActive ? .white.opacity(0.82) : .primaryText.opacity(0.7)
+    }
+
+    private var plusCardChevronColor: Color {
+        subscriptionManager.isPlusActive ? .white.opacity(0.65) : .primaryText.opacity(0.55)
+    }
+
+    private var plusCardIconBackground: Color {
+        subscriptionManager.isPlusActive ? Color.black.opacity(0.24) : Color.white.opacity(0.16)
     }
     
     private func settingsSection<Content: View>(
@@ -615,15 +737,105 @@ struct SettingsView: View {
         Button {
             isBaseCurrencySheetPresented = true
         } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "dollarsign.circle.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.appPrimary)
+                    .frame(width: 30, height: 30)
+                    .background(Color.appPrimary.opacity(0.14))
+                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+                Text("主要幣別")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.primaryText)
+
+                Spacer(minLength: 12)
+
+                BaseCurrencyDisplayLabel(
+                    currency: baseCurrency.baseCurrency,
+                    style: .filled
+                )
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.tertiaryText)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 13)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var aboutAppRow: some View {
+        Button {
+            isAboutSheetPresented = true
+        } label: {
             settingsRowContent(
-                icon: "dollarsign.circle.fill",
+                icon: "info.circle.fill",
                 iconColor: .appPrimary,
-                title: "主要幣別",
-                value: baseCurrency.baseCurrency.settingsDisplayName,
+                title: "關於",
+                value: nil,
                 showsChevron: true
             )
         }
         .buttonStyle(.plain)
+    }
+
+    private var contactSupportRow: some View {
+        Button {
+            openSupportEmail()
+        } label: {
+            settingsRowContent(
+                icon: "envelope.fill",
+                iconColor: .appPrimary,
+                title: "聯繫我們",
+                value: nil,
+                showsChevron: true
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var fiveStarReviewRow: some View {
+        Button {
+            requestAppReview()
+        } label: {
+            settingsRowContent(
+                icon: "star.fill",
+                iconColor: .appPrimary,
+                title: "五星好評",
+                value: nil,
+                showsChevron: true
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var appVersionText: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0"
+    }
+
+    private func openSupportEmail() {
+        let subject = "Walleaf 使用問題"
+        let encodedSubject = subject.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? subject
+        guard let url = URL(string: "mailto:\(SettingsExternalLinks.supportEmail)?subject=\(encodedSubject)") else { return }
+        openURL(url)
+    }
+
+    private func requestAppReview() {
+        #if canImport(UIKit)
+        guard let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first(where: { $0.activationState == .foregroundActive }) else {
+            return
+        }
+        if #available(iOS 18.0, *) {
+            AppStore.requestReview(in: scene)
+        } else {
+            SKStoreReviewController.requestReview(in: scene)
+        }
+        #endif
     }
 
     private var privacyLockRow: some View {
@@ -1066,7 +1278,7 @@ struct SettingsView: View {
         icon: String,
         iconColor: Color,
         title: String,
-        value: String,
+        value: String?,
         showsChevron: Bool
     ) -> some View {
         HStack(spacing: 12) {
@@ -1083,9 +1295,11 @@ struct SettingsView: View {
             
             Spacer(minLength: 12)
             
-            Text(value)
-                .font(.subheadline)
-                .foregroundColor(.secondaryText)
+            if let value, !value.isEmpty {
+                Text(value)
+                    .font(.subheadline)
+                    .foregroundColor(.secondaryText)
+            }
             
             if showsChevron {
                 Image(systemName: "chevron.right")
@@ -1172,6 +1386,7 @@ private struct BaseCurrencyPickerSheet: View {
     let onSelect: (Currency) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @State private var isInfoAlertPresented = false
 
     var body: some View {
         NavigationStack {
@@ -1182,15 +1397,10 @@ private struct BaseCurrencyPickerSheet: View {
                             onSelect(currency)
                         } label: {
                             HStack(spacing: 12) {
-                                CurrencyCodeChip(
+                                BaseCurrencyDisplayLabel(
                                     currency: currency,
-                                    tint: currency.chipTintColor,
                                     style: selectedCurrency == currency ? .filled : .subtle
                                 )
-
-                                Text(currency.displayName)
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundColor(.primaryText)
 
                                 Spacer()
 
@@ -1216,8 +1426,148 @@ private struct BaseCurrencyPickerSheet: View {
                     Button("取消") { dismiss() }
                         .foregroundColor(.appPrimary)
                 }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button {
+                        isInfoAlertPresented = true
+                    } label: {
+                        Image(systemName: "info.circle")
+                    }
+                    .foregroundColor(.appPrimary)
+                    .accessibilityLabel("主要幣別說明")
+                }
+            }
+            .alert("主要幣別說明", isPresented: $isInfoAlertPresented) {
+                Button("知道了", role: .cancel) {}
+            } message: {
+                Text("選擇主要幣別後，首頁、帳戶總額與資產總覽會用當下可用的匯率，將各資產與外幣金額換算成你選擇的主要幣別顯示。原始幣別與原幣金額仍會保留。")
             }
         }
+    }
+}
+
+private struct BaseCurrencyDisplayLabel: View {
+    let currency: Currency
+    var style: CurrencyCodeChip.Style
+
+    var body: some View {
+        HStack(spacing: 8) {
+            CurrencyCodeChip(
+                currency: currency,
+                tint: currency.chipTintColor,
+                style: style
+            )
+
+            Text(currency.displayName)
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(.primaryText)
+                .lineLimit(1)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private enum SettingsExternalLinks {
+    static let supportEmail = "support@walleafapp.com"
+    static let privacyPolicyURL = URL(string: "https://walleafapp.com/privacy/")!
+    static let termsURL = URL(string: "https://walleafapp.com/terms/")!
+    static let disclaimerURL = URL(string: "https://walleafapp.com/disclaimer/")!
+}
+
+private struct AboutAppSheet: View {
+    let version: String
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    VStack(spacing: 12) {
+                        Image(SnapvestBrand.logoImageName)
+                            .resizable()
+                            .aspectRatio(1, contentMode: .fit)
+                            .frame(width: 72, height: 72)
+                            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                    .stroke(Color.separator.opacity(0.45), lineWidth: 1)
+                            }
+
+                        VStack(spacing: 4) {
+                            Text(SnapvestBrand.appName)
+                                .font(.title3.weight(.bold))
+                                .foregroundColor(.primaryText)
+                            Text("版本 \(version)")
+                                .font(.subheadline)
+                                .foregroundColor(.secondaryText)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                }
+
+                Section {
+                    legalLinkRow(
+                        title: "隱私權政策",
+                        subtitle: "了解 Walleaf 如何處理資料與隱私",
+                        url: SettingsExternalLinks.privacyPolicyURL
+                    )
+                    legalLinkRow(
+                        title: "服務條款",
+                        subtitle: "使用 Walleaf 與 Walleaf Plus 的條款",
+                        url: SettingsExternalLinks.termsURL
+                    )
+                    legalLinkRow(
+                        title: "免責聲明",
+                        subtitle: "報價、匯率與投資資訊準確性說明",
+                        url: SettingsExternalLinks.disclaimerURL
+                    )
+                } footer: {
+                    Text("正式上架前，請先將上述連結換成已公開且可開啟的政策頁面網址。")
+                }
+            }
+            .navigationTitle("關於")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("關閉") { dismiss() }
+                        .foregroundColor(.appPrimary)
+                }
+            }
+        }
+    }
+
+    private func legalLinkRow(title: String, subtitle: String, url: URL) -> some View {
+        Button {
+            openURL(url)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "safari.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.appPrimary)
+                    .frame(width: 30, height: 30)
+                    .background(Color.appPrimary.opacity(0.14))
+                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.primaryText)
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundColor(.secondaryText)
+                }
+
+                Spacer(minLength: 12)
+
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.tertiaryText)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -1402,5 +1752,23 @@ private struct ThemeCustomColorPickerRow: View {
         .padding(.vertical, 8)
         .background(Color.secondaryBackground.opacity(0.55))
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+private struct SettingsRoundedPlusMark: View {
+    var color: Color
+    var armLength: CGFloat
+    var armThickness: CGFloat
+
+    var body: some View {
+        ZStack {
+            Capsule(style: .continuous)
+                .fill(color)
+                .frame(width: armLength, height: armThickness)
+            Capsule(style: .continuous)
+                .fill(color)
+                .frame(width: armThickness, height: armLength)
+        }
+        .shadow(color: color.opacity(0.18), radius: 1, x: 0, y: 0.5)
     }
 }

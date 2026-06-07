@@ -15,7 +15,7 @@ from datetime import date
 from pathlib import Path
 from typing import Optional
 
-from symbols_paths import OUTPUT_DIR, SCRIPTS_DIR, next_version
+from symbols_paths import OUTPUT_DIR, SCRIPTS_DIR, catalog_document, read_catalog_meta
 
 DATA_DIR = SCRIPTS_DIR / "data"
 TWSE_LISTED_URL = "https://dts.twse.com.tw/opendata/t187ap03_L.csv"
@@ -272,7 +272,7 @@ TW_ETF_SUPPLEMENT = [
 ]
 
 
-def build_symbols_tw(version: int = 1) -> Optional[dict]:
+def build_symbols_tw() -> Optional[dict]:
     """合併上市、上櫃、興櫃、ETF 補充，去重後排序"""
     all_items = []
     symbol_to_name = {}
@@ -314,28 +314,28 @@ def build_symbols_tw(version: int = 1) -> Optional[dict]:
     merged = [{"symbol": s, "name": n} for s, n in symbol_to_name.items()]
     merged.sort(key=lambda x: (x["symbol"].zfill(6), x["symbol"]))
 
-    return {
-        "version": version,
-        "updatedAt": str(date.today()),
-        "items": merged,
-    }
+    epoch, minor = read_catalog_meta("symbols_tw.json")
+    return catalog_document(
+        epoch=epoch,
+        minor=minor,
+        items=merged,
+        updated_at=str(date.today()),
+    )
 
 
 def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     output_path = OUTPUT_DIR / "symbols_tw.json"
-    version = next_version("symbols_tw.json")
-
     print("台股：正在取得上市、上櫃、興櫃...")
-    data = build_symbols_tw(version=version)
+    data = build_symbols_tw()
     if data is None:
         return 1
 
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-    print(f"✅ symbols_tw.json: {len(data['items'])} 筆, version={data['version']}")
+    print(f"✅ symbols_tw.json: {len(data['items'])} 筆, {data['epoch']}.{data['minor']}")
     return 0
 
 

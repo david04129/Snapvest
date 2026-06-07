@@ -304,17 +304,6 @@ struct AccountsCurrencyControlsBar: View {
                 .animation(ChartMotion.switchSpring, value: currencyDisplay)
             }
             
-            if isEditingOrder {
-                HStack(spacing: 6) {
-                    Image(systemName: "hand.draw.fill")
-                        .font(.system(size: 11, weight: .semibold))
-                    Text("正在編輯帳戶排序，拖曳帳戶右側控制點調整順序，完成後才能進行其他操作。")
-                        .font(.system(size: 12))
-                }
-                .foregroundColor(.secondaryText)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .transition(.opacity.combined(with: .move(edge: .top)))
-            }
         }
         .animation(ChartMotion.switchSpring, value: isEditingOrder)
     }

@@ -283,7 +283,7 @@ def update_exchange_rates(
         return 0
 
     meta_resp = supabase.table("price_update_metadata").upsert(
-        {"id": "global", "last_updated_at": now},
+        {"id": "global", "last_updated_at": tw_now_local_seconds()},
         on_conflict="id",
     ).execute()
     _raise_on_supabase_error(meta_resp, "price_update_metadata upsert")
@@ -688,7 +688,7 @@ def upsert_prices(supabase: Client, updates: list[dict], default_price_kind: Opt
             print(f"寫入 {row.get('asset_type')}/{row.get('symbol')} 失敗: {e}")
         time.sleep(0.05)
     supabase.table("price_update_metadata").upsert(
-        {"id": "global", "last_updated_at": tw_now_iso_seconds()},
+        {"id": "global", "last_updated_at": tw_now_local_seconds()},
         on_conflict="id",
     ).execute()
 

@@ -26,6 +26,7 @@ enum SnapshotRefreshCoordinator {
         trackSymbols: [SymbolInfo] = [],
         syncPortfolioPreviousCloses: Bool = false,
         updatePriceMetadata: Bool = true,
+        localPricesOnly: Bool = false,
         deferRemoteWork: Bool = false,
         postsUpdateNotification: Bool = true
     ) async -> Bool {
@@ -44,6 +45,7 @@ enum SnapshotRefreshCoordinator {
                 trackSymbols: trackSymbols,
                 syncPortfolioPreviousCloses: syncPortfolioPreviousCloses,
                 updatePriceMetadata: updatePriceMetadata,
+                localPricesOnly: localPricesOnly,
                 deferRemoteWork: deferRemoteWork,
                 postsUpdateNotification: postsUpdateNotification,
                 generation: generation
@@ -54,6 +56,78 @@ enum SnapshotRefreshCoordinator {
         return await task.value
     }
 
+    /// 使用者下拉刷新：metadata 未變且本機齊 → 只灌 UI；否則依評估 rebuild（不拉 21 天 history）。
+    @MainActor
+    static func refreshOnUserPull(
+        userId: String,
+        portfolioViewModel: PortfolioViewModel,
+        accountsViewModel: AccountsViewModel,
+        assetsViewModel: AssetsViewModel,
+        dataService: DataServiceProtocol? = nil,
+        priceService: PriceServiceProtocol? = nil
+    ) async {
+        let resolvedDataService = dataService ?? MockDataService.shared
+        let resolvedPriceService = priceService ?? PriceService(dataService: resolvedDataService)
+
+        if (resolvedDataService as? MockDataService)?.isDemoModeActive == true {
+            await LaunchCoordinator.applyPersistedState(
+                userId: userId,
+                portfolioViewModel: portfolioViewModel,
+                accountsViewModel: accountsViewModel,
+                assetsViewModel: assetsViewModel,
+                dataService: resolvedDataService,
+                rebuildAccountDetailCache: false
+            )
+            return
+        }
+
+        guard SupabaseConfig.isConfigured else {
+            await LaunchCoordinator.applyPersistedState(
+                userId: userId,
+                portfolioViewModel: portfolioViewModel,
+                accountsViewModel: accountsViewModel,
+                assetsViewModel: assetsViewModel,
+                dataService: resolvedDataService,
+                rebuildAccountDetailCache: false
+            )
+            return
+        }
+
+        let evaluation = await CloudSnapshotRefreshPolicy.evaluate(
+            userId: userId,
+            dataService: resolvedDataService
+        )
+
+        guard evaluation.shouldRunSnapshotRebuild else {
+            #if DEBUG
+            print("[SnapshotRefreshCoordinator] pull refresh skipped cloud: already up to date")
+            #endif
+            await LaunchCoordinator.applyPersistedState(
+                userId: userId,
+                portfolioViewModel: portfolioViewModel,
+                accountsViewModel: accountsViewModel,
+                assetsViewModel: assetsViewModel,
+                dataService: resolvedDataService,
+                rebuildAccountDetailCache: false
+            )
+            ManualRefreshCooldown.shared.showAlreadyUpToDate()
+            NotificationCenter.default.post(
+                name: .snapshotsDidUpdate,
+                object: nil,
+                userInfo: [SnapshotUpdateUserInfoKey.alreadyApplied: true]
+            )
+            return
+        }
+
+        _ = await rebuildAndNotify(
+            userId: userId,
+            dataService: resolvedDataService,
+            priceService: resolvedPriceService,
+            updatePriceMetadata: evaluation.shouldFetchCloudPrices,
+            localPricesOnly: evaluation.preferLocalPricesOnly
+        )
+    }
+
     @MainActor
     private static func performRebuildAndNotify(
         userId: String,
@@ -62,6 +136,7 @@ enum SnapshotRefreshCoordinator {
         trackSymbols: [SymbolInfo],
         syncPortfolioPreviousCloses: Bool,
         updatePriceMetadata: Bool,
+        localPricesOnly: Bool,
         deferRemoteWork: Bool,
         postsUpdateNotification: Bool,
         generation: UInt
@@ -72,11 +147,19 @@ enum SnapshotRefreshCoordinator {
         let resolvedPriceService = priceService ?? PriceService(dataService: resolvedDataService)
         let shouldTrackSymbols = !trackSymbols.isEmpty
         do {
-            _ = try await SnapshotUpdater.rebuildSnapshots(
-                userId: userId,
-                dataService: resolvedDataService,
-                priceService: resolvedPriceService
-            )
+            if localPricesOnly {
+                _ = try await SnapshotUpdater.rebuildSnapshotsUsingLocalPricesOnly(
+                    userId: userId,
+                    dataService: resolvedDataService,
+                    priceService: resolvedPriceService
+                )
+            } else {
+                _ = try await SnapshotUpdater.rebuildSnapshots(
+                    userId: userId,
+                    dataService: resolvedDataService,
+                    priceService: resolvedPriceService
+                )
+            }
             guard generation == rebuildGeneration else { return false }
 
             if let demoDataService = resolvedDataService as? MockDataService,
@@ -115,7 +198,9 @@ enum SnapshotRefreshCoordinator {
             guard generation == rebuildGeneration else { return false }
 
             resolvedDataService.persistLocalStore(for: userId)
-            DailyPriceHistoryCache.invalidate()
+            if let holdings = try? await resolvedDataService.fetchUserHoldingsSnapshot(userId: userId) {
+                DailyPriceHistoryCache.invalidateIfSymbolSetChanged(holdings.symbols)
+            }
 
             let previousCloseTargets: [SymbolInfo]
             if syncPortfolioPreviousCloses {
@@ -129,6 +214,7 @@ enum SnapshotRefreshCoordinator {
                 previousCloseTargets = []
             }
             if !previousCloseTargets.isEmpty {
+                // 僅 demo／備份還原等明確要求時才拉 history；冷啟／下拉不走 21 天 batch。
                 _ = await DailyPreviousCloseSync.apply(
                     for: previousCloseTargets,
                     dataService: resolvedDataService

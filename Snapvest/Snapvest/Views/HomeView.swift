@@ -130,7 +130,12 @@ struct HomeView: View {
             .refreshable {
                 guard !pieGroupingStore.isEditingGroups else { return }
                 await ManualRefreshCooldown.shared.performIfAllowed {
-                    await SnapshotRefreshCoordinator.rebuildAndNotify(userId: userId)
+                    await SnapshotRefreshCoordinator.refreshOnUserPull(
+                        userId: userId,
+                        portfolioViewModel: viewModel,
+                        accountsViewModel: accountsViewModel,
+                        assetsViewModel: assetsViewModel
+                    )
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .snapshotsDidUpdate)) { notification in

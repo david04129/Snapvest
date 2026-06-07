@@ -187,6 +187,11 @@ struct TransactionHistoryView: View {
     
     private var accountSummaryHeader: some View {
         HStack(alignment: .center, spacing: 12) {
+            CurrencyIconBadge(
+                currency: account.currency,
+                tint: account.accountType.color
+            )
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(account.name)
                     .font(.headline)

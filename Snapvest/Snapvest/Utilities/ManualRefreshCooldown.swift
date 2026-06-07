@@ -58,6 +58,10 @@ final class ManualRefreshCooldown: ObservableObject {
         }
     }
 
+    func showAlreadyUpToDate() {
+        scheduleBlockedAlert("股價已是最新，無需再次更新")
+    }
+
     private func secondsUntilAllowed() -> Int? {
         guard let last = lastRefreshStartedAt else { return nil }
         let remaining = Self.minimumInterval - Date().timeIntervalSince(last)

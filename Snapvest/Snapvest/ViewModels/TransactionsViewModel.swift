@@ -99,7 +99,6 @@ class TransactionsViewModel: ObservableObject {
                     affectedAccountIds: affectedAccountIds,
                     affectedSymbols: affectedSymbols
                 )
-                Task { await updateHoldings(accountId: transaction.accountId) }
                 await loadTransactions(userId: userId)
                 schedulePortfolioRefresh(
                     userId: userId,
@@ -186,11 +185,6 @@ class TransactionsViewModel: ObservableObject {
             
             for row in sortedBuys {
                 await importRow(row)
-            }
-            
-            if !sortedBuys.isEmpty, imported > 0,
-               let accountId = validRows.compactMap({ $0.transaction?.accountId }).first {
-                await updateHoldings(accountId: accountId)
             }
             
             for row in sortedSells {
@@ -478,10 +472,6 @@ class TransactionsViewModel: ObservableObject {
                 affectedSymbols: affectedSymbols
             )
             let userId = await resolveUserId(for: transaction.accountId) ?? AppUser.id
-            Task { await updateHoldings(accountId: transaction.accountId) }
-            if let previousAccountId, previousAccountId != transaction.accountId {
-                Task { await updateHoldings(accountId: previousAccountId) }
-            }
             await loadTransactions(userId: userId)
             schedulePortfolioRefresh(
                 userId: userId,
@@ -758,7 +748,6 @@ class TransactionsViewModel: ObservableObject {
                 }
                 
                 try await dataService.deleteTransaction(transactionId)
-                Task { await updateHoldings(accountId: transaction.accountId) }
             }
             else if transaction.type == .liability {
                 let allAccounts = try await dataService.fetchAccounts(userId: userId)
@@ -780,14 +769,12 @@ class TransactionsViewModel: ObservableObject {
                         try await dataService.deleteAccount(debtAccountId)
                     default:
                         try await dataService.deleteTransaction(transactionId)
-                        Task { await updateHoldings(accountId: transaction.accountId) }
                     }
                 } else {
                     try await dataService.deleteTransaction(transactionId)
                 }
             } else {
                 try await dataService.deleteTransaction(transactionId)
-                Task { await updateHoldings(accountId: transaction.accountId) }
             }
             
             await loadTransactions(userId: userId)
@@ -874,13 +861,7 @@ class TransactionsViewModel: ObservableObject {
     }
 
     private func normalizedSnapshotSymbol(assetType: AssetType, symbol: String) -> String {
-        let trimmed = symbol.trimmingCharacters(in: .whitespacesAndNewlines)
-        switch assetType {
-        case .crypto:
-            return SymbolListService.normalizedCryptoSymbol(trimmed)
-        default:
-            return trimmed
-        }
+        SupabasePriceService.normalizeSymbol(assetType: assetType, symbol: symbol)
     }
 
     private func realizedGainLossDeltaByCurrency(
@@ -994,42 +975,6 @@ class TransactionsViewModel: ObservableObject {
             return costBasis
         }
         return averageCostFallback * quantity
-    }
-    
-    /// 更新持股（根據交易記錄重播）
-    private func updateHoldings(accountId: String) async {
-        do {
-            // 1. 獲取該帳戶的所有交易
-            let accountTransactions = try await dataService.fetchTransactions(accountId: accountId)
-            
-            // 2. 計算新的持股
-            let calculatedHoldings = HoldingCalculator.calculateHoldings(from: accountTransactions)
-            
-            // 3. 更新或建立持股
-            let existingHoldings = try await dataService.fetchHoldings(accountId: accountId)
-            
-            // 刪除不存在的持股
-            for existing in existingHoldings {
-                let stillExists = calculatedHoldings.contains { $0.symbol == existing.symbol && $0.assetType == existing.assetType }
-                if !stillExists {
-                    try await dataService.deleteHolding(existing.id)
-                }
-            }
-            
-            // 更新或建立持股
-            for calculated in calculatedHoldings {
-                if let existing = existingHoldings.first(where: { $0.symbol == calculated.symbol && $0.assetType == calculated.assetType }) {
-                    var updated = existing
-                    updated.quantity = calculated.quantity
-                    updated.averageCost = calculated.averageCost
-                    try await dataService.updateHolding(updated)
-                } else {
-                    try await dataService.updateHolding(calculated)
-                }
-            }
-        } catch {
-            errorMessage = "更新持股失敗：\(error.localizedDescription)"
-        }
     }
 }
 

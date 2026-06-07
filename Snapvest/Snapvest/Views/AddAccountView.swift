@@ -100,39 +100,63 @@ struct AddAccountView: View {
     }
 
     private func attemptOpenAccountForm(_ accountType: AccountType) {
-        let snapshot = SubscriptionComplianceState.snapshot(
-            accounts: viewModel.accounts,
-            holdings: []
-        )
-        let decision = PlusFeatureGate.canCreateAccount(
-            accountType: accountType,
-            snapshot: snapshot,
-            isPlusActive: subscriptionManager.isPlusActive
-        )
-        switch decision {
-        case .allowed:
-            openAccountForm(accountType)
-        case .blocked(let reason):
-            gateAlertMessage = PlusFeatureGate.message(for: reason)
+        Task {
+            do {
+                let snapshot = try await PlusFeatureGate.loadSnapshot(userId: userId)
+                let decision = PlusFeatureGate.canCreateAccount(
+                    accountType: accountType,
+                    snapshot: snapshot,
+                    isPlusActive: subscriptionManager.isPlusActive
+                )
+                switch decision {
+                case .allowed:
+                    openAccountForm(accountType)
+                case .blocked(let reason):
+                    gateAlertMessage = PlusFeatureGate.message(for: reason)
+                }
+            } catch {
+                gateAlertMessage = "無法驗證 Free 上限：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func attemptOpenManualAssetForm() {
+        Task {
+            do {
+                let snapshot = try await PlusFeatureGate.loadSnapshot(userId: userId)
+                guard PlusFeatureGate.shouldBypassLimits(isPlusActive: subscriptionManager.isPlusActive)
+                        || snapshot.activeAccountCount < PlusFreeLimits.maxAccounts else {
+                    gateAlertMessage = PlusFeatureGate.message(for: .accountLimitReached)
+                    return
+                }
+                resetForm()
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    screen = .manualAsset
+                }
+            } catch {
+                gateAlertMessage = "無法驗證 Free 上限：\(error.localizedDescription)"
+            }
         }
     }
 
     @MainActor
-    private func validateAccountCreationGate(for accountType: AccountType) -> Bool {
-        let snapshot = SubscriptionComplianceState.snapshot(
-            accounts: viewModel.accounts,
-            holdings: []
-        )
-        let decision = PlusFeatureGate.canCreateAccount(
-            accountType: accountType,
-            snapshot: snapshot,
-            isPlusActive: subscriptionManager.isPlusActive
-        )
-        switch decision {
-        case .allowed:
-            return true
-        case .blocked(let reason):
-            gateAlertMessage = PlusFeatureGate.message(for: reason)
+    private func validateAccountCreationGate(for accountType: AccountType) async -> Bool {
+        do {
+            let snapshot = try await PlusFeatureGate.loadSnapshot(userId: userId)
+            let decision = PlusFeatureGate.canCreateAccount(
+                accountType: accountType,
+                snapshot: snapshot,
+                isPlusActive: subscriptionManager.isPlusActive
+            )
+            switch decision {
+            case .allowed:
+                return true
+            case .blocked(let reason):
+                gateAlertMessage = PlusFeatureGate.message(for: reason)
+                return false
+            }
+        } catch {
+            gateAlertMessage = "無法驗證 Free 上限：\(error.localizedDescription)"
             return false
         }
     }
@@ -151,12 +175,7 @@ struct AddAccountView: View {
                 case .hub:
                     AddItemHubView(
                         onSelectAccountType: attemptOpenAccountForm,
-                        onSelectManualAsset: {
-                            resetForm()
-                            withAnimation(.easeInOut(duration: 0.22)) {
-                                screen = .manualAsset
-                            }
-                        }
+                        onSelectManualAsset: attemptOpenManualAssetForm
                     )
                 case .manualAsset:
                     ManualAssetFormView(
@@ -189,6 +208,7 @@ struct AddAccountView: View {
         .onAppear {
             resetForm()
             screen = .hub
+            Task { await manualAssetsViewModel.loadAssets(userId: userId) }
         }
         .snapFormSheetChrome()
         .fullScreenCover(isPresented: $isPaywallPresented) {
@@ -201,8 +221,13 @@ struct AddAccountView: View {
                 set: { if !$0 { gateAlertMessage = nil } }
             )
         ) {
-            Button("了解 Plus") { isPaywallPresented = true }
-            Button("知道了", role: .cancel) {}
+            Button("了解 Plus") {
+                gateAlertMessage = nil
+                isPaywallPresented = true
+            }
+            Button("知道了", role: .cancel) {
+                gateAlertMessage = nil
+            }
         } message: {
             Text(gateAlertMessage ?? "")
         }
@@ -256,7 +281,7 @@ struct AddAccountView: View {
     @MainActor
     private func saveAccount() async {
         guard case .accountForm(let accountType) = screen else { return }
-        guard validateAccountCreationGate(for: accountType) else { return }
+        guard await validateAccountCreationGate(for: accountType) else { return }
         
         guard !name.trimmingCharacters(in: .whitespaces).isEmpty else {
             duplicateNameError = "請輸入帳戶名稱"
@@ -277,7 +302,11 @@ struct AddAccountView: View {
             currency: selectedCurrency
         )
         
-        let succeeded = await viewModel.runAccountSave(userId: userId) {
+        let succeeded = await viewModel.runAccountSave(
+            userId: userId,
+            structureOnly: true,
+            affectedAccountId: account.id
+        ) {
             try await viewModel.createAccountRecord(account)
             if let balance = Decimal(string: initialBalance), balance > 0 {
                 let transaction = Transaction(
@@ -304,7 +333,7 @@ struct AddAccountView: View {
     @MainActor
     private func saveOtherDebtAccount() async {
         guard case .accountForm(.otherDebt) = screen else { return }
-        guard validateAccountCreationGate(for: .otherDebt) else { return }
+        guard await validateAccountCreationGate(for: .otherDebt) else { return }
         guard let amountValue = Decimal(string: otherDebtAmount),
               amountValue > 0 else { return }
         
@@ -358,7 +387,7 @@ struct AddAccountView: View {
     @MainActor
     private func saveDebtAccount() async {
         guard case .accountForm(.debt) = screen else { return }
-        guard validateAccountCreationGate(for: .debt) else { return }
+        guard await validateAccountCreationGate(for: .debt) else { return }
         guard let principalValue = Decimal(string: principal),
               let rate = Decimal(string: interestRate) else { return }
         

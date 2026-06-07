@@ -2,7 +2,7 @@
 //  SymbolLiveReferencePrice.swift
 //  Snapvest
 //
-//  買進表單：選股後預抓參考現價（DB / fetch-or-create），成功後視為已驗證報價。
+//  買進表單：選股後預抓參考現價（snapshots + history 昨收 / fetch-or-create），寫入本機快照。
 //
 
 import Foundation
@@ -19,8 +19,13 @@ enum SymbolLiveReferencePrice {
         SupabasePriceService.normalizeSymbol(assetType: assetType, symbol: symbol)
     }
 
-    /// 從 Supabase 取得有效參考現價；成功表示 DB 已有列（含 Edge 剛寫入）。
-    static func prefetch(assetType: AssetType, symbol: String) async -> State {
+    /// 從 Supabase 取得有效參考現價並寫入本機 AssetPriceSnapshot；成功表示可 skip 買入驗價。
+    @MainActor
+    static func prefetch(
+        assetType: AssetType,
+        symbol: String,
+        dataService: DataServiceProtocol
+    ) async -> State {
         let normalized = normalizedSymbol(assetType: assetType, symbol: symbol)
         guard !normalized.isEmpty else {
             return .failed("請選擇股票代號")
@@ -33,11 +38,14 @@ enum SymbolLiveReferencePrice {
             ? SymbolListService.coingeckoId(forCryptoSymbol: normalized)
             : nil
 
-        if let price = await SupabasePriceService.fetchDisplayPrice(
+        if let snapshot = await SupabasePriceService.prefetchAssetPriceSnapshot(
             assetType: assetType,
             symbol: normalized,
+            dataService: dataService,
             coingeckoId: coingeckoId
-        ), price > 0 {
+        ),
+           let price = snapshot.displayPrice,
+           price > 0 {
             return .ready(price)
         }
 

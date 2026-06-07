@@ -140,7 +140,7 @@ enum PriceSnapshotMerger {
             )
         }
 
-        if DailyReferenceCloseResolver.isBootstrapPreviousSource(incoming.previousPriceSource),
+        if DailyReferenceCloseResolver.isTrustedPreviousSource(incoming.previousPriceSource),
            let price = incoming.previousPrice,
            price > 0 {
             return ResolvedPrevious(
@@ -151,7 +151,7 @@ enum PriceSnapshotMerger {
             )
         }
 
-        if DailyReferenceCloseResolver.isBootstrapPreviousSource(existing.previousPriceSource),
+        if DailyReferenceCloseResolver.isTrustedPreviousSource(existing.previousPriceSource),
            let price = existing.previousPrice,
            price > 0 {
             return ResolvedPrevious(
@@ -166,22 +166,23 @@ enum PriceSnapshotMerger {
     }
 
     private static func normalizedFirstAccept(incoming: AssetPriceSnapshot, candidate: Decimal) -> AssetPriceSnapshot {
-        let bootstrapPrevious = DailyReferenceCloseResolver.isBootstrapPreviousSource(incoming.previousPriceSource)
+        let trustedPrevious = DailyReferenceCloseResolver.isTrustedPreviousSource(incoming.previousPriceSource)
             ? incoming.previousPrice
             : nil
+        let keepsPrevious = trustedPrevious != nil && trustedPrevious != candidate
         return AssetPriceSnapshot(
             assetType: incoming.assetType,
             symbol: incoming.symbol,
             name: incoming.name,
             currency: incoming.currency,
             currentPrice: candidate,
-            previousPrice: bootstrapPrevious != candidate ? bootstrapPrevious : nil,
+            previousPrice: keepsPrevious ? trustedPrevious : nil,
             currentCloseDate: incoming.currentCloseDate ?? incoming.currentUpdatedAt ?? Date(),
             currentUpdatedAt: incoming.currentUpdatedAt ?? Date(),
-            previousCloseDate: bootstrapPrevious != nil ? incoming.previousCloseDate : nil,
-            previousUpdatedAt: bootstrapPrevious != nil ? incoming.previousUpdatedAt : nil,
+            previousCloseDate: keepsPrevious ? incoming.previousCloseDate : nil,
+            previousUpdatedAt: keepsPrevious ? incoming.previousUpdatedAt : nil,
             currentPriceSource: incoming.currentPriceSource,
-            previousPriceSource: bootstrapPrevious != nil ? incoming.previousPriceSource : nil,
+            previousPriceSource: keepsPrevious ? incoming.previousPriceSource : nil,
             priceKind: incoming.priceKind
         )
     }

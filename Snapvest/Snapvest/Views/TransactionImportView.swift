@@ -25,6 +25,7 @@ struct TransactionImportView: View {
     @State private var showingImportResultAlert = false
     @State private var importResultAlertTitle = ""
     @State private var importResultAlertMessage = ""
+    @State private var importGateAlertMessage: String?
     @State private var dismissAfterImportResultAlert = false
     @State private var didCopyStatementPrompt = false
     @State private var didCopyHoldingsPrompt = false
@@ -82,6 +83,20 @@ struct TransactionImportView: View {
                 }
             } message: {
                 Text(importResultAlertMessage)
+            }
+            .alert("需要 Walleaf Plus", isPresented: Binding(
+                get: { importGateAlertMessage != nil },
+                set: { if !$0 { importGateAlertMessage = nil } }
+            )) {
+                Button("了解 Plus") {
+                    importGateAlertMessage = nil
+                    isPaywallPresented = true
+                }
+                Button("知道了", role: .cancel) {
+                    importGateAlertMessage = nil
+                }
+            } message: {
+                Text(importGateAlertMessage ?? "")
             }
             .navigationTitle("匯入交易")
             .navigationBarTitleDisplayMode(.inline)
@@ -936,18 +951,12 @@ struct TransactionImportView: View {
                     isPlusActive: subscriptionManager.isPlusActive
                 )
                 if case .blocked(let reason) = decision {
-                    importResultAlertTitle = "無法匯入"
-                    importResultAlertMessage = PlusFeatureGate.message(for: reason)
-                    dismissAfterImportResultAlert = false
-                    showingImportResultAlert = true
+                    importGateAlertMessage = PlusFeatureGate.message(for: reason)
                     return
                 }
             }
         } catch {
-            importResultAlertTitle = "無法匯入"
-            importResultAlertMessage = "無法驗證 Free 上限：\(error.localizedDescription)"
-            dismissAfterImportResultAlert = false
-            showingImportResultAlert = true
+            importGateAlertMessage = "無法驗證 Free 上限：\(error.localizedDescription)"
             return
         }
 

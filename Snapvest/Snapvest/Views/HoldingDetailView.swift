@@ -14,14 +14,15 @@ struct HoldingDetailView: View {
     let totalInvestments: Decimal
     
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openPlusPaywall) private var openPlusPaywall
+    @EnvironmentObject private var subscriptionManager: SubscriptionManager
     @ObservedObject private var baseCurrencyManager = BaseCurrencyManager.shared
     @State private var usdToTwdRate: Decimal = ExchangeRateSessionCache.usdToTwd ?? 0
     @State private var twdPerBaseCurrency: Decimal = 1
     @State private var activeTradeSheet: HoldingTradeSheet?
     @State private var metricAmountDisplay: MetricAmountDisplay
     @State private var marketStatus: MarketStatusSnapshot?
-    @State private var priceHistoryExactByDate: [String: Decimal] = [:]
-    @State private var priceHistoryDateKeys: [String] = []
+    @State private var buyGateAlertMessage: String?
     
     enum MetricAmountDisplay {
         case twd
@@ -340,16 +341,10 @@ struct HoldingDetailView: View {
         }
     }
     
-    /// 單日漲跌：現價相對上一交易日收盤（history 或已對齊的 previous）
+    /// 單日漲跌：現價相對本機 snapshot 昨收（與首頁 TodayPL 同源，不拉 21 天 history）。
     private var dailyPriceChange: (amount: Decimal, percent: Decimal)? {
         guard let snapshot = assetPriceSnapshot else { return nil }
-        let exact = priceHistoryExactByDate.isEmpty ? nil : priceHistoryExactByDate
-        let keys = priceHistoryDateKeys.isEmpty ? nil : priceHistoryDateKeys
-        return DailyReferenceCloseResolver.dailyChange(
-            snapshot: snapshot,
-            exactHistoryByDate: exact,
-            historyDateKeys: keys
-        )
+        return DailyReferenceCloseResolver.dailyChange(snapshot: snapshot)
     }
     
     var body: some View {
@@ -389,17 +384,6 @@ struct HoldingDetailView: View {
         }
         .task {
             marketStatus = await MarketStatusService.fetchIfNeeded()
-            let symbol = SymbolInfo(
-                assetType: aggregatedHolding.assetType,
-                symbol: aggregatedHolding.symbol
-            )
-            let context = await DailyPriceHistoryCache.historyContext(for: [symbol])
-            priceHistoryExactByDate = DailyPriceHistoryCache.exactHistory(
-                assetType: aggregatedHolding.assetType,
-                symbol: aggregatedHolding.symbol,
-                from: context
-            )
-            priceHistoryDateKeys = context.dateKeys
             if let cached = ExchangeRateSessionCache.usdToTwd, cached > 0 {
                 updateUsdToTwdRateIfNeeded(cached)
             } else if usdToTwdRate <= 0 {
@@ -414,6 +398,20 @@ struct HoldingDetailView: View {
         }
         .sheet(item: $activeTradeSheet) { sheet in
             holdingTradeSheetContent(for: sheet)
+        }
+        .alert("需要 Walleaf Plus", isPresented: Binding(
+            get: { buyGateAlertMessage != nil },
+            set: { if !$0 { buyGateAlertMessage = nil } }
+        )) {
+            Button("了解 Plus") {
+                buyGateAlertMessage = nil
+                openPlusPaywall()
+            }
+            Button("知道了", role: .cancel) {
+                buyGateAlertMessage = nil
+            }
+        } message: {
+            Text(buyGateAlertMessage ?? "")
         }
     }
     
@@ -708,7 +706,7 @@ struct HoldingDetailView: View {
         HStack(spacing: 12) {
             // 買入按鈕
             Button(action: {
-                activeTradeSheet = .buy
+                Task { await openBuySheetIfAllowed() }
             }) {
                 HStack {
                     Image(systemName: "plus.circle.fill")
@@ -748,6 +746,26 @@ struct HoldingDetailView: View {
             alignment: .top
         )
     }
+
+    private func openBuySheetIfAllowed() async {
+        do {
+            let snapshot = try await PlusFeatureGate.loadSnapshot(userId: aggregatedHolding.userId)
+            let decision = PlusFeatureGate.canOpenBuyFlow(
+                assetType: aggregatedHolding.assetType,
+                snapshot: snapshot,
+                isPlusActive: subscriptionManager.isPlusActive
+            )
+            switch decision {
+            case .allowed:
+                activeTradeSheet = .buy
+            case .blocked(let reason):
+                buyGateAlertMessage = PlusFeatureGate.message(for: reason)
+            }
+        } catch {
+            buyGateAlertMessage = "無法驗證 Free 上限：\(error.localizedDescription)"
+        }
+    }
+
     private var preferredTradeAccountId: String? {
         aggregatedHolding.fifoLotsByAccount.first?.accountId
             ?? aggregatedHolding.sourceAccountIds.first

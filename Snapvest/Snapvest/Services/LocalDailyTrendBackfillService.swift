@@ -2,7 +2,7 @@
 //  LocalDailyTrendBackfillService.swift
 //  Snapvest
 //
-//  每天第一次開 App 時：補昨日走勢點，並將「日漲跌基準」昨收寫入各股本機快照。
+//  每天第一次開 App 時：只補「上次走勢點～昨天」的 gap 天，不回溯新加持股的歷史。
 //
 
 import Foundation
@@ -31,18 +31,6 @@ enum LocalDailyTrendBackfillService {
             return false
         }
 
-        let historyStart = calendar.date(byAdding: .day, value: -14, to: yesterday) ?? yesterday
-        let context = await BackfillContext.load(
-            userId: userId,
-            dataService: dataService,
-            historyStartDate: historyStart,
-            historyEndDate: yesterday
-        )
-
-        let previousCloseUpdates = await applyDailyPreviousCloses(
-            context: context,
-            dataService: dataService
-        )
         let existingSnapshots = (try? await dataService.fetchLocalDailyTrendSnapshots(
             userId: userId,
             startDate: nil,
@@ -55,8 +43,8 @@ enum LocalDailyTrendBackfillService {
 
         guard let latestExistingDayBeforeToday = existingDaysBeforeToday.last else {
             dataService.updateLastDailyTrendBackfillRunDateKey(userId: userId, dateKey: todayKey)
-            debugLog("skip trend: first day, previousClose=\(previousCloseUpdates)")
-            return previousCloseUpdates > 0
+            debugLog("skip trend: first day")
+            return false
         }
 
         let targetDates = datesToBackfill(
@@ -67,9 +55,17 @@ enum LocalDailyTrendBackfillService {
         )
         guard !targetDates.isEmpty else {
             dataService.updateLastDailyTrendBackfillRunDateKey(userId: userId, dateKey: todayKey)
-            debugLog("skip trend: no missing dates, previousClose=\(previousCloseUpdates)")
-            return previousCloseUpdates > 0
+            debugLog("skip trend: no missing dates")
+            return false
         }
+
+        let gapStart = calendar.date(byAdding: .day, value: 1, to: latestExistingDayBeforeToday) ?? yesterday
+        let context = await BackfillContext.load(
+            userId: userId,
+            dataService: dataService,
+            historyStartDate: gapStart,
+            historyEndDate: yesterday
+        )
 
         var writtenCount = 0
         for date in targetDates {
@@ -85,25 +81,8 @@ enum LocalDailyTrendBackfillService {
         }
 
         dataService.updateLastDailyTrendBackfillRunDateKey(userId: userId, dateKey: todayKey)
-        debugLog("completed: targets=\(targetDates.count), trend=\(writtenCount), previousClose=\(previousCloseUpdates)")
-        return writtenCount > 0 || previousCloseUpdates > 0
-    }
-
-    // MARK: - 昨收寫入各股（每日一次）
-
-    private static func applyDailyPreviousCloses(
-        context: BackfillContext,
-        dataService: DataServiceProtocol
-    ) async -> Int {
-        let symbols = context.holdings.map {
-            SymbolInfo(assetType: $0.assetType, symbol: $0.symbol)
-        }
-        return await DailyPreviousCloseSync.apply(
-            for: symbols,
-            dataService: dataService,
-            historyByKey: context.exactHistoricalPricesByKeyAndDate,
-            historyDateKeys: context.historyDateKeys
-        )
+        debugLog("completed: targets=\(targetDates.count), trend=\(writtenCount)")
+        return writtenCount > 0
     }
 
     // MARK: - 走勢補點
@@ -198,9 +177,7 @@ enum LocalDailyTrendBackfillService {
                 HistoricalPriceResolution(price: $0, isHistorical: true)
             }
         }
-        return snapshot.displayPrice.map {
-            HistoricalPriceResolution(price: $0, isHistorical: false)
-        }
+        return nil
     }
 
     private static func twdRate(
@@ -228,8 +205,6 @@ private struct BackfillContext {
     let holdings: [HoldingSnapshotItem]
     let priceSnapshotsByKey: [String: AssetPriceSnapshot]
     let twdRateByCurrency: [Currency: Decimal]
-    let exactHistoricalPricesByKeyAndDate: [String: [String: Decimal]]
-    let historyDateKeys: [String]
     let historicalPricesByKeyAndDate: [String: [String: Decimal]]
     let currentHoldingsMarketValueTWD: Decimal
     let currentHoldingsUnrealizedTWD: Decimal
@@ -255,12 +230,18 @@ private struct BackfillContext {
         let symbols = holdings.map {
             SymbolInfo(assetType: $0.assetType, symbol: $0.symbol)
         }
-        let batch = try? await SupabasePriceService.fetchBatchPrices(
-            symbols: symbols,
-            historyStartDate: historyStartDate,
-            historyEndDate: historyEndDate,
-            includeCurrent: true
-        )
+        let batch: SupabasePriceBatch?
+        if let historyStartDate, let historyEndDate, !symbols.isEmpty {
+            batch = try? await SupabasePriceService.fetchBatchPrices(
+                symbols: symbols,
+                historyStartDate: historyStartDate,
+                historyEndDate: historyEndDate,
+                includeCurrent: true
+            )
+        } else {
+            batch = nil
+        }
+
         let localPriceSnapshots = (try? await dataService.fetchAssetPriceSnapshots(symbols: symbols)) ?? []
         var priceSnapshotsById = Dictionary(grouping: localPriceSnapshots, by: \.id).compactMapValues(\.first)
         for snapshot in batch?.currentSnapshots ?? [] {
@@ -289,15 +270,11 @@ private struct BackfillContext {
             currentHoldingsUnrealizedTWD += (marketValue - cost) * twdRate
         }
 
-        let exactHistory = batch?.historicalPricesByKeyAndDate ?? [:]
-
         return BackfillContext(
             homeSnapshot: homeSnapshot,
             holdings: holdings,
             priceSnapshotsByKey: priceSnapshotsByKey,
             twdRateByCurrency: twdRateByCurrency,
-            exactHistoricalPricesByKeyAndDate: exactHistory,
-            historyDateKeys: batch?.dateKeys ?? [],
             historicalPricesByKeyAndDate: forwardFilledHistoricalPrices(
                 batch: batch,
                 symbols: symbols

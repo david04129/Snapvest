@@ -1,17 +1,17 @@
 {
   "tw": {
-    "version": 12,
-    "updatedAt": "2026-06-07",
-    "url": "https://your-backend.com/symbols/symbols_tw.json"
+    "epoch": 1,
+    "minor": 12,
+    "updatedAt": "2026-06-07"
   },
   "us": {
-    "version": 7,
-    "updatedAt": "2026-06-07",
-    "url": "https://your-backend.com/symbols/symbols_us.json"
+    "epoch": 1,
+    "minor": 6,
+    "updatedAt": "2026-06-07"
   },
   "crypto": {
-    "version": 9,
-    "updatedAt": "2026-06-07",
-    "url": "https://your-backend.com/symbols/symbols_crypto.json"
+    "epoch": 1,
+    "minor": 8,
+    "updatedAt": "2026-06-07"
   }
 }

@@ -59,6 +59,16 @@ struct SupabasePriceBatch {
     let usdToTwdUpdatedAt: Date?
 }
 
+/// fetch-or-create-price 完整報價（現價 + 可選昨收）
+struct FetchOrCreateQuote: Sendable {
+    let currentPrice: Decimal
+    let currency: Currency
+    let source: String?
+    let currentCloseDate: Date?
+    let previousPrice: Decimal?
+    let previousCloseDate: Date?
+}
+
 /// 從 Supabase 讀取股價與更新時間
 struct SupabasePriceService {
     
@@ -116,7 +126,137 @@ struct SupabasePriceService {
         }
     }
     
-    /// 單檔顯示價格（Supabase → fetch-or-create；不使用 Mock 100）
+    /// 買進表單 prefetch：DB 無列時呼叫 fetch-or-create 寫入雲端，再寫本機 AssetPriceSnapshot。
+    static func prefetchAssetPriceSnapshot(
+        assetType: AssetType,
+        symbol: String,
+        dataService: DataServiceProtocol,
+        coingeckoId: String? = nil
+    ) async -> AssetPriceSnapshot? {
+        guard SupabaseConfig.isConfigured else { return nil }
+
+        let normalized = normalizeSymbol(assetType: assetType, symbol: symbol)
+        guard !normalized.isEmpty else { return nil }
+
+        let symbolInfo = SymbolInfo(assetType: assetType, symbol: normalized)
+        let existing = try? await dataService.fetchAssetPriceSnapshot(
+            assetType: assetType,
+            symbol: normalized
+        )
+
+        let remote = await fetchRemoteSnapshotRow(symbolInfo: symbolInfo)
+        let remoteHasFreshCurrent = remote.map {
+            hasPositiveCurrentPrice($0) && !AssetPriceSnapshotFreshness.isStaleForLiveQuote($0)
+        } ?? false
+
+        // 本機已有完整報價且 DB 現價仍新鮮 → 直接沿用
+        if remoteHasFreshCurrent,
+           let existing,
+           let current = existing.currentPrice,
+           current > 0,
+           DailyReferenceCloseResolver.trustedSnapshotReference(from: existing) != nil,
+           !AssetPriceSnapshotFreshness.isStaleForLiveQuote(existing) {
+            return existing
+        }
+
+        var working: AssetPriceSnapshot?
+
+        if !remoteHasFreshCurrent {
+            guard let quote = try? await fetchOrCreateQuote(
+                assetType: assetType,
+                symbol: normalized,
+                coingeckoId: coingeckoId
+            ) else {
+                #if DEBUG
+                if hasPositiveCurrentPrice(remote) {
+                    print("[SupabasePriceService] prefetch \(normalized): stale DB row, fetch-or-create refresh failed")
+                } else {
+                    print("[SupabasePriceService] prefetch \(normalized): fetch-or-create failed (DB had no current)")
+                }
+                #endif
+                return nil
+            }
+            #if DEBUG
+            if hasPositiveCurrentPrice(remote),
+               let remote,
+               AssetPriceSnapshotFreshness.isStaleForLiveQuote(remote) {
+                print("[SupabasePriceService] prefetch \(normalized): refreshed stale DB closeDate=\(remote.currentCloseDate.map { TradingDayCalendar.dateKey(for: $0, assetType: assetType) } ?? "?")")
+            } else {
+                print("[SupabasePriceService] prefetch \(normalized): fetch-or-create wrote DB source=\(quote.source ?? "?")")
+            }
+            #endif
+            working = PriceSnapshotMerger.mergePreservingDailyReference(
+                incoming: snapshot(from: quote, assetType: assetType, symbol: normalized),
+                existing: existing
+            )
+        } else if let remote {
+            working = PriceSnapshotMerger.mergePreservingDailyReference(
+                incoming: remote.strippingUntrustedRemotePrevious(),
+                existing: existing
+            )
+        }
+
+        guard var merged = working,
+              let current = merged.currentPrice ?? merged.displayPrice,
+              current > 0 else {
+            return nil
+        }
+
+        if DailyReferenceCloseResolver.trustedSnapshotReference(from: merged) == nil {
+            // DB 有 current 但缺昨收：再呼叫 fetch-or-create 觸發 Edge 補 history
+            if remoteHasFreshCurrent {
+                _ = try? await fetchOrCreateQuote(
+                    assetType: assetType,
+                    symbol: normalized,
+                    coingeckoId: coingeckoId
+                )
+            }
+            let anchorDate = merged.currentCloseDate ?? Date()
+            if let historyRef = await fetchPreviousSessionCloseFromHistory(
+                assetType: assetType,
+                symbol: normalized,
+                anchorDate: anchorDate
+            ) {
+                merged = AssetPriceSnapshot(
+                    assetType: merged.assetType,
+                    symbol: merged.symbol,
+                    name: merged.name,
+                    currency: merged.currency,
+                    currentPrice: merged.currentPrice,
+                    previousPrice: historyRef.price,
+                    currentCloseDate: merged.currentCloseDate,
+                    currentUpdatedAt: merged.currentUpdatedAt,
+                    previousCloseDate: historyRef.closeDate,
+                    previousUpdatedAt: Date(),
+                    currentPriceSource: merged.currentPriceSource,
+                    previousPriceSource: DailyReferenceCloseResolver.historyPreviousCloseSource,
+                    priceKind: merged.priceKind
+                )
+            } else if let quote = try? await fetchOrCreateQuote(
+                assetType: assetType,
+                symbol: normalized,
+                coingeckoId: coingeckoId
+            ), quote.previousPrice != nil {
+                merged = PriceSnapshotMerger.mergePreservingDailyReference(
+                    incoming: snapshot(from: quote, assetType: assetType, symbol: normalized),
+                    existing: merged
+                )
+            }
+        }
+
+        let final = PriceSnapshotMerger.mergePreservingDailyReference(
+            incoming: merged,
+            existing: existing
+        )
+        try? await dataService.saveAssetPriceSnapshot(final)
+        return final
+    }
+
+    private static func hasPositiveCurrentPrice(_ snapshot: AssetPriceSnapshot?) -> Bool {
+        guard let snapshot else { return false }
+        guard let price = snapshot.currentPrice ?? snapshot.displayPrice else { return false }
+        return price > 0
+    }
     static func fetchDisplayPrice(
         assetType: AssetType,
         symbol: String,
@@ -491,23 +631,18 @@ struct SupabasePriceService {
             ? SymbolListService.coingeckoId(forCryptoSymbol: symbolInfo.symbol)
             : nil
         do {
-            guard let price = try await fetchOrCreatePrice(
+            guard let quote = try await fetchOrCreateQuote(
                 assetType: symbolInfo.assetType,
                 symbol: symbolInfo.symbol,
                 coingeckoId: coingeckoId
-            ), price > 0 else {
+            ), quote.currentPrice > 0 else {
                 return .failed
             }
-            let now = Date()
             return .success(
-                AssetPriceSnapshot(
+                snapshot(
+                    from: quote,
                     assetType: symbolInfo.assetType,
-                    symbol: symbolInfo.symbol,
-                    currency: symbolInfo.assetType.quoteCurrency,
-                    currentPrice: price,
-                    previousPrice: nil,
-                    currentCloseDate: Calendar.current.startOfDay(for: now),
-                    currentUpdatedAt: now
+                    symbol: symbolInfo.symbol
                 )
             )
         } catch SupabaseError.rateLimited(let retryAfterSeconds) {
@@ -589,23 +724,97 @@ struct SupabasePriceService {
         return rows.compactMap { SupabasePriceHistoryRow.toPrice($0) }
     }
 
+    private static func snapshot(
+        from quote: FetchOrCreateQuote,
+        assetType: AssetType,
+        symbol: String
+    ) -> AssetPriceSnapshot {
+        let now = Date()
+        let previousSource = trustedPreviousPriceSource(for: quote)
+        return AssetPriceSnapshot(
+            assetType: assetType,
+            symbol: symbol,
+            currency: quote.currency,
+            currentPrice: quote.currentPrice,
+            previousPrice: quote.previousPrice,
+            currentCloseDate: quote.currentCloseDate ?? Calendar.current.startOfDay(for: now),
+            currentUpdatedAt: now,
+            previousCloseDate: quote.previousCloseDate,
+            previousUpdatedAt: quote.previousPrice != nil ? now : nil,
+            currentPriceSource: quote.source,
+            previousPriceSource: previousSource,
+            priceKind: .intraday
+        )
+    }
+
+    private static func trustedPreviousPriceSource(for quote: FetchOrCreateQuote) -> String? {
+        guard quote.previousPrice != nil else { return nil }
+        if DailyReferenceCloseResolver.isBootstrapPreviousSource(quote.source) {
+            return quote.source
+        }
+        // Edge DB hit 可能剛從 Yahoo / snapshot 補寫 history 昨收
+        return "yahoo"
+    }
+
+    static func fetchPreviousSessionCloseFromHistory(
+        assetType: AssetType,
+        symbol: String,
+        anchorDate: Date
+    ) async -> DailyReferenceCloseResolver.ReferenceClose? {
+        let calendar = Calendar.current
+        let end = calendar.startOfDay(for: anchorDate)
+        guard let start = calendar.date(byAdding: .day, value: -14, to: end) else { return nil }
+
+        let prices = (try? await fetchHistoricalPrices(
+            assetType: assetType,
+            symbol: symbol,
+            startDate: start,
+            endDate: end
+        )) ?? []
+        guard !prices.isEmpty else { return nil }
+
+        var exactHistoryByDate: [String: Decimal] = [:]
+        var historyDateKeys: [String] = []
+        for price in prices {
+            let key = TradingDayCalendar.dateKey(for: price.priceDate, assetType: assetType)
+            exactHistoryByDate[key] = price.price
+            historyDateKeys.append(key)
+        }
+        historyDateKeys.sort()
+
+        let anchorKey = TradingDayCalendar.dateKey(for: anchorDate, assetType: assetType)
+        return DailyReferenceCloseResolver.resolveFromHistory(
+            assetType: assetType,
+            exactHistoryByDate: exactHistoryByDate,
+            historyDateKeys: historyDateKeys,
+            beforeAnchorKey: anchorKey
+        )
+    }
+
+    static func fetchRemoteSnapshotRow(symbolInfo: SymbolInfo) async -> AssetPriceSnapshot? {
+        guard SupabaseConfig.isConfigured,
+              let baseUrl = SupabaseConfig.url else { return nil }
+        guard let row = await fetchPriceRow(baseUrl: baseUrl, symbolInfo: symbolInfo) else { return nil }
+        return SupabasePriceRow.toAssetPriceSnapshot(row)?.strippingUntrustedRemotePrevious()
+    }
+
     /// 呼叫 fetch-or-create-price（新增股票時使用）
-    static func fetchOrCreatePrice(
+    static func fetchOrCreateQuote(
         assetType: AssetType,
         symbol: String,
         coingeckoId: String? = nil
-    ) async throws -> Decimal? {
+    ) async throws -> FetchOrCreateQuote? {
         guard SupabaseConfig.isConfigured,
               let url = URL(string: "\(SupabaseConfig.url!)/functions/v1/fetch-or-create-price") else {
             throw SupabaseError.notConfigured
         }
-        
+
         struct FetchOrCreateBody: Encodable {
             let assetType: String
             let symbol: String
             let coingeckoId: String?
         }
-        
+
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         await SupabaseConfig.applyRequestAuth(to: &req)
@@ -617,7 +826,7 @@ struct SupabasePriceService {
                 coingeckoId: coingeckoId
             )
         )
-        
+
         let (data, resp) = try await URLSession.shared.data(for: req)
         guard let http = resp as? HTTPURLResponse else { return nil }
         if http.statusCode == 429 {
@@ -630,8 +839,39 @@ struct SupabasePriceService {
             #endif
             return nil
         }
+
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        return parseJSONPrice(json?["price"])
+        guard let currentPrice = parseJSONPrice(json?["price"]), currentPrice > 0 else { return nil }
+
+        let currencyRaw = json?["currency"] as? String
+        let currency = currencyRaw.flatMap(Currency.init(rawValue:)) ?? assetType.quoteCurrency
+        let source = json?["source"] as? String
+        let currentCloseDate = SupabaseRESTTimestampParser.parseCloseDate(json?["currentCloseDate"] as? String)
+        let previousPrice = parseJSONPrice(json?["previousPrice"])
+        let previousCloseDate = SupabaseRESTTimestampParser.parseCloseDate(json?["previousCloseDate"] as? String)
+
+        return FetchOrCreateQuote(
+            currentPrice: currentPrice,
+            currency: currency,
+            source: source,
+            currentCloseDate: currentCloseDate,
+            previousPrice: previousPrice,
+            previousCloseDate: previousCloseDate
+        )
+    }
+
+    /// 呼叫 fetch-or-create-price（新增股票時使用）
+    static func fetchOrCreatePrice(
+        assetType: AssetType,
+        symbol: String,
+        coingeckoId: String? = nil
+    ) async throws -> Decimal? {
+        let quote = try await fetchOrCreateQuote(
+            assetType: assetType,
+            symbol: symbol,
+            coingeckoId: coingeckoId
+        )
+        return quote?.currentPrice
     }
     
     private static func parseJSONPrice(_ value: Any?) -> Decimal? {

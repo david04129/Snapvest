@@ -8,7 +8,7 @@ SET
 WHERE from_currency = 'USD' AND to_currency = 'TWD';
 
 UPDATE price_update_metadata
-SET last_updated_at = NOW()
+SET last_updated_at = date_trunc('second', timezone('Asia/Taipei', NOW()))
 WHERE id = 'global';
 
 -- 確認

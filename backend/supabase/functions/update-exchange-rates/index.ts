@@ -13,6 +13,22 @@ const corsHeaders = {
 
 const EXCHANGE_RATE_API_URL = "https://open.er-api.com/v6/latest/USD"
 const CHUNK_SIZE = 100
+const TAIPEI_TZ = "Asia/Taipei"
+
+function taipeiLocalTimestampSeconds(d = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: TAIPEI_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(d)
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "00"
+  return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}:${get("second")}`
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -46,6 +62,7 @@ serve(async (req) => {
     }
 
     const now = new Date().toISOString()
+    const metadataUpdatedAt = taipeiLocalTimestampSeconds()
     const rows = Object.entries(payload.rates)
       .filter(([, rate]) => typeof rate === "number" && rate > 0 && Number.isFinite(rate))
       .map(([to_currency, rate]) => ({
@@ -79,7 +96,7 @@ serve(async (req) => {
 
     const { error: metaError } = await supabase
       .from("price_update_metadata")
-      .upsert({ id: "global", last_updated_at: now }, { onConflict: "id" })
+      .upsert({ id: "global", last_updated_at: metadataUpdatedAt }, { onConflict: "id" })
     if (metaError) {
       return new Response(JSON.stringify({ error: metaError.message }), {
         status: 500,

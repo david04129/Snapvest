@@ -1,56 +1,43 @@
 #!/usr/bin/env python3
 """
-建立 symbols_manifest.json
-供 App 檢查各市場的 symbols 是否有更新。
+建立 symbols_manifest.json（各市場 epoch.minor）。
 """
 
 import json
 from pathlib import Path
 
-OUTPUT_DIR = Path(__file__).parent / "output"
+from symbol_catalog_diff import MARKETS, OUTPUT_DIR, APP_SYMBOLS_DIR, catalog_filename, read_catalog_file
 
-# 後端 Base URL（上傳到 Supabase Storage 後請修改此處）
-# 例：https://xxxx.supabase.co/storage/v1/object/public/symbols
-BASE_URL = "https://your-backend.com/symbols"
+OUTPUT_MANIFEST = OUTPUT_DIR / "symbols_manifest.json"
+APP_MANIFEST = APP_SYMBOLS_DIR / "symbols_manifest.json"
 
 
 def build_manifest() -> dict:
-    """從現有的 symbols_*.json 讀取 version，組出 manifest"""
     manifest = {}
-    for market in ("tw", "us", "crypto"):
-        path = OUTPUT_DIR / f"symbols_{market}.json"
+    for market in MARKETS:
+        path = OUTPUT_DIR / catalog_filename(market)
         if not path.exists():
-            manifest[market] = {"version": 0, "updatedAt": None, "url": f"{BASE_URL}/symbols_{market}.json"}
+            manifest[market] = {"epoch": 1, "minor": 0, "updatedAt": None}
             continue
-        try:
-            with open(path, encoding="utf-8") as f:
-                data = json.load(f)
-            version = data.get("version", 0)
-            updated_at = data.get("updatedAt")
-            manifest[market] = {
-                "version": version,
-                "updatedAt": updated_at,
-                "url": f"{BASE_URL}/symbols_{market}.json",
-            }
-        except (json.JSONDecodeError, KeyError) as e:
-            manifest[market] = {
-                "version": 0,
-                "updatedAt": None,
-                "url": f"{BASE_URL}/symbols_{market}.json",
-                "error": str(e),
-            }
+        data = read_catalog_file(path) or {}
+        manifest[market] = {
+            "epoch": int(data.get("epoch", 1)),
+            "minor": int(data.get("minor", data.get("version", 0))),
+            "updatedAt": data.get("updatedAt"),
+        }
     return manifest
 
 
 def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     manifest = build_manifest()
-    output_path = OUTPUT_DIR / "symbols_manifest.json"
-    with open(output_path, "w", encoding="utf-8") as f:
-        json.dump(manifest, f, ensure_ascii=False, indent=2)
+    for path in (OUTPUT_MANIFEST, APP_MANIFEST):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as handle:
+            json.dump(manifest, handle, ensure_ascii=False, indent=2)
     print("✅ symbols_manifest.json 已建立")
     for market, info in manifest.items():
-        print(f"   {market}: version={info.get('version', 0)}, updatedAt={info.get('updatedAt', 'N/A')}")
+        print(f"   {market}: {info.get('epoch')}.{info.get('minor')}, updatedAt={info.get('updatedAt', 'N/A')}")
 
 
 if __name__ == "__main__":

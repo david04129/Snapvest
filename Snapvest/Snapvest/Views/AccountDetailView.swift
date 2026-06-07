@@ -41,6 +41,7 @@ struct AccountDetailView: View {
     @State private var showingTransactionImport = false
     @State private var showingNewTradeFlow = false
     @State private var isPaywallPresented = false
+    @State private var buyGateAlertMessage: String?
     @State private var twdPerAccountCurrency: Decimal
     @StateObject private var importTransactionsViewModel = TransactionsViewModel()
     @EnvironmentObject private var subscriptionManager: SubscriptionManager
@@ -244,6 +245,20 @@ struct AccountDetailView: View {
         }
         .fullScreenCover(isPresented: $isPaywallPresented) {
             WalleafPlusPaywallView()
+        }
+        .alert("需要 Walleaf Plus", isPresented: Binding(
+            get: { buyGateAlertMessage != nil },
+            set: { if !$0 { buyGateAlertMessage = nil } }
+        )) {
+            Button("了解 Plus") {
+                buyGateAlertMessage = nil
+                isPaywallPresented = true
+            }
+            Button("知道了", role: .cancel) {
+                buyGateAlertMessage = nil
+            }
+        } message: {
+            Text(buyGateAlertMessage ?? "")
         }
         .task {
             await loadAccountCurrencyRateIfNeeded()
@@ -572,7 +587,7 @@ struct AccountDetailView: View {
         HStack(spacing: 12) {
             if account.accountType.supportsStockTrading {
                 Button(action: {
-                    showingNewTradeFlow = true
+                    Task { await openNewTradeFlowIfAllowed() }
                 }) {
                     HStack {
                         Image(systemName: "plus.circle.fill")
@@ -613,6 +628,27 @@ struct AccountDetailView: View {
                 .foregroundColor(Color.separator.opacity(0.3)),
             alignment: .top
         )
+    }
+
+    private func openNewTradeFlowIfAllowed() async {
+        let tradeMarkets = account.accountType.tradeMarketChoices
+        let assetType = tradeMarkets.count == 1 ? tradeMarkets.first?.assetType : nil
+        do {
+            let snapshot = try await PlusFeatureGate.loadSnapshot(userId: account.userId)
+            let decision = PlusFeatureGate.canOpenBuyFlow(
+                assetType: assetType,
+                snapshot: snapshot,
+                isPlusActive: subscriptionManager.isPlusActive
+            )
+            switch decision {
+            case .allowed:
+                showingNewTradeFlow = true
+            case .blocked(let reason):
+                buyGateAlertMessage = PlusFeatureGate.message(for: reason)
+            }
+        } catch {
+            buyGateAlertMessage = "無法驗證 Free 上限：\(error.localizedDescription)"
+        }
     }
     
     // MARK: - 債務帳戶視圖

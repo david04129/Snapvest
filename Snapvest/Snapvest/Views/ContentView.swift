@@ -249,27 +249,34 @@ private struct ContentViewEventModifier: ViewModifier {
                     showsManualRefreshBlockedAlert = true
                 }
             }
-            .onAppear { dataFreshness.refresh() }
-            .onChange(of: demoMode.isEnabled) { _, _ in
-                Task {
-                    await LaunchCoordinator.applyPersistedState(
-                        userId: AppUser.id,
-                        portfolioViewModel: portfolioViewModel,
-                        accountsViewModel: accountsViewModel,
-                        assetsViewModel: assetsViewModel,
-                        dataService: MockDataService.shared
-                    )
-                    dataFreshness.refresh()
-                    NotificationCenter.default.post(
-                        name: .snapshotsDidUpdate,
-                        object: nil,
-                        userInfo: [SnapshotUpdateUserInfoKey.alreadyApplied: true]
-                    )
+            .onAppear {
+                dataFreshness.refresh()
+                if demoMode.isEnabled {
+                    Task { await applyPresentationAfterDemoModeChange() }
                 }
+            }
+            .onChange(of: demoMode.isEnabled) { _, _ in
+                Task { await applyPresentationAfterDemoModeChange() }
             }
             .sheet(isPresented: $isSettingsPresented) {
                 SettingsView()
             }
+    }
+
+    private func applyPresentationAfterDemoModeChange() async {
+        await LaunchCoordinator.applyPersistedState(
+            userId: AppUser.id,
+            portfolioViewModel: portfolioViewModel,
+            accountsViewModel: accountsViewModel,
+            assetsViewModel: assetsViewModel,
+            dataService: MockDataService.shared
+        )
+        dataFreshness.refresh()
+        NotificationCenter.default.post(
+            name: .snapshotsDidUpdate,
+            object: nil,
+            userInfo: [SnapshotUpdateUserInfoKey.alreadyApplied: true]
+        )
     }
 
     private func handleSelectedTabChange(previousTab: Int, newTab: Int) {

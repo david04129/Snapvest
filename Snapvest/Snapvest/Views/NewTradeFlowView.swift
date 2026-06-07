@@ -135,8 +135,11 @@ enum TradeAction: String, CaseIterable, Identifiable {
 
 struct NewTradeFlowView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openPlusPaywall) private var openPlusPaywall
+    @EnvironmentObject private var subscriptionManager: SubscriptionManager
     @State private var selectedMarket: TradeMarket?
     @State private var selectedAction: TradeAction = .buy
+    @State private var gateAlertMessage: String?
     
     let context: TradeFlowContext?
     let onComplete: ((TradeMarket, TradeAction) -> Void)?
@@ -218,6 +221,20 @@ struct NewTradeFlowView: View {
             }
         }
         .snapFormSheetChrome()
+        .alert("需要 Walleaf Plus", isPresented: Binding(
+            get: { gateAlertMessage != nil },
+            set: { if !$0 { gateAlertMessage = nil } }
+        )) {
+            Button("了解 Plus") {
+                gateAlertMessage = nil
+                openPlusPaywall()
+            }
+            Button("知道了", role: .cancel) {
+                gateAlertMessage = nil
+            }
+        } message: {
+            Text(gateAlertMessage ?? "")
+        }
     }
     
     private var marketSelectionStep: some View {
@@ -241,8 +258,8 @@ struct NewTradeFlowView: View {
                 VStack(spacing: 12) {
                     ForEach(marketsForSelection) { market in
                         TradeMarketSelectionCard(market: market) {
-                            withAnimation {
-                                selectedMarket = market
+                            Task {
+                                await selectMarket(market)
                             }
                         }
                     }
@@ -313,8 +330,18 @@ struct NewTradeFlowView: View {
         let isSelected = selectedAction == action
         let color: Color = action == .buy ? .profitGreen : .lossRed
         return Button {
-            withAnimation(ChartMotion.switchSpring) {
-                selectedAction = action
+            if action == .buy, let selectedMarket {
+                Task {
+                    if await canOpenBuyFlow(for: selectedMarket) {
+                        withAnimation(ChartMotion.switchSpring) {
+                            selectedAction = action
+                        }
+                    }
+                }
+            } else {
+                withAnimation(ChartMotion.switchSpring) {
+                    selectedAction = action
+                }
             }
         } label: {
             HStack(spacing: 6) {
@@ -330,6 +357,35 @@ struct NewTradeFlowView: View {
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)
+    }
+
+    private func selectMarket(_ market: TradeMarket) async {
+        guard await canOpenBuyFlow(for: market) else { return }
+        withAnimation {
+            selectedMarket = market
+        }
+    }
+
+    private func canOpenBuyFlow(for market: TradeMarket) async -> Bool {
+        guard selectedAction == .buy else { return true }
+        do {
+            let snapshot = try await PlusFeatureGate.loadSnapshot(userId: AppUser.id)
+            let decision = PlusFeatureGate.canOpenBuyFlow(
+                assetType: market.assetType,
+                snapshot: snapshot,
+                isPlusActive: subscriptionManager.isPlusActive
+            )
+            switch decision {
+            case .allowed:
+                return true
+            case .blocked(let reason):
+                gateAlertMessage = PlusFeatureGate.message(for: reason)
+                return false
+            }
+        } catch {
+            gateAlertMessage = "無法驗證 Free 上限：\(error.localizedDescription)"
+            return false
+        }
     }
 }
 
