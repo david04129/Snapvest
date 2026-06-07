@@ -114,7 +114,6 @@ struct AddAccountView: View {
             openAccountForm(accountType)
         case .blocked(let reason):
             gateAlertMessage = PlusFeatureGate.message(for: reason)
-            isPaywallPresented = true
         }
     }
 
@@ -134,7 +133,6 @@ struct AddAccountView: View {
             return true
         case .blocked(let reason):
             gateAlertMessage = PlusFeatureGate.message(for: reason)
-            isPaywallPresented = true
             return false
         }
     }

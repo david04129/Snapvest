@@ -329,27 +329,38 @@
 2. Xcode 選單：**Debug → StoreKit → Manage Transactions…**
    - 若選項是灰的：確認是用 Xcode **Run** 啟動的 App
 3. 在列表找到 `walleaf.plus.monthly` 或 `walleaf.plus.yearly`
-4. 對該筆按 **Expire**（過期）或 **Refund**（退款）
+4. 選中訂閱交易 → 按 **Refund**（退款，模擬訂閱結束；**Xcode 沒有 Expire 按鈕**）
+   - 若 Refund 後 entitlement 還在：改試 **Delete** 刪除該筆交易，或見下方「其他作法」
 5. 回到 App：**切到背景再回前景**，或完全關掉 App 重開
 
-- [ ] **11-E-1** Manage Transactions 成功找到並 **Expire** 訂閱
+- [ ] **11-E-1** Manage Transactions 成功找到並 **Refund**（或 Delete）訂閱
 - [ ] **11-E-2** 過期後 **Plus 功能關閉**（備份／還原／匯入／Face ID 再被擋）
 - [ ] **11-E-3** **Face ID 自動關閉**（若過期前有開）
 - [ ] **11-E-4** **帳戶、持股、交易、走勢資料仍在**（沒被刪）
 - [ ] **11-E-5** 若仍超 Free 上限 → **合規橫幅** 再次出現、買入仍被擋
 
-**另選：Time Rate 加速**（測試用／自然過期，不必手動 Expire）
+**其他作法（沒有 Expire 時）**：
+
+| 作法 | 路徑 | 用途 |
+|------|------|------|
+| **Refund** | Manage Transactions → 選交易 → Refund | **最常用**：模擬退款／訂閱失效 |
+| **Delete** | Manage Transactions → 選交易 → Delete（或刪除圖示） | 移除交易紀錄， entitlement 應消失；可重測試用 |
+| **Don't Renew** | Manage Transactions → **＋** 新增訂閱 → 選 **Don't Renew** | 只買一個週期、不自動續訂，等 renewal rate 跑完 |
+| **Time Rate** | 點 `WalleafPlus.storekit` → Editor → **Subscription Renewal Rate**；或 Debug → StoreKit → Time Rate | 加速時間，等試用／訂閱自然到期 |
+| **Decline 漲價** | 選訂閱 → Request Price Increase Consent → **Decline** | 模擬使用者拒絕漲價而**取消訂閱** |
+
+**另選：Time Rate 加速**（測試 7 天試用結束，不必手動 Refund）
 
 - Debug → StoreKit → **Time Rate** → 例如 1 month = 5 minutes
 - 購買含 7 天試用方案後等待試用結束（時間較長，可另日測）
 
 #### F. 恢復購買
 
-- [ ] **11-F-1** 在 **Expire 後**（或刪 App 重裝後），Paywall 點 **恢復購買**
+- [ ] **11-F-1** 在 **Refund 後**（或刪 App 重裝後），Paywall 點 **恢復購買**
 - [ ] **11-F-2** 若 StoreKit 仍有有效 entitlement → 恢復成功、Plus 功能再開
-- [ ] **11-F-3** 若已 Expire 且無有效訂閱 → 顯示「找不到可恢復的有效訂閱」類訊息（符合預期）
+- [ ] **11-F-3** 若已 Refund 且無有效訂閱 → 顯示「找不到可恢復的有效訂閱」類訊息（符合預期）
 
-> **注意**：Expire 後「恢復購買」可能無法恢復，需 **重新購買** 才會再變 Plus；兩種情況都算測到。
+> **注意**：Refund 後「恢復購買」通常**無法**恢復，需 **重新購買** 才會再變 Plus；兩種情況都算測到。
 
 #### G. 月訂路徑（可選，建議至少測一條）
 
@@ -368,7 +379,7 @@
 | 狀況 | 處理 |
 |------|------|
 | Manage Transactions 是灰的 | 用 Xcode Run 啟動；Scheme 已選 StoreKit 檔 |
-| Expire 後 Plus 還在 | App 切背景再回前景，或 Kill 重開 |
+| Refund 後 Plus 還在 | App 切背景再回前景，或 Kill 重開；仍不行就 **Delete** 交易 |
 | 找不到交易 | 先完成購買；Manage Transactions 視窗重新整理 |
 | 真機 | 本段只適用 **StoreKit Configuration + 模擬器**；真機改 #32 Sandbox |
 
@@ -383,7 +394,7 @@
 3. 依清單 **A → B → C → D → E → F** 順序測
 4. 全部 `[x]` 後，P1 的 **#11** 打勾
 
-**StoreKit 過期**：Debug → StoreKit → Manage Transactions → **Expire**
+**StoreKit 訂閱結束**：Debug → StoreKit → Manage Transactions → 選訂閱 → **Refund**（或 Delete）
 
 **StoreKit 加速**：Debug → StoreKit → Time Rate
 
