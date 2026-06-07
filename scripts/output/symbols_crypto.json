@@ -1,6 +1,6 @@
 {
-  "version": 8,
-  "updatedAt": "2026-06-01",
+  "version": 9,
+  "updatedAt": "2026-06-07",
   "source": "coingecko_markets_top_500",
   "items": [
     {
@@ -79,6 +79,11 @@
       "coingeckoId": "aioz-network"
     },
     {
+      "symbol": "aipf",
+      "name": "AI Powered Finance",
+      "coingeckoId": "ai-powered-finance"
+    },
+    {
       "symbol": "akt",
       "name": "Akash Network",
       "coingeckoId": "akash-network"
@@ -92,6 +97,11 @@
       "symbol": "algo",
       "name": "Algorand",
       "coingeckoId": "algorand"
+    },
+    {
+      "symbol": "allo",
+      "name": "Allora",
+      "coingeckoId": "allora"
     },
     {
       "symbol": "amp",
@@ -112,6 +122,11 @@
       "symbol": "apes",
       "name": "APES",
       "coingeckoId": "apes-2-2"
+    },
+    {
+      "symbol": "apr",
+      "name": "aPriori",
+      "coingeckoId": "apriori"
     },
     {
       "symbol": "apt",
@@ -359,6 +374,11 @@
       "coingeckoId": "swissborg"
     },
     {
+      "symbol": "bp",
+      "name": "Backpack",
+      "coingeckoId": "backpack"
+    },
+    {
       "symbol": "brett",
       "name": "Brett",
       "coingeckoId": "based-brett"
@@ -397,6 +417,11 @@
       "symbol": "btt",
       "name": "BitTorrent",
       "coingeckoId": "bittorrent"
+    },
+    {
+      "symbol": "btw",
+      "name": "Bitway",
+      "coingeckoId": "bitway"
     },
     {
       "symbol": "bty",
@@ -479,6 +504,11 @@
       "coingeckoId": "chainopera-ai"
     },
     {
+      "symbol": "coco",
+      "name": "coco",
+      "coingeckoId": "coco-2"
+    },
+    {
       "symbol": "comp",
       "name": "Compound",
       "coingeckoId": "compound-governance-token"
@@ -557,6 +587,11 @@
       "symbol": "deep",
       "name": "DeepBook",
       "coingeckoId": "deep"
+    },
+    {
+      "symbol": "degen",
+      "name": "Degen",
+      "coingeckoId": "degen-base"
     },
     {
       "symbol": "dexe",
@@ -702,11 +737,6 @@
       "symbol": "eutbl",
       "name": "Spiko EU T-Bills Money Market Fund",
       "coingeckoId": "eutbl"
-    },
-    {
-      "symbol": "ev",
-      "name": "Everything",
-      "coingeckoId": "everything"
     },
     {
       "symbol": "exod",
@@ -929,6 +959,11 @@
       "coingeckoId": "htx-dao"
     },
     {
+      "symbol": "huma",
+      "name": "Huma Finance",
+      "coingeckoId": "huma-finance"
+    },
+    {
       "symbol": "hype",
       "name": "Hyperliquid",
       "coingeckoId": "hyperliquid"
@@ -994,6 +1029,11 @@
       "coingeckoId": "jasmycoin"
     },
     {
+      "symbol": "jct",
+      "name": "Janction",
+      "coingeckoId": "janction"
+    },
+    {
       "symbol": "jellyjelly",
       "name": "Jelly-My-Jelly",
       "coingeckoId": "jelly-my-jelly"
@@ -1022,11 +1062,6 @@
       "symbol": "jupusd",
       "name": "JupUSD",
       "coingeckoId": "jupusd"
-    },
-    {
-      "symbol": "jusd",
-      "name": "JUSD",
-      "coingeckoId": "jusd"
     },
     {
       "symbol": "kag",
@@ -1062,6 +1097,11 @@
       "symbol": "kcs",
       "name": "KuCoin",
       "coingeckoId": "kucoin-shares"
+    },
+    {
+      "symbol": "kgen",
+      "name": "KGeN",
+      "coingeckoId": "kgen"
     },
     {
       "symbol": "kite",
@@ -1199,6 +1239,11 @@
       "coingeckoId": "melania-meme"
     },
     {
+      "symbol": "meme",
+      "name": "Memecoin",
+      "coingeckoId": "memecoin-2"
+    },
+    {
       "symbol": "met",
       "name": "Meteora",
       "coingeckoId": "meteora"
@@ -1219,6 +1264,11 @@
       "coingeckoId": "midas-mf-one"
     },
     {
+      "symbol": "mhorse",
+      "name": "MEME HORSE",
+      "coingeckoId": "meme-horse"
+    },
+    {
       "symbol": "mina",
       "name": "Mina Protocol",
       "coingeckoId": "mina-protocol"
@@ -1229,11 +1279,6 @@
       "coingeckoId": "mantle"
     },
     {
-      "symbol": "moca",
-      "name": "Moca Network",
-      "coingeckoId": "mocaverse"
-    },
-    {
       "symbol": "mog",
       "name": "Mog Coin",
       "coingeckoId": "mog-coin"
@@ -1242,11 +1287,6 @@
       "symbol": "mon",
       "name": "Monad",
       "coingeckoId": "monad"
-    },
-    {
-      "symbol": "moodeng",
-      "name": "Moo Deng",
-      "coingeckoId": "moo-deng"
     },
     {
       "symbol": "morpho",
@@ -1379,6 +1419,11 @@
       "coingeckoId": "okb"
     },
     {
+      "symbol": "omi",
+      "name": "ECOMI",
+      "coingeckoId": "ecomi"
+    },
+    {
       "symbol": "ondo",
       "name": "Ondo",
       "coingeckoId": "ondo-finance"
@@ -1407,11 +1452,6 @@
       "symbol": "ordi",
       "name": "ORDI",
       "coingeckoId": "ordinals"
-    },
-    {
-      "symbol": "ore",
-      "name": "ORE",
-      "coingeckoId": "ore"
     },
     {
       "symbol": "ousg",
@@ -1484,11 +1524,6 @@
       "coingeckoId": "na-post-settlement-legal-financing-receivables"
     },
     {
-      "symbol": "pci",
-      "name": "Paycoin",
-      "coingeckoId": "pay-coin"
-    },
-    {
       "symbol": "peaq",
       "name": "peaq",
       "coingeckoId": "peaq-2"
@@ -1549,16 +1584,6 @@
       "coingeckoId": "polymesh"
     },
     {
-      "symbol": "popcat",
-      "name": "Popcat",
-      "coingeckoId": "popcat"
-    },
-    {
-      "symbol": "prespax",
-      "name": "SpaceX (Republic Pre-IPO)",
-      "coingeckoId": "spacex-republic-pre-ipo"
-    },
-    {
       "symbol": "prime",
       "name": "PRIME",
       "coingeckoId": "hastra-prime"
@@ -1614,11 +1639,6 @@
       "coingeckoId": "quant-network"
     },
     {
-      "symbol": "qqqon",
-      "name": "Invesco QQQ ETF (Ondo Tokenized ETF)",
-      "coingeckoId": "invesco-qqq-etf-ondo-tokenized-etf"
-    },
-    {
       "symbol": "qrl",
       "name": "Quantum Resistant Ledger",
       "coingeckoId": "quantum-resistant-ledger"
@@ -1659,24 +1679,9 @@
       "coingeckoId": "reallink"
     },
     {
-      "symbol": "red",
-      "name": "RedStone",
-      "coingeckoId": "redstone-oracles"
-    },
-    {
-      "symbol": "rekt",
-      "name": "Rekt",
-      "coingeckoId": "rekt-4"
-    },
-    {
       "symbol": "render",
       "name": "Render",
       "coingeckoId": "render-token"
-    },
-    {
-      "symbol": "req",
-      "name": "Request",
-      "coingeckoId": "request-network"
     },
     {
       "symbol": "reusd",
@@ -1702,6 +1707,11 @@
       "symbol": "rlusd",
       "name": "Ripple USD",
       "coingeckoId": "ripple-usd"
+    },
+    {
+      "symbol": "robo",
+      "name": "Fabric Protocol",
+      "coingeckoId": "robo-token-2"
     },
     {
       "symbol": "ron",
@@ -1829,24 +1839,9 @@
       "coingeckoId": "solstice"
     },
     {
-      "symbol": "sn120",
-      "name": "affine",
-      "coingeckoId": "affine"
-    },
-    {
       "symbol": "sn4",
       "name": "Targon",
       "coingeckoId": "targon"
-    },
-    {
-      "symbol": "sn44",
-      "name": "Score",
-      "coingeckoId": "score"
-    },
-    {
-      "symbol": "sn51",
-      "name": "lium",
-      "coingeckoId": "celium"
     },
     {
       "symbol": "sn64",
@@ -1882,6 +1877,11 @@
       "symbol": "spx",
       "name": "SPX6900",
       "coingeckoId": "spx6900"
+    },
+    {
+      "symbol": "spyon",
+      "name": "SPDR S&P 500 ETF (Ondo Tokenized ETF)",
+      "coingeckoId": "spdr-s-p-500-etf-ondo-tokenized-etf"
     },
     {
       "symbol": "stable",
@@ -2099,6 +2099,11 @@
       "coingeckoId": "unitywallet-token"
     },
     {
+      "symbol": "up",
+      "name": "Unitas",
+      "coingeckoId": "unitas"
+    },
+    {
       "symbol": "upump",
       "name": "Unit Pump",
       "coingeckoId": "unit-pump"
@@ -2159,11 +2164,6 @@
       "coingeckoId": "global-dollar"
     },
     {
-      "symbol": "usdgo",
-      "name": "USDGO",
-      "coingeckoId": "usdgo"
-    },
-    {
       "symbol": "usdkg",
       "name": "USDKG",
       "coingeckoId": "usdkg"
@@ -2215,7 +2215,7 @@
     },
     {
       "symbol": "ustb",
-      "name": "Superstate Short Duration U.S. Government Securities Fund (USTB)",
+      "name": "Invesco Short Duration US Government Securities Fund",
       "coingeckoId": "superstate-short-duration-us-government-securities-fund-ustb"
     },
     {
@@ -2254,6 +2254,11 @@
       "coingeckoId": "velo"
     },
     {
+      "symbol": "velvet",
+      "name": "Velvet",
+      "coingeckoId": "velvet"
+    },
+    {
       "symbol": "vet",
       "name": "VeChain",
       "coingeckoId": "vechain"
@@ -2267,11 +2272,6 @@
       "symbol": "vsn",
       "name": "Vision",
       "coingeckoId": "vision-3"
-    },
-    {
-      "symbol": "vtho",
-      "name": "VeThor",
-      "coingeckoId": "vethor-token"
     },
     {
       "symbol": "vvs",
