@@ -59,15 +59,11 @@ a:hover {
   font-size: 1.15rem;
 }
 
-.brand-mark {
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 11px;
-  background: linear-gradient(135deg, #7ed957, #f2c078);
-  color: #ffffff;
-  font-weight: 900;
+.brand-logo {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  object-fit: cover;
   box-shadow: 0 8px 18px rgba(75, 159, 74, 0.22);
 }
 
