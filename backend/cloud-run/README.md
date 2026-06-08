@@ -34,7 +34,6 @@ Secret 請先在 Secret Manager 建立，並授權 Cloud Run service account。
 | snapvest-intraday-us | `America/New_York` | `*/15 9-15 * * 1-5` | `--mode intraday --markets us` |
 | snapvest-close-tw | `Asia/Taipei` | `0 14 * * 1-5` | `--mode close --markets tw` |
 | snapvest-close-us | `America/New_York` | `5 16 * * 1-5` | `--mode close --markets us` |
-| snapvest-close-us-late | `America/New_York` | `30 16 * * 1-5` | `--mode close --markets us` |
 | snapvest-crypto-hourly | `Asia/Taipei` | `0 * * * *` | `--mode crypto_hourly`（**00:00 台北** 另寫昨日 `asset_price_history`） |
 | snapvest-calendar | `Asia/Taipei` | `0 6 * * *` | `--mode calendar` |
 | snapvest-exchange | `Asia/Taipei` | `5 14 * * 1-5` | `--mode exchange`（可併入 close-tw，二擇一） |
