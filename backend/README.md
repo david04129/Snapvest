@@ -51,15 +51,18 @@ python daily_price_update.py --markets us
 python daily_price_update.py --markets crypto
 ```
 
-### 排程（GitHub Actions：`.github/workflows/daily-price-update.yml`）
+### 排程（Cloud Run + Cloud Scheduler）
 
-| 台灣時間 | 星期 | 內容 |
-|----------|------|------|
-| 16:00 | 週一～五 | 匯率 + 台股 + 加密 |
-| 16:00 | 週六、週日 | 僅加密 |
-| 07:00 | 週二～六 | 僅美股 |
+台股、加密、匯率排程使用台灣時間；美股排程使用 `America/New_York`，由 Cloud Scheduler 自動處理夏令／冬令。腳本寫入 Supabase 的 `updated_at` 仍使用台灣時間。
 
-手動觸發（Actions → Run workflow）會跑完整更新（匯率 + 全部市場）。
+| 時間 | 時區／星期 | 內容 |
+|------|-----------|------|
+| 14:00 | 台灣，週一～五 | 台股收盤價 |
+| 14:05 | 台灣，週一～五 | 匯率 |
+| 每小時 | 台灣，每日 | 加密 snapshots（00:00 另寫昨日 history） |
+| 16:05、16:30 | 紐約，美股交易日 | 美股收盤價 |
+
+手動觸發（Actions → Run workflow）保留為備援，會跑完整更新（匯率 + 全部市場）。
 
 ## 三、新增股票即時取價（Edge Function）
 

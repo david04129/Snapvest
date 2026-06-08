@@ -26,19 +26,20 @@ gcloud run jobs create snapvest-price-job \
 
 Secret 請先在 Secret Manager 建立，並授權 Cloud Run service account。
 
-## Cloud Scheduler（台灣時間）
+## Cloud Scheduler
 
-| Job 名稱 | Cron | 指令覆寫 args |
-|----------|------|-------------|
-| snapvest-intraday-tw | `*/15 9-13 * * 1-5` | `--mode intraday --markets tw` |
-| snapvest-intraday-us | `*/15 22-23,0-5 * * 1-5` | `--mode intraday --markets us` |
-| snapvest-close-tw | `0 14 * * 1-5` | `--mode close --markets tw` |
-| snapvest-close-us | `0 7 * * 2-6` | `--mode close --markets us` |
-| snapvest-crypto-hourly | `0 * * * *` | `--mode crypto_hourly`（**00:00 台北** 另寫昨日 `asset_price_history`） |
-| snapvest-calendar | `0 6 * * *` | `--mode calendar` |
-| snapvest-exchange | `5 14 * * 1-5` | `--mode exchange`（可併入 close-tw，二擇一） |
+| Job 名稱 | Time zone | Cron | 指令覆寫 args |
+|----------|-----------|------|-------------|
+| snapvest-intraday-tw | `Asia/Taipei` | `*/15 9-13 * * 1-5` | `--mode intraday --markets tw` |
+| snapvest-intraday-us | `America/New_York` | `*/15 9-15 * * 1-5` | `--mode intraday --markets us` |
+| snapvest-close-tw | `Asia/Taipei` | `0 14 * * 1-5` | `--mode close --markets tw` |
+| snapvest-close-us | `America/New_York` | `5 16 * * 1-5` | `--mode close --markets us` |
+| snapvest-close-us-late | `America/New_York` | `30 16 * * 1-5` | `--mode close --markets us` |
+| snapvest-crypto-hourly | `Asia/Taipei` | `0 * * * *` | `--mode crypto_hourly`（**00:00 台北** 另寫昨日 `asset_price_history`） |
+| snapvest-calendar | `Asia/Taipei` | `0 6 * * *` | `--mode calendar` |
+| snapvest-exchange | `Asia/Taipei` | `5 14 * * 1-5` | `--mode exchange`（可併入 close-tw，二擇一） |
 
-夏令時間美股 cron 需手動微調。Job 內已用 `market_session` 在非盤中 skip。
+美股排程使用 `America/New_York`，由 Cloud Scheduler 自動處理夏令／冬令；寫入 Supabase 的 `updated_at` 仍由腳本以台灣時間產生。Job 內也會用 `market_session` 在非盤中 skip。
 
 **台股（盤中／收盤）**：Fugle `intraday/quote` → `current_price_source=fugle`。需 Secret **`FUGLE_API_KEY`**。匯率／交易日曆仍用 **`FINMIND_TOKEN`**。
 

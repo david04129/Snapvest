@@ -4,7 +4,7 @@
 → 計算總資產／淨資產 → upsert user_daily_snapshots
 
 排程語意（台灣 00:05）：結算「前一日」淨值（例：5/26 00:05 → snapshot_date=5/25）。
-美股股價沿用最近一次 07:00 更新（accept lag 一個美股交易日）。
+美股股價沿用最近一次美股 close job（紐約 16:05 / 16:30，寫入時間仍為台灣時間）。
 
 用法:
   export SUPABASE_URL=...

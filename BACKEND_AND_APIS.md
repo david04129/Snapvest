@@ -120,10 +120,10 @@
    → 可能觸發 fetchOrCreatePrice，寫入 DB 後回傳
 ```
 
-### 4. 後端：每日批量更新（GitHub Actions）
+### 4. 後端：批量更新（Cloud Run + Cloud Scheduler）
 
 ```
-分時自動觸發（台灣時間：週一～五 16:00 匯率+台股+加密；週六日 16:00 加密；週二～六 07:00 美股）
+分時自動觸發（台股／加密／匯率用台灣時間；美股用 America/New_York，自動處理夏令／冬令）
          │
          ▼
 daily_price_update.py
@@ -174,11 +174,11 @@ daily_price_update.py
         TWSE / Finnhub / Yahoo / CoinGecko
 
 
-        每日 16:00
+        Cloud Scheduler
               │
               ▼
         ┌──────────────────────┐
-        │ GitHub Actions       │
+        │ Cloud Run Job        │
         │ daily_price_update   │
         └──────────────────────┘
                    │
@@ -205,15 +205,15 @@ daily_price_update.py
 
 ### 2. GitHub Repository
 
-- **用途**：程式碼版控、GitHub Actions 排程
-- **連結**：程式碼 push 到 GitHub，GitHub Actions 依排程執行每日股價更新
+- **用途**：程式碼版控、低頻手動備援 workflow
+- **連結**：程式碼 push 到 GitHub；股價主排程由 Cloud Scheduler 觸發 Cloud Run Job
 
 ### 3. GitHub Actions
 
 | 項目 | 說明 |
 |------|------|
 | **Workflow** | `.github/workflows/daily-price-update.yml` |
-| **觸發** | 三組 cron（見 workflow 註解）、或手動 Run workflow（完整更新） |
+| **觸發** | 手動 Run workflow（完整更新備援）；正式股價排程改由 Cloud Run + Cloud Scheduler |
 | **工作** | 執行 `python backend/scripts/daily_price_update.py` |
 | **Secrets** | 需在 repo Settings > Secrets 設定 `SUPABASE_URL`、`SUPABASE_SERVICE_ROLE_KEY` |
 

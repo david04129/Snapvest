@@ -235,15 +235,15 @@ App 每次產生 / 儲存 `HomeDashboardSnapshot` 都會覆蓋今天的本機 da
 
 ## 每日／每月自動排程總表
 
-以下時間皆為 **台灣時間（UTC+8）**。  
-**盤中每 15 分鐘**、**加密每小時**由 [Cloud Run](./backend/cloud-run/README.md) 執行 `daily_price_update.py --mode …`（見 [MARKET_PRICE_AND_SESSION_SPEC.md](./MARKET_PRICE_AND_SESSION_SPEC.md)）。
+除美股 Cloud Scheduler 使用 **America/New_York** 外，以下時間皆為 **台灣時間（UTC+8）**。  
+**盤中每 15 分鐘**、**加密每小時**由 [Cloud Run](./backend/cloud-run/README.md) 執行 `daily_price_update.py --mode …`（見 [MARKET_PRICE_AND_SESSION_SPEC.md](./MARKET_PRICE_AND_SESSION_SPEC.md)）。腳本寫入 Supabase 的 `updated_at` 仍使用台灣時間。
 
 ### Cloud Run（主排程）
 
 | 模式 | 頻率 | 更新範圍 | 寫入 |
 |------|------|----------|------|
 | `intraday` | 台／美盤中每 15 分 | `tracked_symbols` | 僅 `asset_price_snapshots`（`price_kind=intraday`） |
-| `close` | 台 14:00、美 07:00 | `tracked_symbols` | snapshots + **`asset_price_history`（收盤價）** |
+| `close` | 台 14:00、美股紐約 16:05 與 16:30 | `tracked_symbols` | snapshots + **`asset_price_history`（收盤價）** |
 | `crypto_hourly` | 每小時（**00:00** 另寫昨日 history） | tracked 加密 | snapshots；00:00 另寫 **`asset_price_history`（`price_date`＝昨日）** |
 | `exchange` | 每日 1 次 | 6 幣匯率 | `exchange_rates` |
 | `calendar` | 每日 06:00 | — | `market_calendar` |
@@ -254,7 +254,7 @@ App 每次產生 / 儲存 `HomeDashboardSnapshot` 都會覆蓋今天的本機 da
 |------|---------------|--------|--------|
 | **週一～五 18:00** | [Daily Price Update](./.github/workflows/daily-price-update.yml) | `close`（tracked_symbols 備援） | Supabase |
 | **週六、日 18:00** | 同上 | 只更新加密 | Supabase |
-| **週二～六 07:00** | 同上 | 只更新美股 | Supabase |
+| **美股交易日 16:05、16:30（紐約）** | Cloud Run | 只更新美股收盤價 | Supabase |
 
 #### 一天時間軸（平日）
 
@@ -262,8 +262,8 @@ App 每次產生 / 儲存 `HomeDashboardSnapshot` 都會覆蓋今天的本機 da
 06:00  同步交易日曆（market_calendar）
 09:00–13:30  台股盤中每 15 分（tracked → snapshots）
 14:00  台股收盤價 + 匯率 → snapshots + history
-22:30–05:00  美股盤中每 15 分
-07:00  美股收盤價 → snapshots + history
+美股 09:30–15:45（紐約）  美股盤中每 15 分
+美股 16:05、16:30（紐約）  美股收盤價 → snapshots + history
 每小時  加密 snapshots；**00:00** 加密寫昨日 history
 App 啟動／下拉 → 只讀 DB（fetch-prices-batch）
 ```
@@ -273,7 +273,7 @@ App 啟動／下拉 → 只讀 DB（fetch-prices-batch）
 ```
 週六 18:00  只更新加密
 週日 18:00  只更新加密
-（美股／台股週末不開盤，週一 07:00 / 18:00 再更新）
+（美股／台股週末不開盤；美股下一個交易日紐約 16:05 / 16:30 再更新）
 ```
 
 ### 每月
