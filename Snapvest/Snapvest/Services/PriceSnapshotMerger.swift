@@ -126,11 +126,22 @@ enum PriceSnapshotMerger {
         let source: String?
     }
 
-    /// 盤中 sync 只更新 current；昨收保留 history／fetch-or-create，忽略 DB 滾動 previous。
+    /// 盤中 sync 只更新 current；前收以 batch 依 history 算出的 incoming 為準，忽略 DB 滾動 previous。
     private static func resolvedPreviousFields(
         incoming: AssetPriceSnapshot,
         existing: AssetPriceSnapshot
     ) -> ResolvedPrevious {
+        if DailyReferenceCloseResolver.isHistoryBackedPreviousSource(incoming.previousPriceSource),
+           let price = incoming.previousPrice,
+           price > 0 {
+            return ResolvedPrevious(
+                price: price,
+                closeDate: incoming.previousCloseDate,
+                updatedAt: incoming.previousUpdatedAt,
+                source: incoming.previousPriceSource
+            )
+        }
+
         if let trusted = DailyReferenceCloseResolver.trustedSnapshotReference(from: existing) {
             return ResolvedPrevious(
                 price: trusted.price,
@@ -148,17 +159,6 @@ enum PriceSnapshotMerger {
                 closeDate: incoming.previousCloseDate,
                 updatedAt: incoming.previousUpdatedAt,
                 source: incoming.previousPriceSource
-            )
-        }
-
-        if DailyReferenceCloseResolver.isTrustedPreviousSource(existing.previousPriceSource),
-           let price = existing.previousPrice,
-           price > 0 {
-            return ResolvedPrevious(
-                price: price,
-                closeDate: existing.previousCloseDate,
-                updatedAt: existing.previousUpdatedAt,
-                source: existing.previousPriceSource
             )
         }
 

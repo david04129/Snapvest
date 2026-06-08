@@ -143,7 +143,7 @@ struct AssetPriceSnapshot: Identifiable, Codable, Equatable {
         currentPrice != nil
     }
 
-    /// 遠端 DB 滾動的 previous 不可信；僅保留 fetch-or-create 的 bootstrap 昨收。
+    /// 遠端 DB 滾動的 previous 不可信；僅保留 history 或 fetch-or-create bootstrap 前收。
     nonisolated static func fromRemote(
         assetType: AssetType,
         symbol: String,
@@ -159,7 +159,7 @@ struct AssetPriceSnapshot: Identifiable, Codable, Equatable {
         previousPriceSource: String?,
         priceKind: AssetPriceKind?
     ) -> AssetPriceSnapshot {
-        let trustedPrevious = DailyReferenceCloseResolver.isBootstrapPreviousSource(previousPriceSource)
+        let trustedPrevious = DailyReferenceCloseResolver.isTrustedPreviousSource(previousPriceSource)
         return AssetPriceSnapshot(
             assetType: assetType,
             symbol: symbol,

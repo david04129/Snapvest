@@ -195,7 +195,14 @@ Snapvest 用 Supabase 當「**會變動資料的倉庫**」：
 | 缺價時即時抓 | 同上 → 呼叫 Edge Function | 寫入後回傳 |
 | 匯率 | [PriceService.swift](./Snapvest/Snapvest/Services/PriceService.swift) 等 | `exchange_rates` |
 
-`fetch-prices-batch` 是目前價與補點歷史價的主路徑：App 一次提交所有持股 symbol 與可選日期區間，回收 compact maps / matrix（current、history、fx）。DEBUG build 會在 Xcode Console 印出 `[SupabasePriceService] batch request ...`、`batch response ...`、`fetchPrices using batch ...`；若 batch function 失敗或沒有 current snapshots，才會印出 fallback 並退回舊的逐檔 REST 查詢。
+`fetch-prices-batch` 是目前價、前收與補點歷史價的主路徑：App 一次提交所有持股 symbol 與可選日期區間，回收 compact maps / matrix（current、previous、history、fx）。DEBUG build 會在 Xcode Console 印出 `[SupabasePriceService] batch request ...`、`batch response ...`、`fetchPrices using batch ...`；若 batch function 失敗或沒有 current snapshots，才會印出 fallback 並退回舊的逐檔 REST 查詢。
+
+前收規則：
+
+- `asset_price_snapshots.current_price` 是現價，可為盤中價或最近一次收盤價。
+- `asset_price_snapshots.previous_price` 只作為 `current_price` 缺失時的顯示 fallback，不作今日漲跌／今日損益的真相來源。
+- App 的前收由 `asset_price_history` 決定：以市場／`current_close_date` 分組，先找 `price_date < current_close_date` 的最大 `price_date`，再批次取使用者持有 symbols 在該日的 `close_price`。
+- 只要 `current_close_date` 沒換交易日，盤中下拉刷新只更新 current，不需要重新決定前收日期；當 `current_close_date` 從 6/8 進到 6/9，前收才從 6/5 切到 6/8。
 
 ### App 從本機讀
 
@@ -337,6 +344,7 @@ Snapvest 有 **三條抓價路線**：
 **回傳方式：**
 
 - `current`：`asset_type:symbol -> price`
+- `previous`：由 `asset_price_history` 依市場 `current_close_date` 找出的前收，並以 `previousSources = asset_price_history` 標記。
 - `history`：`asset_type:symbol -> [prices aligned to dates]`
 - `fx`：例如 `USD:TWD`
 - 缺失價格保留 `null`，App 端再做前值延續。
@@ -358,7 +366,7 @@ supabase functions deploy fetch-prices-batch --no-verify-jwt
 
 **程式位置：** [backend/supabase/functions/fetch-or-create-price/index.ts](./backend/supabase/functions/fetch-or-create-price/index.ts)
 
-台股／美股自 Yahoo `range=5d` 取現價與昨收（`chartPreviousClose` 或倒數第二根日 K），寫入 `previous_price` / `previous_close_date` 供新增標的日漲跌；不寫 `asset_price_history`。
+台股／美股自 Yahoo `range=5d` 取現價與前收（`chartPreviousClose` 或倒數第二根日 K），並將前收寫入 `asset_price_history`。`previous_price` / `previous_close_date` 僅保留為 snapshot fallback；日漲跌仍以 history-backed 前收為準。
 
 **什麼時候觸發？**  
 App 查 `asset_price_snapshots` 發現**沒有這檔的價格**時，會 POST 這支 Function。

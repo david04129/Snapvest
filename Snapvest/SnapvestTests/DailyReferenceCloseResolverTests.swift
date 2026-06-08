@@ -290,4 +290,38 @@ struct PriceSnapshotMergerTests {
         #expect(merged.previousCloseDate == TradingDayCalendar.date(fromKey: "2026-05-29", assetType: .stockUS))
         #expect(merged.previousPriceSource == DailyReferenceCloseResolver.historyPreviousCloseSource)
     }
+
+    @Test func merge_incomingHistoryPreviousOverridesStaleLocalHistoryPrevious() {
+        let existing = AssetPriceSnapshot(
+            assetType: .stockUS,
+            symbol: "GOOG",
+            currency: .USD,
+            currentPrice: 177,
+            previousPrice: 169,
+            currentCloseDate: TradingDayCalendar.date(fromKey: "2026-06-08", assetType: .stockUS),
+            previousCloseDate: TradingDayCalendar.date(fromKey: "2026-06-04", assetType: .stockUS),
+            currentPriceSource: "database",
+            previousPriceSource: DailyReferenceCloseResolver.historyPreviousCloseSource,
+            priceKind: .close
+        )
+        let incoming = AssetPriceSnapshot(
+            assetType: .stockUS,
+            symbol: "GOOG",
+            currency: .USD,
+            currentPrice: 178,
+            previousPrice: 174,
+            currentCloseDate: TradingDayCalendar.date(fromKey: "2026-06-08", assetType: .stockUS),
+            previousCloseDate: TradingDayCalendar.date(fromKey: "2026-06-05", assetType: .stockUS),
+            currentPriceSource: "database",
+            previousPriceSource: DailyReferenceCloseResolver.historyPreviousCloseSource,
+            priceKind: .close
+        )
+
+        let merged = PriceSnapshotMerger.merge(incoming: incoming, existing: existing)
+
+        #expect(merged.currentPrice == 178)
+        #expect(merged.previousPrice == 174)
+        #expect(merged.previousCloseDate == TradingDayCalendar.date(fromKey: "2026-06-05", assetType: .stockUS))
+        #expect(merged.previousPriceSource == DailyReferenceCloseResolver.historyPreviousCloseSource)
+    }
 }

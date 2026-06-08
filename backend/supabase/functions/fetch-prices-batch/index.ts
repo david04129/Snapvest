@@ -97,6 +97,85 @@ function compactRows<T extends { asset_type?: string; symbol?: string }>(
   })
 }
 
+type PreviousCloseGroup = {
+  assetType: string
+  currentDate: string
+  symbols: string[]
+}
+
+async function previousCloseDateForGroup(
+  supabase: ReturnType<typeof createClient>,
+  group: PreviousCloseGroup,
+): Promise<string | null> {
+  const { data } = await supabase
+    .from("asset_price_history")
+    .select("price_date")
+    .eq("asset_type", group.assetType)
+    .in("symbol", group.symbols)
+    .lt("price_date", group.currentDate)
+    .order("price_date", { ascending: false })
+    .limit(1)
+
+  const priceDate = data?.[0]?.price_date
+  return typeof priceDate === "string" ? priceDate.slice(0, 10) : null
+}
+
+async function applyHistoryBackedPreviousCloses(
+  supabase: ReturnType<typeof createClient>,
+  symbols: NormalizedSymbol[],
+  current: Record<string, number | null>,
+  currentDates: Record<string, string | null>,
+  previous: Record<string, number | null>,
+  previousDates: Record<string, string | null>,
+  previousSources: Record<string, string | null>,
+  currencies: Record<string, string>,
+) {
+  const groups = new Map<string, PreviousCloseGroup>()
+  for (const s of symbols) {
+    if (current[s.key] == null) continue
+    const currentDate = currentDates[s.key]
+    if (!currentDate) continue
+    const groupKey = `${s.assetType}:${currentDate}`
+    const existing = groups.get(groupKey)
+    if (existing) {
+      existing.symbols.push(s.symbol)
+    } else {
+      groups.set(groupKey, {
+        assetType: s.assetType,
+        currentDate,
+        symbols: [s.symbol],
+      })
+    }
+  }
+
+  for (const group of groups.values()) {
+    group.symbols = [...new Set(group.symbols)]
+    const previousDate = await previousCloseDateForGroup(supabase, group)
+    if (!previousDate) continue
+
+    const { data } = await supabase
+      .from("asset_price_history")
+      .select("asset_type,symbol,price_date,close_price,currency")
+      .eq("asset_type", group.assetType)
+      .eq("price_date", previousDate)
+      .in("symbol", group.symbols)
+
+    for (const row of data ?? []) {
+      const assetType = String(row.asset_type ?? "")
+      const symbol = String(row.symbol ?? "")
+      const key = `${assetType}:${symbol}`
+      const closePrice = decimalNumber(row.close_price)
+      if (closePrice == null) continue
+      previous[key] = closePrice
+      previousDates[key] = previousDate
+      previousSources[key] = "asset_price_history"
+      if (typeof row.currency === "string" && row.currency.length > 0) {
+        currencies[key] = row.currency
+      }
+    }
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders })
 
@@ -188,6 +267,7 @@ serve(async (req) => {
     const previous: Record<string, number | null> = {}
     const currentDates: Record<string, string | null> = {}
     const previousDates: Record<string, string | null> = {}
+    const previousSources: Record<string, string | null> = {}
     const priceKind: Record<string, string | null> = {}
     const currentUpdatedAt: Record<string, string | null> = {}
     if (includeCurrent) {
@@ -196,6 +276,7 @@ serve(async (req) => {
         previous[s.key] = null
         currentDates[s.key] = null
         previousDates[s.key] = null
+        previousSources[s.key] = null
         priceKind[s.key] = null
         currentUpdatedAt[s.key] = null
       }
@@ -216,15 +297,24 @@ serve(async (req) => {
       for (const row of compactRows(data, requestedKeys)) {
         const key = `${row.asset_type}:${row.symbol}`
         current[key] = decimalNumber(row.current_price)
-        previous[key] = decimalNumber(row.previous_price)
         currentDates[key] = typeof row.current_close_date === "string" ? row.current_close_date.slice(0, 10) : null
-        previousDates[key] = typeof row.previous_close_date === "string" ? row.previous_close_date.slice(0, 10) : null
         priceKind[key] = typeof row.price_kind === "string" ? row.price_kind : null
         currentUpdatedAt[key] = typeof row.current_updated_at === "string" ? row.current_updated_at : null
         if (typeof row.currency === "string" && row.currency.length > 0) {
           currencies[key] = row.currency
         }
       }
+
+      await applyHistoryBackedPreviousCloses(
+        supabase,
+        symbols,
+        current,
+        currentDates,
+        previous,
+        previousDates,
+        previousSources,
+        currencies,
+      )
     }
 
     const dates = startDate && endDate ? dateKeysInclusive(startDate, endDate) : []
@@ -298,6 +388,7 @@ serve(async (req) => {
         previous,
         currentDates,
         previousDates,
+        previousSources,
         priceKind,
         currentUpdatedAt,
         currencies,

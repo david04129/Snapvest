@@ -64,6 +64,13 @@ python daily_price_update.py --markets crypto
 
 手動觸發（Actions → Run workflow）保留為備援，會跑完整更新（匯率 + 全部市場）。
 
+### 前收規則（App 今日漲跌 / 今日損益）
+
+- `current_price` 是現價，可為盤中價或最近一次收盤價。
+- `previous_price` 只作為 `current_price` 缺失時的顯示 fallback，不作前收真相來源。
+- App 批次讀價走 `fetch-prices-batch`；此 Function 會依市場與 `current_close_date`，從 `asset_price_history` 找 `price_date < current_close_date` 的最大日期，再批次回傳該日前收。
+- 盤中下拉刷新若 `current_close_date` 未改變，不需要重新決定前收日期；只有進到下一個交易日後，前收才會切到上一交易日收盤。
+
 ## 三、新增股票即時取價（Edge Function）
 
 當使用者新增一檔資料庫沒有的股票時，呼叫此 Function 即時取價並寫入 DB。

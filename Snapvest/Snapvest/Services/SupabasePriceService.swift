@@ -418,7 +418,7 @@ struct SupabasePriceService {
                     previousCloseDate: SupabaseRESTTimestampParser.parseCloseDate(decoded.previousDates[key]?.stringValue),
                     previousUpdatedAt: nil,
                     currentPriceSource: nil,
-                    previousPriceSource: nil,
+                    previousPriceSource: decoded.previousSources[key]?.stringValue,
                     priceKind: decoded.priceKind[key]?.stringValue.flatMap(AssetPriceKind.init(rawValue:))
                 )
             )
@@ -1040,6 +1040,7 @@ private struct SupabasePriceBatchResponse: Decodable, Sendable {
     let previous: [String: SupabaseBatchDecimal]
     let currentDates: [String: SupabaseBatchString]
     let previousDates: [String: SupabaseBatchString]
+    let previousSources: [String: SupabaseBatchString]
     let priceKind: [String: SupabaseBatchString]
     let currentUpdatedAt: [String: SupabaseBatchString]
     let currencies: [String: String]
@@ -1048,7 +1049,7 @@ private struct SupabasePriceBatchResponse: Decodable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case dates, history, current, previous, currentDates, previousDates
-        case priceKind, currentUpdatedAt, currencies, fx, fxUpdatedAt
+        case previousSources, priceKind, currentUpdatedAt, currencies, fx, fxUpdatedAt
     }
 
     init(from decoder: Decoder) throws {
@@ -1059,6 +1060,7 @@ private struct SupabasePriceBatchResponse: Decodable, Sendable {
         previous = try container.decodeIfPresent([String: SupabaseBatchDecimal].self, forKey: .previous) ?? [:]
         currentDates = try container.decodeIfPresent([String: SupabaseBatchString].self, forKey: .currentDates) ?? [:]
         previousDates = try container.decodeIfPresent([String: SupabaseBatchString].self, forKey: .previousDates) ?? [:]
+        previousSources = try container.decodeIfPresent([String: SupabaseBatchString].self, forKey: .previousSources) ?? [:]
         priceKind = try container.decodeIfPresent([String: SupabaseBatchString].self, forKey: .priceKind) ?? [:]
         currentUpdatedAt = try container.decodeIfPresent([String: SupabaseBatchString].self, forKey: .currentUpdatedAt) ?? [:]
         currencies = try container.decodeIfPresent([String: String].self, forKey: .currencies) ?? [:]
