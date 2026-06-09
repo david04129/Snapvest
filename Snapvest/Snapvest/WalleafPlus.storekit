@@ -17,26 +17,29 @@
 
   ],
   "settings" : {
+    "_askToBuyEnabled" : false,
+    "_billingGracePeriodEnabled" : false,
+    "_billingIssuesEnabled" : false,
+    "_disableDialogs" : false,
     "_failTransactionsEnabled" : false,
-    "_locale" : "zh_Hant_TW",
+    "_locale" : "zh_Hans",
+    "_renewalBillingIssuesEnabled" : false,
     "_storefront" : "TWN",
     "_storeKitErrors" : [
       {
-        "current" : null,
         "enabled" : false,
         "name" : "Load Products"
       },
       {
-        "current" : null,
         "enabled" : false,
         "name" : "Purchase"
       },
       {
-        "current" : null,
         "enabled" : false,
         "name" : "Verification"
       }
-    ]
+    ],
+    "_timeRate" : 0
   },
   "subscriptionGroups" : [
     {
@@ -45,7 +48,7 @@
         {
           "description" : "解鎖備份還原、批量匯入、Face ID 與無上限帳戶／持倉。",
           "displayName" : "Walleaf Plus",
-          "locale" : "zh_Hant_TW"
+          "locale" : "zh_Hans"
         },
         {
           "description" : "Unlock backup, import, Face ID, and unlimited accounts and holdings.",
@@ -66,11 +69,12 @@
           "familyShareable" : false,
           "groupNumber" : 1,
           "internalID" : "6738000001",
+          "introductoryOffer" : null,
           "localizations" : [
             {
               "description" : "每月自動續訂，無免費試用。解鎖備份還原、批量匯入、Face ID 與無上限帳戶／持倉。",
               "displayName" : "按月訂閱",
-              "locale" : "zh_Hant_TW"
+              "locale" : "zh_Hans"
             },
             {
               "description" : "Renews monthly. No free trial. Unlock backup, import, Face ID, and unlimited usage.",
@@ -82,7 +86,10 @@
           "recurringSubscriptionPeriod" : "P1M",
           "referenceName" : "Walleaf Plus Monthly",
           "subscriptionGroupID" : "WALLEAF_PLUS_GROUP",
-          "type" : "RecurringSubscription"
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
         },
         {
           "adHocOffers" : [
@@ -105,7 +112,7 @@
             {
               "description" : "每年自動續訂。新訂閱享 7 天免費試用。解鎖備份還原、批量匯入、Face ID 與無上限帳戶／持倉。",
               "displayName" : "按年訂閱",
-              "locale" : "zh_Hant_TW"
+              "locale" : "zh_Hans"
             },
             {
               "description" : "Renews yearly. New subscribers get a 7-day free trial.",
@@ -117,7 +124,10 @@
           "recurringSubscriptionPeriod" : "P1Y",
           "referenceName" : "Walleaf Plus Yearly",
           "subscriptionGroupID" : "WALLEAF_PLUS_GROUP",
-          "type" : "RecurringSubscription"
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
         }
       ]
     }

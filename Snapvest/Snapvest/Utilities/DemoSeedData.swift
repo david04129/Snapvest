@@ -123,7 +123,7 @@ struct DemoSeedData {
         now: Date
     ) -> ([ManualAsset], [String: [ManualAssetValuation]]) {
         let specs: [(String, String, ManualAssetCategory, String, String, Bool)] = [
-            ("demo-manual-fund", "示範平衡基金", .fund, "150000", "135000", true),
+            ("demo-manual-fund", "基金", .fund, "150000", "135000", true),
             ("demo-manual-bond", "公司債券", .bond, "100000", "95000", true),
             ("demo-manual-gold", "實體黃金", .preciousMetal, "55000", "48000", false),
             ("demo-manual-collectible", "限量腕表", .collectible, "65000", "58000", false),

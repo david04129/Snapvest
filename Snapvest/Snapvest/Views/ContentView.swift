@@ -115,11 +115,13 @@ struct ContentView: View {
 
     @ViewBuilder
     private func demoModeBadgeOverlay() -> some View {
-        if demoMode.isEnabled {
-            DemoModeFloatingBadge { showsExitDemoModeAlert = true }
-                .padding(.trailing, 12)
-                .padding(.bottom, 52)
-        }
+        // Screenshot mode: temporarily hide the demo badge while capturing marketing images.
+        EmptyView()
+        // if demoMode.isEnabled {
+        //     DemoModeFloatingBadge { showsExitDemoModeAlert = true }
+        //         .padding(.trailing, 12)
+        //         .padding(.bottom, 52)
+        // }
     }
 
     @ViewBuilder
