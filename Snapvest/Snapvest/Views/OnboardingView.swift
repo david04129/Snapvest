@@ -241,6 +241,8 @@ private enum OnboardingLayout {
 private struct OnboardingPageView: View {
     let page: OnboardingPage
     let animate: Bool
+    
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         VStack(spacing: 26) {
@@ -267,7 +269,37 @@ private struct OnboardingPageView: View {
                 .multilineTextAlignment(.center)
                 .lineSpacing(4)
                 .padding(.horizontal, 6)
+            
+            if page.visual == .finale {
+                legalLinks
+            }
         }
+    }
+    
+    private var legalLinks: some View {
+        HStack(spacing: 8) {
+            legalLinkButton("免責聲明", url: AppExternalLinks.disclaimerURL)
+            separatorDot
+            legalLinkButton("隱私權政策", url: AppExternalLinks.privacyPolicyURL)
+            separatorDot
+            legalLinkButton("服務條款", url: AppExternalLinks.termsURL)
+        }
+        .font(.caption.weight(.semibold))
+        .frame(maxWidth: .infinity, alignment: .center)
+    }
+    
+    private func legalLinkButton(_ title: String, url: URL) -> some View {
+        Button(title) {
+            openURL(url)
+        }
+        .buttonStyle(.plain)
+        .foregroundColor(.secondaryText)
+        .underline()
+    }
+    
+    private var separatorDot: some View {
+        Text("·")
+            .foregroundColor(.tertiaryText)
     }
 
     @ViewBuilder
