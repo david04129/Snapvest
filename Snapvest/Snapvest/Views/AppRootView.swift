@@ -53,6 +53,16 @@ struct AppRootView: View {
             guard launchComplete else { return }
             privacyLock.handleLaunchComplete()
         }
+        .alert("Walleaf Plus 已到期", isPresented: Binding(
+            get: { subscriptionManager.plusExpiryNoticeMessage != nil },
+            set: { if !$0 { subscriptionManager.plusExpiryNoticeMessage = nil } }
+        )) {
+            Button("知道了", role: .cancel) {
+                subscriptionManager.plusExpiryNoticeMessage = nil
+            }
+        } message: {
+            Text(subscriptionManager.plusExpiryNoticeMessage ?? "")
+        }
     }
 
     @ViewBuilder

@@ -71,7 +71,11 @@ final class ThemeManager: ObservableObject {
     }
 
     private init() {
-        isDarkMode = UserDefaults.standard.bool(forKey: Self.darkModeStorageKey)
+        if UserDefaults.standard.object(forKey: Self.darkModeStorageKey) == nil {
+            isDarkMode = true
+        } else {
+            isDarkMode = UserDefaults.standard.bool(forKey: Self.darkModeStorageKey)
+        }
         isRedUpGreenDown = UserDefaults.standard.bool(forKey: Self.redUpStorageKey)
         if AppFeatureFlags.showsThemeStylePicker {
             if let raw = UserDefaults.standard.string(forKey: Self.styleStorageKey),

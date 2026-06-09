@@ -55,6 +55,17 @@ final class PrivacyLockManager: ObservableObject {
                 return .failure(message)
             }
         } else {
+            let result = await evaluateAuthentication(
+                reason: "關閉 Walleaf Face ID 隱私鎖",
+                policy: .deviceOwnerAuthenticationWithBiometrics
+            )
+            guard case .success = result else {
+                if case .failure(let message) = result {
+                    return .failure(message)
+                }
+                return .failure("驗證失敗，請再試一次。")
+            }
+
             isEnabled = false
             isLocked = false
             errorMessage = nil
@@ -130,10 +141,13 @@ final class PrivacyLockManager: ObservableObject {
     }
 
     /// Plus 到期後關閉隱私鎖，避免 Free 使用者被鎖在 App 外。
-    func forceDisableForSubscriptionLapse() {
+    @discardableResult
+    func forceDisableForSubscriptionLapse() -> Bool {
+        let wasEnabled = isEnabled
         isEnabled = false
         isLocked = false
         errorMessage = nil
+        return wasEnabled
     }
     
     private func unlockAfterProtectedPresentation() {
@@ -143,12 +157,15 @@ final class PrivacyLockManager: ObservableObject {
         }
     }
     
-    private func evaluateAuthentication(reason: String) async -> PrivacyLockAuthenticationResult {
+    private func evaluateAuthentication(
+        reason: String,
+        policy: LAPolicy = .deviceOwnerAuthentication
+    ) async -> PrivacyLockAuthenticationResult {
         let context = LAContext()
         context.localizedCancelTitle = "取消"
         
         var error: NSError?
-        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
+        guard context.canEvaluatePolicy(policy, error: &error) else {
             return .failure(authenticationMessage(for: error))
         }
         
@@ -156,7 +173,7 @@ final class PrivacyLockManager: ObservableObject {
         defer { isAuthenticating = false }
         
         do {
-            try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason)
+            try await context.evaluatePolicy(policy, localizedReason: reason)
             return .success
         } catch {
             return .failure(authenticationMessage(for: error as NSError))

@@ -31,9 +31,7 @@
         <h1>隨手開啟，掌握資產的成長</h1>
         <p class="lead">多帳戶一站式管理，資產走勢圖、圓餅圖、績效圖，讓你一目瞭然資產配置。支援多幣別轉換，並以隱私保護為核心設計。</p>
         <div class="actions">
-          <a class="app-store-link" href="mailto:support@walleafapp.com?subject=Walleaf%20App%20下載資訊" aria-label="Download on the App Store">
-            <img class="app-store-badge" src="/assets/app-store-download.png" alt="Download on the App Store">
-          </a>
+          <a class="button" href="mailto:support@walleafapp.com?subject=Walleaf%20App%20下載資訊">立即下載</a>
         </div>
       </div>
     </section>
@@ -71,11 +69,11 @@
           <div class="feature-carousel" data-carousel aria-label="Walleaf 配置與績效圖畫面">
             <div class="carousel-track" data-carousel-track tabindex="0">
               <figure class="carousel-slide is-active" data-carousel-slide>
-              <img src="/assets/app-home-pie-phone.png" alt="Walleaf 資產圓餅圖畫面">
+                <img src="/assets/app-home-pie-phone.png" alt="Walleaf 資產圓餅圖畫面">
                 <figcaption>資產配置</figcaption>
               </figure>
               <figure class="carousel-slide" data-carousel-slide>
-              <img src="/assets/app-home-performance-phone.png" alt="Walleaf 資產績效圖畫面">
+                <img src="/assets/app-home-performance-phone.png" alt="Walleaf 資產績效圖畫面">
                 <figcaption>績效比較</figcaption>
               </figure>
             </div>
@@ -177,11 +175,14 @@
       };
 
       const updateActiveFromScroll = () => {
-        const trackCenter = track.scrollLeft + track.clientWidth / 2;
+        const trackRect = track.getBoundingClientRect();
+        const trackCenter = trackRect.left + trackRect.width / 2;
         const activeIndex = slides.reduce((closestIndex, slide, index) => {
-          const slideCenter = slide.offsetLeft + slide.clientWidth / 2;
+          const slideRect = slide.getBoundingClientRect();
+          const slideCenter = slideRect.left + slideRect.width / 2;
           const closestSlide = slides[closestIndex];
-          const closestCenter = closestSlide.offsetLeft + closestSlide.clientWidth / 2;
+          const closestRect = closestSlide.getBoundingClientRect();
+          const closestCenter = closestRect.left + closestRect.width / 2;
           return Math.abs(slideCenter - trackCenter) < Math.abs(closestCenter - trackCenter)
             ? index
             : closestIndex;
@@ -195,10 +196,15 @@
         ticking = true;
         window.requestAnimationFrame(updateActiveFromScroll);
       });
+      track.addEventListener("scrollend", updateActiveFromScroll);
+      track.addEventListener("touchend", () => {
+        window.setTimeout(updateActiveFromScroll, 180);
+      });
 
       dots.forEach((dot, index) => {
         dot.addEventListener("click", () => {
-          slides[index].scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+          const targetLeft = slides[index].offsetLeft - (track.clientWidth - slides[index].offsetWidth) / 2;
+          track.scrollTo({ left: targetLeft, behavior: "smooth" });
           setActive(index);
         });
       });

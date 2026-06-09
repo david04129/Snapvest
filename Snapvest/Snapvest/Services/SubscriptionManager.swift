@@ -32,8 +32,10 @@ final class SubscriptionManager: ObservableObject {
     @Published private(set) var isPurchasing = false
     @Published private(set) var isRestoring = false
     @Published var statusMessage: String?
+    @Published var plusExpiryNoticeMessage: String?
 
     private var transactionUpdatesTask: Task<Void, Never>?
+    private static let lastKnownPlusActiveKey = "walleaf.lastKnownPlusActive"
 
     private init() {
         transactionUpdatesTask = Task { [weak self] in
@@ -72,15 +74,21 @@ final class SubscriptionManager: ObservableObject {
 
     func refreshEntitlements() async {
         let wasPlusActive = isPlusActive
+        let wasKnownPlusActive = UserDefaults.standard.bool(forKey: Self.lastKnownPlusActiveKey)
         let snapshot = await loadSubscriptionSnapshot()
         activePlusProductID = snapshot.currentProductID
         pendingPlusProductID = snapshot.pendingProductID
         plusRenewalDate = snapshot.renewalDate
         isPlusActive = snapshot.currentProductID != nil
 
-        if wasPlusActive, !isPlusActive {
+        if !PlusFeatureGate.canUsePrivacyLock(isPlusActive: isPlusActive),
+           PrivacyLockManager.shared.isEnabled {
             PrivacyLockManager.shared.forceDisableForSubscriptionLapse()
+            plusExpiryNoticeMessage = "你的 Walleaf Plus 已到期，Face ID 隱私鎖功能已自動關閉。若要重新使用，請再次訂閱 Plus。"
+        } else if (wasPlusActive || wasKnownPlusActive), !isPlusActive {
+            plusExpiryNoticeMessage = "你的 Walleaf Plus 已到期，Plus 功能已暫停。若要重新使用，請再次訂閱 Plus。"
         }
+        UserDefaults.standard.set(isPlusActive, forKey: Self.lastKnownPlusActiveKey)
     }
 
     private struct SubscriptionSnapshot {
