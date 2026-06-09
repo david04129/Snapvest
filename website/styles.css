@@ -16,6 +16,10 @@
   --shadow: 0 24px 64px rgba(0, 0, 0, 0.34);
 }
 
+html {
+  overflow-x: hidden;
+}
+
 body {
   margin: 0;
   background:
@@ -26,6 +30,7 @@ body {
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", sans-serif;
   line-height: 1.7;
+  overflow-x: hidden;
 }
 
 a {
@@ -269,7 +274,7 @@ h3 {
 
 .feature-story.split-phones {
   grid-template-columns: minmax(0, 0.82fr) minmax(300px, 1fr);
-  overflow: visible;
+  overflow: hidden;
 }
 
 .story-copy {
@@ -357,13 +362,14 @@ h3 {
   --carousel-slide-width: min(320px, 82vw);
   width: min(560px, 100%);
   justify-self: center;
-  overflow: visible;
+  overflow: hidden;
+  isolation: isolate;
 }
 
 .carousel-track {
   position: relative;
   min-height: calc(var(--carousel-slide-width) * 2.1 + 58px);
-  overflow: visible;
+  overflow: hidden;
   touch-action: pan-y;
   user-select: none;
 }
@@ -520,10 +526,7 @@ h3 {
   }
 
   .feature-story.split-phones {
-    margin-inline: -20px;
-    border-inline: 0;
-    border-radius: 0;
-    padding-inline: 20px;
+    border-radius: 28px;
   }
 
   .feature-story.reverse .story-copy,
@@ -562,9 +565,8 @@ h3 {
   }
 
   .feature-carousel {
-    --carousel-slide-width: min(320px, 82vw);
-    width: calc(100% + 40px);
-    margin-inline: -20px;
+    --carousel-slide-width: min(300px, 76vw);
+    width: 100%;
   }
 
   .carousel-track {
@@ -580,8 +582,7 @@ h3 {
   }
 
   .feature-story.split-phones {
-    margin-inline: -20px;
-    padding-inline: 20px;
+    padding-inline: 22px;
   }
 
   .phone-pair {

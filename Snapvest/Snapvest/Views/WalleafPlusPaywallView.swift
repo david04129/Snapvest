@@ -19,6 +19,7 @@ struct WalleafPlusPaywallView: View {
     @ObservedObject private var theme = ThemeManager.shared
 
     @State private var selectedPlan: PaywallPlan = .yearly
+    @State private var isClosingAfterInitialPurchase = false
 
     private enum PaywallPlan: String, CaseIterable, Identifiable {
         case yearly
@@ -96,24 +97,25 @@ struct WalleafPlusPaywallView: View {
             let detailsContentWidth = rawDetailsContentWidth.isFinite && rawDetailsContentWidth > 1
                 ? rawDetailsContentWidth
                 : 1
+            let showsSubscribedContent = subscriptionManager.isPlusActive && !isClosingAfterInitialPurchase
 
             ZStack(alignment: .topTrailing) {
                 ScrollView {
                     VStack(spacing: 0) {
-                        firstScreenContent(compact: isCompact)
+                        firstScreenContent(compact: isCompact, showsSubscribedContent: showsSubscribedContent)
                             .frame(minHeight: proxy.size.height, alignment: .top)
 
                         subscriptionDetailsSection(contentWidth: detailsContentWidth)
                             .padding(.horizontal, 20)
-                            .padding(.top, subscriptionManager.isPlusActive ? 16 : -84)
-                            .padding(.bottom, subscriptionManager.isPlusActive ? 44 : 120)
+                            .padding(.top, showsSubscribedContent ? 16 : -84)
+                            .padding(.bottom, showsSubscribedContent ? 44 : 120)
                     }
                     .frame(width: proxy.size.width)
                 }
                 .scrollIndicators(.hidden)
                 .background(paywallPageBackground.ignoresSafeArea())
 
-                if !subscriptionManager.isPlusActive {
+                if !subscriptionManager.isPlusActive && !isClosingAfterInitialPurchase {
                     fixedContinueButton(compact: isCompact)
                 }
 
@@ -144,13 +146,13 @@ struct WalleafPlusPaywallView: View {
         }
     }
 
-    private func firstScreenContent(compact: Bool) -> some View {
+    private func firstScreenContent(compact: Bool, showsSubscribedContent: Bool) -> some View {
         VStack(spacing: 0) {
             heroSection(compact: compact)
 
             Spacer(minLength: compact ? 5 : 8)
 
-            if subscriptionManager.isPlusActive {
+            if showsSubscribedContent {
                 subscribedBanner(compact: compact)
                 Spacer(minLength: compact ? 8 : 14)
             }
@@ -159,7 +161,7 @@ struct WalleafPlusPaywallView: View {
 
             Spacer(minLength: compact ? 6 : 10)
 
-            if subscriptionManager.isPlusActive {
+            if showsSubscribedContent {
                 subscribedManagementSection(compact: compact)
                 Spacer(minLength: compact ? 6 : 10)
                 subscribedContactSection(compact: compact)
@@ -170,7 +172,7 @@ struct WalleafPlusPaywallView: View {
             Spacer(minLength: compact ? 4 : 8)
 
             Color.clear
-                .frame(height: subscriptionManager.isPlusActive ? (compact ? 8 : 12) : (compact ? 104 : 116))
+                .frame(height: showsSubscribedContent ? (compact ? 8 : 12) : (compact ? 104 : 116))
         }
         .padding(.horizontal, compact ? 16 : 20)
         .padding(.top, compact ? 28 : 34)
@@ -1176,9 +1178,16 @@ struct WalleafPlusPaywallView: View {
     private func purchaseSelectedPlan() async {
         guard let product = selectedProduct, !isSelectedPlanCurrent else { return }
         let wasPlus = subscriptionManager.isPlusActive
+        let shouldCloseOnSuccess = !wasPlus
+        if shouldCloseOnSuccess {
+            isClosingAfterInitialPurchase = true
+        }
         let succeeded = await subscriptionManager.purchase(product)
-        if succeeded, !wasPlus {
+        if succeeded, shouldCloseOnSuccess {
+            subscriptionManager.statusMessage = nil
             dismiss()
+        } else if shouldCloseOnSuccess {
+            isClosingAfterInitialPurchase = false
         }
     }
 

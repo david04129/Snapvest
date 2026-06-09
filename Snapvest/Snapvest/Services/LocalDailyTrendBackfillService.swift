@@ -60,10 +60,11 @@ enum LocalDailyTrendBackfillService {
         }
 
         let gapStart = calendar.date(byAdding: .day, value: 1, to: latestExistingDayBeforeToday) ?? yesterday
+        let historyStart = historyPrefetchStartDate(for: gapStart, calendar: calendar)
         let context = await BackfillContext.load(
             userId: userId,
             dataService: dataService,
-            historyStartDate: gapStart,
+            historyStartDate: historyStart,
             historyEndDate: yesterday
         )
 
@@ -105,6 +106,11 @@ enum LocalDailyTrendBackfillService {
             cursor = next
         }
         return result
+    }
+
+    private static func historyPrefetchStartDate(for gapStart: Date, calendar: Calendar) -> Date {
+        let lookbackDays = DemoHistoryFetchPolicy.previousCloseLookbackDays
+        return calendar.date(byAdding: .day, value: -lookbackDays, to: gapStart) ?? gapStart
     }
 
     private static func buildSnapshot(
