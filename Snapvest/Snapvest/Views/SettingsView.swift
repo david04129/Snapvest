@@ -804,7 +804,7 @@ struct SettingsView: View {
             settingsRowContent(
                 icon: "star.fill",
                 iconColor: .appPrimary,
-                title: "五星好評",
+                title: "為 Walleaf 評分",
                 value: nil,
                 showsChevron: true
             )
@@ -813,7 +813,7 @@ struct SettingsView: View {
     }
 
     private var appVersionText: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0"
+        "1.0.0"
     }
 
     private func openSupportEmail() {
@@ -1456,6 +1456,7 @@ private struct BaseCurrencyDisplayLabel: View {
 
 enum AppExternalLinks {
     static let supportEmail = "support@walleafapp.com"
+    static let websiteURL = URL(string: "https://walleafapp.com/")!
     static let privacyPolicyURL = URL(string: "https://walleafapp.com/privacy/")!
     static let termsURL = URL(string: "https://walleafapp.com/terms/")!
     static let disclaimerURL = URL(string: "https://walleafapp.com/disclaimer/")!
@@ -1519,22 +1520,21 @@ private struct AboutAppSheet: View {
 
                 Section {
                     legalLinkRow(
+                        title: "Walleaf 官網",
+                        url: AppExternalLinks.websiteURL
+                    )
+                    legalLinkRow(
                         title: "隱私權政策",
-                        subtitle: "了解 Walleaf 如何處理資料與隱私",
                         url: AppExternalLinks.privacyPolicyURL
                     )
                     legalLinkRow(
                         title: "服務條款",
-                        subtitle: "使用 Walleaf 與 Walleaf Plus 的條款",
                         url: AppExternalLinks.termsURL
                     )
                     legalLinkRow(
                         title: "免責聲明",
-                        subtitle: "報價、匯率與投資資訊準確性說明",
                         url: AppExternalLinks.disclaimerURL
                     )
-                } footer: {
-                    Text("上述連結會開啟 Walleaf 官方網站。")
                 }
             }
             .navigationTitle("關於")
@@ -1548,7 +1548,7 @@ private struct AboutAppSheet: View {
         }
     }
 
-    private func legalLinkRow(title: String, subtitle: String, url: URL) -> some View {
+    private func legalLinkRow(title: String, url: URL) -> some View {
         Button {
             openURL(url)
         } label: {
@@ -1564,9 +1564,6 @@ private struct AboutAppSheet: View {
                     Text(title)
                         .font(.subheadline.weight(.semibold))
                         .foregroundColor(.primaryText)
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundColor(.secondaryText)
                 }
 
                 Spacer(minLength: 12)

@@ -518,6 +518,13 @@ h3 {
     min-height: auto;
   }
 
+  .feature-story.split-phones {
+    margin-inline: -20px;
+    border-inline: 0;
+    border-radius: 0;
+    padding-inline: 20px;
+  }
+
   .feature-story.reverse .story-copy,
   .feature-story.reverse .phone-figure {
     grid-column: auto;
@@ -554,12 +561,13 @@ h3 {
   }
 
   .feature-carousel {
-    width: 100%;
+    width: calc(100% + 40px);
+    margin-inline: -20px;
   }
 
   .carousel-track {
-    padding-inline: calc((100% - min(320px, 82%)) / 2);
-    scroll-padding-inline: calc((100% - min(320px, 82%)) / 2);
+    padding-inline: max(20px, calc((100% - min(320px, 82%)) / 2));
+    scroll-padding-inline: max(20px, calc((100% - min(320px, 82%)) / 2));
   }
 
 }
@@ -568,6 +576,11 @@ h3 {
   .feature-story {
     border-radius: 28px;
     padding: 22px;
+  }
+
+  .feature-story.split-phones {
+    margin-inline: -20px;
+    padding-inline: 20px;
   }
 
   .phone-pair {
@@ -579,8 +592,8 @@ h3 {
   }
 
   .carousel-track {
-    padding-inline: 9%;
-    scroll-padding-inline: 9%;
+    padding-inline: max(20px, calc((100% - min(320px, 82%)) / 2));
+    scroll-padding-inline: max(20px, calc((100% - min(320px, 82%)) / 2));
   }
 
   .carousel-slide {
