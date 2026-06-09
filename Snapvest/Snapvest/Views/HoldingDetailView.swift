@@ -24,6 +24,7 @@ struct HoldingDetailView: View {
     @State private var marketStatus: MarketStatusSnapshot?
     @State private var buyGateAlertMessage: String?
     @State private var symbolRealizedPL: SymbolRealizedPL = .zero
+    @State private var isPriceUpdateInfoPresented = false
     
     enum MetricAmountDisplay {
         case twd
@@ -233,6 +234,13 @@ struct HoldingDetailView: View {
         false
     }
     
+    private var priceUpdateInfoMessage: String {
+        """
+        台股／美股盤中每十五分鐘更新一次股價。
+        加密貨幣每小時更新一次股價。
+        """
+    }
+    
     private var holdingsCurrencyDisplayBinding: Binding<AssetsCurrencyDisplay> {
         Binding(
             get: { metricAmountDisplay == .twd ? .twd : .original },
@@ -275,6 +283,10 @@ struct HoldingDetailView: View {
         case .original:
             return aggregatedHolding.weightedAverageCost.formattedTradePrice(currency: aggregatedHolding.currency)
         }
+    }
+    
+    private var averageCostTitle: String {
+        aggregatedHolding.assetType == .crypto ? "每單位成本" : "每股成本"
     }
     
     private var displayedUnrealizedAmountText: String {
@@ -449,6 +461,11 @@ struct HoldingDetailView: View {
         } message: {
             Text(buyGateAlertMessage ?? "")
         }
+        .alert("股價更新說明", isPresented: $isPriceUpdateInfoPresented) {
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text(priceUpdateInfoMessage)
+        }
     }
     
     @MainActor
@@ -579,10 +596,23 @@ struct HoldingDetailView: View {
                 .frame(minHeight: 48)
             
             VStack(alignment: .leading, spacing: 6) {
-                Text("每股現價")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.secondaryText)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("每股現價")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.secondaryText)
+                    
+                    Button {
+                        isPriceUpdateInfoPresented = true
+                    } label: {
+                        Text("更新說明")
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(.appPrimary)
+                            .underline()
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("股價更新說明")
+                }
                 
                 if let snapshot = assetPriceSnapshot {
                     let annotation = PriceFreshnessFormatter.annotation(
@@ -706,12 +736,12 @@ struct HoldingDetailView: View {
             )
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
                 MetricTile(
-                    title: "總成本",
+                    title: "持倉成本",
                     value: displayedTotalCostText,
                     currency: selectedDisplayCurrency
                 )
                 MetricTile(
-                    title: "平均成本",
+                    title: averageCostTitle,
                     value: displayedAverageCostText,
                     currency: selectedDisplayCurrency
                 )

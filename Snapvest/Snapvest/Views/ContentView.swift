@@ -29,6 +29,7 @@ struct ContentView: View {
     @State private var portfolioMutationRefreshTitle = "正在更新資料…"
     @State private var portfolioMutationRefreshMessage = "交易完成後會自動顯示最新結果"
     @State private var showsManualRefreshBlockedAlert = false
+    @State private var manualRefreshBlockedAlertTitle = "無法更新"
     @State private var manualRefreshBlockedAlertMessage = ""
     @State private var isPaywallPresented = false
 
@@ -48,6 +49,7 @@ struct ContentView: View {
                 showsPrivacyModeTabAlert: $showsPrivacyModeTabAlert,
                 isSettingsPresented: $isSettingsPresented,
                 showsManualRefreshBlockedAlert: $showsManualRefreshBlockedAlert,
+                manualRefreshBlockedAlertTitle: $manualRefreshBlockedAlertTitle,
                 manualRefreshBlockedAlertMessage: $manualRefreshBlockedAlertMessage,
                 portfolioViewModel: portfolioViewModel,
                 accountsViewModel: accountsViewModel,
@@ -66,7 +68,7 @@ struct ContentView: View {
             } message: {
                 Text("結束後會回到你的真實資料，沙盒中的操作不會保留。")
             }
-            .alert("無法更新", isPresented: $showsManualRefreshBlockedAlert) {
+            .alert(manualRefreshBlockedAlertTitle, isPresented: $showsManualRefreshBlockedAlert) {
                 manualRefreshBlockedAlertActions()
             } message: {
                 Text(manualRefreshBlockedAlertMessage)
@@ -161,6 +163,7 @@ struct ContentView: View {
         Button("好", role: .cancel) {
             ManualRefreshCooldown.shared.dismissAlert()
             showsManualRefreshBlockedAlert = false
+            manualRefreshBlockedAlertTitle = "無法更新"
             manualRefreshBlockedAlertMessage = ""
         }
     }
@@ -193,6 +196,7 @@ private struct ContentViewEventModifier: ViewModifier {
     @Binding var showsPrivacyModeTabAlert: Bool
     @Binding var isSettingsPresented: Bool
     @Binding var showsManualRefreshBlockedAlert: Bool
+    @Binding var manualRefreshBlockedAlertTitle: String
     @Binding var manualRefreshBlockedAlertMessage: String
 
     @ObservedObject private var pieGroupingStore = PieChartGroupingStore.shared
@@ -245,6 +249,7 @@ private struct ContentViewEventModifier: ViewModifier {
             }
             .onChange(of: manualRefreshCooldown.alertMessage) { _, message in
                 if let message {
+                    manualRefreshBlockedAlertTitle = manualRefreshCooldown.alertTitle
                     manualRefreshBlockedAlertMessage = message
                     showsManualRefreshBlockedAlert = true
                 }

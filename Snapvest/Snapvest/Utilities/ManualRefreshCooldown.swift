@@ -15,6 +15,7 @@ final class ManualRefreshCooldown: ObservableObject {
     /// 兩次手動刷新之間最短間隔
     static let minimumInterval: TimeInterval = 60
 
+    @Published private(set) var alertTitle = "無法更新"
     @Published private(set) var alertMessage: String?
 
     private var lastRefreshStartedAt: Date?
@@ -23,11 +24,12 @@ final class ManualRefreshCooldown: ObservableObject {
     private init() {}
 
     /// 等 UIRefreshControl 收起後再顯示 alert，避免下拉圈圈卡住。
-    private func scheduleBlockedAlert(_ message: String) {
+    private func scheduleBlockedAlert(title: String = "無法更新", message: String) {
         pendingAlertTask?.cancel()
         pendingAlertTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(400))
             guard !Task.isCancelled else { return }
+            alertTitle = title
             alertMessage = message
         }
     }
@@ -35,11 +37,15 @@ final class ManualRefreshCooldown: ObservableObject {
     /// 允許時執行 `action` 並記錄開始時間；否則設定 `alertMessage` 且不執行。
     func performIfAllowed(_ action: () async -> Void) async {
         if let seconds = secondsUntilAllowed() {
-            scheduleBlockedAlert("請 \(seconds) 秒後再試")
+            scheduleBlockedAlert(
+                title: "請稍後再更新",
+                message: "剛剛已經檢查過股價，請 \(seconds) 秒後再試。"
+            )
             return
         }
         pendingAlertTask?.cancel()
         lastRefreshStartedAt = Date()
+        alertTitle = "無法更新"
         alertMessage = nil
         await action()
         try? await Task.sleep(for: .milliseconds(50))
@@ -47,19 +53,23 @@ final class ManualRefreshCooldown: ObservableObject {
 
     func dismissAlert() {
         pendingAlertTask?.cancel()
+        alertTitle = "無法更新"
         alertMessage = nil
     }
 
     func showRateLimited(retryAfterSeconds: Int? = nil) {
         if let retryAfterSeconds, retryAfterSeconds > 0 {
-            scheduleBlockedAlert("雲端忙碌，請 \(retryAfterSeconds) 秒後再試")
+            scheduleBlockedAlert(message: "雲端忙碌，請 \(retryAfterSeconds) 秒後再試")
         } else {
-            scheduleBlockedAlert("雲端忙碌，請稍後再試")
+            scheduleBlockedAlert(message: "雲端忙碌，請稍後再試")
         }
     }
 
     func showAlreadyUpToDate() {
-        scheduleBlockedAlert("股價已是最新，無需再次更新")
+        scheduleBlockedAlert(
+            title: "已更新",
+            message: "已更新到資料庫最新的股價"
+        )
     }
 
     private func secondsUntilAllowed() -> Int? {
