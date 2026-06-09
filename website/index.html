@@ -161,11 +161,18 @@
       const track = carousel.querySelector("[data-carousel-track]");
       const slides = Array.from(carousel.querySelectorAll("[data-carousel-slide]"));
       const dots = Array.from(carousel.querySelectorAll("[data-carousel-dot]"));
-      let ticking = false;
+      let activeIndex = slides.findIndex((slide) => slide.classList.contains("is-active"));
+      let touchStartX = 0;
+      let touchStartY = 0;
+      activeIndex = activeIndex === -1 ? 0 : activeIndex;
 
-      const setActive = (activeIndex) => {
+      const setActive = (nextIndex) => {
+        activeIndex = (nextIndex + slides.length) % slides.length;
         slides.forEach((slide, index) => {
-          slide.classList.toggle("is-active", index === activeIndex);
+          const isActive = index === activeIndex;
+          slide.classList.toggle("is-active", isActive);
+          slide.classList.toggle("is-before", index < activeIndex);
+          slide.classList.toggle("is-after", index > activeIndex);
         });
         dots.forEach((dot, index) => {
           const isActive = index === activeIndex;
@@ -174,40 +181,32 @@
         });
       };
 
-      const updateActiveFromScroll = () => {
-        const trackRect = track.getBoundingClientRect();
-        const trackCenter = trackRect.left + trackRect.width / 2;
-        const activeIndex = slides.reduce((closestIndex, slide, index) => {
-          const slideRect = slide.getBoundingClientRect();
-          const slideCenter = slideRect.left + slideRect.width / 2;
-          const closestSlide = slides[closestIndex];
-          const closestRect = closestSlide.getBoundingClientRect();
-          const closestCenter = closestRect.left + closestRect.width / 2;
-          return Math.abs(slideCenter - trackCenter) < Math.abs(closestCenter - trackCenter)
-            ? index
-            : closestIndex;
-        }, 0);
-        setActive(activeIndex);
-        ticking = false;
-      };
+      track.addEventListener("touchstart", (event) => {
+        const touch = event.changedTouches[0];
+        touchStartX = touch.clientX;
+        touchStartY = touch.clientY;
+      }, { passive: true });
 
-      track.addEventListener("scroll", () => {
-        if (ticking) return;
-        ticking = true;
-        window.requestAnimationFrame(updateActiveFromScroll);
+      track.addEventListener("touchend", (event) => {
+        const touch = event.changedTouches[0];
+        const deltaX = touch.clientX - touchStartX;
+        const deltaY = touch.clientY - touchStartY;
+        if (Math.abs(deltaX) < 36 || Math.abs(deltaX) < Math.abs(deltaY)) return;
+        setActive(deltaX < 0 ? activeIndex + 1 : activeIndex - 1);
       });
-      track.addEventListener("scrollend", updateActiveFromScroll);
-      track.addEventListener("touchend", () => {
-        window.setTimeout(updateActiveFromScroll, 180);
+
+      track.addEventListener("click", () => {
+        setActive(activeIndex + 1);
       });
 
       dots.forEach((dot, index) => {
-        dot.addEventListener("click", () => {
-          const targetLeft = slides[index].offsetLeft - (track.clientWidth - slides[index].offsetWidth) / 2;
-          track.scrollTo({ left: targetLeft, behavior: "smooth" });
+        dot.addEventListener("click", (event) => {
+          event.stopPropagation();
           setActive(index);
         });
       });
+
+      setActive(activeIndex);
     })();
   </script>
 </body>

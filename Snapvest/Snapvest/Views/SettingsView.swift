@@ -1517,6 +1517,7 @@ private struct AboutAppSheet: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
                 }
+                .listRowBackground(Color.cardBackground)
 
                 Section {
                     legalLinkRow(
@@ -1536,7 +1537,10 @@ private struct AboutAppSheet: View {
                         url: AppExternalLinks.disclaimerURL
                     )
                 }
+                .listRowBackground(Color.cardBackground)
             }
+            .scrollContentBackground(.hidden)
+            .background(Color.mainBackground.ignoresSafeArea())
             .navigationTitle("關於")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1546,6 +1550,7 @@ private struct AboutAppSheet: View {
                 }
             }
         }
+        .presentationBackground(Color.mainBackground)
     }
 
     private func legalLinkRow(title: String, url: URL) -> some View {
