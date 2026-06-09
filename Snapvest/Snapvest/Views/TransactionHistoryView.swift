@@ -455,6 +455,16 @@ struct TransactionHistoryRowView: View {
         getBalanceChange(transaction, accountId: accountId, accountCurrency: accountCurrency)
     }
     
+    private var displayedAmountChange: Decimal {
+        if transaction.type == .buy, transaction.deductFromAccount != true {
+            return CashCalculator.buySellAmountInAccountCurrency(
+                transaction: transaction,
+                accountCurrency: accountCurrency
+            )
+        }
+        return balanceChange
+    }
+    
     var body: some View {
         Button(action: onRowTap) {
             cardContent {
@@ -517,9 +527,9 @@ struct TransactionHistoryRowView: View {
             Spacer(minLength: 8)
             
             VStack(alignment: .trailing, spacing: 4) {
-                Text(formatBalanceChange(balanceChange, currency: accountCurrency))
+                Text(formatBalanceChange(displayedAmountChange, currency: accountCurrency))
                     .font(.system(size: 17, weight: .bold))
-                    .foregroundColor(balanceChange >= 0 ? .marketUp : .marketDown)
+                    .foregroundColor(displayedAmountChange >= 0 ? .marketUp : .marketDown)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                 

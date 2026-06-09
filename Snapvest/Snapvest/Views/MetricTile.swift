@@ -12,6 +12,11 @@ enum MetricTileProminence {
     case featured
 }
 
+enum MetricTileFootnotePlacement {
+    case below
+    case trailingChip
+}
+
 struct MetricTile: View {
     let title: String
     let value: String
@@ -23,6 +28,7 @@ struct MetricTile: View {
     var reservesFootnoteSpace: Bool = true
     var prominence: MetricTileProminence = .standard
     var accentColor: Color? = nil
+    var footnotePlacement: MetricTileFootnotePlacement = .below
     
     private var isFeatured: Bool { prominence == .featured }
     
@@ -31,15 +37,21 @@ struct MetricTile: View {
     }
     
     private var tileMinHeight: CGFloat {
-        isFeatured ? 96 : 88
+        if isFeatured, footnotePlacement == .trailingChip {
+            return 78
+        }
+        return isFeatured ? 96 : 88
     }
     
     private var tilePadding: CGFloat {
-        isFeatured ? 16 : 12
+        if isFeatured, footnotePlacement == .trailingChip {
+            return 14
+        }
+        return isFeatured ? 16 : 12
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: isFeatured ? 10 : 8) {
+        VStack(alignment: .leading, spacing: footnotePlacement == .trailingChip ? 7 : (isFeatured ? 10 : 8)) {
             Text(title)
                 .font(.subheadline)
                 .fontWeight(.medium)
@@ -48,31 +60,16 @@ struct MetricTile: View {
                 .minimumScaleFactor(0.85)
                 .fixedSize(horizontal: false, vertical: true)
             
-            if let currency {
-                CurrencyAmountWithChip(
-                    text: value,
-                    currency: currency,
-                    font: valueFont,
-                    weight: .bold,
-                    color: valueColor,
-                    chipTint: accentColor ?? .appPrimary
-                )
-            } else {
-                Text(value)
-                    .font(valueFont)
-                    .foregroundColor(valueColor)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-            }
+            valueRow
             
-            if let footnote, !footnote.isEmpty {
+            if footnotePlacement == .below, let footnote, !footnote.isEmpty {
                 Text(footnote)
                     .font(isFeatured ? .subheadline : .caption)
                     .fontWeight(.semibold)
                     .foregroundColor(footnoteColor)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
-            } else if reservesFootnoteSpace {
+            } else if footnotePlacement == .below, reservesFootnoteSpace {
                 Text(" ")
                     .font(.caption)
                     .opacity(0)
@@ -94,5 +91,49 @@ struct MetricTile: View {
                 .stroke(Color.separator.opacity(isFeatured ? 0.45 : 0.35), lineWidth: 1)
         )
         .shadow(color: isFeatured ? AppColors.shadowMedium : .clear, radius: isFeatured ? 6 : 0, x: 0, y: isFeatured ? 2 : 0)
+    }
+    
+    private var valueRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            valueContent
+                .layoutPriority(1)
+            
+            if footnotePlacement == .trailingChip,
+               let footnote,
+               !footnote.isEmpty {
+                Text(footnote)
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundColor(footnoteColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(footnoteColor.opacity(0.12))
+                    .clipShape(Capsule())
+            }
+            
+            Spacer(minLength: 0)
+        }
+    }
+    
+    @ViewBuilder
+    private var valueContent: some View {
+        if let currency {
+            CurrencyAmountWithChip(
+                text: value,
+                currency: currency,
+                font: valueFont,
+                weight: .bold,
+                color: valueColor,
+                chipTint: accentColor ?? .appPrimary
+            )
+        } else {
+            Text(value)
+                .font(valueFont)
+                .foregroundColor(valueColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
     }
 }

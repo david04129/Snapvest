@@ -902,6 +902,7 @@ class TransactionsViewModel: ObservableObject {
             loadingTitle: loadingTitle,
             loadingMessage: loadingMessage
         )
+        RealizedPLDetailCache.invalidate()
         NotificationCenter.default.post(
             name: .transactionsDidChange,
             object: request,

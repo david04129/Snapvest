@@ -1521,6 +1521,8 @@ struct TransactionRowView: View {
             sign = "+"
         case .sell:
             sign = amount > 0 ? "+" : "-"
+        case .buy:
+            sign = transaction.deductFromAccount == true ? "-" : "+"
         case .repayment:
             // 還款：顯示負號
             sign = "-"

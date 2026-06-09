@@ -817,25 +817,13 @@ struct SettingsView: View {
     }
 
     private func openSupportEmail() {
-        let subject = "Walleaf 使用問題"
-        let encodedSubject = subject.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? subject
-        guard let url = URL(string: "mailto:\(SettingsExternalLinks.supportEmail)?subject=\(encodedSubject)") else { return }
-        openURL(url)
+        if let url = AppExternalLinks.supportEmailURL() {
+            openURL(url)
+        }
     }
 
     private func requestAppReview() {
-        #if canImport(UIKit)
-        guard let scene = UIApplication.shared.connectedScenes
-            .compactMap({ $0 as? UIWindowScene })
-            .first(where: { $0.activationState == .foregroundActive }) else {
-            return
-        }
-        if #available(iOS 18.0, *) {
-            AppStore.requestReview(in: scene)
-        } else {
-            SKStoreReviewController.requestReview(in: scene)
-        }
-        #endif
+        AppExternalActions.requestAppReview()
     }
 
     private var privacyLockRow: some View {
@@ -1466,11 +1454,33 @@ private struct BaseCurrencyDisplayLabel: View {
     }
 }
 
-private enum SettingsExternalLinks {
+enum AppExternalLinks {
     static let supportEmail = "support@walleafapp.com"
     static let privacyPolicyURL = URL(string: "https://walleafapp.com/privacy/")!
     static let termsURL = URL(string: "https://walleafapp.com/terms/")!
     static let disclaimerURL = URL(string: "https://walleafapp.com/disclaimer/")!
+
+    static func supportEmailURL(subject: String = "Walleaf 使用問題") -> URL? {
+        let encodedSubject = subject.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? subject
+        return URL(string: "mailto:\(supportEmail)?subject=\(encodedSubject)")
+    }
+}
+
+enum AppExternalActions {
+    static func requestAppReview() {
+        #if canImport(UIKit)
+        guard let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first(where: { $0.activationState == .foregroundActive }) else {
+            return
+        }
+        if #available(iOS 18.0, *) {
+            AppStore.requestReview(in: scene)
+        } else {
+            SKStoreReviewController.requestReview(in: scene)
+        }
+        #endif
+    }
 }
 
 private struct AboutAppSheet: View {
@@ -1511,20 +1521,20 @@ private struct AboutAppSheet: View {
                     legalLinkRow(
                         title: "隱私權政策",
                         subtitle: "了解 Walleaf 如何處理資料與隱私",
-                        url: SettingsExternalLinks.privacyPolicyURL
+                        url: AppExternalLinks.privacyPolicyURL
                     )
                     legalLinkRow(
                         title: "服務條款",
                         subtitle: "使用 Walleaf 與 Walleaf Plus 的條款",
-                        url: SettingsExternalLinks.termsURL
+                        url: AppExternalLinks.termsURL
                     )
                     legalLinkRow(
                         title: "免責聲明",
                         subtitle: "報價、匯率與投資資訊準確性說明",
-                        url: SettingsExternalLinks.disclaimerURL
+                        url: AppExternalLinks.disclaimerURL
                     )
                 } footer: {
-                    Text("正式上架前，請先將上述連結換成已公開且可開啟的政策頁面網址。")
+                    Text("上述連結會開啟 Walleaf 官方網站。")
                 }
             }
             .navigationTitle("關於")

@@ -7,6 +7,9 @@
 
 import StoreKit
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 @MainActor
 struct WalleafPlusPaywallView: View {
@@ -102,15 +105,17 @@ struct WalleafPlusPaywallView: View {
 
                         subscriptionDetailsSection(contentWidth: detailsContentWidth)
                             .padding(.horizontal, 20)
-                            .padding(.top, -84)
-                            .padding(.bottom, 120)
+                            .padding(.top, subscriptionManager.isPlusActive ? 16 : -84)
+                            .padding(.bottom, subscriptionManager.isPlusActive ? 44 : 120)
                     }
                     .frame(width: proxy.size.width)
                 }
                 .scrollIndicators(.hidden)
                 .background(paywallPageBackground.ignoresSafeArea())
 
-                fixedContinueButton(compact: isCompact)
+                if !subscriptionManager.isPlusActive {
+                    fixedContinueButton(compact: isCompact)
+                }
 
                 closeButton(compact: isCompact)
             }
@@ -154,12 +159,18 @@ struct WalleafPlusPaywallView: View {
 
             Spacer(minLength: compact ? 6 : 10)
 
-            planPickerSection(compact: compact)
+            if subscriptionManager.isPlusActive {
+                subscribedManagementSection(compact: compact)
+                Spacer(minLength: compact ? 6 : 10)
+                subscribedContactSection(compact: compact)
+            } else {
+                planPickerSection(compact: compact)
+            }
 
             Spacer(minLength: compact ? 4 : 8)
 
             Color.clear
-                .frame(height: compact ? 104 : 116)
+                .frame(height: subscriptionManager.isPlusActive ? (compact ? 8 : 12) : (compact ? 104 : 116))
         }
         .padding(.horizontal, compact ? 16 : 20)
         .padding(.top, compact ? 28 : 34)
@@ -333,6 +344,189 @@ struct WalleafPlusPaywallView: View {
         }
     }
 
+    private func subscribedManagementSection(compact: Bool) -> some View {
+        VStack(alignment: .leading, spacing: compact ? 7 : 9) {
+            Text(WalleafPlusPaywallL10n.currentPlanTitle)
+                .font((compact ? Font.headline : Font.headline).weight(.bold))
+                .foregroundColor(.primaryText)
+
+            VStack(alignment: .leading, spacing: compact ? 12 : 14) {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: currentPlanIconName)
+                        .font(.system(size: compact ? 20 : 23, weight: .semibold))
+                        .foregroundColor(.appPrimary)
+                        .frame(width: compact ? 38 : 44, height: compact ? 38 : 44)
+                        .background(Color.appPrimary.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: compact ? 12 : 14, style: .continuous))
+
+                    VStack(alignment: .leading, spacing: compact ? 7 : 9) {
+                        HStack(spacing: 8) {
+                            Text(currentPlanDisplayName)
+                                .font((compact ? Font.title3 : Font.title2).weight(.bold))
+                                .foregroundColor(.primaryText)
+
+                            if let pendingPlanDisplayName {
+                                planStatusBadge(WalleafPlusPaywallL10n.scheduledPlanBadge, filled: true, compact: compact)
+                                Text(pendingPlanDisplayName)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundColor(.appPrimary)
+                            }
+                        }
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+
+                        if let renewalText {
+                            Text(renewalText)
+                                .font((compact ? Font.subheadline : Font.callout).weight(.medium))
+                                .foregroundColor(.secondaryText)
+                        }
+                    }
+
+                    Spacer(minLength: 0)
+                }
+
+                Text(subscribedPlanExplanation)
+                    .font((compact ? Font.subheadline : Font.callout).weight(.medium))
+                    .foregroundColor(.secondaryText)
+                    .lineSpacing(compact ? 3 : 4)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if canUpgradeMonthlyToYearly {
+                    yearlyUpgradeInlineCard(compact: compact)
+                }
+            }
+            .padding(compact ? 14 : 16)
+            .background(Color.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: compact ? 18 : 22, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: compact ? 18 : 22, style: .continuous)
+                    .stroke(Color.secondaryBackground, lineWidth: 1)
+            }
+            .frame(minHeight: subscribedManagementMinHeight(compact: compact), alignment: .top)
+        }
+    }
+
+    private func subscribedContactSection(compact: Bool) -> some View {
+        VStack(alignment: .leading, spacing: compact ? 7 : 9) {
+            Text(WalleafPlusPaywallL10n.contactSectionTitle)
+                .font((compact ? Font.headline : Font.headline).weight(.bold))
+                .foregroundColor(.primaryText)
+
+            VStack(spacing: 0) {
+                contactActionRow(
+                    icon: "star.fill",
+                    title: WalleafPlusPaywallL10n.supportWithReviewTitle,
+                    subtitle: WalleafPlusPaywallL10n.supportWithReviewSubtitle,
+                    compact: compact
+                ) {
+                    AppExternalActions.requestAppReview()
+                }
+
+                Divider()
+                    .padding(.leading, compact ? 48 : 54)
+                    .opacity(theme.isDarkMode ? 0.22 : 0.35)
+
+                contactActionRow(
+                    icon: "envelope.fill",
+                    title: WalleafPlusPaywallL10n.contactUsTitle,
+                    subtitle: WalleafPlusPaywallL10n.contactUsSubtitle,
+                    compact: compact
+                ) {
+                    openSupportEmail()
+                }
+            }
+            .background(Color.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: compact ? 18 : 22, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: compact ? 18 : 22, style: .continuous)
+                    .stroke(Color.secondaryBackground, lineWidth: 1)
+            }
+        }
+    }
+
+    private func contactActionRow(
+        icon: String,
+        title: String,
+        subtitle: String,
+        compact: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: compact ? 10 : 12) {
+                Image(systemName: icon)
+                    .font(.system(size: compact ? 15 : 17, weight: .semibold))
+                    .foregroundColor(.appPrimary)
+                    .frame(width: compact ? 30 : 34, height: compact ? 30 : 34)
+                    .background(Color.appPrimary.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: compact ? 9 : 11, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font((compact ? Font.subheadline : Font.subheadline).weight(.semibold))
+                        .foregroundColor(.primaryText)
+
+                    Text(subtitle)
+                        .font(.caption.weight(.medium))
+                        .foregroundColor(.secondaryText)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundColor(.tertiaryText)
+            }
+            .padding(.horizontal, compact ? 12 : 14)
+            .padding(.vertical, compact ? 10 : 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func subscribedManagementMinHeight(compact: Bool) -> CGFloat {
+        if canUpgradeMonthlyToYearly {
+            return compact ? 160 : 180
+        }
+        return compact ? 128 : 148
+    }
+
+    private func yearlyUpgradeInlineCard(compact: Bool) -> some View {
+        Button {
+            selectedPlan = .yearly
+            Task { await purchaseSelectedPlan() }
+        } label: {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(WalleafPlusPaywallL10n.switchToYearly)
+                        .font((compact ? Font.subheadline : Font.headline).weight(.bold))
+                        .foregroundColor(.primaryText)
+
+                    Text(WalleafPlusPaywallL10n.applePlanChangeNotice)
+                        .font(.caption.weight(.medium))
+                        .foregroundColor(.secondaryText)
+                        .lineLimit(2)
+                }
+
+                Spacer(minLength: 0)
+
+                Text(subscriptionManager.yearlyProduct?.displayPrice ?? "—")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundColor(.appPrimary)
+                    .lineLimit(1)
+            }
+            .padding(compact ? 12 : 14)
+            .background(Color.appPrimary.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: compact ? 14 : 16, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: compact ? 14 : 16, style: .continuous)
+                    .stroke(Color.appPrimary.opacity(0.28), lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(subscriptionManager.yearlyProduct == nil || subscriptionManager.isPurchasing)
+    }
+
     // MARK: - Comparison
 
     private func comparisonSection(compact: Bool) -> some View {
@@ -356,8 +550,7 @@ struct WalleafPlusPaywallView: View {
             .background(Color.cardBackground)
             .clipShape(RoundedRectangle(cornerRadius: compact ? 16 : 18, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: compact ? 16 : 18, style: .continuous)
-                    .stroke(Color.secondaryBackground, lineWidth: 1)
+                comparisonTableOverlay(compact: compact)
             }
         }
     }
@@ -380,7 +573,7 @@ struct WalleafPlusPaywallView: View {
                 .frame(maxWidth: .infinity, alignment: .center)
         }
         .padding(.horizontal, compact ? 10 : 14)
-        .padding(.vertical, compact ? 7 : 9)
+        .padding(.vertical, comparisonRowVerticalPadding(compact: compact))
         .background(Color.secondaryBackground.opacity(theme.isDarkMode ? 0.35 : 0.45))
     }
 
@@ -407,7 +600,37 @@ struct WalleafPlusPaywallView: View {
                 .frame(maxWidth: .infinity, alignment: .center)
         }
         .padding(.horizontal, compact ? 10 : 14)
-        .padding(.vertical, compact ? 7 : 9)
+        .padding(.vertical, comparisonRowVerticalPadding(compact: compact))
+    }
+
+    private func comparisonRowVerticalPadding(compact: Bool) -> CGFloat {
+        if subscriptionManager.isPlusActive {
+            return compact ? 10 : 12
+        }
+        return compact ? 7 : 9
+    }
+
+    private func comparisonTableOverlay(compact: Bool) -> some View {
+        GeometryReader { geometry in
+            let horizontalPadding: CGFloat = compact ? 10 : 14
+            let contentWidth = max(geometry.size.width - horizontalPadding * 2, 1)
+            let columnWidth = contentWidth / 3
+            let highlightWidth = columnWidth + (compact ? 8 : 10)
+            let highlightHeight = max(geometry.size.height - (compact ? 8 : 10), 1)
+            let highlightCenterX = horizontalPadding + columnWidth * 2.5
+
+            ZStack {
+                RoundedRectangle(cornerRadius: compact ? 16 : 18, style: .continuous)
+                    .stroke(Color.secondaryBackground, lineWidth: 1)
+
+                if subscriptionManager.isPlusActive {
+                    RoundedRectangle(cornerRadius: compact ? 13 : 15, style: .continuous)
+                        .stroke(Color.appPrimary.opacity(0.72), lineWidth: 2)
+                        .frame(width: highlightWidth, height: highlightHeight)
+                        .position(x: highlightCenterX, y: geometry.size.height / 2)
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -558,25 +781,26 @@ struct WalleafPlusPaywallView: View {
 
             VStack(spacing: 0) {
                 Button {
-                    Task { await purchaseSelectedPlan() }
+                    Task { await handlePrimaryButtonTap() }
                 } label: {
-                    Group {
+                    ZStack {
                         if subscriptionManager.isPurchasing {
                             ProgressView().tint(.white)
                         } else {
-                            Text("繼續")
+                            Text(primaryButtonTitle)
                                 .font(.headline.weight(.bold))
                         }
                     }
                     .foregroundColor(AppColors.actionForeground)
                     .frame(maxWidth: .infinity)
                     .frame(minHeight: compact ? 54 : 58)
+                    .background(Color.appPrimary)
+                    .clipShape(Capsule())
+                    .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .background(Color.appPrimary)
-                .clipShape(Capsule())
                 .shadow(color: Color.appPrimary.opacity(0.28), radius: 14, x: 0, y: 7)
-                .disabled(isPurchaseDisabled)
+                .disabled(isPrimaryButtonDisabled)
                 .padding(.horizontal, compact ? 20 : 24)
                 .padding(.top, 14)
                 .padding(.bottom, compact ? 18 : 24)
@@ -644,17 +868,43 @@ struct WalleafPlusPaywallView: View {
             .buttonStyle(.plain)
             .disabled(subscriptionManager.isRestoring || subscriptionManager.isPurchasing)
 
+            if subscriptionManager.isPlusActive {
+                Button {
+                    Task { await subscriptionManager.showManageSubscriptions() }
+                } label: {
+                    HStack(spacing: 7) {
+                        Image(systemName: "gearshape.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text(WalleafPlusPaywallL10n.manageSubscription)
+                            .font(.footnote.weight(.bold))
+                    }
+                    .foregroundColor(.appPrimary)
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 38)
+                    .background(Color.appPrimary.opacity(0.07))
+                    .clipShape(Capsule())
+                    .overlay {
+                        Capsule()
+                            .stroke(Color.appPrimary.opacity(0.18), lineWidth: 1)
+                    }
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(subscriptionManager.isPurchasing)
+                .padding(.top, -8)
+            }
+
             HStack(spacing: 8) {
-                detailsLinkButton("服務條款") {}
+                detailsLinkButton("服務條款") {
+                    openURL(AppExternalLinks.termsURL)
+                }
                 separatorDot
-                detailsLinkButton("隱私政策") {}
+                detailsLinkButton("隱私政策") {
+                    openURL(AppExternalLinks.privacyPolicyURL)
+                }
                 separatorDot
                 detailsLinkButton("聯絡我們") {
                     openSupportEmail()
-                }
-                separatorDot
-                detailsLinkButton("訂閱管理") {
-                    Task { await subscriptionManager.showManageSubscriptions() }
                 }
             }
             .font(.caption.weight(.semibold))
@@ -677,8 +927,9 @@ struct WalleafPlusPaywallView: View {
     }
 
     private func openSupportEmail() {
-        guard let url = URL(string: "mailto:support@walleafapp.com") else { return }
-        openURL(url)
+        if let url = AppExternalLinks.supportEmailURL() {
+            openURL(url)
+        }
     }
 
     private func subscriptionExplanationText(width: CGFloat) -> some View {
@@ -700,6 +951,18 @@ struct WalleafPlusPaywallView: View {
             || subscriptionManager.isPurchasing
             || subscriptionManager.isLoadingProducts
             || isSelectedPlanCurrent
+    }
+
+    private var isPrimaryButtonDisabled: Bool {
+        if subscriptionManager.isPlusActive {
+            if canUpgradeMonthlyToYearly {
+                return subscriptionManager.yearlyProduct == nil
+                    || subscriptionManager.isPurchasing
+                    || subscriptionManager.isLoadingProducts
+            }
+            return subscriptionManager.isPurchasing
+        }
+        return isPurchaseDisabled
     }
 
     // MARK: - Pricing helpers
@@ -753,6 +1016,16 @@ struct WalleafPlusPaywallView: View {
         product(for: selectedPlan)
     }
 
+    private var primaryButtonTitle: String {
+        if subscriptionManager.isPlusActive {
+            if canUpgradeMonthlyToYearly {
+                return WalleafPlusPaywallL10n.switchToYearly
+            }
+            return WalleafPlusPaywallL10n.manageSubscription
+        }
+        return WalleafPlusPaywallL10n.continueButton
+    }
+
     private var purchaseButtonTitle: String {
         guard selectedProduct != nil else { return WalleafPlusPaywallL10n.cannotLoadPlans }
 
@@ -802,6 +1075,55 @@ struct WalleafPlusPaywallView: View {
         }
     }
 
+    private var canUpgradeMonthlyToYearly: Bool {
+        subscriptionManager.isPlusActive
+            && subscriptionManager.activePlusProductID == PlusProductID.monthly
+            && subscriptionManager.pendingPlusProductID != PlusProductID.yearly
+    }
+
+    private var currentPlanDisplayName: String {
+        switch subscriptionManager.activePlusProductID {
+        case PlusProductID.monthly:
+            return WalleafPlusPaywallL10n.planMonthly
+        case PlusProductID.yearly:
+            return WalleafPlusPaywallL10n.planYearly
+        default:
+            return WalleafPlusPaywallL10n.plusActiveEnabled
+        }
+    }
+
+    private var pendingPlanDisplayName: String? {
+        switch subscriptionManager.pendingPlusProductID {
+        case PlusProductID.monthly:
+            return WalleafPlusPaywallL10n.planMonthly
+        case PlusProductID.yearly:
+            return WalleafPlusPaywallL10n.planYearly
+        default:
+            return nil
+        }
+    }
+
+    private var currentPlanIconName: String {
+        subscriptionManager.activePlusProductID == PlusProductID.yearly
+            ? "calendar.badge.checkmark"
+            : "calendar"
+    }
+
+    private var renewalText: String? {
+        guard let date = subscriptionManager.plusRenewalDate else { return nil }
+        return WalleafPlusPaywallL10n.renewalDateText(date)
+    }
+
+    private var subscribedPlanExplanation: String {
+        if canUpgradeMonthlyToYearly {
+            return WalleafPlusPaywallL10n.monthlySubscribedExplanation
+        }
+        if subscriptionManager.activePlusProductID == PlusProductID.yearly {
+            return WalleafPlusPaywallL10n.yearlySubscribedExplanation
+        }
+        return WalleafPlusPaywallL10n.genericSubscribedExplanation
+    }
+
     private func syncSelectedPlan(with activeProductID: String?, pendingID: String? = nil) {
         guard subscriptionManager.isPlusActive else {
             selectedPlan = .yearly
@@ -824,7 +1146,7 @@ struct WalleafPlusPaywallView: View {
         case PlusProductID.monthly:
             selectedPlan = .yearly
         case PlusProductID.yearly:
-            selectedPlan = .monthly
+            selectedPlan = .yearly
         default:
             selectedPlan = .yearly
         }
@@ -857,6 +1179,20 @@ struct WalleafPlusPaywallView: View {
         let succeeded = await subscriptionManager.purchase(product)
         if succeeded, !wasPlus {
             dismiss()
+        }
+    }
+
+    private func handlePrimaryButtonTap() async {
+        guard subscriptionManager.isPlusActive else {
+            await purchaseSelectedPlan()
+            return
+        }
+
+        if canUpgradeMonthlyToYearly {
+            selectedPlan = .yearly
+            await purchaseSelectedPlan()
+        } else {
+            await subscriptionManager.showManageSubscriptions()
         }
     }
 }

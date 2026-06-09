@@ -170,7 +170,7 @@ struct TransactionDisplayFormatter {
         case .repayment:
             return .lossRed
         case .buy:
-            return .lossRed
+            return transaction.deductFromAccount == true ? .lossRed : .profitGreen
         case .sell:
             return .profitGreen
         case .deposit, .dividend:

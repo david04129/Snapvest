@@ -82,12 +82,19 @@ private struct HomeShareCompositeView: View {
 
     private var shareHeader: some View {
         HStack(spacing: 0) {
-            SnapvestBrandMark(
-                iconSize: 36,
-                wordmarkSize: 24,
-                spacing: 10,
-                layout: .horizontal
-            )
+            HStack(alignment: .lastTextBaseline, spacing: 8) {
+                SnapvestBrandMark(
+                    iconSize: 36,
+                    wordmarkSize: 24,
+                    spacing: 10,
+                    layout: .horizontal
+                )
+                Text("隨手開啟，掌握資產的成長")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.secondaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+            }
             Spacer(minLength: 0)
         }
         .padding(.top, 14)
@@ -106,7 +113,7 @@ private struct HomeShareCompositeView: View {
                     .aspectRatio(1, contentMode: .fit)
                     .frame(width: 16, height: 16)
                     .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-                Text(SnapvestBrand.appName)
+                Text("\(SnapvestBrand.appName)｜隨手開啟，掌握資產的成長")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(.tertiaryText)
             }

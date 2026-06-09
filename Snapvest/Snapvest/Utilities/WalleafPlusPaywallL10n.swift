@@ -18,6 +18,7 @@ enum WalleafPlusPaywallL10n {
 
     static var close: String { t("關閉", "Close") }
     static var done: String { t("完成", "Done") }
+    static var continueButton: String { t("繼續", "Continue") }
 
     static var heroSubtitle: String {
         t("升級 Plus，讓資產追蹤不再設限", "Upgrade to Plus for unlimited portfolio tracking")
@@ -26,6 +27,8 @@ enum WalleafPlusPaywallL10n {
     static var plusActiveEnabled: String { t("已啟用", "Active") }
 
     static var currentPlanBadge: String { t("目前方案", "Current") }
+
+    static var currentPlanTitle: String { t("目前方案", "Current plan") }
 
     static var currentPlanSubtitle: String {
         t("您目前的訂閱方案", "Your current subscription")
@@ -76,6 +79,13 @@ enum WalleafPlusPaywallL10n {
 
     static var switchToYearlyHint: String {
         t("本期月訂結束後，下個週期改為按年計費", "Annual billing starts after this monthly period")
+    }
+
+    static var applePlanChangeNotice: String {
+        t(
+            "Apple 會在確認頁顯示實際費用與生效時間。",
+            "Apple will show the final charge and effective date on the confirmation sheet."
+        )
     }
 
     static var switchToMonthlyHint: String {
@@ -132,6 +142,12 @@ enum WalleafPlusPaywallL10n {
     }
 
     static var restorePurchases: String { t("恢復購買", "Restore Purchases") }
+    static var manageSubscription: String { t("管理訂閱", "Manage Subscription") }
+    static var contactSectionTitle: String { t("聯絡我們", "Contact") }
+    static var supportWithReviewTitle: String { t("支持我們：五星評論", "Support Us: 5-Star Review") }
+    static var supportWithReviewSubtitle: String { t("喜歡 Walleaf 的話，歡迎留下評分", "If you enjoy Walleaf, leave a rating") }
+    static var contactUsTitle: String { t("聯絡我們", "Contact Us") }
+    static var contactUsSubtitle: String { t("有問題或建議，寄信給我們", "Email us with questions or feedback") }
 
     static var cannotLoadPlans: String { t("無法載入方案", "Unable to load plans") }
 
@@ -144,6 +160,32 @@ enum WalleafPlusPaywallL10n {
     static var alertOK: String { t("知道了", "OK") }
 
     static var monthlyTimesTwelve: String { t("月付 × 12", "Monthly × 12") }
+
+    static var monthlySubscribedExplanation: String {
+        t(
+            "你已解鎖所有 Plus 功能。若改成年訂閱，Apple 會處理方案切換與實際費用。",
+            "All Plus features are unlocked. If you switch to annual billing, Apple handles the plan change and final charge."
+        )
+    }
+
+    static var yearlySubscribedExplanation: String {
+        t(
+            "你已使用年訂閱並解鎖所有 Plus 功能。如需取消或變更方案，請前往 Apple 訂閱管理。",
+            "You are on annual billing with all Plus features unlocked. Use Apple subscription management to cancel or change your plan."
+        )
+    }
+
+    static var genericSubscribedExplanation: String {
+        t(
+            "你已解鎖所有 Plus 功能。訂閱方案與續訂由 Apple 管理。",
+            "All Plus features are unlocked. Apple manages your subscription plan and renewal."
+        )
+    }
+
+    static func renewalDateText(_ date: Date) -> String {
+        let formatted = renewalDateFormatter.string(from: date)
+        return t("下次續訂：\(formatted)", "Renews on \(formatted)")
+    }
 
     static var priceLocale: Locale {
         usesChinese ? Locale(identifier: "zh_TW") : Locale(identifier: "en_US")

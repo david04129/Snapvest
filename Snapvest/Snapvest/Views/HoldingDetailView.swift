@@ -23,6 +23,7 @@ struct HoldingDetailView: View {
     @State private var metricAmountDisplay: MetricAmountDisplay
     @State private var marketStatus: MarketStatusSnapshot?
     @State private var buyGateAlertMessage: String?
+    @State private var symbolRealizedPL: SymbolRealizedPL = .zero
     
     enum MetricAmountDisplay {
         case twd
@@ -109,6 +110,14 @@ struct HoldingDetailView: View {
     // 計算未實現損益（原幣）
     var unrealizedGainLossOriginal: Decimal {
         marketValueInOriginalCurrency - aggregatedHolding.totalCost
+    }
+    
+    private var realizedGainLossTWD: Decimal {
+        symbolRealizedPL.amountInTWD(usdToTwdRate: usdToTwdRate)
+    }
+    
+    private var realizedGainLossOriginal: Decimal {
+        symbolRealizedPL.amount(in: aggregatedHolding.currency)
     }
     
     // 計算未實現損益百分比
@@ -279,6 +288,18 @@ struct HoldingDetailView: View {
             return unrealizedGainLossOriginal.formatted(currency: aggregatedHolding.currency, fractionDigits: 2)
         }
     }
+    
+    private var displayedRealizedGainLossText: String {
+        switch metricAmountDisplay {
+        case .twd:
+            return amountInSelectedCurrency(fromTWD: realizedGainLossTWD).formatted(
+                currency: selectedDisplayCurrency,
+                fractionDigits: selectedDisplayCurrency == .TWD ? 0 : 2
+            )
+        case .original:
+            return realizedGainLossOriginal.formatted(currency: aggregatedHolding.currency, fractionDigits: 2)
+        }
+    }
 
     private var displayedDailyGainLossText: String? {
         switch metricAmountDisplay {
@@ -324,6 +345,17 @@ struct HoldingDetailView: View {
             amount = unrealizedGainLoss
         case .original:
             amount = unrealizedGainLossOriginal
+        }
+        return Color.marketColor(for: amount)
+    }
+    
+    private var displayedRealizedGainLossColor: Color {
+        let amount: Decimal
+        switch metricAmountDisplay {
+        case .twd:
+            amount = realizedGainLossTWD
+        case .original:
+            amount = realizedGainLossOriginal
         }
         return Color.marketColor(for: amount)
     }
@@ -392,9 +424,13 @@ struct HoldingDetailView: View {
                 )
             }
             await loadBaseCurrencyRate()
+            await loadSymbolRealizedPL(force: false)
         }
         .onChange(of: baseCurrencyManager.baseCurrency) { _, _ in
             Task { await loadBaseCurrencyRate() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .transactionsDidChange)) { _ in
+            Task { await loadSymbolRealizedPL(force: true) }
         }
         .sheet(item: $activeTradeSheet) { sheet in
             holdingTradeSheetContent(for: sheet)
@@ -448,6 +484,27 @@ struct HoldingDetailView: View {
         transaction.disablesAnimations = true
         withTransaction(transaction) {
             twdPerBaseCurrency = newValue
+        }
+    }
+    
+    @MainActor
+    private func loadSymbolRealizedPL(force: Bool) async {
+        if force {
+            SymbolRealizedPLCache.invalidate()
+        }
+        
+        do {
+            try await SymbolRealizedPLCache.loadIfNeeded(
+                userId: aggregatedHolding.userId,
+                dataService: MockDataService.shared
+            )
+            symbolRealizedPL = SymbolRealizedPLCache.value(
+                userId: aggregatedHolding.userId,
+                assetType: aggregatedHolding.assetType,
+                symbol: aggregatedHolding.symbol
+            )
+        } catch {
+            symbolRealizedPL = .zero
         }
     }
 
@@ -608,8 +665,10 @@ struct HoldingDetailView: View {
                 title: "市值",
                 value: displayedMarketValueText,
                 currency: selectedDisplayCurrency,
+                reservesFootnoteSpace: false,
                 prominence: .featured,
-                accentColor: assetAccentColor
+                accentColor: assetAccentColor,
+                footnotePlacement: .trailingChip
             )
             if let displayedDailyGainLossText {
                 MetricTile(
@@ -620,7 +679,8 @@ struct HoldingDetailView: View {
                     footnote: displayedDailyGainLossPercentText,
                     footnoteColor: displayedDailyGainLossColor,
                     prominence: .featured,
-                    accentColor: displayedDailyGainLossColor
+                    accentColor: displayedDailyGainLossColor,
+                    footnotePlacement: .trailingChip
                 )
             }
             MetricTile(
@@ -631,7 +691,18 @@ struct HoldingDetailView: View {
                 footnote: displayedUnrealizedPercentText,
                 footnoteColor: displayedUnrealizedColor,
                 prominence: .featured,
-                accentColor: displayedUnrealizedColor
+                accentColor: displayedUnrealizedColor,
+                footnotePlacement: .trailingChip
+            )
+            MetricTile(
+                title: "已實現損益",
+                value: displayedRealizedGainLossText,
+                currency: selectedDisplayCurrency,
+                valueColor: displayedRealizedGainLossColor,
+                reservesFootnoteSpace: false,
+                prominence: .featured,
+                accentColor: displayedRealizedGainLossColor,
+                footnotePlacement: .trailingChip
             )
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
                 MetricTile(
