@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-建立台股 symbols_tw.json（上市 + 上櫃 + 興櫃）
+建立台股 symbols_tw.json（上市全商品 + 上櫃 + 興櫃）
 資料來源：
-1. 證交所上市公司: https://dts.twse.com.tw/opendata/t187ap03_L.csv（使用「公司簡稱」欄）
-2. 櫃買上櫃股票行情: https://www.tpex.org.tw/web/stock/aftertrading/DAILY_CLOSE_quotes/stk_quote_result.php?l=zh-tw&o=data
-3. 櫃買興櫃資本額排名: https://www.tpex.org.tw/web/regular_emerging/financereport/emerging_capitals_rank/list_result.php?l=zh-tw&type=l_list&o=data
-4. ETF 補充：腳本內 TW_ETF_SUPPLEMENT（含 5/6 碼含字母之 ETF，證交所清單通常不含）
+1. 證交所上市全商品日行情: https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL
+2. 證交所上市公司: https://dts.twse.com.tw/opendata/t187ap03_L.csv（使用「公司簡稱」欄）
+3. 櫃買上櫃股票行情: https://www.tpex.org.tw/web/stock/aftertrading/DAILY_CLOSE_quotes/stk_quote_result.php?l=zh-tw&o=data
+4. 櫃買興櫃資本額排名: https://www.tpex.org.tw/web/regular_emerging/financereport/emerging_capitals_rank/list_result.php?l=zh-tw&type=l_list&o=data
+5. ETF 補充：腳本內 TW_ETF_SUPPLEMENT（保底用）
 """
 
 import csv
@@ -18,6 +19,7 @@ from typing import Optional
 from symbols_paths import OUTPUT_DIR, SCRIPTS_DIR, catalog_document, read_catalog_meta
 
 DATA_DIR = SCRIPTS_DIR / "data"
+TWSE_STOCK_DAY_ALL_URL = "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL"
 TWSE_LISTED_URL = "https://dts.twse.com.tw/opendata/t187ap03_L.csv"
 # 上櫃股票行情（櫃買）
 TPEX_OTC_QUOTE_URL = "https://www.tpex.org.tw/web/stock/aftertrading/DAILY_CLOSE_quotes/stk_quote_result.php?l=zh-tw&o=data"
@@ -58,22 +60,50 @@ def parse_listed_csv(content: str) -> list[dict]:
     )
 
 
+def parse_twse_stock_day_all(content: str) -> list[dict]:
+    """解析證交所上市全商品日行情 JSON：Code、Name、..."""
+    try:
+        rows = json.loads(content)
+    except json.JSONDecodeError:
+        return []
+
+    items = []
+    seen = set()
+    if not isinstance(rows, list):
+        return items
+
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        symbol = str(row.get("Code", "")).strip().upper()
+        name = str(row.get("Name", "")).strip()
+        if not symbol or not name:
+            continue
+        if not _is_valid_tw_symbol(symbol, name):
+            continue
+        if symbol in seen:
+            continue
+        seen.add(symbol)
+        items.append({"symbol": symbol, "name": name})
+
+    return items
+
+
 def parse_otc_csv(content: str) -> list[dict]:
-    """解析上櫃行情 CSV：資料日期、代號、名稱、收盤、...（僅保留4、5碼，排除6碼權證）"""
-    return _parse_tw_csv_generic(content, symbol_col=1, name_col=2, max_symbol_len=5)
+    """解析上櫃行情 CSV：資料日期、代號、名稱、收盤、..."""
+    return _parse_tw_csv_generic(content, symbol_col=1, name_col=2)
 
 
 def parse_emerging_csv(content: str) -> list[dict]:
     """解析興櫃資本額 CSV：資料日期、排名、公司代號、公司名稱、..."""
-    return _parse_tw_csv_generic(content, symbol_col=2, name_col=3, max_symbol_len=5)
+    return _parse_tw_csv_generic(content, symbol_col=2, name_col=3)
 
 
 def _is_valid_tw_symbol(symbol: str, name: str, max_len: int = 6) -> bool:
-    """過濾：保留股票(4碼)、ETF(5碼)，可選保留部分6碼 ETF，排除權證"""
+    """過濾：保留 4-6 碼英數字台股商品；權證不排除，由資料來源決定。"""
     if len(symbol) < 4 or len(symbol) > max_len:
         return False
-    # 6 碼多為權證，排除名稱含「認購」「認售」「權證」者
-    if len(symbol) == 6 and any(kw in name for kw in ("認購", "認售", "權證")):
+    if not symbol.isalnum():
         return False
     return True
 
@@ -117,13 +147,11 @@ def _parse_tw_csv_generic(
         for row in rows[start:]:
             if len(row) <= max(symbol_col, name_col):
                 continue
-            symbol = str(row[symbol_col]).strip()
+            symbol = str(row[symbol_col]).strip().upper()
             name = str(row[name_col]).strip()
             if not name and fallback_name_col is not None and len(row) > fallback_name_col:
                 name = str(row[fallback_name_col]).strip()
             if not symbol or not name:
-                continue
-            if not symbol.isdigit():
                 continue
             if not _is_valid_tw_symbol(symbol, name, max_symbol_len):
                 continue
@@ -156,6 +184,14 @@ def fetch_listed() -> list[dict]:
                 if parsed:
                     print(f"   📁 上市：使用本地檔 {path.name}")
                     return parsed
+    return []
+
+
+def fetch_twse_stock_day_all() -> list[dict]:
+    """取得證交所上市全商品日行情（含 ETF、權證與字母代號商品）"""
+    content = fetch_url(TWSE_STOCK_DAY_ALL_URL)
+    if content and content.strip().startswith("["):
+        return parse_twse_stock_day_all(content)
     return []
 
 
@@ -283,14 +319,22 @@ def build_symbols_tw() -> Optional[dict]:
             symbol_to_name[sym] = name
     print(f"   ETF 補充: {len(TW_ETF_SUPPLEMENT)} 筆")
 
-    # 1. 上市公司
-    listed = fetch_listed()
-    for item in listed:
+    # 1. 證交所上市全商品（含 ETF、權證與字母代號商品）
+    twse_all = fetch_twse_stock_day_all()
+    for item in twse_all:
         symbol_to_name[item["symbol"]] = item["name"]
-    all_items.extend(listed)
-    print(f"   上市: {len(listed)} 筆")
+    all_items.extend(twse_all)
+    print(f"   上市全商品: {len(twse_all)} 筆")
 
-    # 2. 上櫃（排除已存在）
+    # 2. 上市公司（補公司簡稱；若同代號存在，保留全商品行情名稱）
+    listed = fetch_listed()
+    listed_new = [x for x in listed if x["symbol"] not in symbol_to_name]
+    for item in listed_new:
+        symbol_to_name[item["symbol"]] = item["name"]
+    all_items.extend(listed_new)
+    print(f"   上市公司: {len(listed_new)} 筆（新增）")
+
+    # 3. 上櫃（排除已存在）
     otc = fetch_otc()
     otc_new = [x for x in otc if x["symbol"] not in symbol_to_name]
     for item in otc_new:
@@ -298,7 +342,7 @@ def build_symbols_tw() -> Optional[dict]:
     all_items.extend(otc_new)
     print(f"   上櫃: {len(otc_new)} 筆（新增）")
 
-    # 3. 興櫃（排除已存在）
+    # 4. 興櫃（排除已存在）
     emerging = fetch_emerging()
     emerging_new = [x for x in emerging if x["symbol"] not in symbol_to_name]
     for item in emerging_new:
