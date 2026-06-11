@@ -151,10 +151,12 @@ class HoldingCalculator {
 
     private static func normalizedSymbol(assetType: AssetType, symbol: String) -> String {
         switch assetType {
+        case .stockTW, .stockUS:
+            return symbol.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         case .crypto:
             return SymbolListService.normalizedCryptoSymbol(symbol)
         default:
-            return symbol
+            return symbol.trimmingCharacters(in: .whitespacesAndNewlines)
         }
     }
     

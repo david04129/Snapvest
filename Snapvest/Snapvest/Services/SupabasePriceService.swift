@@ -280,11 +280,11 @@ struct SupabasePriceService {
         }
         return nil
     }
-    /// 與 DB / Edge Function 一致的代號格式（加密、美股大寫；台股保留原樣）
+    /// 與 DB / Edge Function 一致的代號格式（台股字母商品、美股、加密皆大寫）
     static func normalizeSymbol(assetType: AssetType, symbol: String) -> String {
         let trimmed = symbol.trimmingCharacters(in: .whitespacesAndNewlines)
         switch assetType {
-        case .stockUS, .crypto:
+        case .stockTW, .stockUS, .crypto:
             return trimmed.uppercased()
         default:
             return trimmed

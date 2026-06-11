@@ -601,7 +601,7 @@ enum TransactionImportService {
         let trimmed = symbol.trimmingCharacters(in: .whitespaces)
         guard let assetType else { return trimmed }
         switch assetType {
-        case .stockUS, .crypto:
+        case .stockTW, .stockUS, .crypto:
             return trimmed.uppercased()
         default:
             return trimmed

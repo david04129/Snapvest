@@ -22,9 +22,7 @@ enum SellHoldingAvailability {
         dataService: DataServiceProtocol,
         editingTransaction: Transaction?
     ) async -> [SellAccountOption] {
-        let normalizedSymbol = assetType == .crypto
-            ? SymbolListService.normalizedCryptoSymbol(symbol)
-            : symbol
+        let normalizedSymbol = SupabasePriceService.normalizeSymbol(assetType: assetType, symbol: symbol)
 
         var options: [SellAccountOption] = []
         for account in candidateAccounts {
@@ -52,6 +50,7 @@ enum SellHoldingAvailability {
     }
 
     private static func symbolsMatch(_ lhs: String, _ rhs: String) -> Bool {
-        lhs == rhs
+        lhs.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+            == rhs.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
     }
 }

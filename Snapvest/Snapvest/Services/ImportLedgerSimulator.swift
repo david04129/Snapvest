@@ -105,10 +105,10 @@ enum ImportLedgerSimulator {
         switch assetType {
         case .crypto:
             return SymbolListService.normalizedCryptoSymbol(symbol)
-        case .stockUS:
-            return symbol.uppercased()
+        case .stockTW, .stockUS:
+            return symbol.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         default:
-            return symbol
+            return symbol.trimmingCharacters(in: .whitespacesAndNewlines)
         }
     }
     

@@ -33,8 +33,9 @@ function normalizeSymbol(assetType: string, rawSymbol: unknown): string | null {
   if (trimmed.length > 20) return null
 
   if (assetType === "stock_tw") {
-    // 台股 / ETF：目前只接受 4 到 6 碼數字，避免任意字串進追蹤池。
-    return /^\d{4,6}$/.test(trimmed) ? trimmed : null
+    // 台股 / ETF / 權證：接受 4 到 6 碼英數字，支援 00981A 等字母代號。
+    const upper = trimmed.toUpperCase()
+    return /^[A-Z0-9]{4,6}$/.test(upper) ? upper : null
   }
 
   if (assetType === "stock_us") {

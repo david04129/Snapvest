@@ -315,8 +315,8 @@ def get_supabase() -> Client:
 
 
 def _normalize_symbol(asset_type: str, symbol: str) -> str:
-    """加密貨幣、美股統一大寫；台股保留原樣"""
-    if asset_type in ("crypto", "stock_us"):
+    """加密貨幣、美股、含字母台股商品統一大寫。"""
+    if asset_type in ("crypto", "stock_us", "stock_tw"):
         return symbol.upper()
     return symbol.strip()
 
@@ -472,6 +472,14 @@ def fetch_yahoo_one(s: dict, session_close: date) -> tuple[Optional[FetchedQuote
         return None, str(e)
 
 
+def fetch_yahoo_symbol_one(
+    http: requests.Session,
+    symbol: str,
+    session_close: date,
+) -> tuple[Optional[FetchedQuote], str]:
+    return fetch_yahoo_one({"asset_type": "stock_tw", "symbol": symbol}, session_close)
+
+
 def _fetch_primary_batch(
     symbols: list[dict],
     session_close: date,
@@ -525,10 +533,13 @@ def fetch_stocks_for_market(
         label = "Fugle"
         finmind_times = None
         if not FUGLE_API_KEY:
-            print("  未設定 FUGLE_API_KEY，略過台股更新")
-            return {}
-        fetch_one = fetch_fugle_tw_quote
-        yfinance_fallback = False
+            print("  未設定 FUGLE_API_KEY，台股將直接嘗試 yfinance fallback")
+            fetch_one = fetch_yahoo_symbol_one
+            label = "yfinance"
+            yfinance_fallback = False
+        else:
+            fetch_one = fetch_fugle_tw_quote
+            yfinance_fallback = True
     else:
         label = "Finnhub"
         finmind_times = None

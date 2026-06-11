@@ -7,7 +7,8 @@ export function normalizeSymbol(assetType: string, rawSymbol: unknown): string |
   if (!trimmed || trimmed.length > 20) return null
 
   if (assetType === "stock_tw") {
-    return /^\d{4,6}$/.test(trimmed) ? trimmed : null
+    const upper = trimmed.toUpperCase()
+    return /^[A-Z0-9]{4,6}$/.test(upper) ? upper : null
   }
 
   if (assetType === "stock_us") {
