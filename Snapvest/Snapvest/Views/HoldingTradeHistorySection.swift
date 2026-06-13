@@ -141,6 +141,7 @@ final class HoldingTradeHistoryViewModel: ObservableObject {
 struct HoldingTradeHistorySection: View {
     let aggregatedHolding: AggregatedHoldingSnapshot
     let currentPrice: Decimal?
+    let usdToTwdRate: Decimal
 
     @StateObject private var historyViewModel = HoldingTradeHistoryViewModel()
     @StateObject private var transactionsViewModel = TransactionsViewModel()
@@ -280,6 +281,8 @@ struct HoldingTradeHistorySection: View {
                         transaction: transaction,
                         aggregatedHolding: aggregatedHolding,
                         currentPrice: currentPrice,
+                        usdToTwdRate: usdToTwdRate,
+                        accountCurrency: group.account.currency,
                         onRowTap: { handleEditTransaction(transaction) },
                         onDelete: { _ in
                             transactionPendingDelete = transaction

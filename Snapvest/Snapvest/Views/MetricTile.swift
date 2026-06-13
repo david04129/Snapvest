@@ -21,6 +21,8 @@ struct MetricTile: View {
     let title: String
     let value: String
     var currency: Currency? = nil
+    var titleCurrency: Currency? = nil
+    var showsValueCurrencyChip: Bool = true
     var valueColor: Color = .primaryText
     var footnote: String? = nil
     var footnoteColor: Color = .secondaryText
@@ -29,6 +31,9 @@ struct MetricTile: View {
     var prominence: MetricTileProminence = .standard
     var accentColor: Color? = nil
     var footnotePlacement: MetricTileFootnotePlacement = .below
+    var compact: Bool = false
+    var titleCurrencyCanToggle: Bool = false
+    var titleCurrencyToggleAction: (() -> Void)? = nil
     
     private var isFeatured: Bool { prominence == .featured }
     
@@ -37,6 +42,9 @@ struct MetricTile: View {
     }
     
     private var tileMinHeight: CGFloat {
+        if compact {
+            return isFeatured ? 78 : 74
+        }
         if isFeatured, footnotePlacement == .trailingChip {
             return 78
         }
@@ -44,6 +52,9 @@ struct MetricTile: View {
     }
     
     private var tilePadding: CGFloat {
+        if compact {
+            return isFeatured ? 14 : 10
+        }
         if isFeatured, footnotePlacement == .trailingChip {
             return 14
         }
@@ -52,13 +63,7 @@ struct MetricTile: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: footnotePlacement == .trailingChip ? 7 : (isFeatured ? 10 : 8)) {
-            Text(title)
-                .font(.subheadline)
-                .fontWeight(.medium)
-                .foregroundColor(.secondaryText)
-                .lineLimit(titleLineLimit)
-                .minimumScaleFactor(0.85)
-                .fixedSize(horizontal: false, vertical: true)
+            titleRow
             
             valueRow
             
@@ -93,6 +98,31 @@ struct MetricTile: View {
         .shadow(color: isFeatured ? AppColors.shadowMedium : .clear, radius: isFeatured ? 6 : 0, x: 0, y: isFeatured ? 2 : 0)
     }
     
+    @ViewBuilder
+    private var titleRow: some View {
+        if let titleCurrency {
+            CurrencyToggleTitleLabel(
+                title: title,
+                currency: titleCurrency,
+                font: .subheadline,
+                weight: .medium,
+                color: .secondaryText,
+                chipTint: accentColor ?? .appPrimary,
+                titleLineLimit: titleLineLimit,
+                canToggle: titleCurrencyCanToggle,
+                action: { titleCurrencyToggleAction?() }
+            )
+        } else {
+            Text(title)
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .foregroundColor(.secondaryText)
+                .lineLimit(titleLineLimit)
+                .minimumScaleFactor(0.85)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     private var valueRow: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             valueContent
@@ -126,7 +156,8 @@ struct MetricTile: View {
                 font: valueFont,
                 weight: .bold,
                 color: valueColor,
-                chipTint: accentColor ?? .appPrimary
+                chipTint: accentColor ?? .appPrimary,
+                showsChip: showsValueCurrencyChip
             )
         } else {
             Text(value)

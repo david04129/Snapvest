@@ -97,36 +97,32 @@ struct AccountsView: View {
     
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 12) {
-                    AccountsCurrencyControlsBar(
-                        currencyDisplay: $accountsCurrencyDisplay,
-                        showsEditControl: true,
-                        isEditingOrder: isEditingOrder,
-                        isEditDisabled: orderedVisibleManagementSections.isEmpty && !showsManagementOnboardingEmpty,
-                        onEditTapped: {
-                            toggleOrderEditing()
-                        }
-                    )
+            VStack(spacing: 0) {
+                managementControlsCard
 
-                    if showsManagementOnboardingEmpty {
-                        OnboardingEmptyStateCard(
-                            icon: "building.columns.fill",
-                            title: "還沒有帳戶",
-                            message: "先建立現金、台股、美股或加密錢包，淨資產與走勢才會開始累積。",
-                            actionTitle: "新增第一個帳戶"
-                        ) {
-                            showingAddAccount = true
+                ScrollView {
+                    VStack(spacing: 12) {
+                        if showsManagementOnboardingEmpty {
+                            OnboardingEmptyStateCard(
+                                icon: "building.columns.fill",
+                                title: "還沒有帳戶",
+                                message: "先建立現金、台股、美股或加密錢包，淨資產與走勢才會開始累積。",
+                                actionTitle: "新增第一個帳戶"
+                            ) {
+                                showingAddAccount = true
+                            }
                         }
+
+                        ForEach(orderedVisibleManagementSections) { sectionID in
+                            sortableManagementSectionView(for: sectionID)
+                        }
+
+                        archivedDebtAccountsSection
                     }
-                    
-                    ForEach(orderedVisibleManagementSections) { sectionID in
-                        sortableManagementSectionView(for: sectionID)
-                    }
-                    
-                    archivedDebtAccountsSection
+                    .padding(.horizontal, 16)
+                    .padding(.top, 4)
+                    .padding(.bottom, 16)
                 }
-                .padding()
             }
             .background(Color.mainBackground)
             .navigationBarBackButtonHidden(true)
@@ -465,10 +461,30 @@ struct AccountsView: View {
     }
     
     // MARK: - 標題欄
+
+    private var managementControlsCard: some View {
+        AccountsCurrencyControlsBar(
+            currencyDisplay: $accountsCurrencyDisplay,
+            showsEditControl: true,
+            isEditingOrder: isEditingOrder,
+            isEditDisabled: orderedVisibleManagementSections.isEmpty && !showsManagementOnboardingEmpty,
+            onEditTapped: {
+                toggleOrderEditing()
+            }
+        )
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+        .background(Color.mainBackground)
+    }
     
     private var accountsHeaderBar: some View {
         HStack {
             HStack(spacing: 6) {
+                Image(systemName: "building.columns.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.appPrimary)
+
                 Text("管理")
                     .font(.headline)
                     .fontWeight(.bold)
@@ -477,7 +493,7 @@ struct AccountsView: View {
             
             Spacer()
             
-            HStack(spacing: 12) {
+            HStack(spacing: 8) {
                 Button {
                     guard !isEditingOrder else { return }
                     showingAddAccount = true
@@ -504,7 +520,6 @@ struct AccountsView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Color.mainBackground)
     }
     
     // MARK: - 刪除帳戶

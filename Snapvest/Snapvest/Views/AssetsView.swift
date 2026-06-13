@@ -45,8 +45,13 @@ struct AssetsView: View {
     
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 20) {
+            VStack(spacing: 0) {
+                if !(viewModel.isLoading && !viewModel.hasLoadedOnce) {
+                    assetsControlsCard
+                }
+
+                ScrollView {
+                    VStack(spacing: 20) {
                         if viewModel.isLoading && !viewModel.hasLoadedOnce {
                             VStack(spacing: 16) {
                                 ProgressView()
@@ -57,11 +62,6 @@ struct AssetsView: View {
                             .frame(maxWidth: .infinity)
                             .padding()
                         } else {
-                            AssetsDisplayControlsBar(
-                                ratioType: $holdingsRatioType,
-                                currencyDisplay: $holdingsCurrencyDisplay
-                            )
-                            
                             if showsHoldingsOnboardingEmpty {
                                 OnboardingEmptyStateCard(
                                     icon: "chart.bar.fill",
@@ -108,7 +108,10 @@ struct AssetsView: View {
                             .id("allHoldings")
                         }
                     }
-                    .padding()
+                    .padding(.horizontal, 16)
+                    .padding(.top, 4)
+                    .padding(.bottom, 16)
+                }
             }
             .background(Color.mainBackground)
             .navigationBarBackButtonHidden(true)
@@ -228,6 +231,18 @@ struct AssetsView: View {
     }
     
     // MARK: - 自定義標題欄
+
+    private var assetsControlsCard: some View {
+        AssetsDisplayControlsBar(
+            ratioType: $holdingsRatioType,
+            currencyDisplay: $holdingsCurrencyDisplay
+        )
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+        .background(Color.mainBackground)
+    }
+
     private func customHeaderBar(icon: String, title: String) -> some View {
         HStack {
             HStack(spacing: 6) {
@@ -242,12 +257,11 @@ struct AssetsView: View {
             }
             
             Spacer()
-            
+
             AppHeaderMoreButton(action: openSettings)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Color.mainBackground)
     }
 }
 

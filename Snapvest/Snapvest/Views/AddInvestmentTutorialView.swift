@@ -183,6 +183,7 @@ private struct InvestmentTutorialPageView: View {
                         height: InvestmentTutorialLayout.visualHeight(for: page.visual),
                         alignment: .top
                     )
+                    .clipped()
 
                 VStack(spacing: 8) {
                     Text(page.title)
@@ -477,9 +478,14 @@ private struct InvestmentTutorialManagementHeaderMock: View {
 
     var body: some View {
         HStack {
-            Text("管理")
-                .font(.subheadline.weight(.bold))
-                .foregroundColor(.primaryText)
+            HStack(spacing: 6) {
+                Image(systemName: "building.columns.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.appPrimary)
+                Text("管理")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundColor(.primaryText)
+            }
             Spacer()
             HStack(spacing: 6) {
                 Image(systemName: "plus.circle.fill")
@@ -493,6 +499,13 @@ private struct InvestmentTutorialManagementHeaderMock: View {
             .clipShape(Capsule())
             .investmentTutorialHighlight(highlightAddButton, cornerRadius: 20, prominent: true)
             .investmentTutorialPress(isAddPressed)
+
+            Image(systemName: "ellipsis")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(.appPrimary)
+                .frame(width: 28, height: 28)
+                .background(Color.cardBackground)
+                .clipShape(Circle())
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -507,33 +520,80 @@ private struct InvestmentTutorialAccountCardMock: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(AccountType.twdSecurities.color)
-                .frame(width: 3, height: 28)
+            ZStack {
+                Circle()
+                    .stroke(AccountType.twdSecurities.color.opacity(0.26), lineWidth: 3)
+                Text("0%")
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundColor(.secondaryText)
+            }
+            .frame(width: 30, height: 30)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(name)
-                    .font(.caption.weight(.bold))
+                    .font(.system(size: 13, weight: .bold))
                     .foregroundColor(.primaryText)
                 Text("總資產")
                     .font(.system(size: 9))
                     .foregroundColor(.secondaryText)
             }
             Spacer()
-            Text("—")
-                .font(.caption.weight(.bold))
-                .foregroundColor(.secondaryText)
+            Text("$0")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(.primaryText)
         }
-        .padding(12)
+        .padding(14)
         .background(Color.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 14)
+            RoundedRectangle(cornerRadius: 16)
                 .fill(AccountType.twdSecurities.color)
-                .frame(width: 3)
+                .frame(width: 4)
         }
+        .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 1)
         .investmentTutorialHighlight(highlighted, cornerRadius: 16, prominent: true)
         .investmentTutorialPress(isPressed)
+    }
+}
+
+private struct InvestmentTutorialTWAccountCategoryMock: View {
+    var highlightedAccount = false
+    var isAccountPressed = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                HStack(spacing: 6) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(AccountType.twdSecurities.color)
+                        .frame(width: 3, height: 14)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("台股證券")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.primaryText)
+                        Text("1 個帳戶")
+                            .font(.system(size: 8))
+                            .foregroundColor(.secondaryText)
+                    }
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("類別總資產")
+                        .font(.system(size: 8, weight: .medium))
+                        .foregroundColor(.secondaryText)
+                    Text("$0")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.primaryText)
+                }
+            }
+
+            InvestmentTutorialAccountCardMock(
+                name: "元大證券",
+                highlighted: highlightedAccount,
+                isPressed: isAccountPressed
+            )
+        }
+        .padding(12)
     }
 }
 
@@ -702,69 +762,173 @@ private struct InvestmentTutorialCreateAccountFlowMock: View {
                 isAddPressed: false
             )
 
-            InvestmentTutorialAccountCardMock(
-                name: "元大證券",
-                highlighted: false,
-                isPressed: false
-            )
-            .padding(12)
+            InvestmentTutorialTWAccountCategoryMock()
 
             Spacer(minLength: 0)
         }
     }
 
     private var addItemHubContent: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            miniHeroCard(title: "新增項目", subtitle: "選擇要建立的帳戶、負債或其他資產")
+        VStack(alignment: .leading, spacing: 8) {
+            miniHeroCard(
+                title: "新增項目",
+                subtitle: "選擇要建立的帳戶、負債或其他資產；完成後會出現在管理分頁。",
+                accent: Color.secondaryText.opacity(0.55)
+            )
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("帳戶")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundColor(.primaryText)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 6) {
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(AccountType.twdSecurities.color.opacity(0.85))
-                            .frame(width: 3, height: 10)
-                        Text("投資帳戶")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundColor(.secondaryText)
-                    }
-                    .investmentTutorialHighlight(highlightInvestment, cornerRadius: 10, prominent: true)
-
-                    VStack(spacing: 0) {
-                        twSecuritiesRow
-                        Divider().padding(.leading, 10)
-                        hubRow(title: "美股證券", color: AccountType.usdAccount.color)
-                        Divider().padding(.leading, 10)
-                        hubRow(title: "加密貨幣錢包", color: AccountType.cryptoWallet.color)
-                    }
-                    .background(Color.cardBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .stroke(Color.separator.opacity(0.3), lineWidth: 1)
-                    }
+            addItemMajorGroup(
+                title: "帳戶",
+                subtitle: "現金與投資帳戶，可記錄餘額與交易",
+                accent: .appPrimary
+            ) {
+                addItemSubsection(title: "現金帳戶", accent: AccountType.twdDeposit.color) {
+                    addItemOptionRow(
+                        title: AccountType.twdDeposit.displayName,
+                        subtitle: "台幣存款、外幣現金與日常資金",
+                        accent: AccountType.twdDeposit.color
+                    )
                 }
-                .padding(10)
-                .background(Color.appPrimary.opacity(0.08))
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+                addItemSubsection(title: "投資帳戶", accent: AccountType.twdSecurities.color) {
+                    addItemOptionRow(
+                        title: AccountType.twdSecurities.displayName,
+                        subtitle: AccountType.twdSecurities.description,
+                        accent: AccountType.twdSecurities.color,
+                        highlighted: highlightTWSecurities,
+                        isPressed: isTWPressed
+                    )
+                    Divider().padding(.leading, 10)
+                    addItemOptionRow(
+                        title: AccountType.usdAccount.displayName,
+                        subtitle: AccountType.usdAccount.description,
+                        accent: AccountType.usdAccount.color
+                    )
+                    Divider().padding(.leading, 10)
+                    addItemOptionRow(
+                        title: AccountType.cryptoWallet.displayName,
+                        subtitle: AccountType.cryptoWallet.description,
+                        accent: AccountType.cryptoWallet.color
+                    )
+                }
+                .investmentTutorialHighlight(highlightInvestment, cornerRadius: 12, prominent: true)
+            }
+
+            addItemMajorGroup(
+                title: "負債",
+                subtitle: "房貸、信貸、卡費與其他欠款",
+                accent: AccountType.debt.color
+            ) {
+                addItemSubsection(title: "", accent: AccountType.debt.color) {
+                    addItemOptionRow(
+                        title: "分期貸款",
+                        subtitle: AccountType.debt.description,
+                        accent: AccountType.debt.color
+                    )
+                    Divider().padding(.leading, 10)
+                    addItemOptionRow(
+                        title: "其他負債",
+                        subtitle: AccountType.otherDebt.description,
+                        accent: AccountType.otherDebt.color
+                    )
+                }
+            }
+
+            addItemMajorGroup(
+                title: "其他資產",
+                subtitle: "基金、房地產、保單等無即時市價的資產",
+                accent: .manualAssetColor
+            ) {
+                addItemSubsection(title: "", accent: .manualAssetColor) {
+                    addItemOptionRow(
+                        title: "新增其他資產",
+                        subtitle: "基金、房地產、保單、收藏品等沒有公開即時價格的資產。",
+                        accent: .manualAssetColor
+                    )
+                }
             }
         }
     }
 
-    private var twSecuritiesRow: some View {
+    private func addItemMajorGroup<Content: View>(
+        title: String,
+        subtitle: String,
+        accent: Color,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .top, spacing: 7) {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(accent)
+                    .frame(width: 3)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(.primaryText)
+                    Text(subtitle)
+                        .font(.system(size: 8))
+                        .foregroundColor(.secondaryText)
+                        .lineLimit(2)
+                }
+            }
+
+            content()
+        }
+        .padding(9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(accent.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(accent)
+                .frame(width: 3)
+        }
+    }
+
+    private func addItemSubsection<Content: View>(
+        title: String,
+        accent: Color,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if !title.isEmpty {
+                HStack(spacing: 5) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(accent.opacity(0.85))
+                        .frame(width: 3, height: 9)
+                    Text(title)
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundColor(.secondaryText)
+                }
+            }
+            VStack(spacing: 0) {
+                content()
+            }
+            .background(Color.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color.separator.opacity(0.3), lineWidth: 1)
+            }
+        }
+    }
+
+    private func addItemOptionRow(
+        title: String,
+        subtitle: String,
+        accent: Color,
+        highlighted: Bool = false,
+        isPressed: Bool = false
+    ) -> some View {
         HStack(spacing: 8) {
             RoundedRectangle(cornerRadius: 2)
-                .fill(AccountType.twdSecurities.color)
-                .frame(width: 3, height: 22)
+                .fill(accent)
+                .frame(width: 3, height: 20)
             VStack(alignment: .leading, spacing: 1) {
-                Text("台股證券")
-                    .font(.system(size: 10, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 9, weight: .semibold))
                     .foregroundColor(.primaryText)
-                Text("買賣台股、台股 ETF")
-                    .font(.system(size: 8))
+                Text(subtitle)
+                    .font(.system(size: 7))
                     .foregroundColor(.secondaryText)
                     .lineLimit(1)
             }
@@ -774,30 +938,13 @@ private struct InvestmentTutorialCreateAccountFlowMock: View {
                 .foregroundColor(.tertiaryText)
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .investmentTutorialHighlight(highlightTWSecurities, cornerRadius: 10, prominent: true)
-        .investmentTutorialPress(isTWPressed)
-    }
-
-    private func hubRow(title: String, color: Color) -> some View {
-        HStack(spacing: 8) {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(color)
-                .frame(width: 3, height: 22)
-            Text(title)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(.primaryText)
-            Spacer()
-            Image(systemName: "chevron.right")
-                .font(.system(size: 8, weight: .semibold))
-                .foregroundColor(.tertiaryText)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.vertical, 6)
+        .investmentTutorialHighlight(highlighted, cornerRadius: 10, prominent: true)
+        .investmentTutorialPress(isPressed)
     }
 
     private var accountFormContent: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             miniHeroCard(
                 title: "台股證券",
                 subtitle: AccountType.twdSecurities.description,
@@ -805,33 +952,84 @@ private struct InvestmentTutorialCreateAccountFlowMock: View {
                 accent: AccountType.twdSecurities.color
             )
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("帳戶名稱")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundColor(.primaryText)
-                Text(accountName.isEmpty ? "例如：元大證券" : accountName)
-                    .font(.system(size: 10))
-                    .foregroundColor(accountName.isEmpty ? .tertiaryText : .primaryText)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .background(Color.secondaryBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            VStack(spacing: 0) {
+                accountFormRow(
+                    icon: "person.circle.fill",
+                    title: "帳戶名稱",
+                    value: accountName.isEmpty ? "例如：元大證券" : accountName,
+                    isPlaceholder: accountName.isEmpty
+                )
+                Divider().padding(.horizontal, 12)
+                accountFormRow(
+                    icon: "dollarsign.arrow.circlepath",
+                    title: "帳戶幣別",
+                    value: "TWD",
+                    helper: "原幣仍依標的決定；帳戶幣別用於現金餘額與折算顯示。"
+                )
+                Divider().padding(.horizontal, 12)
+                accountFormRow(
+                    icon: "dollarsign.circle.fill",
+                    title: "初始餘額",
+                    value: "0",
+                    helper: "可選：設定帳戶的初始餘額",
+                    isPlaceholder: true
+                )
             }
-            .padding(12)
             .background(Color.cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color.separator.opacity(0.3), lineWidth: 1)
+            }
 
-            Text("建立帳戶")
-                .font(.caption.weight(.bold))
-                .foregroundColor(AppColors.actionForeground)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 9)
-                .background(Color.appPrimary)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            HStack(spacing: 6) {
+                Image(systemName: "checkmark.circle.fill")
+                Text("建立帳戶")
+            }
+            .font(.caption.weight(.bold))
+            .foregroundColor(AppColors.actionForeground)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(accountName.isEmpty ? AppColors.disabledBackground : AccountType.twdSecurities.color)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .opacity(accountName.isEmpty ? 0.7 : 1)
                 .investmentTutorialHighlight(highlightCreateButton, cornerRadius: 12, prominent: true)
                 .investmentTutorialPress(isCreatePressed)
         }
+    }
+
+    private func accountFormRow(
+        icon: String,
+        title: String,
+        value: String,
+        helper: String? = nil,
+        isPlaceholder: Bool = false
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(AccountType.twdSecurities.color)
+                Text(title)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.primaryText)
+            }
+            Text(value)
+                .font(.system(size: 11, weight: isPlaceholder ? .regular : .semibold))
+                .foregroundColor(isPlaceholder ? .tertiaryText : .primaryText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(Color.secondaryBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            if let helper {
+                Text(helper)
+                    .font(.system(size: 8))
+                    .foregroundColor(.secondaryText)
+                    .lineLimit(2)
+            }
+        }
+        .padding(12)
     }
 
     private func miniHeroCard(
@@ -1075,12 +1273,10 @@ private struct InvestmentTutorialTradeFlowMock: View {
                 isAddPressed: false
             )
 
-            InvestmentTutorialAccountCardMock(
-                name: "元大證券",
-                highlighted: highlightAccount,
-                isPressed: isAccountPressed
+            InvestmentTutorialTWAccountCategoryMock(
+                highlightedAccount: highlightAccount,
+                isAccountPressed: isAccountPressed
             )
-            .padding(12)
 
             Spacer(minLength: 0)
 
@@ -1106,25 +1302,18 @@ private struct InvestmentTutorialTradeFlowMock: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
 
-            HStack(spacing: 8) {
-                metricTile(title: "現金餘額", value: "—")
-                metricTile(title: "持股市值", value: "—")
+            VStack(spacing: 10) {
+                accountDetailHeroCard
+
+                HStack(spacing: 8) {
+                    metricTile(title: "現金餘額", value: "$0", currency: "TWD")
+                    metricTile(title: "持股市值", value: showHoldingsResult ? "$1,500" : "$0", currency: "TWD")
+                }
+
+                accountHoldingsPreview
             }
             .padding(.horizontal, 12)
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("目前持股")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundColor(.secondaryText)
-                Text("尚無持股")
-                    .font(.system(size: 9))
-                    .foregroundColor(.tertiaryText)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 20)
-                    .background(Color.cardBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            }
-            .padding(12)
+            .padding(.top, 2)
 
             Spacer(minLength: 0)
 
@@ -1159,50 +1348,247 @@ private struct InvestmentTutorialTradeFlowMock: View {
         }
     }
 
-    private var tradeFormContent: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
-                Text("台股")
+    private var accountDetailHeroCard: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .top) {
+                HStack(spacing: 6) {
+                    Text("元大證券")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundColor(.primaryText)
+                    Image(systemName: "pencil")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.appPrimary)
+                }
+                Spacer()
+                Text("台股證券")
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundColor(.stockTWColor)
+                    .foregroundColor(AccountType.twdSecurities.color)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Color.stockTWColor.opacity(0.14))
+                    .background(AccountType.twdSecurities.color.opacity(0.15))
                     .clipShape(Capsule())
+            }
 
-                HStack(spacing: 0) {
-                    Text("買入")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundColor(AppColors.actionForeground)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
-                        .background(Color.profitGreen)
-                        .clipShape(Capsule())
-                    Text("賣出")
-                        .font(.system(size: 9, weight: .semibold))
+            VStack(alignment: .leading, spacing: 3) {
+                CurrencyIconBadge(
+                    currency: .TWD,
+                    tint: AccountType.twdSecurities.color,
+                    showsLabel: true
+                )
+                .scaleEffect(0.72, anchor: .leading)
+                .frame(height: 18, alignment: .leading)
+
+                Text("帳戶總資產")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundColor(.secondaryText)
+                Text(showHoldingsResult ? "$1,500" : "$0")
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .foregroundColor(.primaryText)
+                    .monospacedDigit()
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 16)
+                .fill(AccountType.twdSecurities.color)
+                .frame(width: 4)
+        }
+        .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 1)
+    }
+
+    private var accountHoldingsPreview: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("持股明細")
+                        .font(.system(size: 12, weight: .bold))
                         .foregroundColor(.primaryText)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
+                    Text(showHoldingsResult ? "1 檔" : "0 檔")
+                        .font(.system(size: 8))
+                        .foregroundColor(.secondaryText)
                 }
-                .padding(3)
-                .background(Color.cardBackground)
+                Spacer()
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.down")
+                    Text("市值")
+                }
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundColor(.appPrimary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(Color.appPrimary.opacity(0.12))
                 .clipShape(Capsule())
             }
 
-            formField(title: "代號", value: symbolText, placeholder: "0050")
-            formField(title: "數量", value: quantityText, placeholder: "10")
-            formField(title: "單價", value: priceText, placeholder: "150")
+            if showHoldingsResult {
+                holdingCardRow
+            } else {
+                Text("記錄買入後，持股會出現在這裡")
+                    .font(.system(size: 9))
+                    .foregroundColor(.tertiaryText)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 18)
+                    .background(Color.cardBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+        }
+    }
 
-            Text("買入")
-                .font(.caption.weight(.bold))
-                .foregroundColor(AppColors.actionForeground)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 9)
-                .background(Color.profitGreen)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    private var tradeFormContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text("台股")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.stockTWColor)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(Color.stockTWColor.opacity(0.15))
+                    .clipShape(Capsule())
+                Spacer()
+            }
+
+            HStack(spacing: 6) {
+                tradeActionPill("買入", icon: "arrow.up", color: .profitGreen, selected: true)
+                tradeActionPill("賣出", icon: "arrow.down", color: .lossRed, selected: false)
+            }
+            .padding(4)
+            .background(Color.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+            VStack(spacing: 0) {
+                tradeFormRow(
+                    title: "股票代號",
+                    icon: "tag.fill",
+                    value: symbolText.isEmpty ? "點擊選擇" : "\(symbolText) — 元大台灣50",
+                    isPlaceholder: symbolText.isEmpty
+                )
+                Divider().padding(.horizontal, 12)
+                tradeFormRow(title: "數量", icon: "number.circle.fill", value: quantityText.isEmpty ? "0" : quantityText, isPlaceholder: quantityText.isEmpty)
+                Divider().padding(.horizontal, 12)
+                tradeFormRow(title: "每股買價（台幣）", icon: "dollarsign.circle.fill", value: priceText.isEmpty ? "TWD 0" : "TWD \(priceText)", isPlaceholder: priceText.isEmpty)
+                Divider().padding(.horizontal, 12)
+                tradeFormRow(title: "帳戶", icon: "building.columns.fill", value: "元大證券 · 台股證券")
+                Divider().padding(.horizontal, 12)
+                tradeFormRow(title: "從帳戶扣款", icon: "creditcard.fill", value: "從帳戶中扣除此筆款項")
+                Divider().padding(.horizontal, 12)
+                tradeFormRow(title: "交易日期", icon: "calendar", value: "今天")
+            }
+            .background(Color.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color.separator.opacity(0.32), lineWidth: 1)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("本筆買入")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundColor(.secondaryText)
+                Text(symbolText.isEmpty || quantityText.isEmpty || priceText.isEmpty ? "—" : "$1,500")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundColor(.primaryText)
+                Text(quantityText.isEmpty || priceText.isEmpty ? "請填寫數量與價格" : "\(quantityText) × TWD \(priceText)")
+                    .font(.system(size: 8))
+                    .foregroundColor(.secondaryText)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.up")
+                Text("買入")
+            }
+            .font(.caption.weight(.bold))
+            .foregroundColor(AppColors.actionForeground)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(symbolText.isEmpty || quantityText.isEmpty || priceText.isEmpty ? AppColors.disabledBackground : Color.profitGreen)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .investmentTutorialHighlight(highlightSubmit, cornerRadius: 12, prominent: true)
                 .investmentTutorialPress(isSubmitPressed)
         }
+    }
+
+    private func tradeActionPill(_ title: String, icon: String, color: Color, selected: Bool) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+            Text(title)
+        }
+        .font(.system(size: 10, weight: .semibold))
+        .foregroundColor(selected ? AppColors.actionForeground : .primaryText)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 7)
+        .background(selected ? color : Color.clear)
+        .clipShape(Capsule())
+    }
+
+    private func tradeFormRow(
+        title: String,
+        icon: String,
+        value: String,
+        isPlaceholder: Bool = false
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.stockTWColor)
+                Text(title)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(.primaryText)
+            }
+            Text(value)
+                .font(.system(size: 10, weight: isPlaceholder ? .regular : .semibold))
+                .foregroundColor(isPlaceholder ? .secondaryText : .primaryText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 7)
+                .background(Color.secondaryBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .padding(10)
+    }
+
+    private var holdingCardRow: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("0050")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.primaryText)
+                Text("持有 10 股")
+                    .font(.system(size: 8))
+                    .foregroundColor(.secondaryText)
+            }
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 3) {
+                Text("$1,500")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.primaryText)
+                HStack(spacing: 3) {
+                    Image(systemName: "minus")
+                    Text("$0 (0.0%)")
+                }
+                .font(.system(size: 8, weight: .medium))
+                .foregroundColor(.secondaryText)
+            }
+            Image(systemName: "chevron.right")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundColor(.secondaryText)
+        }
+        .padding(12)
+        .background(Color.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color.stockTWColor)
+                .frame(width: 4)
+        }
+        .shadow(color: AppColors.shadowMedium, radius: 5, x: 0, y: 1)
     }
 
     private var investmentResultContent: some View {
@@ -1219,31 +1605,7 @@ private struct InvestmentTutorialTradeFlowMock: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
 
-            HStack(spacing: 10) {
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(Color.stockTWColor)
-                    .frame(width: 3, height: 28)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("0050")
-                        .font(.caption.weight(.bold))
-                        .foregroundColor(.primaryText)
-                    Text("元大台灣50")
-                        .font(.system(size: 9))
-                        .foregroundColor(.secondaryText)
-                }
-                Spacer()
-                Text("10 股")
-                    .font(.caption.weight(.semibold))
-                    .foregroundColor(.primaryText)
-            }
-            .padding(12)
-            .background(Color.cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(Color.stockTWColor)
-                    .frame(width: 3)
-            }
+            holdingCardRow
             .padding(12)
 
             Spacer(minLength: 0)
@@ -1256,19 +1618,28 @@ private struct InvestmentTutorialTradeFlowMock: View {
         }
     }
 
-    private func metricTile(title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(.system(size: 8))
-                .foregroundColor(.secondaryText)
+    private func metricTile(title: String, value: String, currency: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 4) {
+                Text(title)
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundColor(.secondaryText)
+                Text(currency)
+                    .font(.system(size: 6, weight: .bold))
+                    .foregroundColor(.primaryText.opacity(0.68))
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .background(Color.primaryText.opacity(0.06))
+                    .clipShape(Capsule())
+            }
             Text(value)
-                .font(.system(size: 10, weight: .bold))
+                .font(.system(size: 12, weight: .bold))
                 .foregroundColor(.primaryText)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(8)
+        .padding(9)
         .background(Color.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private func formField(title: String, value: String, placeholder: String) -> some View {

@@ -78,6 +78,13 @@ struct AssetCategoryDetailView: View {
         usesOriginalAmounts ? assetType.quoteCurrency : portfolioViewModel.viewCurrency
     }
 
+    private func toggleCategoryDisplayCurrency() {
+        guard showsCurrencyToggle else { return }
+        withAnimation(ChartMotion.switchSpring) {
+            currencyDisplay = currencyDisplay == .twd ? .original : .twd
+        }
+    }
+
     private var twdPerBaseCurrency: Decimal {
         portfolioViewModel.twdPerBaseCurrency
     }
@@ -177,12 +184,6 @@ struct AssetCategoryDetailView: View {
             ToolbarItem(placement: .navigationBarLeading) {
                 SnapToolbarIconButton(icon: .back) { dismiss() }
             }
-            if showsCurrencyToggle {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    AccountsCurrencyControlsBar(currencyDisplay: $currencyDisplay)
-                }
-                .sharedBackgroundVisibility(.hidden)
-            }
         }
         .onAppear {
             if !showsCurrencyToggle {
@@ -193,68 +194,49 @@ struct AssetCategoryDetailView: View {
 
     private var metricsSection: some View {
         VStack(spacing: 10) {
-            LazyVGrid(
-                columns: [
-                    GridItem(.flexible(), spacing: 10),
-                    GridItem(.flexible(), spacing: 10)
-                ],
-                spacing: 10
-            ) {
-                MetricTile(
-                    title: "未實現損益",
-                    value: displayUnrealized.formatted(
-                        currency: displayCurrency,
-                        fractionDigits: marketValueFractionDigits,
-                        showSymbol: false
-                    ),
-                    currency: displayCurrency,
-                    valueColor: Color.marketColor(for: displayUnrealized),
-                    footnote: "\(displayUnrealizedPercent.formatted(fractionDigits: 1))%",
-                    footnoteColor: Color.marketColor(for: displayUnrealized),
-                    accentColor: accentColor
-                )
-                MetricTile(
-                    title: "成本",
-                    value: displayTotalCost.formatted(
-                        currency: displayCurrency,
-                        fractionDigits: marketValueFractionDigits,
-                        showSymbol: false
-                    ),
-                    currency: displayCurrency,
-                    accentColor: accentColor
-                )
-            }
-
-            AssetCategoryRealizedPLSection(
+            AssetCategoryGainLossSection(
                 assetType: assetType,
+                categoryHoldings: categoryHoldings,
+                assetPriceSnapshots: assetsViewModel.assetPriceSnapshots,
                 accentColor: accentColor,
+                displayUnrealized: displayUnrealized,
+                displayUnrealizedPercent: displayUnrealizedPercent,
                 displayCurrency: displayCurrency,
                 usesOriginalAmounts: usesOriginalAmounts,
                 twdPerBaseCurrency: twdPerBaseCurrency,
                 usdToTwdRate: assetsViewModel.usdToTwdRate,
-                baseCurrency: portfolioViewModel.viewCurrency
+                baseCurrency: portfolioViewModel.viewCurrency,
+                amountFractionDigits: marketValueFractionDigits,
+                canToggleCurrency: showsCurrencyToggle,
+                onCurrencyToggle: toggleCategoryDisplayCurrency
             )
 
-            LazyVGrid(
-                columns: [
-                    GridItem(.flexible(), spacing: 10),
-                    GridItem(.flexible(), spacing: 10)
-                ],
-                spacing: 10
-            ) {
-                MetricTile(
-                    title: "總資產佔比",
-                    value: "\(totalAssetsRatio.formatted(fractionDigits: 1))%",
-                    valueColor: accentColor,
-                    accentColor: accentColor
-                )
-                MetricTile(
-                    title: "投資組合佔比",
-                    value: "\(portfolioRatio.formatted(fractionDigits: 1))%",
-                    valueColor: accentColor,
-                    accentColor: accentColor
-                )
-            }
+            categoryRatioSummaryTile
+        }
+    }
+
+    private var categoryRatioSummaryTile: some View {
+        LazyVGrid(
+            columns: [
+                GridItem(.flexible(), spacing: 10),
+                GridItem(.flexible(), spacing: 10)
+            ],
+            spacing: 10
+        ) {
+            MetricTile(
+                title: "總資產佔比",
+                value: "\(totalAssetsRatio.formatted(fractionDigits: 1))%",
+                valueColor: accentColor,
+                accentColor: accentColor,
+                compact: true
+            )
+            MetricTile(
+                title: "投資組合佔比",
+                value: "\(portfolioRatio.formatted(fractionDigits: 1))%",
+                valueColor: accentColor,
+                accentColor: accentColor,
+                compact: true
+            )
         }
     }
 
@@ -266,6 +248,12 @@ struct AssetCategoryDetailView: View {
                         Text(assetType.displayName)
                             .font(.system(size: 22, weight: .bold))
                             .foregroundColor(.primaryText)
+                        CurrencyToggleChip(
+                            currency: displayCurrency,
+                            tint: accentColor,
+                            isEnabled: showsCurrencyToggle,
+                            action: toggleCategoryDisplayCurrency
+                        )
                         if let chip = MarketSessionDisplay.categorySessionChip(
                             assetType: assetType,
                             marketStatus: marketStatus
@@ -288,31 +276,57 @@ struct AssetCategoryDetailView: View {
                     .clipShape(Capsule())
             }
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("持股市值")
-                    .font(.caption)
-                    .foregroundColor(.secondaryText)
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("持股市值")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(.secondaryText)
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        CurrencyAmountWithChip(
+                            text: displayMarketValue.formatted(
+                                currency: displayCurrency,
+                                fractionDigits: marketValueFractionDigits
+                            ),
+                            currency: displayCurrency,
+                            font: .snapAmountHero,
+                            weight: .bold,
+                            color: .primaryText,
+                            chipTint: accentColor,
+                            showsChip: false
+                        )
+                        if let daily = displayedDailyChange {
+                            dailyChangeBadge(
+                                amount: daily.amount,
+                                percent: daily.percent,
+                                currency: displayCurrency
+                            )
+                        }
+                        Spacer(minLength: 0)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("成本")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.secondaryText)
                     CurrencyAmountWithChip(
-                        text: displayMarketValue.formatted(
+                        text: displayTotalCost.formatted(
                             currency: displayCurrency,
                             fractionDigits: marketValueFractionDigits
                         ),
                         currency: displayCurrency,
-                        font: .snapAmountHero,
+                        font: .snapAmountSecondary,
                         weight: .bold,
                         color: .primaryText,
-                        chipTint: accentColor
+                        chipTint: accentColor,
+                        spacing: 5,
+                        showsChip: false,
+                        minimumScaleFactor: 0.72
                     )
-                    if let daily = displayedDailyChange {
-                        dailyChangeBadge(
-                            amount: daily.amount,
-                            percent: daily.percent,
-                            currency: displayCurrency
-                        )
-                    }
-                    Spacer(minLength: 0)
                 }
+                .lineLimit(1)
             }
         }
         .padding(16)
@@ -347,18 +361,43 @@ struct AssetCategoryDetailView: View {
         .background(color.opacity(0.12))
         .clipShape(Capsule())
     }
+
+    private func compactRatioColumn(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundColor(.secondaryText)
+                .lineLimit(1)
+            Text(value)
+                .font(.headline)
+                .fontWeight(.bold)
+                .foregroundColor(accentColor)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
 }
 
-// MARK: - 類別已實現損益（可展開，邏輯對齊首頁 RealizedPLCardView）
+// MARK: - 類別損益（可展開，已實現邏輯對齊首頁 RealizedPLCardView）
 
-private struct AssetCategoryRealizedPLSection: View {
+private struct AssetCategoryGainLossSection: View {
     let assetType: AssetType
+    let categoryHoldings: [AggregatedHoldingSnapshot]
+    let assetPriceSnapshots: [AssetPriceSnapshot]
     let accentColor: Color
+    let displayUnrealized: Decimal
+    let displayUnrealizedPercent: Decimal
     let displayCurrency: Currency
     let usesOriginalAmounts: Bool
     let twdPerBaseCurrency: Decimal
     let usdToTwdRate: Decimal
     let baseCurrency: Currency
+    let amountFractionDigits: Int
+    let canToggleCurrency: Bool
+    let onCurrencyToggle: () -> Void
 
     @State private var isExpanded = false
     @State private var expandedTransactionIds: Set<String> = []
@@ -374,91 +413,128 @@ private struct AssetCategoryRealizedPLSection: View {
         var id: Currency { currency }
     }
 
+    private struct UnrealizedRow: Identifiable {
+        let id: String
+        let name: String
+        let amount: Decimal
+        let percent: Decimal
+    }
+
     private var categorySells: [Transaction] {
         let _ = detailsRevision
         return RealizedPLDetailCache.sellTransactions.filter { $0.assetType == assetType }
     }
 
     private var realizedCurrencySections: [RealizedCurrencySection] {
-        let grouped = Dictionary(grouping: categorySells, by: \.currency)
-        return grouped.compactMap { currency, transactions in
-            let realizedTransactions = transactions.filter { $0.realizedGainLoss != nil }
-            let total = realizedTransactions.reduce(Decimal.zero) { partial, transaction in
-                partial + (transaction.realizedGainLoss ?? 0)
-            }
-            guard !realizedTransactions.isEmpty else { return nil }
-            return RealizedCurrencySection(
-                currency: currency,
-                transactions: realizedTransactions.sorted { $0.transactionDate > $1.transactionDate },
+        let realizedTransactions = categorySells
+            .filter { $0.realizedGainLoss != nil }
+            .sorted { $0.transactionDate > $1.transactionDate }
+        guard !realizedTransactions.isEmpty else { return [] }
+        let total = realizedTransactions.reduce(Decimal.zero) { partial, transaction in
+            partial + (realizedDisplayAmount(for: transaction, currency: displayCurrency) ?? 0)
+        }
+        return [
+            RealizedCurrencySection(
+                currency: displayCurrency,
+                transactions: realizedTransactions,
                 total: total
             )
-        }
-        .sorted { currencySortRank($0.currency) < currencySortRank($1.currency) }
+        ]
     }
 
     private var headerRealizedTotal: Decimal {
-        if usesOriginalAmounts, let section = realizedCurrencySections.first {
-            return section.total
-        }
-        return realizedCurrencySections.reduce(Decimal.zero) { partial, section in
-            partial + convertToDisplayCurrency(amount: section.total, currency: section.currency)
-        }
+        realizedCurrencySections.first?.total ?? 0
     }
 
     private var headerRealizedCurrency: Currency {
-        usesOriginalAmounts ? assetType.quoteCurrency : displayCurrency
+        displayCurrency
+    }
+
+    private var unrealizedRows: [UnrealizedRow] {
+        var priceMap: [String: AssetPriceSnapshot] = [:]
+        for snapshot in assetPriceSnapshots {
+            priceMap["\(snapshot.assetType.rawValue)_\(snapshot.symbol)"] = snapshot
+        }
+
+        return categoryHoldings.compactMap { holding in
+            let key = "\(holding.assetType.rawValue)_\(holding.symbol)"
+            guard let currentPrice = priceMap[key]?.displayPrice else { return nil }
+            let marketValueOriginal = holding.totalQuantity * currentPrice
+            let unrealizedOriginal = marketValueOriginal - holding.totalCost
+            let displayAmount = usesOriginalAmounts
+                ? unrealizedOriginal
+                : convertToDisplayCurrency(amount: unrealizedOriginal, currency: holding.currency)
+            let percent = holding.totalCost > 0 ? (unrealizedOriginal / holding.totalCost) * 100 : 0
+            return UnrealizedRow(
+                id: holding.id,
+                name: displayName(for: holding),
+                amount: displayAmount,
+                percent: percent
+            )
+        }
+        .sorted {
+            NSDecimalNumber(decimal: abs($0.amount)).compare(NSDecimalNumber(decimal: abs($1.amount))) == .orderedDescending
+        }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Button {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                    isExpanded.toggle()
-                }
-            } label: {
-                HStack(alignment: .firstTextBaseline, spacing: 16) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("已實現損益")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .foregroundColor(.secondaryText)
-                        CurrencyAmountWithChip(
-                            text: headerRealizedTotal.formatted(
-                                currency: headerRealizedCurrency,
-                                fractionDigits: usesOriginalAmounts || baseCurrency != .TWD ? 2 : 0,
-                                showSymbol: false
-                            ),
-                            currency: headerRealizedCurrency,
-                            font: .snapAmountSecondary,
-                            weight: .bold,
-                            color: Color.marketColor(for: headerRealizedTotal),
-                            chipTint: accentColor
+            HStack(alignment: .center, spacing: 16) {
+                VStack(alignment: .leading, spacing: 10) {
+                    CurrencyToggleTitleLabel(
+                        title: "損益",
+                        currency: displayCurrency,
+                        font: .subheadline,
+                        weight: .medium,
+                        color: .secondaryText,
+                        chipTint: accentColor,
+                        titleLineLimit: 1,
+                        canToggle: canToggleCurrency,
+                        action: onCurrencyToggle
+                    )
+                    HStack(alignment: .top, spacing: 12) {
+                        gainLossHeaderColumn(
+                            title: "未實現損益",
+                            amount: displayUnrealized,
+                            percentText: "\(displayUnrealizedPercent.formatted(fractionDigits: 1))%"
+                        )
+                        Divider()
+                            .frame(minHeight: 52)
+                            .overlay(Color.separator.opacity(0.45))
+                        gainLossHeaderColumn(
+                            title: "已實現損益",
+                            amount: headerRealizedTotal,
+                            percentText: nil
                         )
                     }
-                    Spacer(minLength: 0)
+                    .contentShape(Rectangle())
+                    .onTapGesture(perform: toggleExpanded)
+                }
+                Spacer(minLength: 0)
+                Button(action: toggleExpanded) {
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                         .font(.caption.weight(.semibold))
                         .foregroundColor(.secondaryText)
                 }
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
 
             if isExpanded {
-                if isLoadingDetails {
-                    ProgressView()
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                } else if detailLoadFailed {
-                    Text("無法載入明細，請稍後再試")
-                        .font(.subheadline)
-                        .foregroundColor(.secondaryText)
-                } else if realizedCurrencySections.isEmpty {
-                    Text("尚無已實現損益交易")
-                        .font(.subheadline)
-                        .foregroundColor(.secondaryText)
-                } else {
-                    VStack(spacing: 16) {
+                VStack(spacing: 16) {
+                    unrealizedSection
+                    if isLoadingDetails {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                    } else if detailLoadFailed {
+                        Text("無法載入明細，請稍後再試")
+                            .font(.subheadline)
+                            .foregroundColor(.secondaryText)
+                    } else if realizedCurrencySections.isEmpty {
+                        Text("尚無已實現損益交易")
+                            .font(.subheadline)
+                            .foregroundColor(.secondaryText)
+                    } else {
                         ForEach(realizedCurrencySections) { section in
                             realizedSection(
                                 transactions: section.transactions,
@@ -494,15 +570,93 @@ private struct AssetCategoryRealizedPLSection: View {
         }
     }
 
+    private func toggleExpanded() {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+            isExpanded.toggle()
+        }
+    }
+
+    private func gainLossHeaderColumn(title: String, amount: Decimal, percentText: String?) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundColor(.secondaryText)
+                .lineLimit(1)
+            CurrencyAmountWithChip(
+                text: amount.formatted(
+                    currency: displayCurrency,
+                    fractionDigits: amountFractionDigits,
+                    showSymbol: false
+                ),
+                currency: displayCurrency,
+                font: .headline,
+                weight: .bold,
+                color: Color.marketColor(for: amount),
+                chipTint: accentColor,
+                spacing: 5,
+                showsChip: false,
+                minimumScaleFactor: 0.68
+            )
+            .lineLimit(1)
+            if let percentText {
+                Text(percentText)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(Color.marketColor(for: amount))
+                    .lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     private func convertToDisplayCurrency(amount: Decimal, currency: Currency) -> Decimal {
         if currency == displayCurrency { return amount }
-        if currency == .USD, displayCurrency == baseCurrency, twdPerBaseCurrency > 0 {
-            return (amount * usdToTwdRate) / twdPerBaseCurrency
+        if let converted = convertedAmount(
+            amount,
+            from: currency,
+            to: displayCurrency,
+            usdToTwdRate: usdToTwdRate
+        ) {
+            return converted
         }
-        if currency == .TWD, displayCurrency == baseCurrency, twdPerBaseCurrency > 0 {
-            return amount / twdPerBaseCurrency
+        if displayCurrency == baseCurrency, twdPerBaseCurrency > 0 {
+            if currency == .USD {
+                return (amount * usdToTwdRate) / twdPerBaseCurrency
+            }
+            if currency == .TWD {
+                return amount / twdPerBaseCurrency
+            }
         }
         return amount
+    }
+
+    private func realizedDisplayAmount(for transaction: Transaction, currency: Currency) -> Decimal? {
+        guard let realized = transaction.realizedGainLoss else { return nil }
+        let tradeCurrency = TransactionDisplayFormatter(transaction: transaction).tradePriceCurrency
+        return convertedAmount(
+            realized,
+            from: tradeCurrency,
+            to: currency,
+            usdToTwdRate: transaction.exchangeRate ?? usdToTwdRate
+        )
+    }
+
+    private func convertedAmount(
+        _ amount: Decimal,
+        from sourceCurrency: Currency,
+        to targetCurrency: Currency,
+        usdToTwdRate rate: Decimal?
+    ) -> Decimal? {
+        if sourceCurrency == targetCurrency { return amount }
+        guard let rate, rate > 0 else { return nil }
+        if sourceCurrency == .USD, targetCurrency == .TWD {
+            return amount * rate
+        }
+        if sourceCurrency == .TWD, targetCurrency == .USD {
+            return amount / rate
+        }
+        return nil
     }
 
     private func scheduleDetailsRefresh(force: Bool) {
@@ -531,13 +685,74 @@ private struct AssetCategoryRealizedPLSection: View {
         }
     }
 
+    private var unrealizedSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            CurrencyTitleLabel(
+                title: "未實現損益",
+                currency: displayCurrency,
+                font: .subheadline,
+                weight: .semibold,
+                color: .primaryText,
+                chipTint: accentColor,
+                titleLineLimit: 1
+            )
+
+            if unrealizedRows.isEmpty {
+                Text("尚無可計算的未實現損益")
+                    .font(.subheadline)
+                    .foregroundColor(.secondaryText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 8)
+            } else {
+                CardView {
+                    VStack(spacing: 0) {
+                        HStack {
+                            Text("名稱")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.secondaryText)
+                                .frame(width: 90, alignment: .leading)
+
+                            Spacer(minLength: 8)
+
+                            Text("損益")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.secondaryText)
+                                .frame(width: 120, alignment: .trailing)
+                        }
+                        .padding(.vertical, 10)
+                        .padding(.horizontal, 4)
+                        .background(Color.secondaryBackground)
+                        .cornerRadius(8)
+
+                        VStack(spacing: 0) {
+                            ForEach(unrealizedRows) { row in
+                                unrealizedHoldingRow(row)
+                                if row.id != unrealizedRows.last?.id {
+                                    Divider()
+                                        .padding(.horizontal, 12)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private func realizedSection(transactions: [Transaction], currency: Currency, total: Decimal) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
-                Text("已實現損益")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primaryText)
+                CurrencyTitleLabel(
+                    title: "已實現損益",
+                    currency: currency,
+                    font: .subheadline,
+                    weight: .semibold,
+                    color: .primaryText,
+                    chipTint: accentColor,
+                    titleLineLimit: 1
+                )
 
                 Spacer(minLength: 8)
 
@@ -546,7 +761,9 @@ private struct AssetCategoryRealizedPLSection: View {
                     currency: currency,
                     font: .subheadline,
                     weight: .semibold,
-                    color: Color.marketColor(for: total)
+                    color: Color.marketColor(for: total),
+                    chipTint: accentColor,
+                    showsChip: false
                 )
             }
 
@@ -587,6 +804,37 @@ private struct AssetCategoryRealizedPLSection: View {
         }
     }
 
+    private func unrealizedHoldingRow(_ row: UnrealizedRow) -> some View {
+        HStack {
+            Text(row.name)
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundColor(.primaryText)
+                .lineLimit(1)
+                .frame(width: 90, alignment: .leading)
+
+            Spacer(minLength: 8)
+
+            VStack(alignment: .trailing, spacing: 4) {
+                Text(row.amount.formatted(
+                    currency: displayCurrency,
+                    fractionDigits: amountFractionDigits,
+                    showSymbol: false
+                ))
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundColor(Color.marketColor(for: row.amount))
+
+                Text("(\(row.percent.formattedPercentValue(maxFractionDigits: 1))%)")
+                    .font(.caption)
+                    .foregroundColor(.secondaryText)
+            }
+            .frame(width: 120, alignment: .trailing)
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 8)
+    }
+
     @ViewBuilder
     private func realizedTransactionRow(transaction: Transaction, currency: Currency) -> some View {
         let display = TransactionDisplayFormatter(transaction: transaction)
@@ -611,9 +859,12 @@ private struct AssetCategoryRealizedPLSection: View {
                     Spacer(minLength: 8)
 
                     VStack(alignment: .trailing, spacing: 4) {
-                        if let realizedText = display.realizedGainLossText,
-                           let realized = transaction.realizedGainLoss {
-                            Text(realizedText)
+                        if let realized = realizedDisplayAmount(for: transaction, currency: currency) {
+                            Text(realized.formatted(
+                                currency: currency,
+                                fractionDigits: currency == .TWD ? 0 : 2,
+                                showSymbol: false
+                            ))
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
                                 .foregroundColor(Color.marketColor(for: realized))
@@ -724,6 +975,19 @@ private struct AssetCategoryRealizedPLSection: View {
             return transaction.symbol.uppercased()
         default:
             return transaction.symbol
+        }
+    }
+
+    private func displayName(for holding: AggregatedHoldingSnapshot) -> String {
+        switch holding.assetType {
+        case .stockTW:
+            return SymbolListService.twDisplayName(for: holding.symbol) ?? holding.name ?? holding.symbol
+        case .crypto:
+            return SymbolListService.cryptoDisplayName(for: holding.symbol, storedName: holding.name)
+        case .stockUS:
+            return holding.symbol.uppercased()
+        default:
+            return holding.name ?? holding.symbol
         }
     }
 

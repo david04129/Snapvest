@@ -15,6 +15,7 @@ struct UsageTutorialsHubView: View {
     @State private var showingAddInvestmentTutorial = false
     @State private var showingImportTutorial = false
     @State private var showingBackupRestoreTutorial = false
+    @State private var showingPieGroupingTutorial = false
 
     var body: some View {
         ScrollView {
@@ -36,6 +37,17 @@ struct UsageTutorialsHubView: View {
                         subtitle: "從建立帳戶到新增第一筆持倉"
                     ) {
                         showingAddInvestmentTutorial = true
+                    }
+
+                    Divider()
+                        .padding(.leading, 56)
+
+                    tutorialRow(
+                        icon: "chart.pie.fill",
+                        title: "明細與群組",
+                        subtitle: "了解圓餅圖明細、群組與自訂群組"
+                    ) {
+                        showingPieGroupingTutorial = true
                     }
 
                     Divider()
@@ -74,6 +86,9 @@ struct UsageTutorialsHubView: View {
         }
         .sheet(isPresented: $showingBackupRestoreTutorial) {
             BackupRestoreTutorialView()
+        }
+        .sheet(isPresented: $showingPieGroupingTutorial) {
+            PieChartGroupingTutorialView()
         }
     }
 

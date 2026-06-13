@@ -316,6 +316,8 @@ private enum ImportTutorialVisual: Equatable {
 }
 
 private enum ImportTutorialLayout {
+    static let highlightGutter: CGFloat = 10
+
     static func visualHeight(for visual: ImportTutorialVisual) -> CGFloat {
         switch visual {
         case .prepareMaterials:
@@ -459,6 +461,81 @@ private struct ImportTutorialBulletText: View {
                 result.append(segment)
             }
         }
+    }
+}
+
+private enum ImportTutorialMotion {
+    static let highlightSpring = Animation.easeInOut(duration: 0.38)
+    static let pressSpring = Animation.easeInOut(duration: 0.36)
+}
+
+private struct ImportTutorialHighlightModifier: ViewModifier {
+    let active: Bool
+    var cornerRadius: CGFloat = 12
+    var prominent: Bool = false
+
+    @State private var pulseExpanded = false
+
+    private var strokeWidth: CGFloat { prominent ? 3 : 2.5 }
+    private var glowRadius: CGFloat { prominent ? 10 : 8 }
+
+    func body(content: Content) -> some View {
+        content
+            .padding(ImportTutorialLayout.highlightGutter)
+            .overlay {
+                if active {
+                    RoundedRectangle(cornerRadius: cornerRadius + 4, style: .continuous)
+                        .stroke(Color.appPrimary.opacity(0.22), lineWidth: prominent ? 5 : 4)
+                        .padding(ImportTutorialLayout.highlightGutter - 2)
+                        .scaleEffect(pulseExpanded ? 1.04 : 1)
+
+                    RoundedRectangle(cornerRadius: cornerRadius + 2, style: .continuous)
+                        .stroke(Color.appPrimary, lineWidth: strokeWidth)
+                        .padding(ImportTutorialLayout.highlightGutter - 1)
+                        .shadow(color: Color.appPrimary.opacity(0.45), radius: glowRadius, x: 0, y: 0)
+                }
+            }
+            .padding(-ImportTutorialLayout.highlightGutter)
+            .scaleEffect(active ? 0.985 : 1)
+            .animation(ImportTutorialMotion.highlightSpring, value: active)
+            .onChange(of: active) { _, isActive in
+                if isActive {
+                    pulseExpanded = false
+                    withAnimation(.easeInOut(duration: 0.95).repeatForever(autoreverses: true)) {
+                        pulseExpanded = true
+                    }
+                } else {
+                    pulseExpanded = false
+                }
+            }
+    }
+}
+
+private struct ImportTutorialPressModifier: ViewModifier {
+    let isPressed: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(isPressed ? 0.93 : 1)
+            .animation(ImportTutorialMotion.pressSpring, value: isPressed)
+    }
+}
+
+private extension View {
+    func importTutorialHighlight(
+        _ active: Bool,
+        cornerRadius: CGFloat = 12,
+        prominent: Bool = false
+    ) -> some View {
+        modifier(ImportTutorialHighlightModifier(
+            active: active,
+            cornerRadius: cornerRadius,
+            prominent: prominent
+        ))
+    }
+
+    func importTutorialPress(_ isPressed: Bool) -> some View {
+        modifier(ImportTutorialPressModifier(isPressed: isPressed))
     }
 }
 
@@ -899,10 +976,10 @@ private struct ImportTutorialCopyPromptMock: View {
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(isPressed ? Color.appPrimary.opacity(0.35) : Color.separator.opacity(0.4), lineWidth: 1)
+                .stroke(Color.separator.opacity(0.4), lineWidth: 1)
         }
-        .scaleEffect(isPressed ? 0.98 : 1)
-        .animation(.easeInOut(duration: 0.2), value: isPressed)
+        .importTutorialHighlight(isPressed, cornerRadius: 14, prominent: true)
+        .importTutorialPress(isPressed)
     }
 
     private func startCopyLoop() {
@@ -1238,12 +1315,8 @@ private struct ImportTutorialPasteMock: View {
             }
 
             mockParseButton
-                .scaleEffect(isParsePressed ? 0.96 : 1)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(Color.appPrimary.opacity(isParsePressed ? 0.7 : 0), lineWidth: 2)
-                }
-                .animation(.easeInOut(duration: 0.22), value: isParsePressed)
+                .importTutorialHighlight(isParsePressed, cornerRadius: 10, prominent: true)
+                .importTutorialPress(isParsePressed)
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("解析預覽")
@@ -1372,10 +1445,10 @@ private struct ImportTutorialPasteMock: View {
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(isPressed ? Color.appPrimary.opacity(0.45) : Color.separator.opacity(0.45), lineWidth: 1)
+                .stroke(Color.separator.opacity(0.45), lineWidth: 1)
         }
-        .scaleEffect(isPressed ? 0.97 : 1)
-        .animation(.easeInOut(duration: 0.2), value: isPressed)
+        .importTutorialHighlight(isPressed, cornerRadius: 8, prominent: true)
+        .importTutorialPress(isPressed)
     }
 
     private var mockParseButton: some View {

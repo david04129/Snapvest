@@ -660,6 +660,7 @@ private struct BackupRestoreSettingsSheetMock: View {
 
                 settingsSectionBlock(
                     title: "備份與還原",
+                    showsHelpIcon: true,
                     highlightSection: highlightBackupSection
                 ) {
                     backupRow(
@@ -779,14 +780,23 @@ private struct BackupRestoreSettingsSheetMock: View {
 
     private func settingsSectionBlock<Content: View>(
         title: String,
+        showsHelpIcon: Bool = false,
         highlightSection: Bool = false,
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundColor(.secondaryText)
-                .padding(.horizontal, 4)
+            HStack(spacing: 4) {
+                Text(title)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.secondaryText)
+
+                if showsHelpIcon {
+                    Image(systemName: "questionmark.circle")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(.appPrimary)
+                }
+            }
+            .padding(.horizontal, 4)
 
             VStack(spacing: 0) {
                 content()

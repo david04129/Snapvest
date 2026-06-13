@@ -200,6 +200,12 @@ private struct OnboardingPage: Identifiable {
             visual: .pieChart
         ),
         OnboardingPage(
+            id: "privacy",
+            title: "安心管理，數據不外洩",
+            subtitle: "Walleaf 不需要知道你是誰，也不會要求銀行、券商或交易所帳密。你的資產紀錄只保存在裝置上；若你選擇備份，備份檔也只會存放在你個人的 iCloud 空間裡。",
+            visual: .privacy
+        ),
+        OnboardingPage(
             id: "accounts",
             title: "第一步：新增帳戶",
             subtitle: "台外幣、證券、加密貨幣與債務帳戶盡收錢包，股票持倉清楚呈現",
@@ -228,6 +234,7 @@ private struct OnboardingPage: Identifiable {
 
 private enum OnboardingVisual {
     case pieChart
+    case privacy
     case accounts
     case performance
     case baseCurrency
@@ -331,6 +338,8 @@ private struct OnboardingPageView: View {
         switch page.visual {
         case .pieChart:
             OnboardingPieChartMock(animate: animate)
+        case .privacy:
+            OnboardingPrivacyMock(animate: animate)
         case .accounts:
             OnboardingAccountListMock(animate: animate)
         case .performance:
@@ -512,6 +521,133 @@ private struct OnboardingPieCompactLegend: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - 第二頁：隱私保護
+
+private struct OnboardingPrivacyMock: View {
+    let animate: Bool
+
+    private let items: [(String, String)] = [
+        ("iphone.gen3", "資產紀錄只存在你的裝置"),
+        ("icloud.fill", "備份存放於你的 iCloud"),
+        ("eye.slash.fill", "支援隱藏金額"),
+        ("faceid", "可用隱私鎖保護畫面")
+    ]
+
+    var body: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 12) {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.appPrimary.opacity(0.14))
+                            .frame(width: 66, height: 66)
+                        Image(systemName: "lock.shield.fill")
+                            .font(.system(size: 30, weight: .semibold))
+                            .foregroundColor(.appPrimary)
+                    }
+                    .scaleEffect(animate ? 1 : 0.78)
+                    .opacity(animate ? 1 : 0.25)
+                    .animation(.spring(response: 0.55, dampingFraction: 0.78), value: animate)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("你的資產總覽")
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(.secondaryText)
+                        HStack(alignment: .center, spacing: 8) {
+                            Text("••••••")
+                                .font(.system(size: 30, weight: .bold, design: .rounded))
+                                .foregroundColor(.primaryText)
+                                .tracking(2)
+                            CurrencyCodeChip(currency: .TWD, tint: .appPrimary, style: .filled)
+                        }
+                    }
+
+                    Spacer(minLength: 0)
+                }
+
+                HStack(spacing: 10) {
+                    OnboardingPrivacyPill(icon: "person.crop.circle.badge.questionmark", title: "免登入身分")
+                    OnboardingPrivacyPill(icon: "building.columns", title: "免銀行帳密")
+                }
+
+                VStack(spacing: 8) {
+                    ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                        OnboardingPrivacyFeatureRow(
+                            icon: item.0,
+                            title: item.1
+                        )
+                        .opacity(animate ? 1 : 0)
+                        .offset(y: animate ? 0 : 12)
+                        .animation(.easeOut(duration: 0.35).delay(0.14 + Double(index) * 0.07), value: animate)
+                    }
+                }
+            }
+            .padding(14)
+            .background(Color.cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .shadow(color: AppColors.shadowMedium, radius: 14, x: 0, y: 5)
+            .opacity(animate ? 1 : 0)
+            .offset(y: animate ? 0 : 16)
+            .animation(.easeOut(duration: 0.45), value: animate)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+}
+
+private struct OnboardingPrivacyPill: View {
+    let icon: String
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .semibold))
+            Text(title)
+                .font(.caption.weight(.bold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+        }
+        .foregroundColor(.appPrimary)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .background(Color.appPrimary.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+private struct OnboardingPrivacyFeatureRow: View {
+    let icon: String
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(.appPrimary)
+                .frame(width: 32, height: 32)
+                .background(Color.appPrimary.opacity(0.14))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(.primaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
+
+            Spacer(minLength: 0)
+
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundColor(.appPrimary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(Color.secondaryBackground.opacity(0.65))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 

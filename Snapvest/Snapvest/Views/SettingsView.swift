@@ -33,6 +33,7 @@ struct SettingsView: View {
     @State private var pendingBackupRestore: WalleafBackupFile?
     @State private var isRestoreConfirmationPresented = false
     @State private var isRestoringBackup = false
+    @State private var isBackupRestoreTutorialPresented = false
     @State private var backupStatusMessage: String?
     @State private var isBackupRestoreLoadingVisible = false
     @State private var backupRestoreLoadingTitle = ""
@@ -102,7 +103,10 @@ struct SettingsView: View {
                         privacyLockRow
                     }
 
-                    settingsSection(title: "備份與還原") {
+                    settingsSection(
+                        title: "備份與還原",
+                        helpAction: { isBackupRestoreTutorialPresented = true }
+                    ) {
                         backupExportRow
 
                         Divider()
@@ -192,6 +196,9 @@ struct SettingsView: View {
             }
             .sheet(isPresented: $isAboutSheetPresented) {
                 AboutAppSheet(version: appVersionText)
+            }
+            .sheet(isPresented: $isBackupRestoreTutorialPresented) {
+                BackupRestoreTutorialView()
             }
             .fileExporter(
                 isPresented: $isBackupExporterPresented,
@@ -442,13 +449,28 @@ struct SettingsView: View {
     
     private func settingsSection<Content: View>(
         title: String,
+        helpAction: (() -> Void)? = nil,
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.footnote.weight(.semibold))
-                .foregroundColor(.secondaryText)
-                .padding(.horizontal, 4)
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundColor(.secondaryText)
+
+                if let helpAction {
+                    Button(action: helpAction) {
+                        Image(systemName: "questionmark.circle")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundColor(.appPrimary)
+                            .frame(width: 24, height: 24)
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(title)教學")
+                }
+            }
+            .padding(.horizontal, 4)
             
             VStack(spacing: 0) {
                 content()

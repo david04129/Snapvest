@@ -206,6 +206,7 @@ struct HomePieChartSection: View {
     let currency: Currency
     let twdPerBaseCurrency: Decimal
     var onScrollToChart: (() -> Void)? = nil
+    var onOpenGroupingTutorial: (() -> Void)? = nil
     
     @Binding var mode: PieChartDisplayMode
     @ObservedObject var groupingStore: PieChartGroupingStore
@@ -809,6 +810,17 @@ struct HomePieChartSection: View {
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(AppColors.appPrimary)
             }
+            Button {
+                onOpenGroupingTutorial?()
+            } label: {
+                Image(systemName: "questionmark.circle")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.secondaryText)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("明細與群組教學")
             Spacer(minLength: 8)
         }
         .padding(.horizontal, 16)

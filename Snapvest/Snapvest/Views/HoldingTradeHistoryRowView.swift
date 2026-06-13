@@ -11,6 +11,8 @@ struct HoldingTradeHistoryRowView: View {
     let transaction: Transaction
     let aggregatedHolding: AggregatedHoldingSnapshot
     let currentPrice: Decimal?
+    let usdToTwdRate: Decimal
+    let accountCurrency: Currency
     let onRowTap: () -> Void
     let onDelete: ((Transaction) -> Void)?
 
@@ -22,12 +24,13 @@ struct HoldingTradeHistoryRowView: View {
         display.typeAccentColor
     }
 
-    private var tradeAmount: Decimal {
-        transaction.quantity * transaction.price
+    private var amountDisplayCurrency: Currency {
+        display.displayAmount(accountCurrency: accountCurrency, usdToTwdRate: usdToTwdRate).currency
     }
 
     private var tradeAmountText: String {
-        tradeAmount.formattedTradeAmount(currency: display.tradePriceCurrency)
+        let displayed = display.displayAmount(accountCurrency: accountCurrency, usdToTwdRate: usdToTwdRate)
+        return formattedCompactAmount(displayed.amount, currency: displayed.currency)
     }
 
     private var quantityAtPriceText: String {
@@ -105,12 +108,18 @@ struct HoldingTradeHistoryRowView: View {
 
             Spacer(minLength: 6)
 
-            Text(tradeAmountText)
-                .font(.system(size: 17, weight: .bold))
-                .foregroundColor(.primaryText)
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
+            CurrencyAmountWithChip(
+                text: tradeAmountText,
+                currency: amountDisplayCurrency,
+                font: .system(size: 17, weight: .bold),
+                weight: .bold,
+                color: .primaryText,
+                chipTint: accentColor,
+                spacing: 5,
+                minimumScaleFactor: 0.75
+            )
+            .monospacedDigit()
+            .lineLimit(1)
         }
     }
 
@@ -191,14 +200,20 @@ struct HoldingTradeHistoryRowView: View {
         }
         guard let price = currentPrice, price > 0 else { return nil }
 
-        let cost = lot.remainingQuantity * lot.costPerUnit
-        let marketValue = lot.remainingQuantity * price
+        let cost = costAmountInDisplayCurrency(for: lot)
+        let marketValueInPriceCurrency = lot.remainingQuantity * price
+        guard let marketValue = convertedAmount(
+            marketValueInPriceCurrency,
+            from: display.tradePriceCurrency,
+            to: amountDisplayCurrency,
+            rate: usdToTwdRate > 0 ? usdToTwdRate : transaction.exchangeRate
+        ) else { return nil }
         let pl = marketValue - cost
         guard cost > 0 else { return nil }
 
         let pct = (pl / cost) * 100
         let sign = pl >= 0 ? "+" : ""
-        let amountText = pl.formattedTradeAmount(currency: display.tradePriceCurrency)
+        let amountText = formattedCompactAmount(abs(pl), currency: amountDisplayCurrency)
         let pctText = pct.formattedPercentValue(maxFractionDigits: 1)
         return PerformanceLine(
             amount: pl,
@@ -220,11 +235,51 @@ struct HoldingTradeHistoryRowView: View {
               let pl = transaction.realizedGainLoss else {
             return nil
         }
+        let displayed = display.displayRealizedGainLoss(
+            accountCurrency: accountCurrency,
+            usdToTwdRate: usdToTwdRate
+        )
+        let displayedPL = displayed?.amount ?? pl
+        let displayedCurrency = displayed?.currency ?? amountDisplayCurrency
         let sign = pl >= 0 ? "+" : ""
-        var text = "\(sign)\(display.realizedGainLossText ?? pl.formattedTradeAmount(currency: display.tradePriceCurrency))"
+        var text = "\(sign)\(formattedCompactAmount(abs(displayedPL), currency: displayedCurrency))"
         if let pct = display.realizedGainLossPercentText {
             text += " \(pct)"
         }
-        return PerformanceLine(amount: pl, text: text)
+        return PerformanceLine(amount: displayedPL, text: text)
+    }
+
+    private func costAmountInDisplayCurrency(for lot: FIFOLotSnapshot) -> Decimal {
+        let proportionalFee = transaction.quantity > 0
+            ? transaction.fee * (lot.remainingQuantity / transaction.quantity)
+            : Decimal.zero
+        let costInPriceCurrency = (lot.remainingQuantity * transaction.price) + proportionalFee
+        return convertedAmount(
+            costInPriceCurrency,
+            from: display.tradePriceCurrency,
+            to: amountDisplayCurrency,
+            rate: transaction.exchangeRate ?? usdToTwdRate
+        ) ?? (lot.remainingQuantity * lot.costPerUnit)
+    }
+
+    private func convertedAmount(
+        _ amount: Decimal,
+        from sourceCurrency: Currency,
+        to targetCurrency: Currency,
+        rate: Decimal?
+    ) -> Decimal? {
+        if sourceCurrency == targetCurrency { return amount }
+        guard let rate, rate > 0 else { return nil }
+        if sourceCurrency == .USD, targetCurrency == .TWD {
+            return amount * rate
+        }
+        if sourceCurrency == .TWD, targetCurrency == .USD {
+            return amount / rate
+        }
+        return nil
+    }
+
+    private func formattedCompactAmount(_ amount: Decimal, currency: Currency) -> String {
+        amount.formatted(currency: currency, fractionDigits: 1, showSymbol: false)
     }
 }

@@ -260,7 +260,7 @@ struct AccountsCurrencyControlsBar: View {
             HStack(spacing: 8) {
                 if showsEditControl, let onEditTapped {
                     AssetsFilterChipButton(
-                        title: isEditingOrder ? "完成" : "編輯排序",
+                        title: isEditingOrder ? "完成" : "編輯",
                         icon: isEditingOrder ? "checkmark" : "square.and.pencil",
                         isActive: !isEditDisabled
                     ) {

@@ -30,11 +30,18 @@ enum RealizedPLDetailCache {
 
 struct SymbolRealizedPL: Equatable {
     var amountByCurrency: [Currency: Decimal]
+    var costBasisByCurrency: [Currency: Decimal] = [:]
     
-    static let zero = SymbolRealizedPL(amountByCurrency: [:])
+    static let zero = SymbolRealizedPL(amountByCurrency: [:], costBasisByCurrency: [:])
     
     func amount(in currency: Currency) -> Decimal {
         amountByCurrency[currency] ?? 0
+    }
+
+    func percent(in currency: Currency) -> Decimal {
+        let costBasis = costBasisByCurrency[currency] ?? 0
+        guard costBasis > 0 else { return 0 }
+        return (amount(in: currency) / costBasis) * 100
     }
     
     func amountInTWD(usdToTwdRate: Decimal) -> Decimal {
@@ -50,6 +57,24 @@ struct SymbolRealizedPL: Equatable {
                 return partial
             }
         }
+    }
+
+    func percentInTWD(usdToTwdRate: Decimal) -> Decimal {
+        let amount = amountInTWD(usdToTwdRate: usdToTwdRate)
+        let costBasis = costBasisByCurrency.reduce(Decimal.zero) { partial, entry in
+            let (currency, costBasis) = entry
+            switch currency {
+            case .TWD:
+                return partial + costBasis
+            case .USD:
+                guard usdToTwdRate > 0 else { return partial }
+                return partial + costBasis * usdToTwdRate
+            default:
+                return partial
+            }
+        }
+        guard costBasis > 0 else { return 0 }
+        return (amount / costBasis) * 100
     }
 }
 
@@ -74,15 +99,30 @@ enum SymbolRealizedPLCache {
         guard cachedUserId != userId else { return }
         
         let transactions = try await dataService.fetchAllTransactions(userId: userId)
-        var grouped: [String: [Currency: Decimal]] = [:]
+        var amountByKey: [String: [Currency: Decimal]] = [:]
+        var costByKey: [String: [Currency: Decimal]] = [:]
         
         for transaction in transactions where transaction.type == .sell {
             guard let realizedGainLoss = transaction.realizedGainLoss else { continue }
             let key = key(assetType: transaction.assetType, symbol: transaction.symbol)
-            grouped[key, default: [:]][transaction.currency, default: 0] += realizedGainLoss
+            amountByKey[key, default: [:]][transaction.currency, default: 0] += realizedGainLoss
+            if let costBasis = transaction.realizedCostBasis {
+                costByKey[key, default: [:]][transaction.currency, default: 0] += costBasis
+            }
         }
         
-        amountBySymbolKey = grouped.mapValues { SymbolRealizedPL(amountByCurrency: $0) }
+        amountBySymbolKey = amountByKey.map { key, amountByCurrency in
+            (
+                key,
+                SymbolRealizedPL(
+                    amountByCurrency: amountByCurrency,
+                    costBasisByCurrency: costByKey[key] ?? [:]
+                )
+            )
+        }
+        .reduce(into: [:]) { partial, entry in
+            partial[entry.0] = entry.1
+        }
         cachedUserId = userId
     }
     

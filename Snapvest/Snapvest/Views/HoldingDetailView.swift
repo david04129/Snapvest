@@ -251,6 +251,13 @@ struct HoldingDetailView: View {
             }
         )
     }
+
+    private func toggleHoldingDisplayCurrency() {
+        guard canToggleCurrency else { return }
+        withAnimation(ChartMotion.switchSpring) {
+            metricAmountDisplay = metricAmountDisplay == .twd ? .original : .twd
+        }
+    }
     
     private var displayedMarketValueText: String {
         switch metricAmountDisplay {
@@ -283,6 +290,10 @@ struct HoldingDetailView: View {
         case .original:
             return aggregatedHolding.weightedAverageCost.formattedTradePrice(currency: aggregatedHolding.currency)
         }
+    }
+
+    private var heroAverageCostText: String {
+        aggregatedHolding.weightedAverageCost.formattedTradePrice(currency: aggregatedHolding.currency)
     }
     
     private var averageCostTitle: String {
@@ -349,6 +360,18 @@ struct HoldingDetailView: View {
         let sign = pct >= 0 ? "+" : ""
         return "\(sign)\(pct.formatted(fractionDigits: 2))%"
     }
+
+    private var displayedRealizedPercentText: String {
+        let pct: Decimal
+        switch metricAmountDisplay {
+        case .twd:
+            pct = symbolRealizedPL.percentInTWD(usdToTwdRate: usdToTwdRate)
+        case .original:
+            pct = symbolRealizedPL.percent(in: aggregatedHolding.currency)
+        }
+        let sign = pct >= 0 ? "+" : ""
+        return "\(sign)\(pct.formatted(fractionDigits: 2))%"
+    }
     
     private var displayedUnrealizedColor: Color {
         let amount: Decimal
@@ -384,7 +407,7 @@ struct HoldingDetailView: View {
         default: return .appPrimary
         }
     }
-    
+
     /// 單日漲跌：現價相對本機 snapshot 昨收（與首頁 TodayPL 同源，不拉 21 天 history）。
     private var dailyPriceChange: (amount: Decimal, percent: Decimal)? {
         guard let snapshot = assetPriceSnapshot else { return nil }
@@ -394,20 +417,14 @@ struct HoldingDetailView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
-                if canToggleCurrency {
-                    HStack {
-                        Spacer(minLength: 0)
-                        AccountsCurrencyControlsBar(currencyDisplay: holdingsCurrencyDisplayBinding)
-                    }
-                }
-                
                 heroSummaryCard
                 secondaryMetricsSection
                 
                 if showsTradeHistorySection {
                     HoldingTradeHistorySection(
                         aggregatedHolding: aggregatedHolding,
-                        currentPrice: currentPrice
+                        currentPrice: currentPrice,
+                        usdToTwdRate: usdToTwdRate
                     )
                 }
             }
@@ -535,9 +552,12 @@ struct HoldingDetailView: View {
                         .fontWeight(.bold)
                         .foregroundColor(.primaryText)
                     if showsSymbolSubtitle {
-                        Text(aggregatedHolding.symbol)
-                            .font(.subheadline)
-                            .foregroundColor(.secondaryText)
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(aggregatedHolding.symbol)
+                                .font(.subheadline)
+                                .foregroundColor(.secondaryText)
+                            CurrencyCodeChip(currency: aggregatedHolding.currency, tint: assetAccentColor)
+                        }
                     }
                 }
                 Spacer()
@@ -605,10 +625,9 @@ struct HoldingDetailView: View {
                     Button {
                         isPriceUpdateInfoPresented = true
                     } label: {
-                        Text("更新說明")
+                        Image(systemName: "info.circle")
                             .font(.caption.weight(.semibold))
                             .foregroundColor(.appPrimary)
-                            .underline()
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("股價更新說明")
@@ -638,7 +657,8 @@ struct HoldingDetailView: View {
                                 font: .snapStockPriceHero,
                                 weight: .bold,
                                 color: .primaryText,
-                                chipTint: assetAccentColor
+                                chipTint: assetAccentColor,
+                                showsChip: false
                             )
                         } else {
                             Text("--")
@@ -660,6 +680,25 @@ struct HoldingDetailView: View {
                     
                     Spacer(minLength: 0)
                 }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(averageCostTitle)
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.secondaryText)
+                    CurrencyAmountWithChip(
+                        text: heroAverageCostText,
+                        currency: aggregatedHolding.currency,
+                        font: .snapAmountSecondary,
+                        weight: .bold,
+                        color: .primaryText,
+                        chipTint: assetAccentColor,
+                        spacing: 5,
+                        showsChip: false,
+                        minimumScaleFactor: 0.72
+                    )
+                }
+                .lineLimit(1)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -691,71 +730,282 @@ struct HoldingDetailView: View {
     // MARK: - 次要指標
     private var secondaryMetricsSection: some View {
         VStack(spacing: 10) {
-            MetricTile(
-                title: "市值",
-                value: displayedMarketValueText,
-                currency: selectedDisplayCurrency,
-                reservesFootnoteSpace: false,
-                prominence: .featured,
-                accentColor: assetAccentColor,
-                footnotePlacement: .trailingChip
-            )
-            if let displayedDailyGainLossText {
-                MetricTile(
-                    title: "單日損益",
-                    value: displayedDailyGainLossText,
-                    currency: selectedDisplayCurrency,
-                    valueColor: displayedDailyGainLossColor,
-                    footnote: displayedDailyGainLossPercentText,
-                    footnoteColor: displayedDailyGainLossColor,
-                    prominence: .featured,
-                    accentColor: displayedDailyGainLossColor,
-                    footnotePlacement: .trailingChip
-                )
-            }
-            MetricTile(
-                title: "未實現損益",
-                value: displayedUnrealizedAmountText,
-                currency: selectedDisplayCurrency,
-                valueColor: displayedUnrealizedColor,
-                footnote: displayedUnrealizedPercentText,
-                footnoteColor: displayedUnrealizedColor,
-                prominence: .featured,
-                accentColor: displayedUnrealizedColor,
-                footnotePlacement: .trailingChip
-            )
-            MetricTile(
-                title: "已實現損益",
-                value: displayedRealizedGainLossText,
-                currency: selectedDisplayCurrency,
-                valueColor: displayedRealizedGainLossColor,
-                reservesFootnoteSpace: false,
-                prominence: .featured,
-                accentColor: displayedRealizedGainLossColor,
-                footnotePlacement: .trailingChip
-            )
+            marketValueSummaryTile
+            gainLossSummaryTile
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
                 MetricTile(
                     title: "持倉成本",
                     value: displayedTotalCostText,
-                    currency: selectedDisplayCurrency
+                    currency: selectedDisplayCurrency,
+                    titleCurrency: selectedDisplayCurrency,
+                    showsValueCurrencyChip: false,
+                    accentColor: assetAccentColor,
+                    compact: true,
+                    titleCurrencyCanToggle: canToggleCurrency,
+                    titleCurrencyToggleAction: toggleHoldingDisplayCurrency
                 )
-                MetricTile(
-                    title: averageCostTitle,
-                    value: displayedAverageCostText,
-                    currency: selectedDisplayCurrency
-                )
-                MetricTile(
-                    title: "總資產佔比",
-                    value: "\(totalAssetsRatio.formatted(fractionDigits: 1))%",
-                    valueColor: holdingColor
-                )
-                MetricTile(
-                    title: "投資組合佔比",
-                    value: "\(totalInvestmentsRatio.formatted(fractionDigits: 1))%",
-                    valueColor: holdingColor
-                )
+                ratioSummaryTile
             }
+        }
+    }
+
+    private var marketValueSummaryTile: some View {
+        featuredSummaryCard(accentColor: assetAccentColor, minHeight: 92) {
+            VStack(alignment: .leading, spacing: 12) {
+                CurrencyToggleTitleLabel(
+                    title: "市值",
+                    currency: selectedDisplayCurrency,
+                    font: .subheadline,
+                    weight: .medium,
+                    color: .secondaryText,
+                    chipTint: assetAccentColor,
+                    titleLineLimit: 1,
+                    canToggle: canToggleCurrency,
+                    action: toggleHoldingDisplayCurrency
+                )
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    CurrencyAmountWithChip(
+                        text: displayedMarketValueText,
+                        currency: selectedDisplayCurrency,
+                        font: .snapAmountSecondary,
+                        weight: .bold,
+                        color: .primaryText,
+                        chipTint: assetAccentColor,
+                        showsChip: false,
+                        minimumScaleFactor: 0.58
+                    )
+                    .lineLimit(1)
+                    .layoutPriority(1)
+
+                    if let displayedDailyGainLossText {
+                        holdingChangeBadge(
+                            amountText: displayedDailyGainLossText,
+                            percentText: displayedDailyGainLossPercentText,
+                            color: displayedDailyGainLossColor,
+                            isUp: (dailyGainLossTWD ?? 0) >= 0
+                        )
+                    }
+
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+    }
+
+    private var gainLossSummaryTile: some View {
+        featuredSummaryCard(accentColor: displayedUnrealizedColor, minHeight: 112) {
+            VStack(alignment: .leading, spacing: 12) {
+                CurrencyToggleTitleLabel(
+                    title: "損益",
+                    currency: selectedDisplayCurrency,
+                    font: .subheadline,
+                    weight: .medium,
+                    color: .secondaryText,
+                    chipTint: displayedUnrealizedColor,
+                    titleLineLimit: 1,
+                    canToggle: canToggleCurrency,
+                    action: toggleHoldingDisplayCurrency
+                )
+                HStack(alignment: .top, spacing: 12) {
+                    splitMetricColumn(
+                        title: "未實現損益",
+                        value: displayedUnrealizedAmountText,
+                        percent: displayedUnrealizedPercentText,
+                        color: displayedUnrealizedColor
+                    )
+                    Divider()
+                        .frame(minHeight: 52)
+                        .overlay(Color.separator.opacity(0.45))
+                    splitMetricColumn(
+                        title: "已實現損益",
+                        value: displayedRealizedGainLossText,
+                        percent: displayedRealizedPercentText,
+                        color: displayedRealizedGainLossColor
+                    )
+                }
+            }
+        }
+    }
+
+    private var ratioSummaryTile: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("資產佔比")
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundColor(.secondaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+            HStack(alignment: .top, spacing: 10) {
+                splitRatioColumn(title: "總資產", value: "\(totalAssetsRatio.formatted(fractionDigits: 1))%")
+                Divider()
+                    .frame(minHeight: 38)
+                    .overlay(Color.separator.opacity(0.35))
+                splitRatioColumn(title: "投資組合", value: "\(totalInvestmentsRatio.formatted(fractionDigits: 1))%")
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 74, alignment: .leading)
+        .padding(10)
+        .background(Color.cardBackground)
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.separator.opacity(0.35), lineWidth: 1)
+        )
+    }
+
+    private func featuredSummaryCard<Content: View>(
+        accentColor: Color,
+        minHeight: CGFloat,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        content()
+            .padding(14)
+            .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .leading)
+            .background(Color.cardBackground)
+            .cornerRadius(16)
+            .overlay(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(accentColor)
+                    .frame(width: 4)
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.separator.opacity(0.45), lineWidth: 1)
+            )
+            .shadow(color: AppColors.shadowMedium, radius: 6, x: 0, y: 2)
+    }
+
+    private func compactCurrencyMetricRow(
+        title: String,
+        value: String,
+        currency: Currency,
+        valueColor: Color,
+        footnote: String? = nil,
+        footnoteColor: Color = .secondaryText,
+        valueFont: Font = .subheadline
+    ) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(title)
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundColor(.secondaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+
+            Spacer(minLength: 8)
+
+            CurrencyAmountWithChip(
+                text: value,
+                currency: currency,
+                font: valueFont,
+                weight: .bold,
+                color: valueColor,
+                chipTint: valueColor,
+                spacing: 5,
+                showsChip: false,
+                minimumScaleFactor: 0.65
+            )
+            .lineLimit(1)
+            .layoutPriority(1)
+
+            if let footnote, !footnote.isEmpty {
+                Text(footnote)
+                    .font(.caption2)
+                    .fontWeight(.bold)
+                    .foregroundColor(footnoteColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(footnoteColor.opacity(0.12))
+                    .clipShape(Capsule())
+            }
+        }
+    }
+
+    private func splitMetricColumn(
+        title: String,
+        value: String,
+        percent: String?,
+        color: Color
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundColor(.secondaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+            Text(value)
+                .font(.headline)
+                .fontWeight(.bold)
+                .foregroundColor(color)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.62)
+            if let percent {
+                Text(percent)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(color)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func holdingChangeBadge(amountText: String, percentText: String?, color: Color, isUp: Bool) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: MarketDirectionSymbol.systemName(isUp: isUp))
+                .font(.caption2.weight(.bold))
+            Text(percentText.map { "\(amountText) (\($0))" } ?? amountText)
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .foregroundColor(color)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(color.opacity(0.12))
+        .clipShape(Capsule())
+    }
+
+    private func splitRatioColumn(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundColor(.secondaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+            Text(value)
+                .font(.headline)
+                .fontWeight(.bold)
+                .foregroundColor(holdingColor)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func compactRatioRow(title: String, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.secondaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Spacer(minLength: 4)
+            Text(value)
+                .font(.subheadline)
+                .fontWeight(.bold)
+                .foregroundColor(holdingColor)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
         }
     }
 

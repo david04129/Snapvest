@@ -169,13 +169,6 @@ struct AccountDetailView: View {
     private var regularAccountView: some View {
         ScrollView {
             VStack(spacing: 16) {
-                if account.currency != portfolioViewModel.viewCurrency {
-                    HStack {
-                        Spacer(minLength: 0)
-                        AccountsCurrencyControlsBar(currencyDisplay: accountCurrencyDisplayBinding)
-                    }
-                }
-                
                 accountHeroCard
 
                 if account.accountType == .twdDeposit {
@@ -443,6 +436,19 @@ struct AccountDetailView: View {
         )
     }
 
+    private var canToggleAccountDisplayCurrency: Bool {
+        account.currency != portfolioViewModel.viewCurrency
+    }
+
+    private func toggleAccountDisplayCurrency() {
+        guard canToggleAccountDisplayCurrency else { return }
+        withAnimation(ChartMotion.switchSpring) {
+            viewModel.displayCurrency = viewModel.displayCurrency == portfolioViewModel.viewCurrency
+                ? account.currency
+                : portfolioViewModel.viewCurrency
+        }
+    }
+
     private var displayCurrencyTWDValue: Decimal {
         if viewModel.displayCurrency == .TWD { return 1 }
         if viewModel.displayCurrency == account.currency { return twdPerAccountCurrency }
@@ -530,16 +536,25 @@ struct AccountDetailView: View {
                 )
                 .padding(.bottom, 4)
 
-                Text(accountHeroPrimaryLabel)
-                    .font(.caption)
-                    .foregroundColor(.secondaryText)
+                CurrencyToggleTitleLabel(
+                    title: accountHeroPrimaryLabel,
+                    currency: viewModel.displayCurrency,
+                    font: .caption,
+                    weight: .medium,
+                    color: .secondaryText,
+                    chipTint: account.accountType.color,
+                    titleLineLimit: 1,
+                    canToggle: canToggleAccountDisplayCurrency,
+                    action: toggleAccountDisplayCurrency
+                )
                 CurrencyAmountWithChip(
                     text: accountFormattedAmount(accountHeroPrimaryAmount),
                     currency: viewModel.displayCurrency,
                     font: .snapAmountHero,
                     weight: .bold,
                     color: .primaryText,
-                    chipTint: account.accountType.color
+                    chipTint: account.accountType.color,
+                    showsChip: false
                 )
             }
             
@@ -571,12 +586,24 @@ struct AccountDetailView: View {
                 MetricTile(
                     title: "現金餘額",
                     value: accountFormattedAmount(accountDisplayCashBalance),
-                    currency: viewModel.displayCurrency
+                    currency: viewModel.displayCurrency,
+                    titleCurrency: viewModel.displayCurrency,
+                    showsValueCurrencyChip: false,
+                    accentColor: account.accountType.color,
+                    compact: true,
+                    titleCurrencyCanToggle: canToggleAccountDisplayCurrency,
+                    titleCurrencyToggleAction: toggleAccountDisplayCurrency
                 )
                 MetricTile(
                     title: "持股市值",
                     value: accountFormattedAmount(accountDisplayHoldingsValue),
-                    currency: viewModel.displayCurrency
+                    currency: viewModel.displayCurrency,
+                    titleCurrency: viewModel.displayCurrency,
+                    showsValueCurrencyChip: false,
+                    accentColor: account.accountType.color,
+                    compact: true,
+                    titleCurrencyCanToggle: canToggleAccountDisplayCurrency,
+                    titleCurrencyToggleAction: toggleAccountDisplayCurrency
                 )
             }
         }
@@ -761,6 +788,14 @@ struct AccountDetailView: View {
                         .clipShape(Capsule())
                 }
             }
+
+            if let liability = currentLiability {
+                CurrencyIconBadge(
+                    currency: liability.currency,
+                    tint: account.accountType.color,
+                    showsLabel: true
+                )
+            }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -788,13 +823,21 @@ struct AccountDetailView: View {
                 title: "剩餘本金",
                 value: liability.remainingBalance.formatted(currency: liability.currency),
                 currency: liability.currency,
-                valueColor: .lossRed
+                titleCurrency: liability.currency,
+                showsValueCurrencyChip: false,
+                valueColor: .lossRed,
+                accentColor: account.accountType.color,
+                compact: true
             )
             MetricTile(
                 title: "已還款（含息）",
                 value: paidAmount.formatted(currency: liability.currency),
                 currency: liability.currency,
-                valueColor: .profitGreen
+                titleCurrency: liability.currency,
+                showsValueCurrencyChip: false,
+                valueColor: .profitGreen,
+                accentColor: account.accountType.color,
+                compact: true
             )
         }
     }
@@ -1021,6 +1064,11 @@ struct AccountDetailView: View {
                         .clipShape(Capsule())
                 }
             }
+            CurrencyIconBadge(
+                currency: liveOtherDebtAccount.currency,
+                tint: AccountType.otherDebt.color,
+                showsLabel: true
+            )
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1046,13 +1094,21 @@ struct AccountDetailView: View {
                 title: "目前欠款",
                 value: otherDebtRemaining.formatted(currency: liveOtherDebtAccount.currency),
                 currency: liveOtherDebtAccount.currency,
-                valueColor: .lossRed
+                titleCurrency: liveOtherDebtAccount.currency,
+                showsValueCurrencyChip: false,
+                valueColor: .lossRed,
+                accentColor: AccountType.otherDebt.color,
+                compact: true
             )
             MetricTile(
                 title: "已還總額",
                 value: otherDebtRepaid.formatted(currency: liveOtherDebtAccount.currency),
                 currency: liveOtherDebtAccount.currency,
-                valueColor: .profitGreen
+                titleCurrency: liveOtherDebtAccount.currency,
+                showsValueCurrencyChip: false,
+                valueColor: .profitGreen,
+                accentColor: AccountType.otherDebt.color,
+                compact: true
             )
         }
     }

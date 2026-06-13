@@ -17,6 +17,7 @@ struct HomeView: View {
     @State private var userId: String = AppUser.id
     @State private var navigationStackResetID = UUID()
     @State private var isShareSheetPresented = false
+    @State private var isPieGroupingTutorialPresented = false
 
     @State private var trendMetricMode: TrendMetricMode = .netWorth
     @State private var trendTimeRange: DateRangePreset = .sevenDays
@@ -34,91 +35,94 @@ struct HomeView: View {
     var body: some View {
         NavigationStack {
             ScrollViewReader { scrollProxy in
-            ScrollView {
-                VStack(spacing: 20) {
-                    if showsHomeOnboardingEmpty {
-                        OnboardingEmptyStateCard(
-                            icon: "house.fill",
-                            title: "歡迎使用 Walleaf",
-                            message: "建立帳戶後，這裡會顯示淨資產、走勢圖與資產配置。",
-                            actionTitle: "去新增帳戶"
-                        ) {
-                            selectedTab = AppTab.accounts.rawValue
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                                NotificationCenter.default.post(name: .openAddAccountSheet, object: nil)
+                ScrollView {
+                    VStack(spacing: 20) {
+                        if showsHomeOnboardingEmpty {
+                            OnboardingEmptyStateCard(
+                                icon: "house.fill",
+                                title: "歡迎使用 Walleaf",
+                                message: "建立帳戶後，這裡會顯示淨資產、走勢圖與資產配置。",
+                                actionTitle: "去新增帳戶"
+                            ) {
+                                selectedTab = AppTab.accounts.rawValue
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                                    NotificationCenter.default.post(name: .openAddAccountSheet, object: nil)
+                                }
+                            }
+                        }
+
+                        Group {
+                            HomeTrendChartSection(
+                                userId: userId,
+                                currency: viewModel.viewCurrency,
+                                metricMode: $trendMetricMode,
+                                timeRange: $trendTimeRange,
+                                trendPoints: $trendPoints,
+                                customStartDate: $trendCustomStartDate,
+                                customEndDate: $trendCustomEndDate
+                            )
+
+                            // 淨資產卡片
+                            NetWorthCardView(viewModel: viewModel)
+
+                            // 投資資產卡片
+                            InvestmentAssetsCardView(viewModel: viewModel)
+
+                            // 現金卡片
+                            CashCardView(viewModel: viewModel)
+
+                            // 今日損益卡片
+                            TodayPLCardView(viewModel: viewModel)
+
+                            // 已實現損益卡片（隱私模式整塊隱藏）
+                            if !homePrivacy.isAmountHidden {
+                                RealizedPLCardView(viewModel: viewModel, userId: userId)
+                                    .transition(.opacity.combined(with: .move(edge: .top)))
+                            }
+                        }
+                        .allowsHitTesting(!pieGroupingStore.isEditingGroups)
+                        .opacity(pieGroupingStore.isEditingGroups ? 0.5 : 1)
+                        .animation(ChartMotion.switchQuick, value: pieGroupingStore.isEditingGroups)
+
+                        // 圓餅圖（總資產 / 投資組合 / 所有細項）
+                        if viewModel.pieChartInputs != nil {
+                            Group {
+                                HomePieChartSection(
+                                    inputs: viewModel.pieChartInputs,
+                                    totalAssets: viewModel.totalAssets,
+                                    totalInvestments: viewModel.totalInvestments,
+                                    currency: viewModel.viewCurrency,
+                                    twdPerBaseCurrency: viewModel.twdPerBaseCurrency,
+                                    onScrollToChart: {
+                                        withAnimation(.easeInOut(duration: 0.38)) {
+                                            scrollProxy.scrollTo(
+                                                HomePieChartScrollAnchor.donut,
+                                                anchor: UnitPoint(x: 0.5, y: 0.12)
+                                            )
+                                        }
+                                    },
+                                    onOpenGroupingTutorial: {
+                                        isPieGroupingTutorialPresented = true
+                                    },
+                                    mode: $pieChartMode,
+                                    groupingStore: pieGroupingStore
+                                )
+
+                                HomePerformanceChartSection(
+                                    inputs: viewModel.pieChartInputs,
+                                    pieMode: pieChartMode,
+                                    groupingStore: pieGroupingStore,
+                                    mode: $performanceMode,
+                                    currency: viewModel.viewCurrency,
+                                    twdPerBaseCurrency: viewModel.twdPerBaseCurrency
+                                )
+                                .snapHomeSummaryMetricStyle()
                             }
                         }
                     }
-
-                    Group {
-                        HomeTrendChartSection(
-                            userId: userId,
-                            currency: viewModel.viewCurrency,
-                            metricMode: $trendMetricMode,
-                            timeRange: $trendTimeRange,
-                            trendPoints: $trendPoints,
-                            customStartDate: $trendCustomStartDate,
-                            customEndDate: $trendCustomEndDate
-                        )
-                        
-                        // 淨資產卡片
-                        NetWorthCardView(viewModel: viewModel)
-                        
-                        // 投資資產卡片
-                        InvestmentAssetsCardView(viewModel: viewModel)
-                        
-                        // 現金卡片
-                        CashCardView(viewModel: viewModel)
-                        
-                        // 今日損益卡片
-                        TodayPLCardView(viewModel: viewModel)
-                        
-                        // 已實現損益卡片（隱私模式整塊隱藏）
-                        if !homePrivacy.isAmountHidden {
-                            RealizedPLCardView(viewModel: viewModel, userId: userId)
-                                .transition(.opacity.combined(with: .move(edge: .top)))
-                        }
-                    }
-                    .allowsHitTesting(!pieGroupingStore.isEditingGroups)
-                    .opacity(pieGroupingStore.isEditingGroups ? 0.5 : 1)
-                    .animation(ChartMotion.switchQuick, value: pieGroupingStore.isEditingGroups)
-                    
-                    // 圓餅圖（總資產 / 投資組合 / 所有細項）
-                    if viewModel.pieChartInputs != nil {
-                        Group {
-                            HomePieChartSection(
-                                inputs: viewModel.pieChartInputs,
-                                totalAssets: viewModel.totalAssets,
-                                totalInvestments: viewModel.totalInvestments,
-                                currency: viewModel.viewCurrency,
-                                twdPerBaseCurrency: viewModel.twdPerBaseCurrency,
-                                onScrollToChart: {
-                                    withAnimation(.easeInOut(duration: 0.38)) {
-                                        scrollProxy.scrollTo(
-                                            HomePieChartScrollAnchor.donut,
-                                            anchor: UnitPoint(x: 0.5, y: 0.12)
-                                        )
-                                    }
-                                },
-                                mode: $pieChartMode,
-                                groupingStore: pieGroupingStore
-                            )
-                            
-                            HomePerformanceChartSection(
-                                inputs: viewModel.pieChartInputs,
-                                pieMode: pieChartMode,
-                                groupingStore: pieGroupingStore,
-                                mode: $performanceMode,
-                                currency: viewModel.viewCurrency,
-                                twdPerBaseCurrency: viewModel.twdPerBaseCurrency
-                            )
-                            .snapHomeSummaryMetricStyle()
-                        }
-                    }
+                    .padding()
+                    .animation(.easeInOut(duration: 0.22), value: homePrivacy.isAmountHidden)
                 }
-                .padding()
-                .animation(.easeInOut(duration: 0.22), value: homePrivacy.isAmountHidden)
-            }
             }
             .background(Color.mainBackground)
             .navigationBarBackButtonHidden(true)
@@ -168,6 +172,9 @@ struct HomeView: View {
                 twdPerBaseCurrency: viewModel.twdPerBaseCurrency
             )
         }
+        .sheet(isPresented: $isPieGroupingTutorialPresented) {
+            PieChartGroupingTutorialView()
+        }
         .id(navigationStackResetID)
         .resetNavigationWhenTabReappears(selectedTab: $selectedTab, resignedTab: .home) {
             navigationStackResetID = UUID()
@@ -208,7 +215,6 @@ struct HomeView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Color.mainBackground)
     }
 }
 

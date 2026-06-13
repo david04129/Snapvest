@@ -84,6 +84,71 @@ struct TransactionDisplayFormatter {
         let total = transaction.quantity * transaction.price
         return total.formattedTradeAmount(currency: tradePriceCurrency)
     }
+
+    func displayAmount(
+        accountCurrency: Currency?,
+        usdToTwdRate: Decimal? = nil
+    ) -> (amount: Decimal, currency: Currency) {
+        let targetCurrency = accountCurrency ?? transaction.currency
+        guard transaction.type == .buy || transaction.type == .sell else {
+            return (transaction.totalAmountWithFee, transaction.currency)
+        }
+
+        let gross = transaction.quantity * transaction.price
+        let amountInTradeCurrency: Decimal
+        switch transaction.type {
+        case .buy:
+            amountInTradeCurrency = gross + transaction.fee
+        case .sell:
+            amountInTradeCurrency = gross - transaction.fee
+        default:
+            amountInTradeCurrency = gross
+        }
+
+        if let converted = convertedAmount(
+            amountInTradeCurrency,
+            from: tradePriceCurrency,
+            to: targetCurrency,
+            rate: transaction.exchangeRate ?? usdToTwdRate
+        ) {
+            return (converted, targetCurrency)
+        }
+        return (amountInTradeCurrency, tradePriceCurrency)
+    }
+
+    func displayRealizedGainLoss(
+        accountCurrency: Currency?,
+        usdToTwdRate: Decimal? = nil
+    ) -> (amount: Decimal, currency: Currency)? {
+        guard let realized = transaction.realizedGainLoss else { return nil }
+        let targetCurrency = accountCurrency ?? transaction.currency
+        if let converted = convertedAmount(
+            realized,
+            from: tradePriceCurrency,
+            to: targetCurrency,
+            rate: transaction.exchangeRate ?? usdToTwdRate
+        ) {
+            return (converted, targetCurrency)
+        }
+        return (realized, tradePriceCurrency)
+    }
+
+    private func convertedAmount(
+        _ amount: Decimal,
+        from sourceCurrency: Currency,
+        to targetCurrency: Currency,
+        rate: Decimal?
+    ) -> Decimal? {
+        if sourceCurrency == targetCurrency { return amount }
+        guard let rate, rate > 0 else { return nil }
+        if sourceCurrency == .USD, targetCurrency == .TWD {
+            return amount * rate
+        }
+        if sourceCurrency == .TWD, targetCurrency == .USD {
+            return amount / rate
+        }
+        return nil
+    }
     
     /// 過濾系統自動備註，只保留使用者自訂內容 preview
     var userNotePreview: String? {

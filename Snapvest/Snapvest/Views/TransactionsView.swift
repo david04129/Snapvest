@@ -286,6 +286,7 @@ struct TransactionsView: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
+        .background(Color.mainBackground)
         .animation(ChartMotion.switchSpring, value: timePreset == .custom)
         .animation(ChartMotion.switchSpring, value: filterListRefreshToken)
     }
@@ -388,6 +389,7 @@ struct TransactionsView: View {
             accountName: accountDisplay.name,
             accountIconName: accountDisplay.icon,
             accountColor: accountDisplay.color,
+            accountCurrency: accountDisplay.currency,
             onRowTap: { attemptEditTransaction(transaction) },
             onDelete: { transaction in
                 transactionPendingDelete = transaction
@@ -995,7 +997,6 @@ struct TransactionsView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Color.mainBackground)
     }
     
     // MARK: - Sheet Views
@@ -1194,21 +1195,21 @@ struct TransactionsView: View {
         return ""
     }
     
-    private func getAccountDisplay(for transaction: Transaction) -> (name: String, icon: String, color: Color) {
+    private func getAccountDisplay(for transaction: Transaction) -> (name: String, icon: String, color: Color, currency: Currency?) {
         // 確保 accounts 已載入
         if viewModel.accounts.isEmpty {
-            return (name: "未知帳戶", icon: "questionmark.circle", color: .secondaryText)
+            return (name: "未知帳戶", icon: "questionmark.circle", color: .secondaryText, currency: nil)
         }
         
         if transaction.type == .repayment,
            let account = viewModel.accounts.first(where: { $0.id == transaction.accountId }) {
-            return (name: account.name, icon: account.accountType.icon, color: account.accountType.color)
+            return (name: account.name, icon: account.accountType.icon, color: account.accountType.color, currency: account.currency)
         }
         
         if let account = viewModel.accounts.first(where: { $0.id == transaction.accountId }) {
-            return (name: account.name, icon: account.accountType.icon, color: account.accountType.color)
+            return (name: account.name, icon: account.accountType.icon, color: account.accountType.color, currency: account.currency)
         }
-        return (name: "未知帳戶", icon: "questionmark.circle", color: .secondaryText)
+        return (name: "未知帳戶", icon: "questionmark.circle", color: .secondaryText, currency: nil)
     }
 }
 
@@ -1415,6 +1416,7 @@ struct TransactionRowView: View {
     let accountName: String
     let accountIconName: String
     let accountColor: Color
+    let accountCurrency: Currency?
     let onRowTap: () -> Void
     let onDelete: (Transaction) -> Void
 
@@ -1487,7 +1489,7 @@ struct TransactionRowView: View {
             VStack(alignment: .trailing, spacing: 4) {
                 CurrencyAmountWithChip(
                     text: transactionAmount,
-                    currency: transaction.currency,
+                    currency: transactionAmountCurrency,
                     font: .system(size: 17, weight: .bold),
                     weight: .bold,
                     color: amountColor,
@@ -1508,8 +1510,8 @@ struct TransactionRowView: View {
     }
     
     private var transactionAmount: String {
-        // 安全地計算金額
-        let amount = transaction.totalAmountWithFee
+        let displayed = display.displayAmount(accountCurrency: accountCurrency)
+        let amount = displayed.amount
         let absAmount = abs(amount)
         let sign: String
         
@@ -1530,10 +1532,13 @@ struct TransactionRowView: View {
             sign = "-"
         }
         
-        // 安全地格式化金額
-        let formattedAmount = absAmount.formatted(currency: transaction.currency, showSymbol: false)
+        let formattedAmount = absAmount.formatted(currency: displayed.currency, showSymbol: false)
         // 如果 sign 為空，直接返回金額，否則返回帶符號的金額
         return sign.isEmpty ? formattedAmount : "\(sign) \(formattedAmount)"
+    }
+
+    private var transactionAmountCurrency: Currency {
+        display.displayAmount(accountCurrency: accountCurrency).currency
     }
 }
 

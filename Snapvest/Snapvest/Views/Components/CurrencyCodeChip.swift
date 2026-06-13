@@ -16,6 +16,7 @@ struct CurrencyCodeChip: View {
     enum Style {
         case subtle
         case filled
+        case interactive
     }
     
     var body: some View {
@@ -23,8 +24,8 @@ struct CurrencyCodeChip: View {
             .font(.system(size: 10, weight: .bold, design: .rounded))
             .tracking(0.4)
             .foregroundColor(foregroundColor)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 4)
+            .padding(.horizontal, style == .interactive ? 9 : 7)
+            .padding(.vertical, style == .interactive ? 5 : 4)
             .background(backgroundColor)
             .clipShape(Capsule())
             .overlay {
@@ -44,6 +45,8 @@ struct CurrencyCodeChip: View {
             return colorScheme == .dark
                 ? Color.white.opacity(0.92)
                 : Color.primaryText.opacity(0.84)
+        case .interactive:
+            return .appPrimary
         }
     }
     
@@ -57,6 +60,8 @@ struct CurrencyCodeChip: View {
             return colorScheme == .dark
                 ? Color.white.opacity(0.16)
                 : Color.primaryText.opacity(0.10)
+        case .interactive:
+            return Color.appPrimary.opacity(0.12)
         }
     }
     
@@ -70,6 +75,8 @@ struct CurrencyCodeChip: View {
             return colorScheme == .dark
                 ? Color.white.opacity(0.24)
                 : Color.primaryText.opacity(0.16)
+        case .interactive:
+            return Color.appPrimary.opacity(0.35)
         }
     }
 }
@@ -218,6 +225,60 @@ struct CurrencyTitleLabel: View {
                 .minimumScaleFactor(0.85)
                 .fixedSize(horizontal: false, vertical: true)
             CurrencyCodeChip(currency: currency, tint: chipTint)
+        }
+    }
+}
+
+struct CurrencyToggleChip: View {
+    let currency: Currency
+    var tint: Color = .appPrimary
+    var isEnabled: Bool = true
+    var accessibilityLabel: String = "切換顯示幣別"
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            CurrencyCodeChip(
+                currency: currency,
+                tint: tint,
+                style: isEnabled ? .interactive : .subtle
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .accessibilityLabel(Text(accessibilityLabel))
+    }
+}
+
+struct CurrencyToggleTitleLabel: View {
+    let title: String
+    let currency: Currency
+    var font: Font = .subheadline
+    var weight: Font.Weight = .medium
+    var color: Color = .secondaryText
+    var chipTint: Color = .appPrimary
+    var titleLineLimit: Int = 2
+    var canToggle: Bool = true
+    var accessibilityLabel: String = "切換顯示幣別"
+    let action: () -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(title)
+                .font(font)
+                .fontWeight(weight)
+                .foregroundColor(color)
+                .lineLimit(titleLineLimit)
+                .minimumScaleFactor(0.85)
+                .fixedSize(horizontal: false, vertical: true)
+            CurrencyToggleChip(
+                currency: currency,
+                tint: chipTint,
+                isEnabled: canToggle,
+                accessibilityLabel: accessibilityLabel,
+                action: action
+            )
         }
     }
 }
