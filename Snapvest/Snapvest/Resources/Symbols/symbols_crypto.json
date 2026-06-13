@@ -1,8 +1,8 @@
 {
   "epoch": 1,
-  "minor": 9,
-  "version": 9,
-  "updatedAt": "2026-06-10",
+  "minor": 10,
+  "version": 10,
+  "updatedAt": "2026-06-13",
   "items": [
     {
       "symbol": "0g",
@@ -178,11 +178,6 @@
       "symbol": "aster",
       "name": "Aster",
       "coingeckoId": "aster-2"
-    },
-    {
-      "symbol": "asteroid",
-      "name": "Asteroid Shiba",
-      "coingeckoId": "asteroid-shiba"
     },
     {
       "symbol": "astr",
@@ -565,11 +560,6 @@
       "coingeckoId": "convex-finance"
     },
     {
-      "symbol": "cx",
-      "name": "Cortex",
-      "coingeckoId": "cortex-2"
-    },
-    {
       "symbol": "cys",
       "name": "Cysic",
       "coingeckoId": "cysic"
@@ -593,6 +583,11 @@
       "symbol": "dcr",
       "name": "Decred",
       "coingeckoId": "decred"
+    },
+    {
+      "symbol": "deep",
+      "name": "DeepBook",
+      "coingeckoId": "deep"
     },
     {
       "symbol": "degen",
@@ -700,6 +695,11 @@
       "coingeckoId": "ethereum-name-service"
     },
     {
+      "symbol": "esports",
+      "name": "Yooldo Games",
+      "coingeckoId": "yooldo-games"
+    },
+    {
       "symbol": "etc",
       "name": "Ethereum Classic",
       "coingeckoId": "ethereum-classic"
@@ -753,11 +753,6 @@
       "symbol": "fartcoin",
       "name": "Fartcoin",
       "coingeckoId": "fartcoin"
-    },
-    {
-      "symbol": "fb",
-      "name": "Fractal Bitcoin",
-      "coingeckoId": "fractal-bitcoin"
     },
     {
       "symbol": "fdit",
@@ -958,6 +953,11 @@
       "symbol": "hnt",
       "name": "Helium",
       "coingeckoId": "helium"
+    },
+    {
+      "symbol": "holo",
+      "name": "Holoworld",
+      "coingeckoId": "holoworld"
     },
     {
       "symbol": "home",
@@ -1325,11 +1325,6 @@
       "coingeckoId": "mx-token"
     },
     {
-      "symbol": "myx",
-      "name": "MYX Finance",
-      "coingeckoId": "myx-finance"
-    },
-    {
       "symbol": "near",
       "name": "NEAR Protocol",
       "coingeckoId": "near"
@@ -1373,6 +1368,11 @@
       "symbol": "nock",
       "name": "Nockchain",
       "coingeckoId": "nockchain"
+    },
+    {
+      "symbol": "not",
+      "name": "Notcoin",
+      "coingeckoId": "notcoin"
     },
     {
       "symbol": "nusd",
@@ -1880,6 +1880,11 @@
       "coingeckoId": "spx6900"
     },
     {
+      "symbol": "sqd",
+      "name": "SQD",
+      "coingeckoId": "subsquid"
+    },
+    {
       "symbol": "stable",
       "name": "​​Stable",
       "coingeckoId": "stable-2"
@@ -1943,6 +1948,11 @@
       "symbol": "syrup",
       "name": "Maple Finance",
       "coingeckoId": "syrup"
+    },
+    {
+      "symbol": "t",
+      "name": "Threshold Network",
+      "coingeckoId": "threshold-network-token"
     },
     {
       "symbol": "tac",
@@ -2400,11 +2410,6 @@
       "coingeckoId": "straitsx-xusd"
     },
     {
-      "symbol": "xvs",
-      "name": "Venus",
-      "coingeckoId": "venus"
-    },
-    {
       "symbol": "xyo",
       "name": "XYO Network",
       "coingeckoId": "xyo-network"
@@ -2443,11 +2448,6 @@
       "symbol": "zen",
       "name": "Horizen",
       "coingeckoId": "zencash"
-    },
-    {
-      "symbol": "zest",
-      "name": "Zest Protocol",
-      "coingeckoId": "zest-protocol"
     },
     {
       "symbol": "zeta",

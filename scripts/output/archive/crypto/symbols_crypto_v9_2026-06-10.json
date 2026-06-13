@@ -1,2487 +1,2487 @@
 {
   "epoch": 1,
-  "minor": 8,
-  "version": 8,
-  "updatedAt": "2026-06-07",
+  "minor": 9,
+  "version": 9,
+  "updatedAt": "2026-06-10",
   "items": [
     {
-      "name": "0G",
       "symbol": "0g",
+      "name": "0G",
       "coingeckoId": "zero-gravity"
     },
     {
-      "name": "1INCH",
       "symbol": "1inch",
+      "name": "1INCH",
       "coingeckoId": "1inch"
     },
     {
-      "name": "DoubleZero",
       "symbol": "2z",
+      "name": "DoubleZero",
       "coingeckoId": "doublezero"
     },
     {
-      "name": "The9bit",
       "symbol": "9bit",
+      "name": "The9bit",
       "coingeckoId": "the9bit"
     },
     {
-      "name": "Vaulta",
       "symbol": "a",
+      "name": "Vaulta",
       "coingeckoId": "vaulta"
     },
     {
-      "name": "A7A5",
       "symbol": "a7a5",
+      "name": "A7A5",
       "coingeckoId": "a7a5"
     },
     {
-      "name": "Aave",
       "symbol": "aave",
+      "name": "Aave",
       "coingeckoId": "aave"
     },
     {
-      "name": "AB",
       "symbol": "ab",
+      "name": "AB",
       "coingeckoId": "newton-project"
     },
     {
-      "name": "Anemoy Tokenized Apollo Diversified Credit Fund",
       "symbol": "acrdx",
+      "name": "Anemoy Tokenized Apollo Diversified Credit Fund",
       "coingeckoId": "anemoy-tokenized-apollo-diversified-credit-fund"
     },
     {
-      "name": "Apollo Diversified Credit Securitize Fund",
       "symbol": "acred",
+      "name": "Apollo Diversified Credit Securitize Fund",
       "coingeckoId": "apollo-diversified-credit-securitize-fund"
     },
     {
-      "name": "Cardano",
       "symbol": "ada",
+      "name": "Cardano",
       "coingeckoId": "cardano"
     },
     {
-      "name": "ADI",
       "symbol": "adi",
+      "name": "ADI",
       "coingeckoId": "adi-token"
     },
     {
-      "name": "Aerodrome Finance",
       "symbol": "aero",
+      "name": "Aerodrome Finance",
       "coingeckoId": "aerodrome-finance"
     },
     {
-      "name": "AgentFun.AI",
       "symbol": "agentfun",
+      "name": "AgentFun.AI",
       "coingeckoId": "agentfun-ai"
     },
     {
-      "name": "AIOZ Network",
       "symbol": "aioz",
+      "name": "AIOZ Network",
       "coingeckoId": "aioz-network"
     },
     {
-      "name": "AI Powered Finance",
       "symbol": "aipf",
+      "name": "AI Powered Finance",
       "coingeckoId": "ai-powered-finance"
     },
     {
-      "name": "Akash Network",
+      "symbol": "aix",
+      "name": "AI XOVIA",
+      "coingeckoId": "ai-xovia"
+    },
+    {
       "symbol": "akt",
+      "name": "Akash Network",
       "coingeckoId": "akash-network"
     },
     {
-      "name": "Alchemist AI",
       "symbol": "alch",
+      "name": "Alchemist AI",
       "coingeckoId": "alchemist-ai"
     },
     {
-      "name": "Algorand",
       "symbol": "algo",
+      "name": "Algorand",
       "coingeckoId": "algorand"
     },
     {
-      "name": "Allora",
       "symbol": "allo",
+      "name": "Allora",
       "coingeckoId": "allora"
     },
     {
-      "name": "Amp",
       "symbol": "amp",
+      "name": "Amp",
       "coingeckoId": "amp-token"
     },
     {
-      "name": "ApeCoin",
       "symbol": "ape",
+      "name": "ApeCoin",
       "coingeckoId": "apecoin"
     },
     {
-      "name": "Ape and Pepe",
       "symbol": "apepe",
+      "name": "Ape and Pepe",
       "coingeckoId": "ape-and-pepe"
     },
     {
-      "name": "APES",
       "symbol": "apes",
+      "name": "APES",
       "coingeckoId": "apes-2-2"
     },
     {
-      "name": "aPriori",
       "symbol": "apr",
+      "name": "aPriori",
       "coingeckoId": "apriori"
     },
     {
-      "name": "Aptos",
       "symbol": "apt",
+      "name": "Aptos",
       "coingeckoId": "aptos"
     },
     {
-      "name": "apxUSD",
       "symbol": "apxusd",
+      "name": "apxUSD",
       "coingeckoId": "apxusd"
     },
     {
-      "name": "apyUSD",
       "symbol": "apyusd",
+      "name": "apyUSD",
       "coingeckoId": "apyusd"
     },
     {
-      "name": "Arweave",
       "symbol": "ar",
+      "name": "Arweave",
       "coingeckoId": "arweave"
     },
     {
-      "name": "Arbitrum",
       "symbol": "arb",
+      "name": "Arbitrum",
       "coingeckoId": "arbitrum"
     },
     {
-      "name": "AI Rig Complex",
       "symbol": "arc",
+      "name": "AI Rig Complex",
       "coingeckoId": "ai-rig-complex"
     },
     {
-      "name": "Arkham",
       "symbol": "arkm",
+      "name": "Arkham",
       "coingeckoId": "arkham"
     },
     {
-      "name": "Pirate Chain",
       "symbol": "arrr",
+      "name": "Pirate Chain",
       "coingeckoId": "pirate-chain"
     },
     {
-      "name": "Aster",
       "symbol": "aster",
+      "name": "Aster",
       "coingeckoId": "aster-2"
     },
     {
-      "name": "Asteroid Shiba",
       "symbol": "asteroid",
+      "name": "Asteroid Shiba",
       "coingeckoId": "asteroid-shiba"
     },
     {
-      "name": "Astar",
       "symbol": "astr",
+      "name": "Astar",
       "coingeckoId": "astar"
     },
     {
-      "name": "Aethir",
       "symbol": "ath",
+      "name": "Aethir",
       "coingeckoId": "aethir"
     },
     {
-      "name": "Cosmos Hub",
       "symbol": "atom",
+      "name": "Cosmos Hub",
       "coingeckoId": "cosmos"
     },
     {
-      "name": "AUSD",
       "symbol": "ausd",
+      "name": "AUSD",
       "coingeckoId": "agora-dollar"
     },
     {
-      "name": "Alloy Tether",
       "symbol": "ausdt",
+      "name": "Alloy Tether",
       "coingeckoId": "alloy-tether"
     },
     {
-      "name": "Avalanche",
       "symbol": "avax",
+      "name": "Avalanche",
       "coingeckoId": "avalanche-2"
     },
     {
-      "name": "Avant USD",
       "symbol": "avusd",
+      "name": "Avant USD",
       "coingeckoId": "avant-usd"
     },
     {
-      "name": "AWE Network",
       "symbol": "awe",
+      "name": "AWE Network",
       "coingeckoId": "stp-network"
     },
     {
-      "name": "Axelar",
       "symbol": "axl",
+      "name": "Axelar",
       "coingeckoId": "axelar"
     },
     {
-      "name": "Axie Infinity",
       "symbol": "axs",
+      "name": "Axie Infinity",
       "coingeckoId": "axie-infinity"
     },
     {
-      "name": "Aztec",
       "symbol": "aztec",
+      "name": "Aztec",
       "coingeckoId": "aztec"
     },
     {
-      "name": "BUILDon",
       "symbol": "b",
+      "name": "BUILDon",
       "coingeckoId": "build-on"
     },
     {
-      "name": "Babylon",
       "symbol": "baby",
+      "name": "Babylon",
       "coingeckoId": "babylon"
     },
     {
-      "name": "Baby Doge Coin",
       "symbol": "babydoge",
+      "name": "Baby Doge Coin",
       "coingeckoId": "baby-doge-coin"
     },
     {
-      "name": "Comedian",
       "symbol": "ban",
+      "name": "Comedian",
       "coingeckoId": "comedian"
     },
     {
-      "name": "Banana For Scale",
       "symbol": "bananas31",
+      "name": "Banana For Scale",
       "coingeckoId": "banana-for-scale-2"
     },
     {
-      "name": "Lombard",
       "symbol": "bard",
+      "name": "Lombard",
       "coingeckoId": "lombard-protocol"
     },
     {
-      "name": "BNB Attestation Service",
       "symbol": "bas",
+      "name": "BNB Attestation Service",
       "coingeckoId": "bas"
     },
     {
-      "name": "BasedHype",
       "symbol": "basedhype",
+      "name": "BasedHype",
       "coingeckoId": "basedhype"
     },
     {
-      "name": "Basic Attention",
       "symbol": "bat",
+      "name": "Basic Attention",
       "coingeckoId": "basic-attention-token"
     },
     {
-      "name": "BCGame Coin",
       "symbol": "bc",
+      "name": "BCGame Coin",
       "coingeckoId": "bc-token"
     },
     {
-      "name": "Blockchain Capital",
       "symbol": "bcap",
+      "name": "Blockchain Capital",
       "coingeckoId": "blockchain-capital"
     },
     {
-      "name": "bitcastle Token",
       "symbol": "bce",
+      "name": "bitcastle Token",
       "coingeckoId": "bitcastle-token"
     },
     {
-      "name": "Bitcoin Cash",
       "symbol": "bch",
+      "name": "Bitcoin Cash",
       "coingeckoId": "bitcoin-cash"
     },
     {
-      "name": "BitDCA",
       "symbol": "bdca",
+      "name": "BitDCA",
       "coingeckoId": "bitdca"
     },
     {
-      "name": "Beldex",
       "symbol": "bdx",
+      "name": "Beldex",
       "coingeckoId": "beldex"
     },
     {
-      "name": "Beam",
       "symbol": "beam",
+      "name": "Beam",
       "coingeckoId": "beam-2"
     },
     {
-      "name": "Audiera",
       "symbol": "beat",
+      "name": "Audiera",
       "coingeckoId": "audiera"
     },
     {
-      "name": "Berachain",
       "symbol": "bera",
+      "name": "Berachain",
       "coingeckoId": "berachain-bera"
     },
     {
-      "name": "BFUSD",
       "symbol": "bfusd",
+      "name": "BFUSD",
       "coingeckoId": "bfusd"
     },
     {
-      "name": "Bitget Token",
       "symbol": "bgb",
+      "name": "Bitget Token",
       "coingeckoId": "bitget-token"
     },
     {
-      "name": "Billions Network",
       "symbol": "bill",
+      "name": "Billions Network",
       "coingeckoId": "billions-network"
     },
     {
-      "name": "Bio Protocol",
       "symbol": "bio",
+      "name": "Bio Protocol",
       "coingeckoId": "bio-protocol"
     },
     {
-      "name": "Blur",
       "symbol": "blur",
+      "name": "Blur",
       "coingeckoId": "blur"
     },
     {
-      "name": "BitMart",
       "symbol": "bmx",
+      "name": "BitMart",
       "coingeckoId": "bitmart-token"
     },
     {
-      "name": "BNB",
       "symbol": "bnb",
+      "name": "BNB",
       "coingeckoId": "binancecoin"
     },
     {
-      "name": "BankrCoin",
       "symbol": "bnkr",
+      "name": "BankrCoin",
       "coingeckoId": "bankercoin-2"
     },
     {
-      "name": "Bonk",
       "symbol": "bonk",
+      "name": "Bonk",
       "coingeckoId": "bonk"
     },
     {
-      "name": "SwissBorg",
       "symbol": "borg",
+      "name": "SwissBorg",
       "coingeckoId": "swissborg"
     },
     {
-      "name": "Backpack",
       "symbol": "bp",
+      "name": "Backpack",
       "coingeckoId": "backpack"
     },
     {
-      "name": "Brett",
       "symbol": "brett",
+      "name": "Brett",
       "coingeckoId": "based-brett"
     },
     {
-      "name": "Crown BRLV",
       "symbol": "brlv",
+      "name": "Crown BRLV",
       "coingeckoId": "crown-brlv"
     },
     {
-      "name": "Brazilian Digital",
       "symbol": "brz",
+      "name": "Brazilian Digital",
       "coingeckoId": "brz"
     },
     {
-      "name": "Block Street",
       "symbol": "bsb",
+      "name": "Block Street",
       "coingeckoId": "block-street"
     },
     {
-      "name": "Bitcoin SV",
       "symbol": "bsv",
+      "name": "Bitcoin SV",
       "coingeckoId": "bitcoin-cash-sv"
     },
     {
-      "name": "Bitcoin",
       "symbol": "btc",
+      "name": "Bitcoin",
       "coingeckoId": "bitcoin"
     },
     {
-      "name": "BTSE Token",
       "symbol": "btse",
+      "name": "BTSE Token",
       "coingeckoId": "btse-token"
     },
     {
-      "name": "BitTorrent",
       "symbol": "btt",
+      "name": "BitTorrent",
       "coingeckoId": "bittorrent"
     },
     {
-      "name": "Bitway",
       "symbol": "btw",
+      "name": "Bitway",
       "coingeckoId": "bitway"
     },
     {
-      "name": "Bityuan",
       "symbol": "bty",
+      "name": "Bityuan",
       "coingeckoId": "bityuan"
     },
     {
-      "name": "BlackRock USD Institutional Digital Liquidity Fund",
       "symbol": "buidl",
+      "name": "BlackRock USD Institutional Digital Liquidity Fund",
       "coingeckoId": "blackrock-usd-institutional-digital-liquidity-fund"
     },
     {
-      "name": "PancakeSwap",
       "symbol": "cake",
+      "name": "PancakeSwap",
       "coingeckoId": "pancakeswap-token"
     },
     {
-      "name": "Collector Crypt",
       "symbol": "cards",
+      "name": "Collector Crypt",
       "coingeckoId": "collector-crypt"
     },
     {
-      "name": "CASH",
       "symbol": "cash",
+      "name": "CASH",
       "coingeckoId": "cash-4"
     },
     {
-      "name": "Canton",
       "symbol": "cc",
+      "name": "Canton",
       "coingeckoId": "canton-network"
     },
     {
-      "name": "Concordium",
       "symbol": "ccd",
+      "name": "Concordium",
       "coingeckoId": "concordium"
     },
     {
-      "name": "CoinEx",
       "symbol": "cet",
+      "name": "CoinEx",
       "coingeckoId": "coinex-token"
     },
     {
-      "name": "Centrifuge",
       "symbol": "cfg",
+      "name": "Centrifuge",
       "coingeckoId": "centrifuge-2"
     },
     {
-      "name": "Conflux",
       "symbol": "cfx",
+      "name": "Conflux",
       "coingeckoId": "conflux-token"
     },
     {
-      "name": "Cygnus Finance Global USD",
       "symbol": "cgusd",
+      "name": "Cygnus Finance Global USD",
       "coingeckoId": "cygnus-finance-global-usd"
     },
     {
-      "name": "Cheems Token",
       "symbol": "cheems",
+      "name": "Cheems Token",
       "coingeckoId": "cheems-token"
     },
     {
-      "name": "USD.AI",
       "symbol": "chip",
+      "name": "USD.AI",
       "coingeckoId": "chip-2"
     },
     {
-      "name": "Chiliz",
       "symbol": "chz",
+      "name": "Chiliz",
       "coingeckoId": "chiliz"
     },
     {
-      "name": "Nervos Network",
       "symbol": "ckb",
+      "name": "Nervos Network",
       "coingeckoId": "nervos-network"
     },
     {
-      "name": "ChainOpera AI",
       "symbol": "coai",
+      "name": "ChainOpera AI",
       "coingeckoId": "chainopera-ai"
     },
     {
-      "name": "coco",
       "symbol": "coco",
+      "name": "coco",
       "coingeckoId": "coco-2"
     },
     {
-      "name": "Compound",
       "symbol": "comp",
+      "name": "Compound",
       "coingeckoId": "compound-governance-token"
     },
     {
-      "name": "CoW Protocol",
       "symbol": "cow",
+      "name": "CoW Protocol",
       "coingeckoId": "cow-protocol"
     },
     {
-      "name": "Circle Internet Group (Ondo Tokenized Stock)",
       "symbol": "crclon",
+      "name": "Circle Internet Group (Ondo Tokenized Stock)",
       "coingeckoId": "circle-internet-group-ondo-tokenized-stock"
     },
     {
-      "name": "Circle xStock",
       "symbol": "crclx",
+      "name": "Circle xStock",
       "coingeckoId": "circle-xstock"
     },
     {
-      "name": "Cronos",
       "symbol": "cro",
+      "name": "Cronos",
       "coingeckoId": "crypto-com-chain"
     },
     {
-      "name": "Curve DAO",
       "symbol": "crv",
+      "name": "Curve DAO",
       "coingeckoId": "curve-dao-token"
     },
     {
-      "name": "crvUSD",
       "symbol": "crvusd",
+      "name": "crvUSD",
       "coingeckoId": "crvusd"
     },
     {
-      "name": "Creditcoin",
       "symbol": "ctc",
+      "name": "Creditcoin",
       "coingeckoId": "creditcoin-2"
     },
     {
-      "name": "Cap USD",
       "symbol": "cusd",
+      "name": "Cap USD",
       "coingeckoId": "cap-usd"
     },
     {
-      "name": "Convex Finance",
       "symbol": "cvx",
+      "name": "Convex Finance",
       "coingeckoId": "convex-finance"
     },
     {
-      "name": "Cysic",
+      "symbol": "cx",
+      "name": "Cortex",
+      "coingeckoId": "cortex-2"
+    },
+    {
       "symbol": "cys",
+      "name": "Cysic",
       "coingeckoId": "cysic"
     },
     {
-      "name": "Dai",
       "symbol": "dai",
+      "name": "Dai",
       "coingeckoId": "dai"
     },
     {
-      "name": "Dash",
       "symbol": "dash",
+      "name": "Dash",
       "coingeckoId": "dash"
     },
     {
-      "name": "deBridge",
       "symbol": "dbr",
+      "name": "deBridge",
       "coingeckoId": "debridge"
     },
     {
-      "name": "Decred",
       "symbol": "dcr",
+      "name": "Decred",
       "coingeckoId": "decred"
     },
     {
-      "name": "DeepBook",
-      "symbol": "deep",
-      "coingeckoId": "deep"
-    },
-    {
-      "name": "Degen",
       "symbol": "degen",
+      "name": "Degen",
       "coingeckoId": "degen-base"
     },
     {
-      "name": "DeXe",
       "symbol": "dexe",
+      "name": "DeXe",
       "coingeckoId": "dexe"
     },
     {
-      "name": "DigiByte",
       "symbol": "dgb",
+      "name": "DigiByte",
       "coingeckoId": "digibyte"
     },
     {
-      "name": "Diem",
       "symbol": "diem",
+      "name": "Diem",
       "coingeckoId": "diem"
     },
     {
-      "name": "Dog (Bitcoin)",
       "symbol": "dog",
+      "name": "Dog (Bitcoin)",
       "coingeckoId": "dog-go-to-the-moon-rune"
     },
     {
-      "name": "Dogecoin",
       "symbol": "doge",
+      "name": "Dogecoin",
       "coingeckoId": "dogecoin"
     },
     {
-      "name": "DOLA",
       "symbol": "dola",
+      "name": "DOLA",
       "coingeckoId": "dola-usd"
     },
     {
-      "name": "Polkadot",
       "symbol": "dot",
+      "name": "Polkadot",
       "coingeckoId": "polkadot"
     },
     {
-      "name": "Derive",
       "symbol": "drv",
+      "name": "Derive",
       "coingeckoId": "derive"
     },
     {
-      "name": "StandX DUSD",
       "symbol": "dusd",
+      "name": "StandX DUSD",
       "coingeckoId": "standx-dusd"
     },
     {
-      "name": "DUSK",
       "symbol": "dusk",
+      "name": "DUSK",
       "coingeckoId": "dusk-network"
     },
     {
-      "name": "dYdX",
       "symbol": "dydx",
+      "name": "dYdX",
       "coingeckoId": "dydx-chain"
     },
     {
-      "name": "Lido Earn ETH",
       "symbol": "earneth",
+      "name": "Lido Earn ETH",
       "coingeckoId": "lido-earn-eth"
     },
     {
-      "name": "edgeX",
       "symbol": "edge",
+      "name": "edgeX",
       "coingeckoId": "edgex"
     },
     {
-      "name": "MultiversX",
       "symbol": "egld",
+      "name": "MultiversX",
       "coingeckoId": "elrond-erd-2"
     },
     {
-      "name": "EigenCloud (prev. EigenLayer)",
       "symbol": "eigen",
+      "name": "EigenCloud (prev. EigenLayer)",
       "coingeckoId": "eigenlayer"
     },
     {
-      "name": "aelf",
       "symbol": "elf",
+      "name": "aelf",
       "coingeckoId": "aelf"
     },
     {
-      "name": "Escoin",
       "symbol": "elg",
+      "name": "Escoin",
       "coingeckoId": "escoin-token"
     },
     {
-      "name": "Ethena",
       "symbol": "ena",
+      "name": "Ethena",
       "coingeckoId": "ethena"
     },
     {
-      "name": "Enjin Coin",
       "symbol": "enj",
+      "name": "Enjin Coin",
       "coingeckoId": "enjincoin"
     },
     {
-      "name": "Ethereum Name Service",
       "symbol": "ens",
+      "name": "Ethereum Name Service",
       "coingeckoId": "ethereum-name-service"
     },
     {
-      "name": "Ethereum Classic",
       "symbol": "etc",
+      "name": "Ethereum Classic",
       "coingeckoId": "ethereum-classic"
     },
     {
-      "name": "Ethereum",
       "symbol": "eth",
+      "name": "Ethereum",
       "coingeckoId": "ethereum"
     },
     {
-      "name": "Ether.fi",
       "symbol": "ethfi",
+      "name": "Ether.fi",
       "coingeckoId": "ether-fi"
     },
     {
-      "name": "EURC",
       "symbol": "eurc",
+      "name": "EURC",
       "coingeckoId": "euro-coin"
     },
     {
-      "name": "EUR CoinVertible",
       "symbol": "eurcv",
+      "name": "EUR CoinVertible",
       "coingeckoId": "societe-generale-forge-eurcv"
     },
     {
-      "name": "Eurite",
       "symbol": "euri",
+      "name": "Eurite",
       "coingeckoId": "eurite"
     },
     {
-      "name": "STASIS EURO",
       "symbol": "eurs",
+      "name": "STASIS EURO",
       "coingeckoId": "stasis-eurs"
     },
     {
-      "name": "Spiko Amundi Overnight Swap Fund (EUR)",
       "symbol": "eursafo",
+      "name": "Spiko Amundi Overnight Swap Fund (EUR)",
       "coingeckoId": "spiko-amundi-overnight-swap-fund-eur"
     },
     {
-      "name": "Spiko EU T-Bills Money Market Fund",
       "symbol": "eutbl",
+      "name": "Spiko EU T-Bills Money Market Fund",
       "coingeckoId": "eutbl"
     },
     {
-      "name": "EXOD",
       "symbol": "exod",
+      "name": "EXOD",
       "coingeckoId": "exod"
     },
     {
-      "name": "Fartcoin",
       "symbol": "fartcoin",
+      "name": "Fartcoin",
       "coingeckoId": "fartcoin"
     },
     {
-      "name": "Fidelity Digital Interest Token",
+      "symbol": "fb",
+      "name": "Fractal Bitcoin",
+      "coingeckoId": "fractal-bitcoin"
+    },
+    {
       "symbol": "fdit",
+      "name": "Fidelity Digital Interest Token",
       "coingeckoId": "fidelity-digital-interest-token"
     },
     {
-      "name": "First Digital USD",
       "symbol": "fdusd",
+      "name": "First Digital USD",
       "coingeckoId": "first-digital-usd"
     },
     {
-      "name": "Artificial Superintelligence Alliance",
       "symbol": "fet",
+      "name": "Artificial Superintelligence Alliance",
       "coingeckoId": "fetch-ai"
     },
     {
-      "name": "Felix feUSD",
       "symbol": "feusd",
+      "name": "Felix feUSD",
       "coingeckoId": "felix-feusd"
     },
     {
-      "name": "Falcon Finance",
       "symbol": "ff",
+      "name": "Falcon Finance",
       "coingeckoId": "falcon-finance-ff"
     },
     {
-      "name": "Fidelity Digital Dollar",
       "symbol": "fidd",
+      "name": "Fidelity Digital Dollar",
       "coingeckoId": "fidelity-digital-dollar"
     },
     {
-      "name": "Figure Heloc",
       "symbol": "figr_heloc",
+      "name": "Figure Heloc",
       "coingeckoId": "figure-heloc"
     },
     {
-      "name": "Filecoin",
       "symbol": "fil",
+      "name": "Filecoin",
       "coingeckoId": "filecoin"
     },
     {
-      "name": "Sygnum FIUSD Liquidity Fund",
       "symbol": "fiusd",
+      "name": "Sygnum FIUSD Liquidity Fund",
       "coingeckoId": "sygnum-fiusd-liquidity-fund"
     },
     {
-      "name": "FLOKI",
       "symbol": "floki",
+      "name": "FLOKI",
       "coingeckoId": "floki"
     },
     {
-      "name": "Flow",
       "symbol": "flow",
+      "name": "Flow",
       "coingeckoId": "flow"
     },
     {
-      "name": "Flare",
       "symbol": "flr",
+      "name": "Flare",
       "coingeckoId": "flare-networks"
     },
     {
-      "name": "Fluid",
       "symbol": "fluid",
+      "name": "Fluid",
       "coingeckoId": "instadapp"
     },
     {
-      "name": "Fogo",
       "symbol": "fogo",
+      "name": "Fogo",
       "coingeckoId": "fogo"
     },
     {
-      "name": "Four",
       "symbol": "form",
+      "name": "Four",
       "coingeckoId": "four"
     },
     {
-      "name": "Legacy Frax Dollar",
       "symbol": "frax",
+      "name": "Legacy Frax Dollar",
       "coingeckoId": "frax"
     },
     {
-      "name": "Frax USD",
       "symbol": "frxusd",
+      "name": "Frax USD",
       "coingeckoId": "frax-usd"
     },
     {
-      "name": "Flying Tulip",
       "symbol": "ft",
+      "name": "Flying Tulip",
       "coingeckoId": "flying-tulip"
     },
     {
-      "name": "f(x) USD Saving",
       "symbol": "fxsave",
+      "name": "f(x) USD Saving",
       "coingeckoId": "fx-usd-saving"
     },
     {
-      "name": "f(x) Protocol fxUSD",
       "symbol": "fxusd",
+      "name": "f(x) Protocol fxUSD",
       "coingeckoId": "f-x-protocol-fxusd"
     },
     {
-      "name": "GALA",
       "symbol": "gala",
+      "name": "GALA",
       "coingeckoId": "gala"
     },
     {
-      "name": "Gas",
       "symbol": "gas",
+      "name": "Gas",
       "coingeckoId": "gas"
     },
     {
-      "name": "Genius",
+      "symbol": "gcoin",
+      "name": "Playnance",
+      "coingeckoId": "playnance"
+    },
+    {
       "symbol": "genius",
+      "name": "Genius",
       "coingeckoId": "genius-3"
     },
     {
-      "name": "Geodnet",
       "symbol": "geod",
+      "name": "Geodnet",
       "coingeckoId": "geodnet"
     },
     {
-      "name": "GHO",
       "symbol": "gho",
+      "name": "GHO",
       "coingeckoId": "gho"
     },
     {
-      "name": "Golem",
       "symbol": "glm",
+      "name": "Golem",
       "coingeckoId": "golem"
     },
     {
-      "name": "GMX",
       "symbol": "gmx",
+      "name": "GMX",
       "coingeckoId": "gmx"
     },
     {
-      "name": "Gnosis",
       "symbol": "gno",
+      "name": "Gnosis",
       "coingeckoId": "gnosis"
     },
     {
-      "name": "GoMining Token",
       "symbol": "gomining",
+      "name": "GoMining Token",
       "coingeckoId": "gmt-token"
     },
     {
-      "name": "Grass",
       "symbol": "grass",
+      "name": "Grass",
       "coingeckoId": "grass"
     },
     {
-      "name": "The Graph",
       "symbol": "grt",
+      "name": "The Graph",
       "coingeckoId": "the-graph"
     },
     {
-      "name": "GRX Chain",
       "symbol": "grx",
+      "name": "GRX Chain",
       "coingeckoId": "grx-chain"
     },
     {
-      "name": "Gate",
       "symbol": "gt",
+      "name": "Gate",
       "coingeckoId": "gatechain-token"
     },
     {
-      "name": "GUSD",
       "symbol": "gusd",
+      "name": "GUSD",
       "coingeckoId": "gusd"
     },
     {
-      "name": "ETHGas",
       "symbol": "gwei",
+      "name": "ETHGas",
       "coingeckoId": "ethgas-2"
     },
     {
-      "name": "Humanity",
       "symbol": "h",
+      "name": "Humanity",
       "coingeckoId": "humanity"
     },
     {
-      "name": "Provenance Blockchain",
       "symbol": "hash",
+      "name": "Provenance Blockchain",
       "coingeckoId": "hash-2"
     },
     {
-      "name": "Hedera",
       "symbol": "hbar",
+      "name": "Hedera",
       "coingeckoId": "hedera-hashgraph"
     },
     {
-      "name": "Helium",
       "symbol": "hnt",
+      "name": "Helium",
       "coingeckoId": "helium"
     },
     {
-      "name": "HOME",
       "symbol": "home",
+      "name": "HOME",
       "coingeckoId": "home"
     },
     {
-      "name": "Holo",
       "symbol": "hot",
+      "name": "Holo",
       "coingeckoId": "holotoken"
     },
     {
-      "name": "HTX DAO",
       "symbol": "htx",
+      "name": "HTX DAO",
       "coingeckoId": "htx-dao"
     },
     {
-      "name": "Huma Finance",
-      "symbol": "huma",
-      "coingeckoId": "huma-finance"
-    },
-    {
-      "name": "Hyperliquid",
       "symbol": "hype",
+      "name": "Hyperliquid",
       "coingeckoId": "hyperliquid"
     },
     {
-      "name": "Impossible Cloud Network Token",
       "symbol": "icnt",
+      "name": "Impossible Cloud Network Token",
       "coingeckoId": "impossible-cloud-network-token"
     },
     {
-      "name": "Internet Computer",
       "symbol": "icp",
+      "name": "Internet Computer",
       "coingeckoId": "internet-computer"
     },
     {
-      "name": "MEET48",
       "symbol": "idol",
+      "name": "MEET48",
       "coingeckoId": "meet48"
     },
     {
-      "name": "Immutable",
       "symbol": "imx",
+      "name": "Immutable",
       "coingeckoId": "immutable-x"
     },
     {
-      "name": "Injective",
       "symbol": "inj",
+      "name": "Injective",
       "coingeckoId": "injective-protocol"
     },
     {
-      "name": "io.net",
       "symbol": "io",
+      "name": "io.net",
       "coingeckoId": "io"
     },
     {
-      "name": "IOTA",
       "symbol": "iota",
+      "name": "IOTA",
       "coingeckoId": "iota"
     },
     {
-      "name": "Story",
       "symbol": "ip",
+      "name": "Story",
       "coingeckoId": "story-2"
     },
     {
-      "name": "InfiniFi USD",
       "symbol": "iusd",
+      "name": "InfiniFi USD",
       "coingeckoId": "infinifi-usd"
     },
     {
-      "name": "iShares Core S&P 500 ETF (Ondo Tokenized ETF)",
       "symbol": "ivvon",
+      "name": "iShares Core S&P 500 ETF (Ondo Tokenized ETF)",
       "coingeckoId": "ishares-core-s-p-500-etf-ondo-tokenized-etf"
     },
     {
-      "name": "Janus Henderson Anemoy AAA CLO Fund",
       "symbol": "jaaa",
+      "name": "Janus Henderson Anemoy AAA CLO Fund",
       "coingeckoId": "janus-henderson-anemoy-aaa-clo-fund"
     },
     {
-      "name": "JasmyCoin",
       "symbol": "jasmy",
+      "name": "JasmyCoin",
       "coingeckoId": "jasmycoin"
     },
     {
-      "name": "Janction",
       "symbol": "jct",
+      "name": "Janction",
       "coingeckoId": "janction"
     },
     {
-      "name": "Jelly-My-Jelly",
       "symbol": "jellyjelly",
+      "name": "Jelly-My-Jelly",
       "coingeckoId": "jelly-my-jelly"
     },
     {
-      "name": "JUST",
       "symbol": "jst",
+      "name": "JUST",
       "coingeckoId": "just"
     },
     {
-      "name": "Jito",
       "symbol": "jto",
+      "name": "Jito",
       "coingeckoId": "jito-governance-token"
     },
     {
-      "name": "Janus Henderson Anemoy Treasury Fund",
       "symbol": "jtrsy",
+      "name": "Janus Henderson Anemoy Treasury Fund",
       "coingeckoId": "janus-henderson-anemoy-treasury-fund"
     },
     {
-      "name": "Jupiter",
       "symbol": "jup",
+      "name": "Jupiter",
       "coingeckoId": "jupiter-exchange-solana"
     },
     {
-      "name": "JupUSD",
       "symbol": "jupusd",
+      "name": "JupUSD",
       "coingeckoId": "jupusd"
     },
     {
-      "name": "Kinesis Silver",
       "symbol": "kag",
+      "name": "Kinesis Silver",
       "coingeckoId": "kinesis-silver"
     },
     {
-      "name": "Kaia",
       "symbol": "kaia",
+      "name": "Kaia",
       "coingeckoId": "kaia"
     },
     {
-      "name": "KAITO",
       "symbol": "kaito",
+      "name": "KAITO",
       "coingeckoId": "kaito"
     },
     {
-      "name": "Kaspa",
       "symbol": "kas",
+      "name": "Kaspa",
       "coingeckoId": "kaspa"
     },
     {
-      "name": "Kinesis Gold",
       "symbol": "kau",
+      "name": "Kinesis Gold",
       "coingeckoId": "kinesis-gold"
     },
     {
-      "name": "Kava",
       "symbol": "kava",
+      "name": "Kava",
       "coingeckoId": "kava"
     },
     {
-      "name": "KuCoin",
       "symbol": "kcs",
+      "name": "KuCoin",
       "coingeckoId": "kucoin-shares"
     },
     {
-      "name": "KGeN",
-      "symbol": "kgen",
-      "coingeckoId": "kgen"
-    },
-    {
-      "name": "Kite",
       "symbol": "kite",
+      "name": "Kite",
       "coingeckoId": "kite-2"
     },
     {
-      "name": "Kamino",
       "symbol": "kmno",
+      "name": "Kamino",
       "coingeckoId": "kamino"
     },
     {
-      "name": "Kinetiq",
       "symbol": "kntq",
+      "name": "Kinetiq",
       "coingeckoId": "kinetiq"
     },
     {
-      "name": "KOGE",
       "symbol": "koge",
+      "name": "KOGE",
       "coingeckoId": "bnb48-club-token"
     },
     {
-      "name": "Kusama",
       "symbol": "ksm",
+      "name": "Kusama",
       "coingeckoId": "kusama"
     },
     {
-      "name": "Keeta",
       "symbol": "kta",
+      "name": "Keeta",
       "coingeckoId": "keeta"
     },
     {
-      "name": "KUB Coin",
       "symbol": "kub",
+      "name": "KUB Coin",
       "coingeckoId": "bitkub-coin"
     },
     {
-      "name": "LAB",
       "symbol": "lab",
+      "name": "LAB",
       "coingeckoId": "lab"
     },
     {
-      "name": "Law Blocks AI",
       "symbol": "lbt",
+      "name": "Law Blocks AI",
       "coingeckoId": "law-blocks"
     },
     {
-      "name": "Lido DAO",
       "symbol": "ldo",
+      "name": "Lido DAO",
       "coingeckoId": "lido-dao"
     },
     {
-      "name": "LEO Token",
       "symbol": "leo",
+      "name": "LEO Token",
       "coingeckoId": "leo-token"
     },
     {
-      "name": "Linea",
       "symbol": "linea",
+      "name": "Linea",
       "coingeckoId": "linea"
     },
     {
-      "name": "Chainlink",
       "symbol": "link",
+      "name": "Chainlink",
       "coingeckoId": "chainlink"
     },
     {
-      "name": "Loaded Lions",
       "symbol": "lion",
+      "name": "Loaded Lions",
       "coingeckoId": "loaded-lions"
     },
     {
-      "name": "Lista USD",
       "symbol": "lisusd",
+      "name": "Lista USD",
       "coingeckoId": "helio-protocol-hay"
     },
     {
-      "name": "Lighter",
       "symbol": "lit",
+      "name": "Lighter",
       "coingeckoId": "lighter"
     },
     {
-      "name": "LOUZI",
       "symbol": "louzi",
+      "name": "LOUZI",
       "coingeckoId": "louzi"
     },
     {
-      "name": "Livepeer",
       "symbol": "lpt",
+      "name": "Livepeer",
       "coingeckoId": "livepeer"
     },
     {
-      "name": "Litecoin",
       "symbol": "ltc",
+      "name": "Litecoin",
       "coingeckoId": "litecoin"
     },
     {
-      "name": "Terra Luna Classic",
       "symbol": "lunc",
+      "name": "Terra Luna Classic",
       "coingeckoId": "terra-luna"
     },
     {
-      "name": "MemeCore",
       "symbol": "m",
+      "name": "MemeCore",
       "coingeckoId": "memecore"
     },
     {
-      "name": "MAG7.ssi",
       "symbol": "mag7.ssi",
+      "name": "MAG7.ssi",
       "coingeckoId": "mag7-ssi"
     },
     {
-      "name": "Magma Finance",
       "symbol": "magma",
+      "name": "Magma Finance",
       "coingeckoId": "magma-finance"
     },
     {
-      "name": "Decentraland",
       "symbol": "mana",
+      "name": "Decentraland",
       "coingeckoId": "decentraland"
     },
     {
-      "name": "MBG By Multibank Group",
       "symbol": "mbg",
+      "name": "MBG By Multibank Group",
       "coingeckoId": "mbg-by-multibank-group"
     },
     {
-      "name": "MegaETH",
       "symbol": "mega",
+      "name": "MegaETH",
       "coingeckoId": "megaeth"
     },
     {
-      "name": "Melania Meme",
       "symbol": "melania",
+      "name": "Melania Meme",
       "coingeckoId": "melania-meme"
     },
     {
-      "name": "Memecoin",
-      "symbol": "meme",
-      "coingeckoId": "memecoin-2"
-    },
-    {
-      "name": "Meteora",
       "symbol": "met",
+      "name": "Meteora",
       "coingeckoId": "meteora"
     },
     {
-      "name": "MetaDAO",
       "symbol": "meta",
+      "name": "MetaDAO",
       "coingeckoId": "meta-2-2"
     },
     {
-      "name": "Metal Blockchain",
       "symbol": "metal",
+      "name": "Metal Blockchain",
       "coingeckoId": "metal-blockchain"
     },
     {
-      "name": "Midas mF-ONE",
       "symbol": "mf-one",
+      "name": "Midas mF-ONE",
       "coingeckoId": "midas-mf-one"
     },
     {
-      "name": "MEME HORSE",
       "symbol": "mhorse",
+      "name": "MEME HORSE",
       "coingeckoId": "meme-horse"
     },
     {
-      "name": "Mina Protocol",
       "symbol": "mina",
+      "name": "Mina Protocol",
       "coingeckoId": "mina-protocol"
     },
     {
-      "name": "Mantle",
       "symbol": "mnt",
+      "name": "Mantle",
       "coingeckoId": "mantle"
     },
     {
-      "name": "Mog Coin",
-      "symbol": "mog",
-      "coingeckoId": "mog-coin"
-    },
-    {
-      "name": "Monad",
       "symbol": "mon",
+      "name": "Monad",
       "coingeckoId": "monad"
     },
     {
-      "name": "Morpho",
       "symbol": "morpho",
+      "name": "Morpho",
       "coingeckoId": "morpho"
     },
     {
-      "name": "Movement",
       "symbol": "move",
+      "name": "Movement",
       "coingeckoId": "movement"
     },
     {
-      "name": "Main Street USD",
       "symbol": "msusd",
+      "name": "Main Street USD",
       "coingeckoId": "main-street-usd"
     },
     {
-      "name": "Main Street Yield",
       "symbol": "msy",
+      "name": "Main Street Yield",
       "coingeckoId": "main-street-yield"
     },
     {
-      "name": "Midas mTBILL",
       "symbol": "mtbill",
+      "name": "Midas mTBILL",
       "coingeckoId": "midas-mtbill"
     },
     {
-      "name": "Micron Technology (Ondo Tokenized Stock)",
       "symbol": "muon",
+      "name": "Micron Technology (Ondo Tokenized Stock)",
       "coingeckoId": "micron-technology-ondo-tokenized-stock"
     },
     {
-      "name": "Mustang",
       "symbol": "must",
+      "name": "Mustang",
       "coingeckoId": "mustang"
     },
     {
-      "name": "MX",
       "symbol": "mx",
+      "name": "MX",
       "coingeckoId": "mx-token"
     },
     {
-      "name": "MYX Finance",
       "symbol": "myx",
+      "name": "MYX Finance",
       "coingeckoId": "myx-finance"
     },
     {
-      "name": "NEAR Protocol",
       "symbol": "near",
+      "name": "NEAR Protocol",
       "coingeckoId": "near"
     },
     {
-      "name": "NEO",
       "symbol": "neo",
+      "name": "NEO",
       "coingeckoId": "neo"
     },
     {
-      "name": "Nexus",
       "symbol": "nex",
+      "name": "Nexus",
       "coingeckoId": "nexus-4"
     },
     {
-      "name": "NEXO",
       "symbol": "nexo",
+      "name": "NEXO",
       "coingeckoId": "nexo"
     },
     {
-      "name": "AINFT",
       "symbol": "nft",
+      "name": "AINFT",
       "coingeckoId": "apenft"
     },
     {
-      "name": "Midnight",
       "symbol": "night",
+      "name": "Midnight",
       "coingeckoId": "midnight-3"
     },
     {
-      "name": "MindWaveDAO",
       "symbol": "nila",
+      "name": "MindWaveDAO",
       "coingeckoId": "mindwavedao"
     },
     {
-      "name": "Numeraire",
       "symbol": "nmr",
+      "name": "Numeraire",
       "coingeckoId": "numeraire"
     },
     {
-      "name": "Nockchain",
       "symbol": "nock",
+      "name": "Nockchain",
       "coingeckoId": "nockchain"
     },
     {
-      "name": "Neutrl USD",
       "symbol": "nusd",
+      "name": "Neutrl USD",
       "coingeckoId": "nusd-2"
     },
     {
-      "name": "NVIDIA (Ondo Tokenized Stock)",
       "symbol": "nvdaon",
+      "name": "NVIDIA (Ondo Tokenized Stock)",
       "coingeckoId": "nvidia-ondo-tokenized-stock"
     },
     {
-      "name": "Nexus Mutual",
       "symbol": "nxm",
+      "name": "Nexus Mutual",
       "coingeckoId": "nxm"
     },
     {
-      "name": "Nexpace",
       "symbol": "nxpc",
+      "name": "Nexpace",
       "coingeckoId": "nexpace"
     },
     {
-      "name": "NEXST",
       "symbol": "nxt",
+      "name": "NEXST",
       "coingeckoId": "nexst"
     },
     {
-      "name": "Octra",
       "symbol": "oct",
+      "name": "Octra",
       "coingeckoId": "octra"
     },
     {
-      "name": "Olympus",
       "symbol": "ohm",
+      "name": "Olympus",
       "coingeckoId": "olympus"
     },
     {
-      "name": "OKB",
       "symbol": "okb",
+      "name": "OKB",
       "coingeckoId": "okb"
     },
     {
-      "name": "ECOMI",
       "symbol": "omi",
+      "name": "ECOMI",
       "coingeckoId": "ecomi"
     },
     {
-      "name": "Ondo",
       "symbol": "ondo",
+      "name": "Ondo",
       "coingeckoId": "ondo-finance"
     },
     {
-      "name": "Ontology",
       "symbol": "ont",
+      "name": "Ontology",
       "coingeckoId": "ontology"
     },
     {
-      "name": "OnRe Tokenized Reinsurance",
       "symbol": "onyc",
+      "name": "OnRe Tokenized Reinsurance",
       "coingeckoId": "onyc"
     },
     {
-      "name": "Optimism",
       "symbol": "op",
+      "name": "Optimism",
       "coingeckoId": "optimism"
     },
     {
-      "name": "Orca",
+      "symbol": "open",
+      "name": "OpenLedger",
+      "coingeckoId": "openledger-2"
+    },
+    {
       "symbol": "orca",
+      "name": "Orca",
       "coingeckoId": "orca"
     },
     {
-      "name": "ORDI",
       "symbol": "ordi",
+      "name": "ORDI",
       "coingeckoId": "ordinals"
     },
     {
-      "name": "OUSG",
       "symbol": "ousg",
+      "name": "Ondo Short-Term U.S. Government Bond Fund",
       "coingeckoId": "ousg"
     },
     {
-      "name": "Ozone Chain",
       "symbol": "ozo",
+      "name": "Ozone Chain",
       "coingeckoId": "ozone-chain"
     },
     {
-      "name": "PAX Gold",
       "symbol": "paxg",
+      "name": "PAX Gold",
       "coingeckoId": "pax-gold"
     },
     {
-      "name": "Tradable NA Third Party Online Merchant SSTN",
       "symbol": "pc0000015",
+      "name": "Tradable NA Third Party Online Merchant SSTN",
       "coingeckoId": "tradable-na-third-party-online-merchant-sstn"
     },
     {
-      "name": "Tradable North America PoS Lender SSTN",
       "symbol": "pc0000019",
+      "name": "Tradable North America PoS Lender SSTN",
       "coingeckoId": "tradable-north-america-pos-lender-sstn"
     },
     {
-      "name": "Tradable Singapore Fintech SSL",
       "symbol": "pc0000023",
+      "name": "Tradable Singapore Fintech SSL",
       "coingeckoId": "tradable-singapore-fintech-ssl-2"
     },
     {
-      "name": "Tradable NA Rent Financing Platform SSTN",
       "symbol": "pc0000031",
+      "name": "Tradable NA Rent Financing Platform SSTN",
       "coingeckoId": "tradable-na-rent-financing-platform-sstn"
     },
     {
-      "name": "Tradable APAC Diversified Finance Provider SSTN",
       "symbol": "pc0000033",
+      "name": "Tradable APAC Diversified Finance Provider SSTN",
       "coingeckoId": "tradable-apac-diversified-finance-provider-sstn"
     },
     {
-      "name": "Tradable Eu/LatAm PoS Financing SSTL",
       "symbol": "pc0000049",
+      "name": "Tradable Eu/LatAm PoS Financing SSTL",
       "coingeckoId": "tradable-eu-latam-pos-financing-sstl"
     },
     {
-      "name": "Tradable Singapore Fintech SSL",
       "symbol": "pc0000077",
+      "name": "Tradable Singapore Fintech SSL",
       "coingeckoId": "tradable-singapore-fintech-ssl"
     },
     {
-      "name": "Tradable NA Legal Receivables SSL",
       "symbol": "pc0000081",
+      "name": "Tradable NA Legal Receivables SSL",
       "coingeckoId": "tradable-na-legal-receivables-ssl"
     },
     {
-      "name": "Tradable LatAm Middle-Market Lender SSTL",
       "symbol": "pc0000085",
+      "name": "Tradable LatAm Middle-Market Lender SSTL",
       "coingeckoId": "tradable-latam-middle-market-lender-sstl"
     },
     {
-      "name": "Tradable LatAm Fintech SSTN",
       "symbol": "pc0000097",
+      "name": "Tradable LatAm Fintech SSTN",
       "coingeckoId": "tradable-latam-fintech-sstn"
     },
     {
-      "name": "Tradable NA Post-Settlement Legal Financing Receivables",
       "symbol": "pc0000101",
+      "name": "Tradable NA Post-Settlement Legal Financing Receivables",
       "coingeckoId": "na-post-settlement-legal-financing-receivables"
     },
     {
-      "name": "peaq",
       "symbol": "peaq",
+      "name": "peaq",
       "coingeckoId": "peaq-2"
     },
     {
-      "name": "Pendle",
       "symbol": "pendle",
+      "name": "Pendle",
       "coingeckoId": "pendle"
     },
     {
-      "name": "Pudgy Penguins",
       "symbol": "pengu",
+      "name": "Pudgy Penguins",
       "coingeckoId": "pudgy-penguins"
     },
     {
-      "name": "Pepe",
       "symbol": "pepe",
+      "name": "Pepe",
       "coingeckoId": "pepe"
     },
     {
-      "name": "Pleasing Gold",
       "symbol": "pgold",
+      "name": "Pleasing Gold",
       "coingeckoId": "pleasing-gold"
     },
     {
-      "name": "Pi Network",
       "symbol": "pi",
+      "name": "Pi Network",
       "coingeckoId": "pi-network"
     },
     {
-      "name": "Pieverse",
       "symbol": "pieverse",
+      "name": "Pieverse",
       "coingeckoId": "pieverse"
     },
     {
-      "name": "Plume",
       "symbol": "plume",
+      "name": "Plume",
       "coingeckoId": "plume"
     },
     {
-      "name": "Precious Metals USD",
       "symbol": "pmusd",
+      "name": "Precious Metals USD",
       "coingeckoId": "precious-metals-usd"
     },
     {
-      "name": "Peanut the Squirrel",
-      "symbol": "pnut",
-      "coingeckoId": "peanut-the-squirrel"
-    },
-    {
-      "name": "POL (ex-MATIC)",
       "symbol": "pol",
+      "name": "POL (ex-MATIC)",
       "coingeckoId": "polygon-ecosystem-token"
     },
     {
-      "name": "Polymesh",
       "symbol": "polyx",
+      "name": "Polymesh",
       "coingeckoId": "polymesh"
     },
     {
-      "name": "PRIME",
       "symbol": "prime",
+      "name": "PRIME",
       "coingeckoId": "hastra-prime"
     },
     {
-      "name": "Pharos",
       "symbol": "pros",
+      "name": "Pharos",
       "coingeckoId": "pharos-network"
     },
     {
-      "name": "Puff The Dragon",
       "symbol": "puff",
+      "name": "Puff The Dragon",
       "coingeckoId": "puff-the-dragon"
     },
     {
-      "name": "Pump.fun",
       "symbol": "pump",
+      "name": "Pump.fun",
       "coingeckoId": "pump-fun"
     },
     {
-      "name": "Purr",
       "symbol": "purr",
+      "name": "Purr",
       "coingeckoId": "purr-2"
     },
     {
-      "name": "Pyth Network",
       "symbol": "pyth",
+      "name": "Pyth Network",
       "coingeckoId": "pyth-network"
     },
     {
-      "name": "PayPal USD",
       "symbol": "pyusd",
+      "name": "PayPal USD",
       "coingeckoId": "paypal-usd"
     },
     {
-      "name": "Quack AI",
       "symbol": "q",
+      "name": "Quack AI",
       "coingeckoId": "quack-ai"
     },
     {
-      "name": "SEALCOIN",
       "symbol": "qait",
+      "name": "SEALCOIN",
       "coingeckoId": "sealcoin"
     },
     {
-      "name": "Quantix Finance",
       "symbol": "qfi",
+      "name": "Quantix Finance",
       "coingeckoId": "quantixai"
     },
     {
-      "name": "Quant",
       "symbol": "qnt",
+      "name": "Quant",
       "coingeckoId": "quant-network"
     },
     {
-      "name": "Quantum Resistant Ledger",
       "symbol": "qrl",
+      "name": "Quantum Resistant Ledger",
       "coingeckoId": "quantum-resistant-ledger"
     },
     {
-      "name": "Qtum",
       "symbol": "qtum",
+      "name": "Qtum",
       "coingeckoId": "qtum"
     },
     {
-      "name": "Qubic",
       "symbol": "qubic",
+      "name": "Qubic",
       "coingeckoId": "qubic-network"
     },
     {
-      "name": "Railgun",
       "symbol": "rail",
+      "name": "Railgun",
       "coingeckoId": "railgun"
     },
     {
-      "name": "Rain",
       "symbol": "rain",
+      "name": "Rain",
       "coingeckoId": "rain"
     },
     {
-      "name": "RaveDAO",
       "symbol": "rave",
+      "name": "RaveDAO",
       "coingeckoId": "ravedao"
     },
     {
-      "name": "Raydium",
       "symbol": "ray",
+      "name": "Raydium",
       "coingeckoId": "raydium"
     },
     {
-      "name": "RealLink",
       "symbol": "real",
+      "name": "RealLink",
       "coingeckoId": "reallink"
     },
     {
-      "name": "Render",
       "symbol": "render",
+      "name": "Render",
       "coingeckoId": "render-token"
     },
     {
-      "name": "Re Protocol reUSD",
       "symbol": "reusd",
+      "name": "Re Protocol reUSD",
       "coingeckoId": "re-protocol-reusd"
     },
     {
-      "name": "Rootstock Infrastructure Framework",
       "symbol": "rif",
+      "name": "Rootstock Infrastructure Framework",
       "coingeckoId": "rif-token"
     },
     {
-      "name": "River",
       "symbol": "river",
+      "name": "River",
       "coingeckoId": "river"
     },
     {
-      "name": "Rollbit Coin",
       "symbol": "rlb",
+      "name": "Rollbit Coin",
       "coingeckoId": "rollbit-coin"
     },
     {
-      "name": "Ripple USD",
       "symbol": "rlusd",
+      "name": "Ripple USD",
       "coingeckoId": "ripple-usd"
     },
     {
-      "name": "Fabric Protocol",
       "symbol": "robo",
+      "name": "Fabric Protocol",
       "coingeckoId": "robo-token-2"
     },
     {
-      "name": "Ronin",
       "symbol": "ron",
+      "name": "Ronin",
       "coingeckoId": "ronin"
     },
     {
-      "name": "Oasis",
       "symbol": "rose",
+      "name": "Oasis",
       "coingeckoId": "oasis-network"
     },
     {
-      "name": "Reserve Rights",
       "symbol": "rsr",
+      "name": "Reserve Rights",
       "coingeckoId": "reserve-rights-token"
     },
     {
-      "name": "THORChain",
       "symbol": "rune",
+      "name": "THORChain",
       "coingeckoId": "thorchain"
     },
     {
-      "name": "Royal Dollar",
       "symbol": "rusd",
+      "name": "Royal Dollar",
       "coingeckoId": "royal-dollar"
     },
     {
-      "name": "Ravencoin",
       "symbol": "rvn",
+      "name": "Ravencoin",
       "coingeckoId": "ravencoin"
     },
     {
-      "name": "Sonic",
       "symbol": "s",
+      "name": "Sonic",
       "coingeckoId": "sonic-3"
     },
     {
-      "name": "Safe",
       "symbol": "safe",
+      "name": "Safe",
       "coingeckoId": "safe"
     },
     {
-      "name": "Spiko Amundi Overnight Swap Fund",
       "symbol": "safo",
+      "name": "Spiko Amundi Overnight Swap Fund",
       "coingeckoId": "safo"
     },
     {
-      "name": "Sahara AI",
       "symbol": "sahara",
+      "name": "Sahara AI",
       "coingeckoId": "sahara-ai"
     },
     {
-      "name": "The Sandbox",
       "symbol": "sand",
+      "name": "The Sandbox",
       "coingeckoId": "the-sandbox"
     },
     {
-      "name": "Satoshi Stablecoin",
       "symbol": "satusd",
+      "name": "Satoshi Stablecoin",
       "coingeckoId": "satoshi-stablecoin"
     },
     {
-      "name": "Sei",
       "symbol": "sei",
+      "name": "Sei",
       "coingeckoId": "sei-network"
     },
     {
-      "name": "Sentient",
       "symbol": "sent",
+      "name": "Sentient",
       "coingeckoId": "sentient"
     },
     {
-      "name": "OpenServ",
       "symbol": "serv",
+      "name": "OpenServ",
       "coingeckoId": "openserv"
     },
     {
-      "name": "SafePal",
       "symbol": "sfp",
+      "name": "SafePal",
       "coingeckoId": "safepal"
     },
     {
-      "name": "Shuffle",
       "symbol": "shfl",
+      "name": "Shuffle",
       "coingeckoId": "shuffle-2"
     },
     {
-      "name": "Shiba Inu",
       "symbol": "shib",
+      "name": "Shiba Inu",
       "coingeckoId": "shiba-inu"
     },
     {
-      "name": "Stronghold",
+      "symbol": "show",
+      "name": "SHOW",
+      "coingeckoId": "show-2"
+    },
+    {
       "symbol": "shx",
+      "name": "Stronghold",
       "coingeckoId": "stronghold-token"
     },
     {
-      "name": "Sierra",
       "symbol": "sierra",
+      "name": "Sierra",
       "coingeckoId": "sierra-2"
     },
     {
-      "name": "Siren",
       "symbol": "siren",
+      "name": "Siren",
       "coingeckoId": "siren-2"
     },
     {
-      "name": "Seeker",
       "symbol": "skr",
+      "name": "Seeker",
       "coingeckoId": "seeker"
     },
     {
-      "name": "Sky",
       "symbol": "sky",
+      "name": "Sky",
       "coingeckoId": "sky"
     },
     {
-      "name": "SkyAI",
       "symbol": "skyai",
+      "name": "SkyAI",
       "coingeckoId": "skyai"
     },
     {
-      "name": "Solstice",
       "symbol": "slx",
+      "name": "Solstice",
       "coingeckoId": "solstice"
     },
     {
-      "name": "Targon",
       "symbol": "sn4",
+      "name": "Targon",
       "coingeckoId": "targon"
     },
     {
-      "name": "Chutes",
       "symbol": "sn64",
+      "name": "Chutes",
       "coingeckoId": "chutes"
     },
     {
-      "name": "Synthetix",
       "symbol": "snx",
+      "name": "Synthetix",
       "coingeckoId": "havven"
     },
     {
-      "name": "Solana",
       "symbol": "sol",
+      "name": "Solana",
       "coingeckoId": "solana"
     },
     {
-      "name": "SOON",
       "symbol": "soon",
+      "name": "SOON",
       "coingeckoId": "soon-2"
     },
     {
-      "name": "SoSoValue",
       "symbol": "soso",
+      "name": "SoSoValue",
       "coingeckoId": "sosovalue"
     },
     {
-      "name": "Spark",
       "symbol": "spk",
+      "name": "Spark",
       "coingeckoId": "spark-2"
     },
     {
-      "name": "SPX6900",
       "symbol": "spx",
+      "name": "SPX6900",
       "coingeckoId": "spx6900"
     },
     {
-      "name": "SPDR S&P 500 ETF (Ondo Tokenized ETF)",
-      "symbol": "spyon",
-      "coingeckoId": "spdr-s-p-500-etf-ondo-tokenized-etf"
-    },
-    {
-      "name": "​​Stable",
       "symbol": "stable",
+      "name": "​​Stable",
       "coingeckoId": "stable-2"
     },
     {
-      "name": "Securitize Tokenized AAA CLO Fund",
       "symbol": "stac",
+      "name": "Securitize Tokenized AAA CLO Fund",
       "coingeckoId": "securitize-tokenized-aaa-clo-fund"
     },
     {
-      "name": "STAU",
       "symbol": "stau",
+      "name": "STAU",
       "coingeckoId": "stau"
     },
     {
-      "name": "Strategy PP Variable xStock",
+      "symbol": "stg",
+      "name": "Stargate Finance",
+      "coingeckoId": "stargate-finance"
+    },
+    {
       "symbol": "strcx",
+      "name": "Strategy PP Variable xStock",
       "coingeckoId": "strategy-pp-variable-xstock"
     },
     {
-      "name": "Starknet",
       "symbol": "strk",
+      "name": "Starknet",
       "coingeckoId": "starknet"
     },
     {
-      "name": "Stacks",
       "symbol": "stx",
+      "name": "Stacks",
       "coingeckoId": "blockstack"
     },
     {
-      "name": "Sui",
       "symbol": "sui",
+      "name": "Sui",
       "coingeckoId": "sui"
     },
     {
-      "name": "Sun Token",
       "symbol": "sun",
+      "name": "Sun Token",
       "coingeckoId": "sun-token"
     },
     {
-      "name": "SuperVerse",
       "symbol": "super",
+      "name": "SuperVerse",
       "coingeckoId": "superfarm"
     },
     {
-      "name": "Sushi",
       "symbol": "sushi",
+      "name": "Sushi",
       "coingeckoId": "sushi"
     },
     {
-      "name": "Swop",
       "symbol": "swop",
+      "name": "Swop",
       "coingeckoId": "swop-2"
     },
     {
-      "name": "Maple Finance",
       "symbol": "syrup",
+      "name": "Maple Finance",
       "coingeckoId": "syrup"
     },
     {
-      "name": "Threshold Network",
-      "symbol": "t",
-      "coingeckoId": "threshold-network-token"
-    },
-    {
-      "name": "TAC",
       "symbol": "tac",
+      "name": "TAC",
       "coingeckoId": "tac"
     },
     {
-      "name": "TAGGER",
       "symbol": "tag",
+      "name": "TAGGER",
       "coingeckoId": "tagger"
     },
     {
-      "name": "Bittensor",
       "symbol": "tao",
+      "name": "Bittensor",
       "coingeckoId": "bittensor"
     },
     {
-      "name": "TronBank",
       "symbol": "tbk",
+      "name": "TronBank",
       "coingeckoId": "tronbank"
     },
     {
-      "name": "Telcoin",
       "symbol": "tel",
+      "name": "Telcoin",
       "coingeckoId": "telcoin"
     },
     {
-      "name": "TempleDAO",
       "symbol": "temple",
+      "name": "TempleDAO",
       "coingeckoId": "temple"
     },
     {
-      "name": "Theta Fuel",
       "symbol": "tfuel",
+      "name": "Theta Fuel",
       "coingeckoId": "theta-fuel"
     },
     {
-      "name": "Theo Short Duration US Treasury Fund",
       "symbol": "thbill",
+      "name": "Theo Short Duration US Treasury Fund",
       "coingeckoId": "theo-short-duration-us-treasury-fund"
     },
     {
-      "name": "Theta Network",
       "symbol": "theta",
+      "name": "Theta Network",
       "coingeckoId": "theta-token"
     },
     {
-      "name": "Celestia",
       "symbol": "tia",
+      "name": "Celestia",
       "coingeckoId": "celestia"
     },
     {
-      "name": "Ribbita by Virtuals",
       "symbol": "tibbir",
+      "name": "Ribbita by Virtuals",
       "coingeckoId": "ribbita-by-virtuals"
     },
     {
-      "name": "Tokenize Xchange",
       "symbol": "tkx",
+      "name": "Tokenize Xchange",
       "coingeckoId": "tokenize-xchange"
     },
     {
-      "name": "Toncoin",
       "symbol": "ton",
+      "name": "Toncoin",
       "coingeckoId": "the-open-network"
     },
     {
-      "name": "Toshi",
       "symbol": "toshi",
+      "name": "Toshi",
       "coingeckoId": "toshi"
     },
     {
-      "name": "OriginTrail",
       "symbol": "trac",
+      "name": "OriginTrail",
       "coingeckoId": "origintrail"
     },
     {
-      "name": "TRIA",
       "symbol": "tria",
+      "name": "TRIA",
       "coingeckoId": "tria"
     },
     {
-      "name": "TROLL",
       "symbol": "troll",
+      "name": "TROLL",
       "coingeckoId": "troll-2"
     },
     {
-      "name": "Official Trump",
       "symbol": "trump",
+      "name": "Official Trump",
       "coingeckoId": "official-trump"
     },
     {
-      "name": "TRON",
       "symbol": "trx",
+      "name": "TRON",
       "coingeckoId": "tron"
     },
     {
-      "name": "Tesla xStock",
       "symbol": "tslax",
+      "name": "Tesla xStock",
       "coingeckoId": "tesla-xstock"
     },
     {
-      "name": "Turbo",
       "symbol": "turbo",
+      "name": "Turbo",
       "coingeckoId": "turbo"
     },
     {
-      "name": "TrueUSD",
       "symbol": "tusd",
+      "name": "TrueUSD",
       "coingeckoId": "true-usd"
     },
     {
-      "name": "Trust Wallet",
       "symbol": "twt",
+      "name": "Trust Wallet",
       "coingeckoId": "trust-wallet-token"
     },
     {
-      "name": "United Stables",
       "symbol": "u",
+      "name": "United Stables",
       "coingeckoId": "united-stables"
     },
     {
-      "name": "UnifAI Network",
       "symbol": "uai",
+      "name": "UnifAI Network",
       "coingeckoId": "unifai-network"
     },
     {
-      "name": "Unibase",
       "symbol": "ub",
+      "name": "Unibase",
       "coingeckoId": "unibase"
     },
     {
-      "name": "Ultima",
       "symbol": "ultima",
+      "name": "Ultima",
       "coingeckoId": "ultima"
     },
     {
-      "name": "Manadia",
       "symbol": "umxm",
+      "name": "Manadia",
       "coingeckoId": "manadia"
     },
     {
-      "name": "Uniswap",
       "symbol": "uni",
+      "name": "Uniswap",
       "coingeckoId": "uniswap"
     },
     {
-      "name": "UnityWallet Token",
       "symbol": "unt",
+      "name": "UnityWallet Token",
       "coingeckoId": "unitywallet-token"
     },
     {
-      "name": "Unitas",
       "symbol": "up",
+      "name": "Unitas",
       "coingeckoId": "unitas"
     },
     {
-      "name": "Unit Pump",
       "symbol": "upump",
+      "name": "Unit Pump",
       "coingeckoId": "unit-pump"
     },
     {
-      "name": "USAT",
       "symbol": "usat",
+      "name": "USAT",
       "coingeckoId": "usa"
     },
     {
-      "name": "Usual USD",
       "symbol": "usd0",
+      "name": "Usual USD",
       "coingeckoId": "usual-usd"
     },
     {
-      "name": "USD1",
       "symbol": "usd1",
+      "name": "USD1",
       "coingeckoId": "usd1-wlfi"
     },
     {
-      "name": "USDa",
       "symbol": "usda",
+      "name": "USDa",
       "coingeckoId": "usda-2"
     },
     {
-      "name": "USDai",
       "symbol": "usdai",
+      "name": "USDai",
       "coingeckoId": "usdai"
     },
     {
-      "name": "Saturn Dollar",
       "symbol": "usdat",
+      "name": "Saturn Dollar",
       "coingeckoId": "saturn-dollar"
     },
     {
-      "name": "USDC",
       "symbol": "usdc",
+      "name": "USDC",
       "coingeckoId": "usd-coin"
     },
     {
-      "name": "USDD",
       "symbol": "usdd",
+      "name": "USDD",
       "coingeckoId": "usdd"
     },
     {
-      "name": "Ethena USDe",
       "symbol": "usde",
+      "name": "Ethena USDe",
       "coingeckoId": "ethena-usde"
     },
     {
-      "name": "Falcon USD",
       "symbol": "usdf",
+      "name": "Falcon USD",
       "coingeckoId": "falcon-finance"
     },
     {
-      "name": "Global Dollar",
       "symbol": "usdg",
+      "name": "Global Dollar",
       "coingeckoId": "global-dollar"
     },
     {
-      "name": "USDKG",
       "symbol": "usdkg",
+      "name": "USDKG",
       "coingeckoId": "usdkg"
     },
     {
-      "name": "MegaUSD",
       "symbol": "usdm",
+      "name": "MegaUSD",
       "coingeckoId": "megausd"
     },
     {
-      "name": "Ondo U.S. Dollar Token",
       "symbol": "usdon",
+      "name": "Ondo U.S. Dollar Token",
       "coingeckoId": "ondo-u-s-dollar-token"
     },
     {
-      "name": "USDS",
       "symbol": "usds",
+      "name": "USDS",
       "coingeckoId": "usds"
     },
     {
-      "name": "Tether",
       "symbol": "usdt",
+      "name": "Tether",
       "coingeckoId": "tether"
     },
     {
-      "name": "USDtb",
       "symbol": "usdtb",
+      "name": "USDtb",
       "coingeckoId": "usdtb"
     },
     {
-      "name": "USDu",
       "symbol": "usdu",
+      "name": "USDu",
       "coingeckoId": "usdu"
     },
     {
-      "name": "USDX",
       "symbol": "usdx",
+      "name": "USDX",
       "coingeckoId": "usdx"
     },
     {
-      "name": "Ondo US Dollar Yield",
       "symbol": "usdy",
+      "name": "Ondo US Dollar Yield",
       "coingeckoId": "ondo-us-dollar-yield"
     },
     {
-      "name": "Useless Coin",
       "symbol": "useless",
+      "name": "Useless Coin",
       "coingeckoId": "useless-3"
     },
     {
-      "name": "Invesco Short Duration US Government Securities Fund",
       "symbol": "ustb",
+      "name": "Invesco Short Duration US Government Securities Fund",
       "coingeckoId": "superstate-short-duration-us-government-securities-fund-ustb"
     },
     {
-      "name": "Spiko US T-Bills Money Market Fund",
       "symbol": "ustbl",
+      "name": "Spiko US T-Bills Money Market Fund",
       "coingeckoId": "spiko-us-t-bills-money-market-fund"
     },
     {
-      "name": "USX",
       "symbol": "usx",
+      "name": "USX",
       "coingeckoId": "usx"
     },
     {
-      "name": "Circle USYC",
       "symbol": "usyc",
+      "name": "Circle USYC",
       "coingeckoId": "hashnote-usyc"
     },
     {
-      "name": "Unity USD",
       "symbol": "uusd",
+      "name": "Unity USD",
       "coingeckoId": "unity-usd"
     },
     {
-      "name": "VanEck Treasury Fund",
       "symbol": "vbill",
+      "name": "VanEck Treasury Fund",
       "coingeckoId": "vaneck-treasury-fund"
     },
     {
-      "name": "ViciCoin",
       "symbol": "vcnt",
+      "name": "ViciCoin",
       "coingeckoId": "vicicoin"
     },
     {
-      "name": "Velo",
       "symbol": "velo",
+      "name": "Velo",
       "coingeckoId": "velo"
     },
     {
-      "name": "Velvet",
       "symbol": "velvet",
+      "name": "Velvet",
       "coingeckoId": "velvet"
     },
     {
-      "name": "VeChain",
       "symbol": "vet",
+      "name": "VeChain",
       "coingeckoId": "vechain"
     },
     {
-      "name": "Virtuals Protocol",
       "symbol": "virtual",
+      "name": "Virtuals Protocol",
       "coingeckoId": "virtual-protocol"
     },
     {
-      "name": "Vision",
       "symbol": "vsn",
+      "name": "Vision",
       "coingeckoId": "vision-3"
     },
     {
-      "name": "VVS Finance",
       "symbol": "vvs",
+      "name": "VVS Finance",
       "coingeckoId": "vvs-finance"
     },
     {
-      "name": "Venice Token",
       "symbol": "vvv",
+      "name": "Venice Token",
       "coingeckoId": "venice-token"
     },
     {
-      "name": "Wormhole",
       "symbol": "w",
+      "name": "Wormhole",
       "coingeckoId": "wormhole"
     },
     {
-      "name": "Walrus",
       "symbol": "wal",
+      "name": "Walrus",
       "coingeckoId": "walrus-2"
     },
     {
-      "name": "WhiteBIT Coin",
       "symbol": "wbt",
+      "name": "WhiteBIT Coin",
       "coingeckoId": "whitebit"
     },
     {
-      "name": "WEMIX",
       "symbol": "wemix",
+      "name": "WEMIX",
       "coingeckoId": "wemix-token"
     },
     {
-      "name": "WeFi",
       "symbol": "wfi",
+      "name": "WeFi",
       "coingeckoId": "wefi"
     },
     {
-      "name": "dogwifhat",
       "symbol": "wif",
+      "name": "dogwifhat",
       "coingeckoId": "dogwifcoin"
     },
     {
-      "name": "Worldcoin",
       "symbol": "wld",
+      "name": "Worldcoin",
       "coingeckoId": "worldcoin-wld"
     },
     {
-      "name": "World Liberty Financial",
       "symbol": "wlfi",
+      "name": "World Liberty Financial",
       "coingeckoId": "world-liberty-financial"
     },
     {
-      "name": "would",
       "symbol": "would",
+      "name": "would",
       "coingeckoId": "would"
     },
     {
-      "name": "Matrixdock Gold",
       "symbol": "xaum",
+      "name": "Matrixdock Gold",
       "coingeckoId": "matrixdock-gold"
     },
     {
-      "name": "Tether Gold",
       "symbol": "xaut",
+      "name": "Tether Gold",
       "coingeckoId": "tether-gold"
     },
     {
-      "name": "Onyxcoin",
       "symbol": "xcn",
+      "name": "Onyxcoin",
       "coingeckoId": "chain-2"
     },
     {
-      "name": "XDAI",
       "symbol": "xdai",
+      "name": "XDAI",
       "coingeckoId": "xdai"
     },
     {
-      "name": "XDC Network",
       "symbol": "xdc",
+      "name": "XDC Network",
       "coingeckoId": "xdce-crowd-sale"
     },
     {
-      "name": "eCash",
       "symbol": "xec",
+      "name": "eCash",
       "coingeckoId": "ecash"
     },
     {
-      "name": "Stellar",
       "symbol": "xlm",
+      "name": "Stellar",
       "coingeckoId": "stellar"
     },
     {
-      "name": "Monero",
       "symbol": "xmr",
+      "name": "Monero",
       "coingeckoId": "monero"
     },
     {
-      "name": "Nano",
       "symbol": "xno",
+      "name": "Nano",
       "coingeckoId": "nano"
     },
     {
-      "name": "Xphere",
       "symbol": "xp",
+      "name": "Xphere",
       "coingeckoId": "xphere"
     },
     {
-      "name": "Plasma",
       "symbol": "xpl",
+      "name": "Plasma",
       "coingeckoId": "plasma"
     },
     {
-      "name": "XPR Network",
       "symbol": "xpr",
+      "name": "XPR Network",
       "coingeckoId": "proton"
     },
     {
-      "name": "XRP",
       "symbol": "xrp",
+      "name": "XRP",
       "coingeckoId": "ripple"
     },
     {
-      "name": "Tezos",
       "symbol": "xtz",
+      "name": "Tezos",
       "coingeckoId": "tezos"
     },
     {
-      "name": "StraitsX XUSD",
       "symbol": "xusd",
+      "name": "StraitsX XUSD",
       "coingeckoId": "straitsx-xusd"
     },
     {
-      "name": "Verge",
-      "symbol": "xvg",
-      "coingeckoId": "verge"
+      "symbol": "xvs",
+      "name": "Venus",
+      "coingeckoId": "venus"
     },
     {
-      "name": "XYO Network",
       "symbol": "xyo",
+      "name": "XYO Network",
       "coingeckoId": "xyo-network"
     },
     {
-      "name": "yearn.finance",
       "symbol": "yfi",
+      "name": "yearn.finance",
       "coingeckoId": "yearn-finance"
     },
     {
-      "name": "YLDS",
       "symbol": "ylds",
+      "name": "YLDS",
       "coingeckoId": "ylds"
     },
     {
-      "name": "Zama",
       "symbol": "zama",
+      "name": "Zama",
       "coingeckoId": "zama"
     },
     {
-      "name": "Zano",
       "symbol": "zano",
+      "name": "Zano",
       "coingeckoId": "zano"
     },
     {
-      "name": "Zebec Network",
       "symbol": "zbcn",
+      "name": "Zebec Network",
       "coingeckoId": "zebec-network"
     },
     {
-      "name": "Zcash",
       "symbol": "zec",
+      "name": "Zcash",
       "coingeckoId": "zcash"
     },
     {
-      "name": "Horizen",
       "symbol": "zen",
+      "name": "Horizen",
       "coingeckoId": "zencash"
     },
     {
-      "name": "ZetaChain",
+      "symbol": "zest",
+      "name": "Zest Protocol",
+      "coingeckoId": "zest-protocol"
+    },
+    {
       "symbol": "zeta",
+      "name": "ZetaChain",
       "coingeckoId": "zetachain"
     },
     {
-      "name": "ZIGChain",
       "symbol": "zig",
+      "name": "ZIGChain",
       "coingeckoId": "zignaly"
     },
     {
-      "name": "Zilliqa",
       "symbol": "zil",
+      "name": "Zilliqa",
       "coingeckoId": "zilliqa"
     },
     {
-      "name": "ZKsync",
       "symbol": "zk",
+      "name": "ZKsync",
       "coingeckoId": "zksync"
     },
     {
-      "name": "LayerZero",
       "symbol": "zro",
+      "name": "LayerZero",
       "coingeckoId": "layerzero"
     },
     {
-      "name": "0x Protocol",
       "symbol": "zrx",
+      "name": "0x Protocol",
       "coingeckoId": "0x"
     },
     {
-      "name": "币安人生 (BinanceLife)",
       "symbol": "币安人生",
+      "name": "币安人生 (BinanceLife)",
       "coingeckoId": "bianrensheng"
     }
   ],
