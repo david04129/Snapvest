@@ -136,7 +136,7 @@ enum HoldingsMarketValueSort {
     }
 }
 
-/// Toolbar 用 chip（透明底 + 描邊，避免與導航列 glass 背景疊成雙層泡泡）
+/// Toolbar 用 chip（輕量底色，避免與系統 toolbar 背景疊成雙層外框）
 struct AccountToolbarChip: View {
     let icon: String
     let title: String
@@ -152,14 +152,11 @@ struct AccountToolbarChip: View {
                     .fontWeight(.semibold)
             }
             .foregroundColor(.appPrimary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(Color.clear)
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.appPrimary.opacity(0.35), lineWidth: 1)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(Color.appPrimary.opacity(0.14))
+            .clipShape(Capsule())
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .fixedSize()

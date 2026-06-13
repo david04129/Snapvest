@@ -200,7 +200,7 @@ enum WalleafPlusPaywallL10n {
     }
 
     static var settingsCardSubtitle: String {
-        t("查看方案 · 年訂享 7 天試用", "View plans · 7-day trial on annual")
+        t("查看方案 · 解鎖 Plus 功能", "View plans · Unlock Plus features")
     }
 
     static var settingsCardSubscribed: String {

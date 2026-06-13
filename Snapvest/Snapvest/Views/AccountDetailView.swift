@@ -190,25 +190,26 @@ struct AccountDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .tint(.appPrimary)
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                HStack(spacing: 8) {
-                    if account.accountType.supportsTransactionImport {
-                        TransactionImportToolbarChip {
-                            if PlusFeatureGate.canUseImport(isPlusActive: subscriptionManager.isPlusActive) {
-                                showingTransactionImport = true
-                            } else {
-                                isPaywallPresented = true
+            if account.accountType.supportsTransactionImport || !account.accountType.showsInlineTransactionHistory {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    HStack(spacing: 8) {
+                        if account.accountType.supportsTransactionImport {
+                            TransactionImportToolbarChip {
+                                if PlusFeatureGate.canUseImport(isPlusActive: subscriptionManager.isPlusActive) {
+                                    showingTransactionImport = true
+                                } else {
+                                    isPaywallPresented = true
+                                }
                             }
                         }
-                    }
-                    if !account.accountType.showsInlineTransactionHistory {
-                        TransactionHistoryToolbarChip {
-                            showTransactionHistory = true
+                        if !account.accountType.showsInlineTransactionHistory {
+                            TransactionHistoryToolbarChip {
+                                showTransactionHistory = true
+                            }
                         }
                     }
                 }
             }
-            .sharedBackgroundVisibility(.hidden)
         }
         .safeAreaInset(edge: .bottom) {
             accountDetailBottomBar

@@ -730,12 +730,7 @@ struct WalleafPlusPaywallView: View {
                         }
                     }
 
-                    if plan == .yearly, yearlyHasIntroOffer && !subscriptionManager.isPlusActive {
-                        Text(WalleafPlusPaywallL10n.freeTrial7Days)
-                            .font((compact ? Font.subheadline : Font.callout).weight(.bold))
-                            .foregroundColor(.appPrimary)
-                            .lineLimit(1)
-                    }
+                    // Hide annual free-trial copy until the App Store Connect offer is approved.
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -1047,9 +1042,7 @@ struct WalleafPlusPaywallView: View {
 
         switch selectedPlan {
         case .yearly:
-            if yearlyHasIntroOffer {
-                return WalleafPlusPaywallL10n.startFreeTrial
-            }
+            // Hide annual free-trial CTA until the App Store Connect offer is approved.
             return WalleafPlusPaywallL10n.subscribeYearly
         case .monthly:
             return WalleafPlusPaywallL10n.subscribeMonthly

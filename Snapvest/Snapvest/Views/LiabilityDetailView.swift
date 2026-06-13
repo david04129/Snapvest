@@ -42,7 +42,6 @@ struct LiabilityDetailView: View {
                     // TODO: 導航到交易紀錄
                 }
             }
-            .sharedBackgroundVisibility(.hidden)
         }
         .safeAreaInset(edge: .bottom) {
             Button(action: {
