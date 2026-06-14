@@ -84,6 +84,34 @@ a:hover {
   font-size: 0.95rem;
 }
 
+.language-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(16, 25, 35, 0.72);
+}
+
+.language-switcher a {
+  padding: 4px 10px;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.language-switcher a:hover {
+  text-decoration: none;
+  color: var(--primary-dark);
+}
+
+.language-switcher a.is-active {
+  background: var(--accent);
+  color: var(--primary-dark);
+}
+
 .hero {
   max-width: 1040px;
   padding: 64px 0 56px;
@@ -115,6 +143,11 @@ h1 {
 
 .hero h1 {
   white-space: nowrap;
+}
+
+html[lang="en"] .hero h1 {
+  max-width: 820px;
+  white-space: normal;
 }
 
 h2 {
@@ -157,6 +190,12 @@ h3 {
   color: var(--primary-dark);
   border: 1px solid var(--line);
   box-shadow: none;
+}
+
+.button-disabled {
+  cursor: default;
+  box-shadow: none;
+  opacity: 0.86;
 }
 
 .card,
