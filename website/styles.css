@@ -177,6 +177,23 @@ h3 {
   margin-top: 28px;
 }
 
+.app-store-badge {
+  display: inline-block;
+  line-height: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.app-store-badge:hover {
+  opacity: 0.88;
+  transform: translateY(-1px);
+}
+
+.app-store-badge img {
+  display: block;
+  width: auto;
+  height: 44px;
+}
+
 .button {
   display: inline-flex;
   align-items: center;
