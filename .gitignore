@@ -9,6 +9,8 @@
 *.xcuserstate
 *.hmap
 *.ipa
+*.xcarchive
+releases/artifacts/
 *.dSYM.zip
 *.dSYM
 

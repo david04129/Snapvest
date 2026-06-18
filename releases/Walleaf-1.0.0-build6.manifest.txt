@@ -1,0 +1,29 @@
+Walleaf App Store Release Snapshot
+==================================
+
+Version:        1.0.0 (6)
+Git tag:        v1.0.0-build6
+Git commit:     9875a58
+Git branch:     release/1.0.0
+Bundle ID:      com.EggHsu.Walleaf
+Apple ID:       6778330994
+Team ID:        64F82QUW6Z
+
+Archive source: Snapvest 2026-6-13, 11.39 PM.xcarchive
+Archive date:   2026-06-13 (uploaded to App Store successfully)
+Commit date:    2026-06-14 — Update App Store build settings for iPhone release
+
+Restore source code:
+  git fetch --tags
+  git checkout v1.0.0-build6
+
+Restore from maintenance branch:
+  git checkout release/1.0.0
+
+Binary backup (local, not in git):
+  releases/artifacts/Walleaf-1.0.0-build6.xcarchive
+  To export IPA: Xcode → Organizer → Archives → Export
+
+Notes:
+  Commits after v1.0.0-build6 on main are website-only unless otherwise noted.
+  App Store Connect also retains build 6 for re-submission.
