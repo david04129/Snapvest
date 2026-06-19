@@ -23,7 +23,7 @@
 | **狀態** | **待送審** |
 | **日期** | 2026-06-19 |
 | **Git Tag** | `v1.1.0-build7` |
-| **Git Commit** | `7e86d33` |
+| **Git Commit** | `36703d6` |
 | **備份分支** | `backup/v1.1.0-build7` |
 | **維護分支** | `main`（`release/1.0.0` 保留 1.0.0 hotfix 用） |
 | **Bundle ID** | `com.EggHsu.Walleaf` |
