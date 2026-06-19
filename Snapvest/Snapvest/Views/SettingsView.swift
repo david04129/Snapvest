@@ -126,6 +126,11 @@ struct SettingsView: View {
                         Divider()
                             .padding(.leading, 56)
 
+                        redeemOfferCodeRow
+
+                        Divider()
+                            .padding(.leading, 56)
+
                         fiveStarReviewRow
                     }
                 }
@@ -821,7 +826,7 @@ struct SettingsView: View {
 
     private var fiveStarReviewRow: some View {
         Button {
-            requestAppReview()
+            openURL(AppExternalLinks.appStoreWriteReviewURL)
         } label: {
             settingsRowContent(
                 icon: "star.fill",
@@ -834,18 +839,29 @@ struct SettingsView: View {
         .buttonStyle(.plain)
     }
 
+    private var redeemOfferCodeRow: some View {
+        Button {
+            AppExternalActions.presentOfferCodeRedemptionSheet()
+        } label: {
+            settingsRowContent(
+                icon: "ticket.fill",
+                iconColor: .appPrimary,
+                title: WalleafPlusPaywallL10n.redeemOfferCode,
+                value: nil,
+                showsChevron: true
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
     private var appVersionText: String {
-        "1.0.0"
+        "1.1.0"
     }
 
     private func openSupportEmail() {
         if let url = AppExternalLinks.supportEmailURL() {
             openURL(url)
         }
-    }
-
-    private func requestAppReview() {
-        AppExternalActions.requestAppReview()
     }
 
     private var privacyLockRow: some View {
@@ -1482,27 +1498,11 @@ enum AppExternalLinks {
     static let privacyPolicyURL = URL(string: "https://walleafapp.com/privacy/")!
     static let termsURL = URL(string: "https://walleafapp.com/terms/")!
     static let disclaimerURL = URL(string: "https://walleafapp.com/disclaimer/")!
+    static let appStoreWriteReviewURL = URL(string: "https://apps.apple.com/app/id6778330994?action=write-review")!
 
     static func supportEmailURL(subject: String = "Walleaf 使用問題") -> URL? {
         let encodedSubject = subject.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? subject
         return URL(string: "mailto:\(supportEmail)?subject=\(encodedSubject)")
-    }
-}
-
-enum AppExternalActions {
-    static func requestAppReview() {
-        #if canImport(UIKit)
-        guard let scene = UIApplication.shared.connectedScenes
-            .compactMap({ $0 as? UIWindowScene })
-            .first(where: { $0.activationState == .foregroundActive }) else {
-            return
-        }
-        if #available(iOS 18.0, *) {
-            AppStore.requestReview(in: scene)
-        } else {
-            SKStoreReviewController.requestReview(in: scene)
-        }
-        #endif
     }
 }
 

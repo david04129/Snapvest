@@ -421,7 +421,7 @@ struct WalleafPlusPaywallView: View {
                     subtitle: WalleafPlusPaywallL10n.supportWithReviewSubtitle,
                     compact: compact
                 ) {
-                    AppExternalActions.requestAppReview()
+                    openURL(AppExternalLinks.appStoreWriteReviewURL)
                 }
 
                 Divider()
@@ -864,6 +864,28 @@ struct WalleafPlusPaywallView: View {
             }
             .buttonStyle(.plain)
             .disabled(subscriptionManager.isRestoring || subscriptionManager.isPurchasing)
+
+            Button {
+                AppExternalActions.presentOfferCodeRedemptionSheet()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "ticket.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                    Text(WalleafPlusPaywallL10n.redeemOfferCode)
+                        .font(.subheadline.weight(.semibold))
+                }
+                .foregroundColor(.appPrimary)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: 46)
+                .background(Color.appPrimary.opacity(0.10))
+                .clipShape(Capsule())
+                .overlay {
+                    Capsule()
+                        .stroke(Color.appPrimary.opacity(0.22), lineWidth: 1)
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(subscriptionManager.isPurchasing)
 
             if subscriptionManager.isPlusActive {
                 Button {

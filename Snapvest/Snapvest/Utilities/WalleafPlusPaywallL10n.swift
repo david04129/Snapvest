@@ -2,18 +2,14 @@
 //  WalleafPlusPaywallL10n.swift
 //  Snapvest
 //
-//  Walleaf Plus 訂閱頁文案（依使用者語言 zh / en）
+//  Walleaf Plus 訂閱頁文案（繁體中文）
 //
 
 import Foundation
 
 enum WalleafPlusPaywallL10n {
-    private static var usesChinese: Bool {
-        Locale.preferredLanguages.contains { $0.hasPrefix("zh") }
-    }
-
     private static func t(_ zh: String, _ en: String) -> String {
-        usesChinese ? zh : en
+        zh
     }
 
     static var close: String { t("關閉", "Close") }
@@ -69,7 +65,7 @@ enum WalleafPlusPaywallL10n {
 
     private static var renewalDateFormatter: DateFormatter {
         let formatter = DateFormatter()
-        formatter.locale = usesChinese ? Locale(identifier: "zh_TW") : Locale(identifier: "en_US")
+        formatter.locale = Locale(identifier: "zh_TW")
         formatter.dateStyle = .medium
         formatter.timeStyle = .none
         return formatter
@@ -142,6 +138,10 @@ enum WalleafPlusPaywallL10n {
     }
 
     static var restorePurchases: String { t("恢復購買", "Restore Purchases") }
+    static var redeemOfferCode: String { t("兌換優惠碼", "Redeem Offer Code") }
+    static var redeemOfferCodeSubtitle: String {
+        t("輸入 Apple 訂閱優惠碼", "Enter an Apple subscription offer code")
+    }
     static var manageSubscription: String { t("管理訂閱", "Manage Subscription") }
     static var contactSectionTitle: String { t("聯絡我們", "Contact") }
     static var supportWithReviewTitle: String { t("支持我們：五星評論", "Support Us: 5-Star Review") }
@@ -188,7 +188,7 @@ enum WalleafPlusPaywallL10n {
     }
 
     static var priceLocale: Locale {
-        usesChinese ? Locale(identifier: "zh_TW") : Locale(identifier: "en_US")
+        Locale(identifier: "zh_TW")
     }
 
     static var settingsCardDescription: String {
