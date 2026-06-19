@@ -9,41 +9,45 @@
 
 | 版本 | Build | 狀態 | Git Tag | 正式上架 |
 |------|-------|------|---------|----------|
-| 1.1.0 | 7 | **開發中** | （待送審前建立） | — |
+| 1.1.0 | 7 | **待送審** | `v1.1.0-build7` | — |
 | 1.0.0 | 6 | **已上架** | `v1.0.0-build6` | 2026-06（App Store 已可發布） |
 
 ---
 
 ## 版本詳細紀錄
 
-### v1.1.0 (build 7) — 評分體驗 + Apple 優惠碼兌換
+### v1.1.0 (build 7) — 霧化、圖表手勢、分享與 Paywall 試用
 
 | 項目 | 內容 |
 |------|------|
-| **狀態** | **開發中** |
-| **日期** | 2026-06-19 起 |
-| **Git Tag** | （送審前建立，建議 `v1.1.0-build7`） |
-| **Git Commit** | （送審前填入） |
+| **狀態** | **待送審** |
+| **日期** | 2026-06-19 |
+| **Git Tag** | `v1.1.0-build7` |
+| **Git Commit** | `7e86d33` |
+| **備份分支** | `backup/v1.1.0-build7` |
 | **維護分支** | `main`（`release/1.0.0` 保留 1.0.0 hotfix 用） |
 | **Bundle ID** | `com.EggHsu.Walleaf` |
 | **App Store Apple ID** | `6778330994` |
+| **App Store 下載** | https://apple.co/4b0KA8X |
 
 #### 改動摘要
 
 **App**
-- **評分（為 Walleaf 評分）**：點擊後直接開啟 App Store **撰寫評論**頁；按鈕名稱不變。
-- **App Store 語言**：App 僅宣告 **繁體中文（zh-Hant）**（移除 `en`）；送審後商店應只顯示中文。
+- **評分（為 Walleaf 評分）**：點擊後直接開啟 App Store **撰寫評論**頁。
+- **App Store 語言**：App 僅宣告 **繁體中文（zh-Hant）**。
 - **兌換優惠碼**：Apple Offer Code 兌換 sheet（設定、Paywall）。
+- **Free 超上限霧化**：Free 且帳戶或持股超上限時，首頁／管理／投資／分享長圖對數字、圖表、占比做視覺模糊；Plus／示範模式不套用。
+- **分享**：可全部取消勾選；走勢圖與首頁相同線性渲染；分享文字附 App Store 下載連結。
+- **首頁圖表手勢**：長按後 scrub／選 slice；修正非 7 天區間 scrub 座標；長按 0.45 秒觸發。
+- **新增交易**：買入／賣出切換與賣出持股選單改善；買賣表單改為先填價格再填數量。
+- **Paywall**：年訂 7 天免費試用 UI（角標 + pill + 訂閱說明）；底部按鈕間距修正。
 - **版本號**：Marketing 1.1.0 / Build 7。
 
 **官網**
-- （本版無新增；1.0.0 後官網變更見下方表格）
+- （本版 App binary 無新增；官網見下方表格）
 
 **後端 / GCP**
 - 無
-
-**延後至後續版本**
-- Free 超上限 + 訂閱到期後的 **資料模糊化**（061901 備份點尚未包含；見下方 061901 之後改動紀錄）
 
 #### 061901 備份點（霧化功能開發前 baseline）
 
@@ -51,39 +55,55 @@
 |------|------|
 | **名稱** | **061901 版** |
 | **Git Tag** | `061901` |
+| **Commit** | `7fd69cd` |
 | **分支** | `backup/061901` |
 | **包含** | 評分直連 App Store、優惠碼兌換、僅 zh-Hant、1.1.0 (7)；**不含** Free 超上限霧化 |
 | **還原方式** | `git checkout 061901` 或 `git checkout backup/061901` |
 
+#### v1.1.0-build7 備份點（送審前完整版）
+
+| 項目 | 內容 |
+|------|------|
+| **名稱** | **v1.1.0 (build 7) 送審前備份** |
+| **Git Tag** | `v1.1.0-build7` |
+| **分支** | `backup/v1.1.0-build7` |
+| **還原方式** | `git checkout v1.1.0-build7` 或 `git checkout backup/v1.1.0-build7` |
+
 #### 061901 之後的改動紀錄
 
-> 若不滿意後續改動，可還原至 `061901` tag。
+> 若不滿意後續改動，可還原至 `061901` tag；送審 baseline 用 `v1.1.0-build7`。
 
 | 日期 | 改動 |
 |------|------|
-| — | （尚無；霧化實作後填入） |
+| 2026-06-19 | **Free 超上限霧化**：`FreeLimitBlurEnvironment.swift`；首頁／管理／投資／分享長圖；更新 `WALLEAF_PLUS_SUBSCRIPTION_SPEC.md` §4.1 |
+| 2026-06-19 | **首頁圖表手勢**：`ChartHoldToInteractOverlay` + `ChartLongPressInteraction`（0.45s）；修正 scrub 座標 |
+| 2026-06-19 | **分享**：空選擇、走勢圖線性渲染、`HomeShareMessageBuilder` App Store 連結 |
+| 2026-06-19 | **交易表單**：買賣先價格後數量；新增交易買賣切換與賣出選單改善 |
+| 2026-06-19 | **Paywall**：年訂 7 天試用角標／pill／訂閱說明；底部按鈕與說明文字版面 |
 
 #### 備份位置
 
 | 類型 | 路徑 |
 |------|------|
-| 原始碼 | `main`（送審前打 tag） |
+| 原始碼（tag） | `git checkout v1.1.0-build7` |
+| 備份分支 | `git checkout backup/v1.1.0-build7` |
 | **061901 baseline** | `git checkout 061901` |
 | 1.0.0 回溯 | `git checkout v1.0.0-build6` |
-| App Store Connect | 送審後 → 建置版本 **1.1.0 (7)** |
+| App Store Connect | 送審建置版本 **1.1.0 (7)** |
 
 #### App Store 正式版紀錄
 
 | 項目 | 內容 |
 |------|------|
-| **送審** | 尚未 |
-| **備註** | 優惠碼需先在 Connect → 訂閱 → Offer Codes 建立，再於 App 內兌換 |
+| **送審** | 2026-06-19 準備上傳 |
+| **備註** | 年訂 7 天試用需在 Connect「試賣優惠」設定；優惠碼在 Connect → Offer Codes 建立 |
 
 #### Connect 優惠碼設定提醒（自用 / 朋友）
 
 1. App Store Connect → **訂閱** → Walleaf Plus → **Offer Codes**
 2. 建立優惠（試用延長、折扣等）→ 產生兌換碼
 3. App 內：**更多 → 兌換優惠碼** 或 Paywall **兌換優惠碼** → 貼上 Apple 提供的碼
+4. 年訂 **7 天免費試用**：年訂 Product → **試賣優惠** → 免費試用 1 週
 
 ---
 
@@ -208,11 +228,7 @@ git checkout release/1.0.0
 
 ## main 上尚未納入正式 tag 的改動
 
-### 已併入 v1.1.0 開發（App）
-
-| 日期 | 改動 |
-|------|------|
-| 2026-06-19 | App 1.1.0 build 7：App Store 評論頁、Apple 優惠碼兌換入口 |
+（v1.1.0-build7 已含下方 App 改動；官網-only 仍僅在 git 歷史中。）
 
 ### 1.0.0 上架後、官網 only（不影響 App binary）
 
@@ -223,7 +239,7 @@ git checkout release/1.0.0
 | `85a13c4` | 2026-06-19 | 新增版本 manifest、`.gitignore` 忽略 artifacts |
 | `f2d10a5` | 2026-06-19 | 新增 `VERSIONS.md` |
 
-**v1.1.0 送審前**：打 tag `v1.1.0-build7`、更新本節 commit、Archive 備份至 `releases/artifacts/`。
+**v1.1.0 送審**：tag `v1.1.0-build7`、分支 `backup/v1.1.0-build7`、Archive 備份至 `releases/artifacts/`（可選）。
 
 ---
 
@@ -268,4 +284,4 @@ releases/
 
 ---
 
-*最後更新：2026-06-19（v1.1.0 開發中）*
+*最後更新：2026-06-19（v1.1.0 build 7 待送審）*

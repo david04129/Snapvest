@@ -8,8 +8,8 @@
 import Foundation
 
 enum HomeShareMessageBuilder {
-    /// App Store 或 TestFlight 下載連結；上架後填入
-    static var appDownloadURL: URL? = nil
+    /// App Store 下載連結
+    static var appDownloadURL: URL? = URL(string: "https://apple.co/4b0KA8X")
 
     static func shareText(config: HomeShareRenderConfig) -> String {
         var lines: [String] = []

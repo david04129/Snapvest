@@ -101,22 +101,22 @@ struct EditTransactionView: View {
                         .padding()
                         
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("數量")
+                            Text("價格 (\(transaction.currency.rawValue))")
                                 .font(.subheadline)
                                 .foregroundColor(.primaryText)
                             
-                            TextField("0", text: $quantity)
+                            TextField("0", text: $price)
                                 .keyboardType(.decimalPad)
                                 .textFieldStyle(CustomTextFieldStyle())
                         }
                         .padding()
                         
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("價格 (\(transaction.currency.rawValue))")
+                            Text("數量")
                                 .font(.subheadline)
                                 .foregroundColor(.primaryText)
                             
-                            TextField("0", text: $price)
+                            TextField("0", text: $quantity)
                                 .keyboardType(.decimalPad)
                                 .textFieldStyle(CustomTextFieldStyle())
                         }

@@ -152,8 +152,16 @@ struct SellTradeFormView: View {
         requiresComplianceLiquidation && !isEditMode
     }
 
+    private var isSymbolLocked: Bool {
+        if isEditMode || isImportDraftMode { return true }
+        if prefill?.lockSymbol == true, pinnedSymbol != nil { return true }
+        return false
+    }
+
     private var showsHoldingPicker: Bool {
-        effectiveSymbol == nil && !isEditMode && !isImportDraftMode
+        if isEditMode || isImportDraftMode || isSymbolLocked { return false }
+        if embedInTradeFlow { return true }
+        return effectiveSymbol == nil
     }
     
     /// 持股選單候選（僅依 pinnedSymbol 篩選，避免與 effectiveSymbol 循環）
@@ -453,9 +461,9 @@ struct SellTradeFormView: View {
                 importAccountSection
             }
             TradeFormCardDivider()
-            quantitySection
-            TradeFormCardDivider()
             priceSection
+            TradeFormCardDivider()
+            quantitySection
             TradeFormCardDivider()
             if needsExchangeRate {
                 TradeFormCardDivider()
@@ -588,55 +596,83 @@ struct SellTradeFormView: View {
     
     private var holdingSection: some View {
         TradeFormRow(title: market == .crypto ? "幣種" : "股票代號", icon: "tag.fill", color: market.themeColor) {
-            VStack(alignment: .leading) {
+            VStack(alignment: .leading, spacing: 4) {
                 if isImportDraftMode, let symbol = editingTransaction?.symbol {
                     Text(symbol)
                         .fontWeight(.semibold)
                         .foregroundColor(.primaryText)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                } else if !showsHoldingPicker, let symbol = effectiveSymbol {
-                    Text(symbol)
+                } else if isSymbolLocked, let symbol = effectiveSymbol {
+                    Text(holdingDisplayName(forSymbol: symbol))
                         .fontWeight(.semibold)
                         .foregroundColor(.primaryText)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                } else {
-                    Picker(selection: $selectedHoldingId) {
-                    if availableHoldings.isEmpty {
-                        Text("無持股").tag("")
-                    } else {
-                        ForEach(availableHoldings) { snapshot in
-                            Text(holdingDisplayName(snapshot.holding)).tag(snapshot.id)
-                        }
+                } else if showsHoldingPicker {
+                    holdingPickerField
+
+                    if let selectedHolding,
+                       let currentPrice = selectedHolding.currentPrice {
+                        TradeFormReferencePriceCard(
+                            title: "參考現價",
+                            priceText: currentPrice.formattedTradePrice(currency: selectedHolding.holding.currency),
+                            tint: market.themeColor
+                        )
                     }
-                } label: {
-                    HStack(spacing: 8) {
-                        if let selectedHolding = selectedHolding {
-                            Text(holdingDisplayName(selectedHolding.holding))
-                                .foregroundColor(.primaryText)
-                        } else {
-                            Text("選擇持股")
-                                .foregroundColor(.secondaryText)
-                        }
-                        Spacer(minLength: 0)
-                        Image(systemName: "chevron.down")
-                            .foregroundColor(.secondaryText)
-                            .font(.caption)
+                } else if let selectedHolding {
+                    Text(holdingDisplayName(selectedHolding.holding))
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primaryText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    if let currentPrice = selectedHolding.currentPrice {
+                        TradeFormReferencePriceCard(
+                            title: "參考現價",
+                            priceText: currentPrice.formattedTradePrice(currency: selectedHolding.holding.currency),
+                            tint: market.themeColor
+                        )
                     }
-                    .snapFormFieldTapTarget()
-                }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                
-                if let selectedHolding = selectedHolding,
-                   let currentPrice = selectedHolding.currentPrice {
-                    TradeFormInfoRow(
-                        label: "目前股價",
-                        value: currentPrice.formattedTradePrice(currency: selectedHolding.holding.currency)
-                    )
-                }
+                } else if let symbol = effectiveSymbol {
+                    Text(holdingDisplayName(forSymbol: symbol))
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primaryText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var holdingPickerField: some View {
+        Menu {
+            if selectableHoldings.isEmpty {
+                Button("無持股") {}
+                    .disabled(true)
+            } else {
+                ForEach(selectableHoldings) { snapshot in
+                    Button {
+                        selectedHoldingId = snapshot.id
+                    } label: {
+                        Text(holdingDisplayName(snapshot.holding))
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                if let selectedHolding {
+                    Text(holdingDisplayName(selectedHolding.holding))
+                        .foregroundColor(.primaryText)
+                } else {
+                    Text("選擇持股")
+                        .foregroundColor(.secondaryText)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.down")
+                    .foregroundColor(.secondaryText)
+                    .font(.caption)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .snapFormFieldTapTarget()
         }
     }
     
@@ -1053,12 +1089,22 @@ struct SellTradeFormView: View {
             selectedHoldingId = ""
         }
     }
-    
+
     private func holdingDisplayName(_ holding: Holding) -> String {
         if holding.assetType == .stockTW, let name = holding.name, !name.isEmpty {
             return "\(holding.symbol)-\(name)"
         }
         return holding.symbol
+    }
+
+    private func holdingDisplayName(forSymbol symbol: String) -> String {
+        if let holding = selectedHolding?.holding, holding.symbol == symbol {
+            return holdingDisplayName(holding)
+        }
+        if let holding = availableHoldings.first(where: { $0.holding.symbol == symbol })?.holding {
+            return holdingDisplayName(holding)
+        }
+        return symbol
     }
 
     private func formatQuantity(_ value: Decimal) -> String {

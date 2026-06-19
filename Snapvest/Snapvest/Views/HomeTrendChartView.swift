@@ -189,7 +189,7 @@ enum TrendChartSeries {
 }
 
 /// 走勢圖繪製快取（避免每次 body 重算排序／降採樣／Y domain）。
-private struct TrendChartRenderBundle: Equatable {
+struct TrendChartRenderBundle: Equatable {
     let renderPoints: [TrendChartPoint]
     let yValuesByPointId: [String: Double]
     let filteredPoints: [TrendChartPoint]
@@ -539,40 +539,35 @@ struct HomeTrendChartSection: View {
         .chartYScale(domain: bundle.yDomain)
         .chartOverlay { proxy in
             GeometryReader { geometry in
-                Rectangle()
-                    .fill(Color.clear)
-                    .contentShape(Rectangle())
-                    .gesture(scrubGesture(proxy: proxy, geometry: geometry, filteredPoints: bundle.filteredPoints))
+                ChartHoldToInteractOverlay(
+                    minimumHoldDuration: ChartLongPressInteraction.minimumDuration,
+                    maximumMovement: ChartLongPressInteraction.maximumMovement,
+                    contentSize: geometry.size,
+                    onReady: {
+                        ChartLongPressInteraction.playReadyFeedback()
+                        isScrubbing = true
+                    },
+                    onLocationChanged: { location in
+                        updateScrubIndex(
+                            at: location,
+                            proxy: proxy,
+                            geometry: geometry,
+                            filteredPoints: bundle.filteredPoints
+                        )
+                    },
+                    onEnded: {
+                        if let scrubIndex {
+                            pinnedSelectionIndex = scrubIndex
+                        }
+                        isScrubbing = false
+                        self.scrubIndex = nil
+                    }
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
     }
 
-    private func scrubGesture(
-        proxy: ChartProxy,
-        geometry: GeometryProxy,
-        filteredPoints: [TrendChartPoint]
-    ) -> some Gesture {
-        DragGesture(minimumDistance: 0)
-            .onChanged { gesture in
-                if !isScrubbing {
-                    isScrubbing = true
-                }
-                updateScrubIndex(
-                    at: gesture.location,
-                    proxy: proxy,
-                    geometry: geometry,
-                    filteredPoints: filteredPoints
-                )
-            }
-            .onEnded { _ in
-                if let scrubIndex {
-                    pinnedSelectionIndex = scrubIndex
-                }
-                isScrubbing = false
-                self.scrubIndex = nil
-            }
-    }
-    
     private func refreshChartBundle(animateXDomain: Bool) {
         guard let bundle = TrendChartRenderBundle.make(
             trendPoints: trendPoints,

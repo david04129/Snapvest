@@ -25,6 +25,8 @@ enum HomeShareChartKind: String, CaseIterable, Identifiable {
 
 struct HomeShareRenderConfig {
     let hideAmounts: Bool
+    /// Free 超上限時，分享圖同步套用霧化（不可在分享流程關閉）
+    let applyFreeLimitBlur: Bool
     let isDarkMode: Bool
     let currency: Currency
     let twdPerBaseCurrency: Decimal

@@ -13,14 +13,12 @@ enum HomeSharePreferences {
     }
 
     static func loadSelectedKinds(userId: String = AppUser.id) -> Set<HomeShareChartKind>? {
-        guard let rawValues = UserDefaults.standard.stringArray(
-            forKey: storageKey(userId: userId)
-        ) else {
+        let key = storageKey(userId: userId)
+        guard UserDefaults.standard.object(forKey: key) != nil else {
             return nil
         }
-        let kinds = rawValues.compactMap { HomeShareChartKind(rawValue: $0) }
-        guard !kinds.isEmpty else { return nil }
-        return Set(kinds)
+        let rawValues = UserDefaults.standard.stringArray(forKey: key) ?? []
+        return Set(rawValues.compactMap { HomeShareChartKind(rawValue: $0) })
     }
 
     static func saveSelectedKinds(_ kinds: Set<HomeShareChartKind>, userId: String = AppUser.id) {

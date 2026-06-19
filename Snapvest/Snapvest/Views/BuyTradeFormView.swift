@@ -427,9 +427,9 @@ struct BuyTradeFormView: View {
         VStack(spacing: 0) {
             symbolSection
             TradeFormCardDivider()
-            quantitySection
-            TradeFormCardDivider()
             priceSection
+            TradeFormCardDivider()
+            quantitySection
             TradeFormCardDivider()
             accountSection
             TradeFormCardDivider()
@@ -626,22 +626,11 @@ struct BuyTradeFormView: View {
                 }
                 .padding(.top, 4)
             case .ready(let price):
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("參考現價")
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.secondaryText)
-                    Text(price.formattedTradePrice(currency: priceCurrency))
-                        .font(.snapReferencePrice)
-                        .foregroundColor(.primaryText)
-                        .monospacedDigit()
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
-                .background(market.themeColor.opacity(0.1))
-                .cornerRadius(TradeFormLayout.fieldCornerRadius)
-                .padding(.top, 4)
+                TradeFormReferencePriceCard(
+                    title: "參考現價",
+                    priceText: price.formattedTradePrice(currency: priceCurrency),
+                    tint: market.themeColor
+                )
             case .failed(let message):
                 VStack(alignment: .leading, spacing: 6) {
                     Text(message)

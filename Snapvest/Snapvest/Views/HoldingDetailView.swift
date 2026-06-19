@@ -842,6 +842,7 @@ struct HoldingDetailView: View {
                     .overlay(Color.separator.opacity(0.35))
                 splitRatioColumn(title: "投資組合", value: "\(totalInvestmentsRatio.formatted(fractionDigits: 1))%")
             }
+            .freeLimitBlurred(.numbers, .pie)
         }
         .frame(maxWidth: .infinity, minHeight: 74, alignment: .leading)
         .padding(10)

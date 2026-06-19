@@ -113,6 +113,31 @@ struct TradeFormInfoRow: View {
     }
 }
 
+struct TradeFormReferencePriceCard: View {
+    let title: String
+    let priceText: String
+    var tint: Color = .appPrimary
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundColor(.secondaryText)
+            Text(priceText)
+                .font(.snapReferencePrice)
+                .foregroundColor(.primaryText)
+                .monospacedDigit()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(tint.opacity(0.1))
+        .cornerRadius(TradeFormLayout.fieldCornerRadius)
+        .padding(.top, 4)
+    }
+}
+
 extension View {
     func tradeFormDecimalFieldStyle() -> some View {
         font(.system(size: 16, weight: .semibold))

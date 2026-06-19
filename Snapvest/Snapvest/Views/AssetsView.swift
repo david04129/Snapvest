@@ -539,6 +539,7 @@ struct AllHoldingCard: View {
                     ringSize: 40,
                     lineWidth: 4
                 )
+                .freeLimitBlurred(.pie)
                 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(item.displayName)
@@ -602,6 +603,7 @@ struct AllHoldingCard: View {
                     }
                     .foregroundColor(Color.marketColor(for: item.unrealizedGainLoss))
                 }
+                .freeLimitBlurred(.numbers)
             }
             .padding(16)
             .background(Color.cardBackground)

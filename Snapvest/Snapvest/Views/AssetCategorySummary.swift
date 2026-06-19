@@ -566,6 +566,7 @@ struct AssetCategorySummaryCard: View {
                         .contentTransition(.numericText())
                 }
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .trailing)
+                .freeLimitBlurred(.numbers, .pie)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)

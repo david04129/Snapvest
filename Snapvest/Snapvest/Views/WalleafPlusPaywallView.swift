@@ -93,10 +93,6 @@ struct WalleafPlusPaywallView: View {
     var body: some View {
         GeometryReader { proxy in
             let isCompact = proxy.size.height < 800
-            let rawDetailsContentWidth = proxy.size.width - 40
-            let detailsContentWidth = rawDetailsContentWidth.isFinite && rawDetailsContentWidth > 1
-                ? rawDetailsContentWidth
-                : 1
             let showsSubscribedContent = subscriptionManager.isPlusActive && !isClosingAfterInitialPurchase
 
             ZStack(alignment: .topTrailing) {
@@ -105,8 +101,8 @@ struct WalleafPlusPaywallView: View {
                         firstScreenContent(compact: isCompact, showsSubscribedContent: showsSubscribedContent)
                             .frame(minHeight: proxy.size.height, alignment: .top)
 
-                        subscriptionDetailsSection(contentWidth: detailsContentWidth)
-                            .padding(.horizontal, 20)
+                        subscriptionDetailsSection(compact: isCompact)
+                            .padding(.horizontal, isCompact ? 16 : 20)
                             .padding(.top, showsSubscribedContent ? 16 : -84)
                             .padding(.bottom, showsSubscribedContent ? 44 : 120)
                     }
@@ -697,6 +693,7 @@ struct WalleafPlusPaywallView: View {
         let isYearly = plan == .yearly
         let isCurrentPlan = isActivePlan(plan)
         let isScheduled = isScheduledPlan(plan)
+        let showsYearlyTrialPromo = isYearly && !isCurrentPlan && !subscriptionManager.isPlusActive
 
         return Button {
             withAnimation(.easeInOut(duration: 0.18)) {
@@ -730,7 +727,9 @@ struct WalleafPlusPaywallView: View {
                         }
                     }
 
-                    // Hide annual free-trial copy until the App Store Connect offer is approved.
+                    if showsYearlyTrialPromo {
+                        freeTrialPromoBadge(compact: compact)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -739,12 +738,22 @@ struct WalleafPlusPaywallView: View {
                     .foregroundColor(.primaryText)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
+                    .padding(.top, showsYearlyTrialPromo ? (compact ? 8 : 10) : 0)
             }
             .padding(.horizontal, compact ? 13 : 15)
             .padding(.vertical, compact ? 12 : 14)
-            .frame(minHeight: compact ? 78 : 84)
+            .frame(minHeight: showsYearlyTrialPromo ? (compact ? 82 : 88) : (compact ? 78 : 84))
             .background(isSelected ? Color.appPrimary.opacity(0.08) : Color.cardBackground)
             .clipShape(RoundedRectangle(cornerRadius: compact ? 14 : 16, style: .continuous))
+            .overlay(alignment: .topTrailing) {
+                if showsYearlyTrialPromo {
+                    PaywallCornerRibbon(
+                        title: WalleafPlusPaywallL10n.yearlyRibbonFreeTrial,
+                        compact: compact,
+                        cardCornerRadius: compact ? 14 : 16
+                    )
+                }
+            }
             .overlay {
                 RoundedRectangle(cornerRadius: compact ? 14 : 16, style: .continuous)
                     .stroke(
@@ -758,6 +767,16 @@ struct WalleafPlusPaywallView: View {
         }
         .buttonStyle(.plain)
         .disabled(product == nil && !subscriptionManager.isLoadingProducts)
+    }
+
+    private func freeTrialPromoBadge(compact: Bool) -> some View {
+        Text(WalleafPlusPaywallL10n.freeTrial7Days)
+            .font(.system(size: compact ? 11 : 12, weight: .bold))
+            .foregroundColor(.white)
+            .padding(.horizontal, compact ? 8 : 10)
+            .padding(.vertical, compact ? 4 : 5)
+            .background(Color.appPrimary)
+            .clipShape(Capsule())
     }
 
     private func planStatusBadge(_ title: String, filled: Bool, compact: Bool) -> some View {
@@ -827,90 +846,50 @@ struct WalleafPlusPaywallView: View {
         }
     }
 
-    private func subscriptionDetailsSection(contentWidth: CGFloat) -> some View {
+    private func subscriptionDetailsSection(compact: Bool) -> some View {
         VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 14) {
                 Text("訂閱說明")
                     .font(.headline.weight(.bold))
                     .foregroundColor(.primaryText)
-                    .frame(width: contentWidth, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                subscriptionExplanationText(width: contentWidth)
+                subscriptionExplanationText
             }
-            .frame(width: contentWidth, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            Button {
-                Task { await subscriptionManager.restorePurchases() }
-            } label: {
-                HStack(spacing: 8) {
-                    if subscriptionManager.isRestoring {
-                        ProgressView()
-                    } else {
-                        Image(systemName: "arrow.clockwise.circle.fill")
-                            .font(.system(size: 15, weight: .semibold))
-                        Text(WalleafPlusPaywallL10n.restorePurchases)
-                            .font(.subheadline.weight(.semibold))
-                    }
+            VStack(spacing: 10) {
+                paywallSecondaryActionButton(
+                    compact: compact,
+                    icon: subscriptionManager.isRestoring ? nil : "arrow.clockwise.circle.fill",
+                    title: WalleafPlusPaywallL10n.restorePurchases,
+                    showsProgress: subscriptionManager.isRestoring
+                ) {
+                    Task { await subscriptionManager.restorePurchases() }
                 }
-                .foregroundColor(.appPrimary)
-                .frame(maxWidth: .infinity)
-                .frame(minHeight: 46)
-                .background(Color.appPrimary.opacity(0.10))
-                .clipShape(Capsule())
-                .overlay {
-                    Capsule()
-                        .stroke(Color.appPrimary.opacity(0.22), lineWidth: 1)
-                }
-            }
-            .buttonStyle(.plain)
-            .disabled(subscriptionManager.isRestoring || subscriptionManager.isPurchasing)
+                .disabled(subscriptionManager.isRestoring || subscriptionManager.isPurchasing)
 
-            Button {
-                AppExternalActions.presentOfferCodeRedemptionSheet()
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "ticket.fill")
-                        .font(.system(size: 15, weight: .semibold))
-                    Text(WalleafPlusPaywallL10n.redeemOfferCode)
-                        .font(.subheadline.weight(.semibold))
+                paywallSecondaryActionButton(
+                    compact: compact,
+                    icon: "ticket.fill",
+                    title: WalleafPlusPaywallL10n.redeemOfferCode,
+                    showsProgress: false
+                ) {
+                    AppExternalActions.presentOfferCodeRedemptionSheet()
                 }
-                .foregroundColor(.appPrimary)
-                .frame(maxWidth: .infinity)
-                .frame(minHeight: 46)
-                .background(Color.appPrimary.opacity(0.10))
-                .clipShape(Capsule())
-                .overlay {
-                    Capsule()
-                        .stroke(Color.appPrimary.opacity(0.22), lineWidth: 1)
-                }
-            }
-            .buttonStyle(.plain)
-            .disabled(subscriptionManager.isPurchasing)
-
-            if subscriptionManager.isPlusActive {
-                Button {
-                    Task { await subscriptionManager.showManageSubscriptions() }
-                } label: {
-                    HStack(spacing: 7) {
-                        Image(systemName: "gearshape.fill")
-                            .font(.system(size: 13, weight: .semibold))
-                        Text(WalleafPlusPaywallL10n.manageSubscription)
-                            .font(.footnote.weight(.bold))
-                    }
-                    .foregroundColor(.appPrimary)
-                    .frame(maxWidth: .infinity)
-                    .frame(minHeight: 38)
-                    .background(Color.appPrimary.opacity(0.07))
-                    .clipShape(Capsule())
-                    .overlay {
-                        Capsule()
-                            .stroke(Color.appPrimary.opacity(0.18), lineWidth: 1)
-                    }
-                    .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
                 .disabled(subscriptionManager.isPurchasing)
-                .padding(.top, -8)
+
+                if subscriptionManager.isPlusActive {
+                    paywallSecondaryActionButton(
+                        compact: compact,
+                        icon: "gearshape.fill",
+                        title: WalleafPlusPaywallL10n.manageSubscription,
+                        showsProgress: false
+                    ) {
+                        Task { await subscriptionManager.showManageSubscriptions() }
+                    }
+                    .disabled(subscriptionManager.isPurchasing)
+                }
             }
 
             HStack(spacing: 8) {
@@ -929,8 +908,40 @@ struct WalleafPlusPaywallView: View {
             .font(.caption.weight(.semibold))
             .frame(maxWidth: .infinity, alignment: .center)
         }
-        .frame(width: contentWidth, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
+    }
+
+    private func paywallSecondaryActionButton(
+        compact: Bool,
+        icon: String?,
+        title: String,
+        showsProgress: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                if showsProgress {
+                    ProgressView()
+                } else if let icon {
+                    Image(systemName: icon)
+                        .font(.system(size: 15, weight: .semibold))
+                }
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+            }
+            .foregroundColor(.appPrimary)
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: compact ? 44 : 46)
+            .background(Color.appPrimary.opacity(0.10))
+            .clipShape(Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(Color.appPrimary.opacity(0.22), lineWidth: 1)
+            }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     private func detailsLinkButton(_ title: String, action: @escaping () -> Void) -> some View {
@@ -951,18 +962,23 @@ struct WalleafPlusPaywallView: View {
         }
     }
 
-    private func subscriptionExplanationText(width: CGFloat) -> some View {
-        Text("""
-        完成確認後，Apple 會透過您的 App Store 帳戶處理付款。
-        訂閱會依所選週期自動續訂，續訂費用通常會在到期前 24 小時內扣款。
-        您可以隨時到 App Store 的訂閱管理取消；取消後，既有資料仍會保留。
-        若遇到訂閱或恢復購買問題，請透過 App 內支援聯繫我們。
-        """)
-            .font(.footnote.weight(.medium))
-            .foregroundColor(.secondaryText)
-            .lineSpacing(4)
-            .multilineTextAlignment(.leading)
-            .frame(width: width, alignment: .leading)
+    private var subscriptionExplanationText: some View {
+        (
+            Text("完成確認後，Apple 會透過您的 App Store 帳戶處理付款。訂閱會依所選週期自動續訂，續訂費用通常會在到期前 24 小時內扣款。您可以隨時到 App Store 的訂閱管理取消；取消後，既有資料仍會保留。")
+            + Text("\n\n")
+            + Text("僅限首次訂閱年方案的新用戶").bold()
+            + Text("可享 ")
+            + Text("7 天免費試用").bold()
+            + Text("；月訂無試用。若您曾訂閱或已使用過試用，Apple 可能不再提供此優惠。")
+            + Text("\n\n")
+            + Text("若遇到訂閱或恢復購買問題，請透過 App 內支援聯繫我們。")
+        )
+        .font(.footnote.weight(.medium))
+        .foregroundColor(.secondaryText)
+        .lineSpacing(4)
+        .multilineTextAlignment(.leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private var isPurchaseDisabled: Bool {
@@ -1064,8 +1080,7 @@ struct WalleafPlusPaywallView: View {
 
         switch selectedPlan {
         case .yearly:
-            // Hide annual free-trial CTA until the App Store Connect offer is approved.
-            return WalleafPlusPaywallL10n.subscribeYearly
+            return WalleafPlusPaywallL10n.startFreeTrial
         case .monthly:
             return WalleafPlusPaywallL10n.subscribeMonthly
         }
@@ -1169,10 +1184,6 @@ struct WalleafPlusPaywallView: View {
         }
     }
 
-    private var yearlyHasIntroOffer: Bool {
-        subscriptionManager.yearlyProduct?.subscription?.introductoryOffer != nil
-    }
-
     private func product(for plan: PaywallPlan) -> StoreProduct? {
         switch plan {
         case .monthly: return subscriptionManager.monthlyProduct
@@ -1218,6 +1229,42 @@ struct WalleafPlusPaywallView: View {
         } else {
             await subscriptionManager.showManageSubscriptions()
         }
+    }
+}
+
+/// 年訂方案右上角折角標籤
+private struct PaywallCornerRibbon: View {
+    let title: String
+    let compact: Bool
+    let cardCornerRadius: CGFloat
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: compact ? 10 : 11, weight: .bold))
+            .foregroundColor(.white)
+            .padding(.horizontal, compact ? 8 : 9)
+            .padding(.vertical, compact ? 4 : 5)
+            .background {
+                LinearGradient(
+                    colors: [
+                        Color.appPrimary,
+                        Color.appPrimary.opacity(0.82)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            }
+            .clipShape(
+                UnevenRoundedRectangle(
+                    topLeadingRadius: compact ? 8 : 9,
+                    bottomLeadingRadius: compact ? 8 : 9,
+                    bottomTrailingRadius: 0,
+                    topTrailingRadius: cardCornerRadius,
+                    style: .continuous
+                )
+            )
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 

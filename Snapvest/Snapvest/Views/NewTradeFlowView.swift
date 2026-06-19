@@ -272,6 +272,40 @@ struct NewTradeFlowView: View {
     
     private func tradeActionStep(for market: TradeMarket) -> some View {
         VStack(spacing: 0) {
+            tradeFlowHeader(for: market)
+                .background(Color.mainBackground)
+                .fixedSize(horizontal: false, vertical: true)
+                .zIndex(1)
+
+            Group {
+                if selectedAction == .sell {
+                    SellTradeFormView(
+                        market: market,
+                        prefill: lockedSellPrefill,
+                        embedInTradeFlow: true,
+                        onSubmit: { _ in
+                            onComplete?(market, .sell)
+                        }
+                    )
+                } else {
+                    BuyTradeFormView(
+                        market: market,
+                        prefill: lockedBuyPrefill,
+                        embedInTradeFlow: true,
+                        onSubmit: {
+                            onComplete?(market, .buy)
+                        }
+                    )
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
+        }
+        .background(Color.mainBackground)
+    }
+
+    private func tradeFlowHeader(for market: TradeMarket) -> some View {
+        VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Text(market.title)
                     .font(.subheadline)
@@ -281,18 +315,19 @@ struct NewTradeFlowView: View {
                     .padding(.vertical, 5)
                     .background(market.themeColor.opacity(0.15))
                     .clipShape(Capsule())
-                
+
                 Spacer(minLength: 0)
             }
             .padding(.horizontal)
             .padding(.top, 8)
             .padding(.bottom, 4)
-            
+
             HStack(spacing: 8) {
                 ForEach(TradeAction.allCases) { action in
                     tradeActionPill(action)
                 }
             }
+            .fixedSize(horizontal: false, vertical: true)
             .padding(6)
             .background(Color.cardBackground)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -302,39 +337,24 @@ struct NewTradeFlowView: View {
             }
             .padding(.horizontal)
             .padding(.bottom, 8)
-            
-            if selectedAction == .sell {
-                SellTradeFormView(
-                    market: market,
-                    prefill: lockedSellPrefill,
-                    embedInTradeFlow: true,
-                    onSubmit: { _ in
-                        onComplete?(market, .sell)
-                    }
-                )
-            } else {
-                BuyTradeFormView(
-                    market: market,
-                    prefill: lockedBuyPrefill,
-                    embedInTradeFlow: true,
-                    onSubmit: {
-                        onComplete?(market, .buy)
-                    }
-                )
-            }
         }
-        .background(Color.mainBackground)
     }
 
     private func tradeActionPill(_ action: TradeAction) -> some View {
         let isSelected = selectedAction == action
         let color: Color = action == .buy ? .profitGreen : .lossRed
         return Button {
+            guard selectedAction != action else { return }
             if action == .buy, let selectedMarket {
+                let previousAction = selectedAction
+                withAnimation(ChartMotion.switchSpring) {
+                    selectedAction = .buy
+                }
                 Task {
-                    if await canOpenBuyFlow(for: selectedMarket) {
+                    let allowed = await canOpenBuyFlow(for: selectedMarket)
+                    if !allowed {
                         withAnimation(ChartMotion.switchSpring) {
-                            selectedAction = action
+                            selectedAction = previousAction
                         }
                     }
                 }
@@ -353,8 +373,12 @@ struct NewTradeFlowView: View {
             .foregroundColor(isSelected ? AppColors.actionForeground : .primaryText)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
-            .background(isSelected ? color : Color.clear)
-            .clipShape(Capsule())
+            .background {
+                if isSelected {
+                    Capsule().fill(color)
+                }
+            }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }

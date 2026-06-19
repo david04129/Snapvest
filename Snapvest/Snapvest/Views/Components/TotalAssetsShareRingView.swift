@@ -101,6 +101,7 @@ struct TotalAssetsShareRingView: View {
             ringSize: 44,
             lineWidth: 5
         )
+        .freeLimitBlurred(.pie)
     }
 }
 

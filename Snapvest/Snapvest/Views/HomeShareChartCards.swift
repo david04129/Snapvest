@@ -15,8 +15,19 @@ struct HomeTrendChartShareCard: View {
 
     @Environment(\.homeAmountsHidden) private var hideHomeAmounts
 
+    private var chartBundle: TrendChartRenderBundle? {
+        TrendChartRenderBundle.make(
+            trendPoints: config.trendPoints,
+            metricMode: config.trendMetricMode,
+            baseDivisor: baseDivisor,
+            timeRange: config.trendTimeRange,
+            customStart: config.trendCustomStart,
+            customEnd: config.trendCustomEnd
+        )
+    }
+
     private var filteredPoints: [TrendChartPoint] {
-        config.effectiveTrendPoints
+        chartBundle?.filteredPoints ?? config.effectiveTrendPoints
     }
 
     private var displayPoint: TrendChartPoint? {
@@ -40,12 +51,14 @@ struct HomeTrendChartShareCard: View {
                     isSelected: false,
                     hideAmounts: hideHomeAmounts
                 )
+                .freeLimitBlurred(.numbers)
                 .padding(.horizontal, 16)
                 .padding(.bottom, 10)
             }
 
             if filteredPoints.count >= 2 {
                 trendChart
+                    .freeLimitBlurred(.charts)
                     .frame(height: 200)
                     .padding(.horizontal, 8)
                     .padding(.bottom, 16)
@@ -56,82 +69,73 @@ struct HomeTrendChartShareCard: View {
     }
 
     private var trendChart: some View {
-        Chart {
-            ForEach(filteredPoints) { point in
-                let value = displayValue(for: point)
-                AreaMark(
-                    x: .value("日期", point.date),
-                    y: .value("金額", value)
-                )
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [Color.appPrimary.opacity(0.22), Color.appPrimary.opacity(0.02)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .interpolationMethod(.catmullRom)
+        Group {
+            if let bundle = chartBundle {
+                Chart {
+                    ForEach(bundle.renderPoints) { point in
+                        let value = bundle.yValuesByPointId[point.id] ?? 0
+                        AreaMark(
+                            x: .value("日期", point.date),
+                            yStart: .value("基準", bundle.yDomain.lowerBound),
+                            yEnd: .value("金額", value)
+                        )
+                        .foregroundStyle(Color.appPrimary.opacity(0.14))
+                        .interpolationMethod(.linear)
 
-                LineMark(
-                    x: .value("日期", point.date),
-                    y: .value("金額", value)
-                )
-                .foregroundStyle(Color.appPrimary)
-                .lineStyle(StrokeStyle(lineWidth: 2, lineJoin: .round))
-                .interpolationMethod(.catmullRom)
-            }
+                        LineMark(
+                            x: .value("日期", point.date),
+                            y: .value("金額", value)
+                        )
+                        .foregroundStyle(Color.appPrimary)
+                        .lineStyle(StrokeStyle(lineWidth: 2, lineJoin: .round))
+                        .interpolationMethod(.linear)
+                    }
 
-            if let selected = displayPoint {
-                let selectedValue = displayValue(for: selected)
-                PointMark(
-                    x: .value("日期", selected.date),
-                    y: .value("金額", selectedValue)
-                )
-                .foregroundStyle(Color.appPrimary)
-                .symbolSize(64)
-            }
-        }
-        .chartYAxis {
-            AxisMarks(position: .trailing) { value in
-                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
-                    .foregroundStyle(Color.separator.opacity(0.35))
-                if !hideHomeAmounts {
-                    AxisValueLabel {
-                        if let doubleValue = value.as(Double.self) {
-                            Text(compactAxisLabel(doubleValue, domain: yAxisDomain))
-                                .font(.system(size: 10))
-                                .foregroundColor(.secondaryText)
+                    if let selected = displayPoint,
+                       let plotY = TrendChartSeries.interpolatedY(
+                           at: selected.date,
+                           renderPoints: bundle.renderPoints,
+                           yValuesByPointId: bundle.yValuesByPointId
+                       ) {
+                        PointMark(
+                            x: .value("日期", selected.date),
+                            y: .value("金額", plotY)
+                        )
+                        .foregroundStyle(Color.appPrimary)
+                        .symbolSize(64)
+                    }
+                }
+                .chartYAxis {
+                    AxisMarks(position: .trailing) { value in
+                        AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
+                            .foregroundStyle(Color.separator.opacity(0.35))
+                        if !hideHomeAmounts {
+                            AxisValueLabel {
+                                if let doubleValue = value.as(Double.self) {
+                                    Text(compactAxisLabel(doubleValue, domain: bundle.yDomain))
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.secondaryText)
+                                }
+                            }
                         }
                     }
                 }
+                .chartXAxis {
+                    AxisMarks(values: .automatic(desiredCount: 4)) { _ in
+                        AxisValueLabel(format: .dateTime.month(.twoDigits).day(.twoDigits))
+                            .font(.system(size: 10))
+                            .foregroundStyle(Color.secondaryText)
+                    }
+                }
+                .chartXScale(domain: bundle.xDomain)
+                .chartYScale(domain: bundle.yDomain)
             }
         }
-        .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: 4)) { _ in
-                AxisValueLabel(format: .dateTime.month(.twoDigits).day(.twoDigits))
-                    .font(.system(size: 10))
-                    .foregroundStyle(Color.secondaryText)
-            }
-        }
-        .chartYScale(domain: yAxisDomain)
     }
 
     private var baseDivisor: Decimal {
         guard config.currency != .TWD, config.twdPerBaseCurrency > 0 else { return 1 }
         return config.twdPerBaseCurrency
-    }
-
-    private func displayValue(for point: TrendChartPoint) -> Decimal {
-        point.displayValue(for: config.trendMetricMode) / baseDivisor
-    }
-
-    private var yAxisDomain: ClosedRange<Double> {
-        let values = filteredPoints.map {
-            NSDecimalNumber(decimal: $0.displayValue(for: config.trendMetricMode)).doubleValue
-        }
-        guard let minV = values.min(), let maxV = values.max() else { return 0...1 }
-        let padding = max((maxV - minV) * 0.08, maxV * 0.02)
-        return (minV - padding)...(maxV + padding)
     }
 
     private func compactAxisLabel(_ value: Double, domain: ClosedRange<Double>) -> String {
@@ -216,6 +220,7 @@ struct HomePieChartShareCard: View {
                     centerTitle: config.pieMode.rawValue,
                     showsSliceLabels: config.pieShowsSliceLabels
                 )
+                .freeLimitBlurred(.pie)
                 .padding(.top, 4)
                 .padding(.bottom, 2)
 
@@ -240,6 +245,7 @@ struct HomePieChartShareCard: View {
                         onToggleMemberSelection: { _ in },
                         showsGroupActions: false
                     )
+                    .freeLimitBlurred(.numbers, .pie)
                     .padding(.horizontal, 12)
                     .padding(.bottom, 12)
                 } else {
@@ -560,7 +566,8 @@ struct HomePerformanceChartShareCard: View {
                             mode: config.performanceMode,
                             maxAbsValue: maxAbsChartValue,
                             currency: config.currency,
-                            twdPerBaseCurrency: config.twdPerBaseCurrency
+                            twdPerBaseCurrency: config.twdPerBaseCurrency,
+                            blurHoldingNames: config.applyFreeLimitBlur
                         )
                     }
                 }
@@ -611,6 +618,7 @@ private struct HomeSharePerformanceRow: View {
     let maxAbsValue: Double
     let currency: Currency
     let twdPerBaseCurrency: Decimal
+    var blurHoldingNames: Bool = false
 
     @Environment(\.homeAmountsHidden) private var hideHomeAmounts
 
@@ -657,13 +665,24 @@ private struct HomeSharePerformanceRow: View {
         return .secondaryText
     }
 
+    @ViewBuilder
+    private var holdingNameLabel: some View {
+        let label = Text(row.displayName)
+            .font(.system(size: 14, weight: .medium))
+            .foregroundColor(row.color)
+            .lineLimit(1)
+            .frame(width: 76, alignment: .leading)
+
+        if blurHoldingNames {
+            label.freeLimitBlurred(.numbers)
+        } else {
+            label
+        }
+    }
+
     var body: some View {
         HStack(spacing: 8) {
-            Text(row.displayName)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(row.color)
-                .lineLimit(1)
-                .frame(width: 76, alignment: .leading)
+            holdingNameLabel
 
             GeometryReader { geo in
                 let totalW = geo.size.width
@@ -688,6 +707,7 @@ private struct HomeSharePerformanceRow: View {
                         )
                 }
             }
+            .freeLimitBlurred(.charts)
             .frame(height: 22)
 
             Group {
@@ -707,6 +727,7 @@ private struct HomeSharePerformanceRow: View {
                         .foregroundColor(valueColor)
                 }
             }
+            .freeLimitBlurred(.numbers)
             .lineLimit(1)
             .minimumScaleFactor(0.7)
             .frame(width: mode == .gainLoss ? 108 : 88, alignment: .trailing)

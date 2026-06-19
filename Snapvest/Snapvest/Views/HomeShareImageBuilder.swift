@@ -14,6 +14,7 @@ enum HomeShareImageBuilder {
     static let headerSectionHeight: CGFloat = 68
     static let footerSectionHeight: CGFloat = 72
     static let footerSectionHeightWithPrivacyNote: CGFloat = 86
+    static let footerSectionHeightWithDualNotes: CGFloat = 100
     static let chartsSectionSpacing: CGFloat = 16
 
     /// 輸出像素倍率（與裝置螢幕無關，確保相簿內每張分享圖解析度一致）
@@ -45,9 +46,14 @@ private struct HomeShareCompositeView: View {
     let config: HomeShareRenderConfig
 
     private var footerHeight: CGFloat {
-        config.hideAmounts
-            ? HomeShareImageBuilder.footerSectionHeightWithPrivacyNote
-            : HomeShareImageBuilder.footerSectionHeight
+        switch (config.hideAmounts, config.applyFreeLimitBlur) {
+        case (true, true):
+            return HomeShareImageBuilder.footerSectionHeightWithDualNotes
+        case (true, false), (false, true):
+            return HomeShareImageBuilder.footerSectionHeightWithPrivacyNote
+        case (false, false):
+            return HomeShareImageBuilder.footerSectionHeight
+        }
     }
 
     var body: some View {
@@ -77,6 +83,9 @@ private struct HomeShareCompositeView: View {
         .frame(width: HomeShareImageBuilder.canvasWidth)
         .background(Color.mainBackground)
         .environment(\.homeAmountsHidden, config.hideAmounts)
+        .environment(\.freeLimitBlurNumbers, config.applyFreeLimitBlur)
+        .environment(\.freeLimitBlurCharts, config.applyFreeLimitBlur)
+        .environment(\.freeLimitBlurPie, config.applyFreeLimitBlur)
         .preferredColorScheme(config.isDarkMode ? .dark : .light)
     }
 
@@ -119,6 +128,11 @@ private struct HomeShareCompositeView: View {
             }
             if config.hideAmounts {
                 Text("金額已隱藏")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.appPrimary)
+            }
+            if config.applyFreeLimitBlur {
+                Text("部分資料已模糊顯示")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(.appPrimary)
             }

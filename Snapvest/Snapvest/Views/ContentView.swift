@@ -33,6 +33,20 @@ struct ContentView: View {
     @State private var manualRefreshBlockedAlertMessage = ""
     @State private var isPaywallPresented = false
 
+    private var portfolioLimitSnapshot: PortfolioLimitSnapshot {
+        SubscriptionComplianceState.snapshot(
+            accounts: accountsViewModel.accounts,
+            holdings: assetsViewModel.aggregatedHoldings
+        )
+    }
+
+    private var shouldApplyFreeLimitBlur: Bool {
+        FreeLimitBlurPolicy.shouldBlurContent(
+            isPlusActive: subscriptionManager.isPlusActive,
+            snapshot: portfolioLimitSnapshot
+        )
+    }
+
     var body: some View {
         tabRootWithChrome
             .overlay(alignment: .bottomTrailing, content: demoModeBadgeOverlay)
@@ -92,16 +106,23 @@ struct ContentView: View {
             HomeView(selectedTab: $selectedTab) {
                 isSettingsPresented = true
             }
+            .environment(\.freeLimitBlurNumbers, shouldApplyFreeLimitBlur)
+            .environment(\.freeLimitBlurCharts, shouldApplyFreeLimitBlur)
+            .environment(\.freeLimitBlurPie, shouldApplyFreeLimitBlur)
             .tabItem { Label("首頁", systemImage: "house.fill") }
             .tag(AppTab.home.rawValue)
 
             AccountsView(selectedTab: $selectedTab)
                 .environment(\.openSettings, { isSettingsPresented = true })
+                .environment(\.freeLimitBlurNumbers, shouldApplyFreeLimitBlur)
+                .environment(\.freeLimitBlurPie, shouldApplyFreeLimitBlur)
                 .tabItem { Label("管理", systemImage: "building.columns.fill") }
                 .tag(AppTab.accounts.rawValue)
 
             AssetsView(selectedTab: $selectedTab)
                 .environment(\.openSettings, { isSettingsPresented = true })
+                .environment(\.freeLimitBlurNumbers, shouldApplyFreeLimitBlur)
+                .environment(\.freeLimitBlurPie, shouldApplyFreeLimitBlur)
                 .tabItem { Label("投資", systemImage: "chart.bar.fill") }
                 .tag(AppTab.assets.rawValue)
 

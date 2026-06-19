@@ -13,6 +13,7 @@ struct HomeView: View {
     @EnvironmentObject private var viewModel: PortfolioViewModel
     @EnvironmentObject private var accountsViewModel: AccountsViewModel
     @EnvironmentObject private var assetsViewModel: AssetsViewModel
+    @EnvironmentObject private var subscriptionManager: SubscriptionManager
     @ObservedObject private var homePrivacy = HomePrivacyManager.shared
     @State private var userId: String = AppUser.id
     @State private var navigationStackResetID = UUID()
@@ -30,6 +31,16 @@ struct HomeView: View {
 
     private var showsHomeOnboardingEmpty: Bool {
         accountsViewModel.accounts.filter { !$0.isArchived }.isEmpty
+    }
+
+    private var shouldApplyFreeLimitBlur: Bool {
+        FreeLimitBlurPolicy.shouldBlurContent(
+            isPlusActive: subscriptionManager.isPlusActive,
+            snapshot: SubscriptionComplianceState.snapshot(
+                accounts: accountsViewModel.accounts,
+                holdings: assetsViewModel.aggregatedHoldings
+            )
+        )
     }
     
     var body: some View {
@@ -61,6 +72,7 @@ struct HomeView: View {
                                 customStartDate: $trendCustomStartDate,
                                 customEndDate: $trendCustomEndDate
                             )
+                            .freeLimitBlurred(.charts)
 
                             // 淨資產卡片
                             NetWorthCardView(viewModel: viewModel)
@@ -107,6 +119,7 @@ struct HomeView: View {
                                     mode: $pieChartMode,
                                     groupingStore: pieGroupingStore
                                 )
+                                .freeLimitBlurred(.pie)
 
                                 HomePerformanceChartSection(
                                     inputs: viewModel.pieChartInputs,
@@ -117,6 +130,7 @@ struct HomeView: View {
                                     twdPerBaseCurrency: viewModel.twdPerBaseCurrency
                                 )
                                 .snapHomeSummaryMetricStyle()
+                                .freeLimitBlurred(.charts)
                             }
                         }
                     }
@@ -169,7 +183,8 @@ struct HomeView: View {
                 totalInvestments: viewModel.totalInvestments,
                 performanceMode: performanceMode,
                 currency: viewModel.viewCurrency,
-                twdPerBaseCurrency: viewModel.twdPerBaseCurrency
+                twdPerBaseCurrency: viewModel.twdPerBaseCurrency,
+                applyFreeLimitBlur: shouldApplyFreeLimitBlur
             )
         }
         .sheet(isPresented: $isPieGroupingTutorialPresented) {
@@ -274,11 +289,13 @@ private struct HomeCardDetailRow: View {
                     weight: emphasized ? .bold : .semibold,
                     color: valueColor
                 )
+                .freeLimitBlurred(.numbers)
             } else {
                 Text(value)
                     .font(.subheadline)
                     .fontWeight(emphasized ? .bold : .semibold)
                     .foregroundColor(valueColor)
+                    .freeLimitBlurred(.numbers)
             }
         }
     }
@@ -302,6 +319,7 @@ private struct HomeCardCurrencyDetailRow: View {
                 Text(label)
                     .font(.subheadline)
                     .foregroundColor(.secondaryText)
+                    .freeLimitBlurred(.pie)
             }
 
             Spacer(minLength: 8)
@@ -315,10 +333,12 @@ private struct HomeCardCurrencyDetailRow: View {
                     color: .primaryText,
                     chipTint: dotColor
                 )
+                .freeLimitBlurred(.numbers)
                 if let footnote {
                     Text(footnote)
                         .font(.caption2)
                         .foregroundColor(.secondaryText)
+                        .freeLimitBlurred(.numbers)
                 }
             }
         }
@@ -349,22 +369,25 @@ struct NetWorthCardView: View {
         AccentBarCard(title: "淨資產", titleCurrency: viewModel.viewCurrency, accentColor: .homeNetWorthAccent) {
             VStack(spacing: 16) {
                 HomeExpandableCardHeader(isExpanded: $isExpanded) {
-                    AdaptivePercentageRingView(
-                        sharePercent: netWorthRatio,
-                        accentColor: .homeNetWorthAccent,
-                        ringSize: 50,
-                        lineWidth: 7,
-                        animatesProgressChanges: false
-                    )
+                    Group {
+                        AdaptivePercentageRingView(
+                            sharePercent: netWorthRatio,
+                            accentColor: .homeNetWorthAccent,
+                            ringSize: 50,
+                            lineWidth: 7,
+                            animatesProgressChanges: false
+                        )
 
-                    CurrencyAmountWithChip(
-                        text: HomeAmountPrivacyFormat.currency(netWorth, currency: viewModel.viewCurrency, hidden: hideHomeAmounts),
-                        currency: viewModel.viewCurrency,
-                        font: .snapAmountHero,
-                        weight: .bold,
-                        color: .primaryText,
-                        animatesNumericContentTransition: false
-                    )
+                        CurrencyAmountWithChip(
+                            text: HomeAmountPrivacyFormat.currency(netWorth, currency: viewModel.viewCurrency, hidden: hideHomeAmounts),
+                            currency: viewModel.viewCurrency,
+                            font: .snapAmountHero,
+                            weight: .bold,
+                            color: .primaryText,
+                            animatesNumericContentTransition: false
+                        )
+                    }
+                    .freeLimitBlurred(.numbers, .pie)
                 }
                 
                 if isExpanded {
@@ -425,23 +448,26 @@ struct InvestmentAssetsCardView: View {
         AccentBarCard(title: "投資資產", titleCurrency: viewModel.viewCurrency, accentColor: .homeInvestmentsAccent) {
             VStack(spacing: 16) {
                 HomeExpandableCardHeader(isExpanded: $isExpanded) {
-                    AdaptivePercentageRingView(
-                        sharePercent: investmentRatio,
-                        accentColor: .homeInvestmentsAccent,
-                        ringSize: 50,
-                        lineWidth: 7,
-                        animatesProgressChanges: false
-                    )
+                    Group {
+                        AdaptivePercentageRingView(
+                            sharePercent: investmentRatio,
+                            accentColor: .homeInvestmentsAccent,
+                            ringSize: 50,
+                            lineWidth: 7,
+                            animatesProgressChanges: false
+                        )
 
-                    CurrencyAmountWithChip(
-                        text: HomeAmountPrivacyFormat.currency(viewModel.totalInvestments, currency: viewModel.viewCurrency, hidden: hideHomeAmounts),
-                        currency: viewModel.viewCurrency,
-                        font: .snapAmountHero,
-                        weight: .bold,
-                        color: .primaryText,
-                        chipTint: .homeInvestmentsAccent,
-                        animatesNumericContentTransition: false
-                    )
+                        CurrencyAmountWithChip(
+                            text: HomeAmountPrivacyFormat.currency(viewModel.totalInvestments, currency: viewModel.viewCurrency, hidden: hideHomeAmounts),
+                            currency: viewModel.viewCurrency,
+                            font: .snapAmountHero,
+                            weight: .bold,
+                            color: .primaryText,
+                            chipTint: .homeInvestmentsAccent,
+                            animatesNumericContentTransition: false
+                        )
+                    }
+                    .freeLimitBlurred(.numbers, .pie)
                 }
                 
                 if isExpanded {
@@ -482,6 +508,7 @@ struct InvestmentAssetsCardView: View {
                                     .foregroundColor(gainLossColor)
                                 }
                             }
+                            .freeLimitBlurred(.numbers)
                         }
 
                         HomeCardDetailRow(
@@ -584,24 +611,27 @@ struct CashCardView: View {
         AccentBarCard(title: "現金", titleCurrency: viewModel.viewCurrency, accentColor: .homeCashAccent) {
             VStack(spacing: 16) {
                 HomeExpandableCardHeader(isExpanded: $isExpanded) {
-                    AdaptivePercentageRingView(
-                        sharePercent: cashRatio,
-                        accentColor: .homeCashAccent,
-                        trimStyle: .counterclockwiseTail,
-                        ringSize: 50,
-                        lineWidth: 7,
-                        animatesProgressChanges: false
-                    )
+                    Group {
+                        AdaptivePercentageRingView(
+                            sharePercent: cashRatio,
+                            accentColor: .homeCashAccent,
+                            trimStyle: .counterclockwiseTail,
+                            ringSize: 50,
+                            lineWidth: 7,
+                            animatesProgressChanges: false
+                        )
 
-                    CurrencyAmountWithChip(
-                        text: HomeAmountPrivacyFormat.currency(viewModel.totalCash, currency: viewModel.viewCurrency, hidden: hideHomeAmounts),
-                        currency: viewModel.viewCurrency,
-                        font: .snapAmountHero,
-                        weight: .bold,
-                        color: .primaryText,
-                        chipTint: .homeCashAccent,
-                        animatesNumericContentTransition: false
-                    )
+                        CurrencyAmountWithChip(
+                            text: HomeAmountPrivacyFormat.currency(viewModel.totalCash, currency: viewModel.viewCurrency, hidden: hideHomeAmounts),
+                            currency: viewModel.viewCurrency,
+                            font: .snapAmountHero,
+                            weight: .bold,
+                            color: .primaryText,
+                            chipTint: .homeCashAccent,
+                            animatesNumericContentTransition: false
+                        )
+                    }
+                    .freeLimitBlurred(.numbers, .pie)
                 }
                 
                 if !isExpanded {
@@ -698,6 +728,7 @@ struct TodayPLCardView: View {
                                 weight: .semibold
                             )
                         }
+                        .freeLimitBlurred(.numbers)
                     }
                 } else {
                     HStack(alignment: .firstTextBaseline) {
@@ -726,6 +757,7 @@ struct TodayPLCardView: View {
                                     .foregroundColor(.secondaryText)
                             }
                         }
+                        .freeLimitBlurred(.numbers)
                         Spacer()
                     }
                 }
@@ -772,6 +804,7 @@ struct TodayPLCardView: View {
                     weight: .medium
                 )
             }
+            .freeLimitBlurred(.numbers)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
@@ -868,6 +901,7 @@ struct RealizedPLCardView: View {
                         color: Color.marketColor(for: viewModel.realizedGainLoss),
                         animatesNumericContentTransition: false
                     )
+                    .freeLimitBlurred(.numbers)
                 }
                 
                 if isExpanded {
@@ -951,6 +985,7 @@ struct RealizedPLCardView: View {
                     weight: .semibold,
                     color: Color.marketColor(for: total)
                 )
+                .freeLimitBlurred(.numbers)
             }
             
             if transactions.isEmpty {
@@ -1025,6 +1060,7 @@ struct RealizedPLCardView: View {
                                                 }
                                             }
                                             .frame(width: 120, alignment: .trailing)
+                                            .freeLimitBlurred(.numbers)
                                             
                                             Image(systemName: expandedTransactionIds.contains(transaction.id) ? "chevron.up" : "chevron.down")
                                                 .font(.caption)
@@ -1085,6 +1121,7 @@ struct RealizedPLCardView: View {
                                             }
                                             .frame(maxWidth: .infinity)
                                         }
+                                        .freeLimitBlurred(.numbers)
                                         .padding(.horizontal, 12)
                                         .padding(.vertical, 12)
                                         .background(Color.secondaryBackground)

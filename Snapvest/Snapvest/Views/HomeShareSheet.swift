@@ -21,6 +21,7 @@ struct HomeShareSheet: View {
     let performanceMode: PerformanceDisplayMode
     let currency: Currency
     let twdPerBaseCurrency: Decimal
+    let applyFreeLimitBlur: Bool
 
     @ObservedObject private var theme = ThemeManager.shared
     @ObservedObject private var pieGroupingStore = PieChartGroupingStore.shared
@@ -63,7 +64,8 @@ struct HomeShareSheet: View {
         totalInvestments: Decimal,
         performanceMode: PerformanceDisplayMode,
         currency: Currency,
-        twdPerBaseCurrency: Decimal
+        twdPerBaseCurrency: Decimal,
+        applyFreeLimitBlur: Bool
     ) {
         _trendPoints = trendPoints
         self.trendMetricMode = trendMetricMode
@@ -77,6 +79,7 @@ struct HomeShareSheet: View {
         self.performanceMode = performanceMode
         self.currency = currency
         self.twdPerBaseCurrency = twdPerBaseCurrency
+        self.applyFreeLimitBlur = applyFreeLimitBlur
         _shareHideAmounts = State(initialValue: HomePrivacyManager.shared.isAmountHidden)
         _shareTrendMetricMode = State(initialValue: trendMetricMode)
         _shareTrendTimeRange = State(initialValue: trendTimeRange)
@@ -90,6 +93,7 @@ struct HomeShareSheet: View {
     private var baseConfig: HomeShareRenderConfig {
         HomeShareRenderConfig(
             hideAmounts: shareHideAmounts,
+            applyFreeLimitBlur: applyFreeLimitBlur,
             isDarkMode: theme.isDarkMode,
             currency: currency,
             twdPerBaseCurrency: twdPerBaseCurrency,
@@ -118,6 +122,7 @@ struct HomeShareSheet: View {
         guard !selectedKinds.isEmpty else { return nil }
         return HomeShareRenderConfig(
             hideAmounts: shareHideAmounts,
+            applyFreeLimitBlur: applyFreeLimitBlur,
             isDarkMode: theme.isDarkMode,
             currency: currency,
             twdPerBaseCurrency: twdPerBaseCurrency,
@@ -150,6 +155,7 @@ struct HomeShareSheet: View {
         [
             "selected=\(selectedKinds.map(\.rawValue).sorted().joined(separator: ","))",
             "hide=\(shareHideAmounts)",
+            "blur=\(applyFreeLimitBlur)",
             "trendMetric=\(shareTrendMetricMode.rawValue)",
             "trendRange=\(shareTrendTimeRange.rawValue)",
             "trendStart=\(shareTrendCustomStart.timeIntervalSince1970)",
@@ -194,6 +200,7 @@ struct HomeShareSheet: View {
         }
         .onChange(of: selectedKinds) { _, newValue in
             HomeSharePreferences.saveSelectedKinds(newValue)
+            refreshPreview()
         }
         .onChange(of: previewRefreshToken) { _, _ in
             syncSelectionToAvailable()
@@ -549,7 +556,7 @@ struct HomeShareSheet: View {
                     ProgressView("產生分享圖…")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    Text("請至少選擇一項有資料的圖表")
+                    Text("請至少選擇一項圖表以產生預覽")
                         .font(.subheadline)
                         .foregroundColor(.secondaryText)
                         .multilineTextAlignment(.center)
@@ -584,17 +591,13 @@ struct HomeShareSheet: View {
         if let saved = HomeSharePreferences.loadSelectedKinds() {
             selectedKinds = saved
         } else {
-            selectedKinds = [.trend, .pie, .performance]
+            selectedKinds = Set(HomeShareChartKind.allCases.filter { baseConfig.isAvailable($0) })
         }
     }
 
     private func syncSelectionToAvailable() {
         let available = Set(HomeShareChartKind.allCases.filter { baseConfig.isAvailable($0) })
         selectedKinds = selectedKinds.intersection(available)
-        if selectedKinds.isEmpty {
-            selectedKinds = available
-        }
-        HomeSharePreferences.saveSelectedKinds(selectedKinds)
     }
 
     private func toggle(_ kind: HomeShareChartKind) {
@@ -604,7 +607,6 @@ struct HomeShareSheet: View {
             } else {
                 selectedKinds.insert(kind)
             }
-            HomeSharePreferences.saveSelectedKinds(selectedKinds)
         }
     }
     

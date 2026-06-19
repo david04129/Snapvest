@@ -127,6 +127,8 @@ enum WalleafPlusPaywallL10n {
 
     static var freeTrial7Days: String { t("7 天免費試用", "7-day free trial") }
 
+    static var yearlyRibbonFreeTrial: String { t("7 天免費", "7 days free") }
+
     static func perMonth(_ price: String) -> String {
         t("折合 \(price) / 月", "≈ \(price) / mo")
     }

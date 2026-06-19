@@ -1466,9 +1466,9 @@ private struct InvestmentTutorialTradeFlowMock: View {
                     isPlaceholder: symbolText.isEmpty
                 )
                 Divider().padding(.horizontal, 12)
-                tradeFormRow(title: "數量", icon: "number.circle.fill", value: quantityText.isEmpty ? "0" : quantityText, isPlaceholder: quantityText.isEmpty)
-                Divider().padding(.horizontal, 12)
                 tradeFormRow(title: "每股買價（台幣）", icon: "dollarsign.circle.fill", value: priceText.isEmpty ? "TWD 0" : "TWD \(priceText)", isPlaceholder: priceText.isEmpty)
+                Divider().padding(.horizontal, 12)
+                tradeFormRow(title: "數量", icon: "number.circle.fill", value: quantityText.isEmpty ? "0" : quantityText, isPlaceholder: quantityText.isEmpty)
                 Divider().padding(.horizontal, 12)
                 tradeFormRow(title: "帳戶", icon: "building.columns.fill", value: "元大證券 · 台股證券")
                 Divider().padding(.horizontal, 12)

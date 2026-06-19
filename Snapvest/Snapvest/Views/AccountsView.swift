@@ -1149,6 +1149,7 @@ private func managementListAmountChip(
     )
     .fixedSize(horizontal: true, vertical: false)
     .layoutPriority(2)
+    .freeLimitBlurred(.numbers)
 }
 
 @ViewBuilder
@@ -1169,6 +1170,7 @@ private func categoryOverviewAmountChip(
     )
     .monospacedDigit()
     .snapOverviewFittingLine()
+    .freeLimitBlurred(.numbers)
 }
 
 // MARK: - 帳戶列表顯示用（台幣 / 原幣）

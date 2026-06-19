@@ -1059,14 +1059,19 @@ struct PortfolioDonutChart: View {
     /// 自訂環帶手勢（比 chartAngleSelection 更好點中細環）
     private var donutTouchOverlay: some View {
         GeometryReader { geometry in
-            Color.clear
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 0, coordinateSpace: .local)
-                        .onChanged { value in
-                            selectItem(at: value.location, in: geometry.size)
-                        }
-                )
+            ChartHoldToInteractOverlay(
+                minimumHoldDuration: ChartLongPressInteraction.minimumDuration,
+                maximumMovement: ChartLongPressInteraction.maximumMovement,
+                contentSize: geometry.size,
+                onReady: {
+                    ChartLongPressInteraction.playReadyFeedback()
+                },
+                onLocationChanged: { location in
+                    selectItem(at: location, in: geometry.size)
+                },
+                onEnded: {}
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
     
@@ -1080,9 +1085,9 @@ struct PortfolioDonutChart: View {
         let dx = location.x - center.x
         let dy = location.y - center.y
         let distance = hypot(dx, dy)
-        let radius = min(size.width, size.height) / 2
-        let hitInner = radius * hitInnerRadiusRatio
-        let hitOuter = radius + hitOuterPadding * layoutScale
+        let ringRadius = min(chartSize, min(size.width, size.height)) / 2
+        let hitInner = ringRadius * hitInnerRadiusRatio
+        let hitOuter = ringRadius + hitOuterPadding * layoutScale
         guard distance >= hitInner, distance <= hitOuter else { return }
 
         let sum = data.reduce(0.0) { $0 + $1.value }
