@@ -4,7 +4,7 @@ Walleaf v1.2.0 Release Snapshot
 Version:        1.2.0 (8)
 Git tag:        v1.2.0-build8
 Git branch:     backup/v1.2.0-build8
-Git commit:     a6cf251
+Git commit:     3ddd889
 Bundle ID:      com.EggHsu.Walleaf
 Minimum iOS:    18.6
 
