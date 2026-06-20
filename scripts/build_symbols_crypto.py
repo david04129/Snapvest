@@ -10,6 +10,7 @@ import urllib.error
 import urllib.request
 from datetime import date
 from pathlib import Path
+from typing import Optional
 
 from symbols_paths import BACKEND_CRYPTO_MAP, OUTPUT_DIR, catalog_document, read_catalog_meta
 COINGECKO_MARKETS_BASE = "https://api.coingecko.com/api/v3/coins/markets"
@@ -75,11 +76,12 @@ def build_coingecko_map(items: list[dict]) -> dict[str, str]:
     return {item["symbol"].upper(): item["coingeckoId"] for item in items}
 
 
-def build_symbols_crypto() -> dict:
+def build_symbols_crypto(*, catalog_minor: Optional[int] = None) -> dict:
     """建立 symbols_crypto.json 內容"""
     markets = fetch_coingecko_top_markets()
     items = transform_to_items(markets)
-    epoch, minor = read_catalog_meta("symbols_crypto.json")
+    epoch, _minor = read_catalog_meta("symbols_crypto.json")
+    minor = catalog_minor if catalog_minor is not None else _minor
     doc = catalog_document(
         epoch=epoch,
         minor=minor,
@@ -94,7 +96,7 @@ def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     output_path = OUTPUT_DIR / "symbols_crypto.json"
     print(f"加密貨幣：正在取得 CoinGecko 市值 Top {TOP_N}...")
-    data = build_symbols_crypto()
+    data = build_symbols_crypto(catalog_minor=11)
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 

@@ -1,8 +1,8 @@
 {
   "epoch": 1,
-  "minor": 10,
-  "version": 10,
-  "updatedAt": "2026-06-13",
+  "minor": 11,
+  "version": 11,
+  "updatedAt": "2026-06-20",
   "items": [
     {
       "symbol": "0g",
@@ -178,6 +178,11 @@
       "symbol": "aster",
       "name": "Aster",
       "coingeckoId": "aster-2"
+    },
+    {
+      "symbol": "asteroid",
+      "name": "Asteroid Shiba",
+      "coingeckoId": "asteroid-shiba"
     },
     {
       "symbol": "astr",
@@ -360,11 +365,6 @@
       "coingeckoId": "binancecoin"
     },
     {
-      "symbol": "bnkr",
-      "name": "BankrCoin",
-      "coingeckoId": "bankercoin-2"
-    },
-    {
       "symbol": "bonk",
       "name": "Bonk",
       "coingeckoId": "bonk"
@@ -423,11 +423,6 @@
       "symbol": "btw",
       "name": "Bitway",
       "coingeckoId": "bitway"
-    },
-    {
-      "symbol": "bty",
-      "name": "Bityuan",
-      "coingeckoId": "bityuan"
     },
     {
       "symbol": "buidl",
@@ -585,11 +580,6 @@
       "coingeckoId": "decred"
     },
     {
-      "symbol": "deep",
-      "name": "DeepBook",
-      "coingeckoId": "deep"
-    },
-    {
       "symbol": "degen",
       "name": "Degen",
       "coingeckoId": "degen-base"
@@ -695,11 +685,6 @@
       "coingeckoId": "ethereum-name-service"
     },
     {
-      "symbol": "esports",
-      "name": "Yooldo Games",
-      "coingeckoId": "yooldo-games"
-    },
-    {
       "symbol": "etc",
       "name": "Ethereum Classic",
       "coingeckoId": "ethereum-classic"
@@ -728,11 +713,6 @@
       "symbol": "euri",
       "name": "Eurite",
       "coingeckoId": "eurite"
-    },
-    {
-      "symbol": "eurs",
-      "name": "STASIS EURO",
-      "coingeckoId": "stasis-eurs"
     },
     {
       "symbol": "eursafo",
@@ -905,6 +885,11 @@
       "coingeckoId": "gmt-token"
     },
     {
+      "symbol": "gram",
+      "name": "Gram (prev. Toncoin)",
+      "coingeckoId": "the-open-network"
+    },
+    {
       "symbol": "grass",
       "name": "Grass",
       "coingeckoId": "grass"
@@ -923,6 +908,11 @@
       "symbol": "gt",
       "name": "Gate",
       "coingeckoId": "gatechain-token"
+    },
+    {
+      "symbol": "gua",
+      "name": "Superfortune",
+      "coingeckoId": "superfortune"
     },
     {
       "symbol": "gusd",
@@ -993,6 +983,11 @@
       "symbol": "idol",
       "name": "MEET48",
       "coingeckoId": "meet48"
+    },
+    {
+      "symbol": "igra",
+      "name": "IGRA",
+      "coingeckoId": "igra"
     },
     {
       "symbol": "imx",
@@ -1280,6 +1275,11 @@
       "coingeckoId": "mantle"
     },
     {
+      "symbol": "mog",
+      "name": "Mog Coin",
+      "coingeckoId": "mog-coin"
+    },
+    {
       "symbol": "mon",
       "name": "Monad",
       "coingeckoId": "monad"
@@ -1313,11 +1313,6 @@
       "symbol": "muon",
       "name": "Micron Technology (Ondo Tokenized Stock)",
       "coingeckoId": "micron-technology-ondo-tokenized-stock"
-    },
-    {
-      "symbol": "must",
-      "name": "Mustang",
-      "coingeckoId": "mustang"
     },
     {
       "symbol": "mx",
@@ -1370,11 +1365,6 @@
       "coingeckoId": "nockchain"
     },
     {
-      "symbol": "not",
-      "name": "Notcoin",
-      "coingeckoId": "notcoin"
-    },
-    {
       "symbol": "nusd",
       "name": "Neutrl USD",
       "coingeckoId": "nusd-2"
@@ -1398,6 +1388,11 @@
       "symbol": "nxt",
       "name": "NEXST",
       "coingeckoId": "nexst"
+    },
+    {
+      "symbol": "o",
+      "name": "o1.exchange",
+      "coingeckoId": "o1-exchange"
     },
     {
       "symbol": "oct",
@@ -1570,6 +1565,11 @@
       "coingeckoId": "precious-metals-usd"
     },
     {
+      "symbol": "pnut",
+      "name": "Peanut the Squirrel",
+      "coingeckoId": "peanut-the-squirrel"
+    },
+    {
       "symbol": "pol",
       "name": "POL (ex-MATIC)",
       "coingeckoId": "polygon-ecosystem-token"
@@ -1673,6 +1673,11 @@
       "symbol": "real",
       "name": "RealLink",
       "coingeckoId": "reallink"
+    },
+    {
+      "symbol": "red",
+      "name": "RedStone",
+      "coingeckoId": "redstone-oracles"
     },
     {
       "symbol": "render",
@@ -1780,11 +1785,6 @@
       "coingeckoId": "sentient"
     },
     {
-      "symbol": "serv",
-      "name": "OpenServ",
-      "coingeckoId": "openserv"
-    },
-    {
       "symbol": "sfp",
       "name": "SafePal",
       "coingeckoId": "safepal"
@@ -1798,11 +1798,6 @@
       "symbol": "shib",
       "name": "Shiba Inu",
       "coingeckoId": "shiba-inu"
-    },
-    {
-      "symbol": "show",
-      "name": "SHOW",
-      "coingeckoId": "show-2"
     },
     {
       "symbol": "shx",
@@ -1900,11 +1895,6 @@
       "coingeckoId": "stau"
     },
     {
-      "symbol": "stg",
-      "name": "Stargate Finance",
-      "coingeckoId": "stargate-finance"
-    },
-    {
       "symbol": "strcx",
       "name": "Strategy PP Variable xStock",
       "coingeckoId": "strategy-pp-variable-xstock"
@@ -1948,11 +1938,6 @@
       "symbol": "syrup",
       "name": "Maple Finance",
       "coingeckoId": "syrup"
-    },
-    {
-      "symbol": "t",
-      "name": "Threshold Network",
-      "coingeckoId": "threshold-network-token"
     },
     {
       "symbol": "tac",
@@ -2013,11 +1998,6 @@
       "symbol": "tkx",
       "name": "Tokenize Xchange",
       "coingeckoId": "tokenize-xchange"
-    },
-    {
-      "symbol": "ton",
-      "name": "Toncoin",
-      "coingeckoId": "the-open-network"
     },
     {
       "symbol": "toshi",
@@ -2108,11 +2088,6 @@
       "symbol": "up",
       "name": "Unitas",
       "coingeckoId": "unitas"
-    },
-    {
-      "symbol": "upump",
-      "name": "Unit Pump",
-      "coingeckoId": "unit-pump"
     },
     {
       "symbol": "usat",
@@ -2275,6 +2250,11 @@
       "coingeckoId": "virtual-protocol"
     },
     {
+      "symbol": "vit",
+      "name": "V.I.T.R.I.O.L. Network",
+      "coingeckoId": "v-i-t-r-i-o-l-network"
+    },
+    {
       "symbol": "vsn",
       "name": "Vision",
       "coingeckoId": "vision-3"
@@ -2328,6 +2308,16 @@
       "symbol": "wlfi",
       "name": "World Liberty Financial",
       "coingeckoId": "world-liberty-financial"
+    },
+    {
+      "symbol": "wm",
+      "name": "WrappedM by M0",
+      "coingeckoId": "wrappedm-by-m0"
+    },
+    {
+      "symbol": "wojak",
+      "name": "wojak",
+      "coingeckoId": "wojak-5"
     },
     {
       "symbol": "would",
@@ -2410,6 +2400,11 @@
       "coingeckoId": "straitsx-xusd"
     },
     {
+      "symbol": "xvs",
+      "name": "Venus",
+      "coingeckoId": "venus"
+    },
+    {
       "symbol": "xyo",
       "name": "XYO Network",
       "coingeckoId": "xyo-network"
@@ -2438,6 +2433,11 @@
       "symbol": "zbcn",
       "name": "Zebec Network",
       "coingeckoId": "zebec-network"
+    },
+    {
+      "symbol": "zchf",
+      "name": "Frankencoin",
+      "coingeckoId": "frankencoin"
     },
     {
       "symbol": "zec",

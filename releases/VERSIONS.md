@@ -30,6 +30,7 @@
 | **Bundle ID** | `com.EggHsu.Walleaf` |
 | **App Store Apple ID** | `6778330994` |
 | **App Store 下載** | https://apple.co/4b0KA8X |
+| **最低 iOS** | **18.0**（Phase 1；原 18.6 → 18.0，無 API 改動） |
 
 #### 改動摘要
 
@@ -42,6 +43,7 @@
 - **首頁圖表手勢**：長按後 scrub／選 slice；修正非 7 天區間 scrub 座標；長按 0.45 秒觸發。
 - **新增交易**：買入／賣出切換與賣出持股選單改善；買賣表單改為先填價格再填數量。
 - **Paywall**：年訂 7 天免費試用 UI（角標 + pill + 訂閱說明）；底部按鈕間距修正。
+- **最低系統**：iOS **18.0**（deployment target 自 18.6 放寬；iOS 17 支援規劃於 **v1.2.0**）。
 - **版本號**：Marketing 1.1.0 / Build 7。
 
 **官網**
@@ -81,6 +83,7 @@
 | 2026-06-19 | **分享**：空選擇、走勢圖線性渲染、`HomeShareMessageBuilder` App Store 連結 |
 | 2026-06-19 | **交易表單**：買賣先價格後數量；新增交易買賣切換與賣出選單改善 |
 | 2026-06-19 | **Paywall**：年訂 7 天試用角標／pill／訂閱說明；底部按鈕與說明文字版面 |
+| 2026-06-20 | **最低 iOS Phase 1**：`IPHONEOS_DEPLOYMENT_TARGET` 18.6 → **18.0**（僅 Xcode 設定；iOS 17 留待 **v1.2.0**） |
 
 #### 備份位置
 
@@ -244,7 +247,13 @@ git checkout release/1.0.0
 
 ## main 上尚未納入正式 tag 的改動
 
-（v1.1.0-build7 已含下方 App 改動；官網-only 仍僅在 git 歷史中。）
+（v1.1.0-build7 仍為 iOS 18.0 送審 baseline；下方為 main 上後續改動。）
+
+| 日期 | 改動 |
+|------|------|
+| 2026-06-20 | **Phase 1**：deployment target 18.6 → 18.0（v1.1.0 送審用） |
+| 2026-06-20 | **Phase 2**：deployment target 18.0 → **17.0**（無 Swift 改動；待驗證，目標 **v1.2.0**） |
+| 2026-06-20 | **選股 catalog 1.14**（v1.2.0）：台股 2744 檔、排除權證；補回 2330／2382／00981A 等；美股 **1.9**、加密 **1.11** |
 
 ### 1.0.0 上架後、官網 only（不影響 App binary）
 
@@ -255,7 +264,18 @@ git checkout release/1.0.0
 | `85a13c4` | 2026-06-19 | 新增版本 manifest、`.gitignore` 忽略 artifacts |
 | `f2d10a5` | 2026-06-19 | 新增 `VERSIONS.md` |
 
-**v1.1.0 送審**：tag `v1.1.0-build7`、分支 `backup/v1.1.0-build7`、manifest 與 Archive 已備份至 `releases/`（見上方 v1.1.0 備份位置）。
+**v1.1.0 送審**：tag `v1.1.0-build7`、分支 `backup/v1.1.0-build7`、manifest 與 Archive 已備份至 `releases/`（見上方 v1.1.0 備份位置）。**送審前請以含 iOS 18.0 deployment target 的 commit 重新 Archive**（Phase 1 後 binary 最低版本為 18.0）。
+
+---
+
+## 相容性路線圖
+
+| 階段 | 目標 | 版本 | 狀態 |
+|------|------|------|------|
+| Phase 1 | 最低 **iOS 18.0**（18.6 → 18.0） | **v1.1.0** | **已完成**（僅改 deployment target） |
+| Phase 2 | 最低 **iOS 17.0**（18.0 → 17.0） | **v1.2.0** | **進行中**（deployment target 已改；catalog **1.14** 已建；待驗證送審） |
+
+Phase 2：deployment target → 17.0；選股 catalog **tw 1.14**（2744 檔、無權證）、**us 1.9**、**crypto 1.11**。驗證通過後 bump **1.2.0**、打 tag、manifest、Archive；Supabase OTA 需執行 `sync_symbol_catalog_to_db.py`。
 
 ---
 
@@ -301,4 +321,4 @@ releases/
 
 ---
 
-*最後更新：2026-06-19（v1.1.0 build 7 待送審）*
+*最後更新：2026-06-20（Phase 2：最低 iOS 17.0，待驗證 → v1.2.0）*

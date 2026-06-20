@@ -99,11 +99,23 @@ def parse_emerging_csv(content: str) -> list[dict]:
     return _parse_tw_csv_generic(content, symbol_col=2, name_col=3)
 
 
+def _is_warrant(symbol: str, name: str) -> bool:
+    """排除權證（7xxxxx 等）；保留 ETF（00631L / 00981A 等）。"""
+    if len(symbol) == 6 and symbol[0] == "7" and symbol.isalnum():
+        return True
+    warrant_keywords = ("認購", "認售", "權證", "牛證", "熊證", "購01", "購02", "購03", "售01", "售02", "售03")
+    if any(keyword in name for keyword in warrant_keywords):
+        return True
+    return False
+
+
 def _is_valid_tw_symbol(symbol: str, name: str, max_len: int = 6) -> bool:
-    """過濾：保留 4-6 碼英數字台股商品；權證不排除，由資料來源決定。"""
+    """過濾：保留 4-6 碼英數字台股商品；排除權證。"""
     if len(symbol) < 4 or len(symbol) > max_len:
         return False
     if not symbol.isalnum():
+        return False
+    if _is_warrant(symbol, name):
         return False
     return True
 
@@ -261,6 +273,8 @@ TW_ETF_SUPPLEMENT = [
     ("00941", "中信上游半導體"),
     ("00943", "兆豐臺灣晶圓製造"),
     ("00944", "野村臺灣趨勢動能高息"),
+    ("00981A", "主動統一台股增長"),
+    ("00981B", "第一金優選非投債"),
     # 槓桿型正2（第六碼 L）
     ("00631L", "元大台灣50正2"),
     ("00633L", "富邦上証正2"),
@@ -308,57 +322,57 @@ TW_ETF_SUPPLEMENT = [
 ]
 
 
-def build_symbols_tw() -> Optional[dict]:
-    """合併上市、上櫃、興櫃、ETF 補充，去重後排序"""
-    all_items = []
-    symbol_to_name = {}
+def build_symbols_tw(*, catalog_minor: Optional[int] = None) -> Optional[dict]:
+    """合併上市、上櫃、興櫃、ETF 補充，去重後排序（不含權證）。"""
+    symbol_to_name: dict[str, str] = {}
 
-    # 0. 台股 ETF 補充（證交所清單不含含字母代號之 ETF，如 00631L；0050 等也可能不在上市 CSV）
-    for sym, name in TW_ETF_SUPPLEMENT:
-        if sym not in symbol_to_name:
-            symbol_to_name[sym] = name
-    print(f"   ETF 補充: {len(TW_ETF_SUPPLEMENT)} 筆")
+    def merge_items(items: list[dict], *, overwrite: bool = False) -> int:
+        added = 0
+        for item in items:
+            symbol = item["symbol"]
+            name = item["name"]
+            if not _is_valid_tw_symbol(symbol, name):
+                continue
+            if overwrite or symbol not in symbol_to_name:
+                if symbol not in symbol_to_name:
+                    added += 1
+                symbol_to_name[symbol] = name
+        return added
 
-    # 1. 證交所上市全商品（含 ETF、權證與字母代號商品）
-    twse_all = fetch_twse_stock_day_all()
-    for item in twse_all:
-        symbol_to_name[item["symbol"]] = item["name"]
-    all_items.extend(twse_all)
-    print(f"   上市全商品: {len(twse_all)} 筆")
-
-    # 2. 上市公司（補公司簡稱；若同代號存在，保留全商品行情名稱）
+    # 1. 上市公司（主要上市櫃股票來源；含台積電、廣達等）
     listed = fetch_listed()
-    listed_new = [x for x in listed if x["symbol"] not in symbol_to_name]
-    for item in listed_new:
-        symbol_to_name[item["symbol"]] = item["name"]
-    all_items.extend(listed_new)
-    print(f"   上市公司: {len(listed_new)} 筆（新增）")
+    listed_added = merge_items(listed, overwrite=True)
+    print(f"   上市公司: {len(listed)} 筆（新增 {listed_added}）")
 
-    # 3. 上櫃（排除已存在）
+    # 2. 上櫃
     otc = fetch_otc()
-    otc_new = [x for x in otc if x["symbol"] not in symbol_to_name]
-    for item in otc_new:
-        symbol_to_name[item["symbol"]] = item["name"]
-    all_items.extend(otc_new)
-    print(f"   上櫃: {len(otc_new)} 筆（新增）")
+    otc_added = merge_items(otc)
+    print(f"   上櫃: {len(otc)} 筆（新增 {otc_added}）")
 
-    # 4. 興櫃（排除已存在）
+    # 3. 興櫃
     emerging = fetch_emerging()
-    emerging_new = [x for x in emerging if x["symbol"] not in symbol_to_name]
-    for item in emerging_new:
-        symbol_to_name[item["symbol"]] = item["name"]
-    all_items.extend(emerging_new)
-    print(f"   興櫃: {len(emerging_new)} 筆（新增）")
+    emerging_added = merge_items(emerging)
+    print(f"   興櫃: {len(emerging)} 筆（新增 {emerging_added}）")
+
+    # 4. ETF 補充（含字母代號 ETF）
+    etf_items = [{"symbol": sym, "name": name} for sym, name in TW_ETF_SUPPLEMENT]
+    etf_added = merge_items(etf_items, overwrite=True)
+    print(f"   ETF 補充: {len(TW_ETF_SUPPLEMENT)} 筆（新增 {etf_added}）")
+
+    # 5. 證交所上市全商品（補 ETF / 字母商品；已濾權證）
+    twse_all = fetch_twse_stock_day_all()
+    twse_added = merge_items(twse_all)
+    print(f"   上市全商品: {len(twse_all)} 筆（新增 {twse_added}，已排除權證）")
 
     if not symbol_to_name:
         print("❌ 台股：無法取得任何資料")
         return None
 
-    # 合併並去重（以 symbol 為 key，後面的覆蓋前面的）
     merged = [{"symbol": s, "name": n} for s, n in symbol_to_name.items()]
     merged.sort(key=lambda x: (x["symbol"].zfill(6), x["symbol"]))
 
-    epoch, minor = read_catalog_meta("symbols_tw.json")
+    epoch, _minor = read_catalog_meta("symbols_tw.json")
+    minor = catalog_minor if catalog_minor is not None else _minor
     return catalog_document(
         epoch=epoch,
         minor=minor,
@@ -371,8 +385,8 @@ def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     output_path = OUTPUT_DIR / "symbols_tw.json"
-    print("台股：正在取得上市、上櫃、興櫃...")
-    data = build_symbols_tw()
+    print("台股：正在取得上市、上櫃、興櫃（不含權證）...")
+    data = build_symbols_tw(catalog_minor=14)
     if data is None:
         return 1
 
