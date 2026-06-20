@@ -1,0 +1,33 @@
+Walleaf App Store Release Snapshot
+==================================
+
+Version:        1.1.0 (7)
+Git tag:        v1.1.0-build7
+Git commit:     36703d6
+Git branch:     backup/v1.1.0-build7
+Bundle ID:      com.EggHsu.Walleaf
+Apple ID:       6778330994
+Team ID:        64F82QUW6Z
+
+Archive source: Snapvest 2026-6-19, 1.25 PM.xcarchive
+Archive date:   2026-06-19 (pre-submission backup)
+Commit date:    2026-06-19 — Prepare v1.1.0 (build 7) for App Store submission
+
+Restore source code:
+  git fetch --tags
+  git checkout v1.1.0-build7
+
+Restore from backup branch:
+  git checkout backup/v1.1.0-build7
+
+Restore pre-blur baseline (optional):
+  git checkout 061901
+
+Binary backup (local, not in git):
+  releases/artifacts/Walleaf-1.1.0-build7.xcarchive
+  To export IPA: Xcode → Organizer → Archives → Export
+
+Notes:
+  Full v1.1.0 feature set: free-limit blur, chart hold-to-scrub, share improvements,
+  trade form UX, Paywall 7-day trial UI.
+  Yearly 7-day trial requires App Store Connect introductory offer configuration.

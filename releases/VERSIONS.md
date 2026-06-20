@@ -25,6 +25,7 @@
 | **Git Tag** | `v1.1.0-build7` |
 | **Git Commit** | `36703d6` |
 | **備份分支** | `backup/v1.1.0-build7` |
+| **Team ID** | `64F82QUW6Z` |
 | **維護分支** | `main`（`release/1.0.0` 保留 1.0.0 hotfix 用） |
 | **Bundle ID** | `com.EggHsu.Walleaf` |
 | **App Store Apple ID** | `6778330994` |
@@ -87,9 +88,24 @@
 |------|------|
 | 原始碼（tag） | `git checkout v1.1.0-build7` |
 | 備份分支 | `git checkout backup/v1.1.0-build7` |
+| 詳細 manifest | [`releases/Walleaf-1.1.0-build7.manifest.txt`](Walleaf-1.1.0-build7.manifest.txt) |
+| Xcode Archive（本機） | `releases/artifacts/Walleaf-1.1.0-build7.xcarchive` |
+| Xcode Organizer 原始檔 | `~/Library/Developer/Xcode/Archives/2026-06-19/Snapvest 2026-6-19, 1.25 PM.xcarchive` |
 | **061901 baseline** | `git checkout 061901` |
 | 1.0.0 回溯 | `git checkout v1.0.0-build6` |
+| GitHub Tag | https://github.com/david04129/Snapvest/releases/tag/v1.1.0-build7 |
 | App Store Connect | 送審建置版本 **1.1.0 (7)** |
+
+#### 還原方式
+
+```bash
+git fetch --tags
+git checkout v1.1.0-build7
+# 或
+git checkout backup/v1.1.0-build7
+```
+
+從 Archive 重裝 / 重送：Xcode → Organizer → 開啟 `releases/artifacts/Walleaf-1.1.0-build7.xcarchive`
 
 #### App Store 正式版紀錄
 
@@ -239,7 +255,7 @@ git checkout release/1.0.0
 | `85a13c4` | 2026-06-19 | 新增版本 manifest、`.gitignore` 忽略 artifacts |
 | `f2d10a5` | 2026-06-19 | 新增 `VERSIONS.md` |
 
-**v1.1.0 送審**：tag `v1.1.0-build7`、分支 `backup/v1.1.0-build7`、Archive 備份至 `releases/artifacts/`（可選）。
+**v1.1.0 送審**：tag `v1.1.0-build7`、分支 `backup/v1.1.0-build7`、manifest 與 Archive 已備份至 `releases/`（見上方 v1.1.0 備份位置）。
 
 ---
 
@@ -259,7 +275,8 @@ releases/
 ├── VERSIONS.md                          ← 本文件（版本總表）
 ├── Walleaf-X.Y.Z-buildN.manifest.txt    ← 單版詳細 manifest（可選）
 └── artifacts/                           ← 本機二進位備份（不進 git）
-    └── Walleaf-1.0.0-build6.xcarchive
+    ├── Walleaf-1.0.0-build6.xcarchive
+    └── Walleaf-1.1.0-build7.xcarchive
 ```
 
 ---
