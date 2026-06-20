@@ -24,7 +24,7 @@
 | **狀態** | **待送審**（正式 baseline；`build8` 為預 release，已由 **build9** 取代） |
 | **日期** | 2026-06-21 |
 | **Git Tag** | `v1.2.0-build9` |
-| **Git Commit** | （commit 後填入） |
+| **Git Commit** | `61a6cee` |
 | **備份分支** | `backup/v1.2.0-build9` |
 | **最低 iOS** | **18.6**（恢復 Phase 1 前設定；iOS 17 **不支援**） |
 | **Symbol catalog** | 台股 **1.15**（3258 檔，Fugle 可交易清單）；先前 **1.14** 為 2744 檔 |
