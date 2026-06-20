@@ -1,7 +1,7 @@
 {
   "epoch": 1,
-  "minor": 11,
-  "version": 11,
+  "minor": 12,
+  "version": 12,
   "updatedAt": "2026-06-20",
   "items": [
     {
@@ -363,6 +363,11 @@
       "symbol": "bnb",
       "name": "BNB",
       "coingeckoId": "binancecoin"
+    },
+    {
+      "symbol": "bnkr",
+      "name": "BankrCoin",
+      "coingeckoId": "bankercoin-2"
     },
     {
       "symbol": "bonk",
@@ -908,11 +913,6 @@
       "symbol": "gt",
       "name": "Gate",
       "coingeckoId": "gatechain-token"
-    },
-    {
-      "symbol": "gua",
-      "name": "Superfortune",
-      "coingeckoId": "superfortune"
     },
     {
       "symbol": "gusd",
@@ -1670,6 +1670,11 @@
       "coingeckoId": "raydium"
     },
     {
+      "symbol": "re",
+      "name": "RE",
+      "coingeckoId": "re"
+    },
+    {
       "symbol": "real",
       "name": "RealLink",
       "coingeckoId": "reallink"
@@ -1708,11 +1713,6 @@
       "symbol": "rlusd",
       "name": "Ripple USD",
       "coingeckoId": "ripple-usd"
-    },
-    {
-      "symbol": "robo",
-      "name": "Fabric Protocol",
-      "coingeckoId": "robo-token-2"
     },
     {
       "symbol": "ron",
@@ -2090,6 +2090,11 @@
       "coingeckoId": "unitas"
     },
     {
+      "symbol": "upump",
+      "name": "Unit Pump",
+      "coingeckoId": "unit-pump"
+    },
+    {
       "symbol": "usat",
       "name": "USAT",
       "coingeckoId": "usa"
@@ -2313,11 +2318,6 @@
       "symbol": "wm",
       "name": "WrappedM by M0",
       "coingeckoId": "wrappedm-by-m0"
-    },
-    {
-      "symbol": "wojak",
-      "name": "wojak",
-      "coingeckoId": "wojak-5"
     },
     {
       "symbol": "would",
