@@ -9,7 +9,7 @@
 
 | 版本 | Build | 狀態 | Git Tag / 備份 | 正式上架 |
 |------|-------|------|----------------|----------|
-| **1.2.0** | （待 bump） | **開發中** | `backup/v1.2.0-20260620` | — |
+| **1.2.0** | 8 | **待送審** | `v1.2.0-build8` / `backup/v1.2.0-build8` | — |
 | 1.1.0 | 7 | **待送審** | `v1.1.0-build7` | — |
 | 1.0.0 | 6 | **已上架** | `v1.0.0-build6` | 2026-06（App Store 已可發布） |
 
@@ -21,11 +21,12 @@
 
 | 項目 | 內容 |
 |------|------|
-| **狀態** | **開發中**（Xcode 仍 **1.1.0 (7)**，送審前需 bump Marketing / Build） |
+| **狀態** | **待送審** |
 | **日期** | 2026-06-20 |
-| **Git Commit** | `4e9070a` |
-| **備份分支** | `backup/v1.2.0-20260620` |
-| **最低 iOS** | **18.0**（Phase 2 降 iOS 17 **已取消**） |
+| **Git Tag** | `v1.2.0-build8` |
+| **Git Commit** | `a6cf251` |
+| **備份分支** | `backup/v1.2.0-build8` |
+| **最低 iOS** | **18.6**（恢復 Phase 1 前設定；iOS 17 **不支援**） |
 | **Symbol catalog** | 台股 **1.15**（3258 檔，Fugle 可交易清單）；先前 **1.14** 為 2744 檔 |
 
 #### 改動摘要
@@ -35,7 +36,8 @@
 - **匯入教學**：成交明細欄位改「代號或股票名稱」；持有倉位示意改中文名稱範例（`TransactionImportTutorialView`）。
 - **其他資產備註**：詳情頁備註列恆顯、可編輯（`ManualAssetDetailView` + `EditManualAssetNotesSheet`）。
 - **前收信任**：`DailyReferenceCloseResolver` 信任 bootstrap 來源 **`fugle`**；`SupabasePriceService` 解析 Edge `previousPriceSource`。
-- **Deployment target**：App target **17.0 → 18.0**（放棄 iOS 17；Swift 6 × iOS 17 runtime 不相容）。
+- **Deployment target**：App target **18.6**（恢復原設定；放棄 iOS 17；Swift 6 × iOS 17 runtime 不相容）。
+- **股價合併**：移除 `PriceSnapshotMerger` 單日 100% 價差防呆，雲端修正可覆寫本機錯價。
 
 **後端 / Edge / 排程**
 - **即時補價** `fetch-or-create-price`：台股 **Fugle `intraday/quote`（含 `previousClose`）→ Yahoo 5d 備援**；新增 `_shared/fugleQuote.ts`。
@@ -50,7 +52,7 @@
 - **GitHub Actions** `monthly-symbols-update.yml`：需 **`FUGLE_API_KEY`**；手動 Run 可勾 **skip_db_sync**。
 
 **文件**
-- `ENGINEERING_HANDBOOK.md`、`README.md`（iOS 18.0）、`scripts/README.md`、`docs/SYMBOL_CATALOG_UPDATE_GUIDE.md`。
+- `ENGINEERING_HANDBOOK.md`、`README.md`（iOS 18.6）、`scripts/README.md`、`docs/SYMBOL_CATALOG_UPDATE_GUIDE.md`。
 
 #### 部署提醒（後端）
 
@@ -78,15 +80,19 @@ cd backend/scripts && python3 backfill_tw_previous_close_fugle.py --yahoo-only
 
 | 類型 | 路徑 |
 |------|------|
-| 備份分支 | `git checkout backup/v1.2.0-20260620` |
-| 詳細 manifest | [`releases/Walleaf-1.2.0.manifest.txt`](Walleaf-1.2.0.manifest.txt) |
+| 備份分支 | `git checkout backup/v1.2.0-build8` |
+| Git tag | `git checkout v1.2.0-build8` |
+| 詳細 manifest | [`releases/Walleaf-1.2.0-build8.manifest.txt`](Walleaf-1.2.0-build8.manifest.txt) |
+| 開發快照 manifest | [`releases/Walleaf-1.2.0.manifest.txt`](Walleaf-1.2.0.manifest.txt) |
 | 1.1.0 送審 baseline | `git checkout v1.1.0-build7` |
 
 #### 還原方式
 
 ```bash
-git fetch origin
-git checkout backup/v1.2.0-20260620
+git fetch origin --tags
+git checkout v1.2.0-build8
+# 或
+git checkout backup/v1.2.0-build8
 ```
 
 ---

@@ -8,23 +8,15 @@
 import Foundation
 
 enum PriceSnapshotMerger {
-    /// 單日允許最大變動比例（100%）
-    static let maxDailyChangeRatio: Decimal = 1
-
-    /// 將遠端快照與本機既有快照合併（驗證後更新 current，保留 trusted previous）
+    /// 將遠端快照與本機既有快照合併（更新 current，保留 trusted previous）
     static func merge(incoming: AssetPriceSnapshot, existing: AssetPriceSnapshot?) -> AssetPriceSnapshot {
         guard let candidate = incoming.currentPrice ?? incoming.previousPrice else {
             if let existing, existing.hasValidPrice { return existing }
             return incoming
         }
 
-        if let existing, existing.hasValidPrice, let reference = existing.displayPrice {
-            guard isValidCandidate(candidate, referencePrice: reference) else {
-                #if DEBUG
-                print("[PriceSnapshotMerger] rejected \(incoming.assetType.rawValue)/\(incoming.symbol): candidate=\(candidate) ref=\(reference)")
-                #endif
-                return existing
-            }
+        if let existing, existing.hasValidPrice {
+            guard candidate > 0 else { return existing }
             return buildAccepted(
                 incoming: incoming,
                 existing: existing,
@@ -35,17 +27,6 @@ enum PriceSnapshotMerger {
         guard candidate > 0 else {
             if let existing, existing.hasValidPrice { return existing }
             return incoming
-        }
-
-        if let incomingPrevious = incoming.previousPrice,
-           incomingPrevious > 0,
-           incoming.currentPrice != nil,
-           !isValidMutation(from: incomingPrevious, to: candidate) {
-            #if DEBUG
-            print("[PriceSnapshotMerger] rejected first ingest spike \(incoming.symbol)")
-            #endif
-            if let existing, existing.hasValidPrice { return existing }
-            return snapshotUsingPreviousOnly(from: incoming, previous: incomingPrevious)
         }
 
         return normalizedFirstAccept(incoming: incoming, candidate: candidate)
@@ -73,25 +54,6 @@ enum PriceSnapshotMerger {
         existing: AssetPriceSnapshot?
     ) -> AssetPriceSnapshot {
         merge(incoming: incoming, existing: existing)
-    }
-
-    // MARK: - Validation
-
-    private static func isValidCandidate(_ candidate: Decimal, referencePrice: Decimal) -> Bool {
-        guard candidate > 0 else { return false }
-        guard referencePrice > 0 else { return true }
-        return isValidMutation(from: referencePrice, to: candidate)
-    }
-
-    private static func isValidMutation(from reference: Decimal, to candidate: Decimal) -> Bool {
-        guard reference > 0, candidate > 0 else { return false }
-        return changeRatio(from: reference, to: candidate) <= maxDailyChangeRatio
-    }
-
-    private static func changeRatio(from reference: Decimal, to candidate: Decimal) -> Decimal {
-        let diff = candidate - reference
-        let absDiff = diff < 0 ? -diff : diff
-        return absDiff / reference
     }
 
     // MARK: - Builders
@@ -183,24 +145,6 @@ enum PriceSnapshotMerger {
             previousUpdatedAt: keepsPrevious ? incoming.previousUpdatedAt : nil,
             currentPriceSource: incoming.currentPriceSource,
             previousPriceSource: keepsPrevious ? incoming.previousPriceSource : nil,
-            priceKind: incoming.priceKind
-        )
-    }
-
-    private static func snapshotUsingPreviousOnly(from incoming: AssetPriceSnapshot, previous: Decimal) -> AssetPriceSnapshot {
-        AssetPriceSnapshot(
-            assetType: incoming.assetType,
-            symbol: incoming.symbol,
-            name: incoming.name,
-            currency: incoming.currency,
-            currentPrice: previous,
-            previousPrice: nil,
-            currentCloseDate: incoming.previousCloseDate ?? incoming.previousUpdatedAt,
-            currentUpdatedAt: incoming.currentUpdatedAt ?? Date(),
-            previousCloseDate: nil,
-            previousUpdatedAt: nil,
-            currentPriceSource: incoming.currentPriceSource,
-            previousPriceSource: nil,
             priceKind: incoming.priceKind
         )
     }

@@ -346,4 +346,34 @@ struct PriceSnapshotMergerTests {
         #expect(merged.previousCloseDate == TradingDayCalendar.date(fromKey: "2026-06-05", assetType: .stockUS))
         #expect(merged.previousPriceSource == DailyReferenceCloseResolver.historyPreviousCloseSource)
     }
+
+    @Test func merge_acceptsLargeRemoteCorrectionOverStaleLocal() {
+        let existing = AssetPriceSnapshot(
+            assetType: .stockTW,
+            symbol: "6669",
+            currency: .TWD,
+            currentPrice: 1603,
+            previousPrice: 1603,
+            currentCloseDate: TradingDayCalendar.date(fromKey: "2026-06-10", assetType: .stockTW),
+            previousCloseDate: TradingDayCalendar.date(fromKey: "2026-06-09", assetType: .stockTW),
+            previousPriceSource: "yahoo"
+        )
+        let incoming = AssetPriceSnapshot(
+            assetType: .stockTW,
+            symbol: "6669",
+            currency: .TWD,
+            currentPrice: 5080,
+            previousPrice: 5080,
+            currentCloseDate: TradingDayCalendar.date(fromKey: "2026-06-20", assetType: .stockTW),
+            previousCloseDate: TradingDayCalendar.date(fromKey: "2026-06-19", assetType: .stockTW),
+            currentPriceSource: "database",
+            previousPriceSource: "fugle"
+        )
+
+        let merged = PriceSnapshotMerger.merge(incoming: incoming, existing: existing)
+
+        #expect(merged.currentPrice == 5080)
+        #expect(merged.previousPrice == 1603)
+        #expect(merged.previousPriceSource == "yahoo")
+    }
 }
