@@ -121,21 +121,9 @@ struct AddAccountView: View {
     }
 
     private func attemptOpenManualAssetForm() {
-        Task {
-            do {
-                let snapshot = try await PlusFeatureGate.loadSnapshot(userId: userId)
-                guard PlusFeatureGate.shouldBypassLimits(isPlusActive: subscriptionManager.isPlusActive)
-                        || snapshot.activeAccountCount < PlusFreeLimits.maxAccounts else {
-                    gateAlertMessage = PlusFeatureGate.message(for: .accountLimitReached)
-                    return
-                }
-                resetForm()
-                withAnimation(.easeInOut(duration: 0.22)) {
-                    screen = .manualAsset
-                }
-            } catch {
-                gateAlertMessage = "無法驗證 Free 上限：\(error.localizedDescription)"
-            }
+        resetForm()
+        withAnimation(.easeInOut(duration: 0.22)) {
+            screen = .manualAsset
         }
     }
 

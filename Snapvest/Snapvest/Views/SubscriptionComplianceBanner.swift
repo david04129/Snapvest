@@ -45,13 +45,6 @@ struct SubscriptionComplianceBanner: View {
     }
 
     private var complianceMessage: String {
-        if snapshot.distinctHoldingCount > PlusFreeLimits.maxDistinctHoldings,
-           snapshot.holdingAssetTypes.count > 1 {
-            return "你目前有 \(snapshot.distinctHoldingCount) 檔持股且跨多種市場。只能對現有持股「全數賣出」，無法買入或匯入，直到恢復 Free 上限內或訂閱 Plus。"
-        }
-        if snapshot.distinctHoldingCount > PlusFreeLimits.maxDistinctHoldings {
-            return "你目前有 \(snapshot.distinctHoldingCount) 檔持股（Free 上限 \(PlusFreeLimits.maxDistinctHoldings) 檔）。只能全數賣出清倉，無法買入，直到恢復合規或訂閱 Plus。"
-        }
-        return "持股跨多種投資市場。只能全數賣出清倉，無法買入，直到只剩單一市場或訂閱 Plus。"
+        "你目前有 \(snapshot.distinctHoldingCount) 檔持股（Free 上限 \(PlusFreeLimits.maxDistinctHoldings) 檔）。只能全數賣出清倉，無法買入，直到恢復合規或訂閱 Plus。"
     }
 }

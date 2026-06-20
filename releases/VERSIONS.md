@@ -9,7 +9,7 @@
 
 | 版本 | Build | 狀態 | Git Tag / 備份 | 正式上架 |
 |------|-------|------|----------------|----------|
-| **1.2.0** | 8 | **待送審** | `v1.2.0-build8` / `backup/v1.2.0-build8` | — |
+| **1.2.0** | 9 | **待送審** | `v1.2.0-build9` / `backup/v1.2.0-build9` | — |
 | 1.1.0 | 7 | **待送審** | `v1.1.0-build7` | — |
 | 1.0.0 | 6 | **已上架** | `v1.0.0-build6` | 2026-06（App Store 已可發布） |
 
@@ -21,11 +21,11 @@
 
 | 項目 | 內容 |
 |------|------|
-| **狀態** | **待送審** |
-| **日期** | 2026-06-20 |
-| **Git Tag** | `v1.2.0-build8` |
-| **Git Commit** | `3ddd889` |
-| **備份分支** | `backup/v1.2.0-build8` |
+| **狀態** | **待送審**（正式 baseline；`build8` 為預 release，已由 **build9** 取代） |
+| **日期** | 2026-06-21 |
+| **Git Tag** | `v1.2.0-build9` |
+| **Git Commit** | （commit 後填入） |
+| **備份分支** | `backup/v1.2.0-build9` |
 | **最低 iOS** | **18.6**（恢復 Phase 1 前設定；iOS 17 **不支援**） |
 | **Symbol catalog** | 台股 **1.15**（3258 檔，Fugle 可交易清單）；先前 **1.14** 為 2744 檔 |
 
@@ -38,6 +38,13 @@
 - **前收信任**：`DailyReferenceCloseResolver` 信任 bootstrap 來源 **`fugle`**；`SupabasePriceService` 解析 Edge `previousPriceSource`。
 - **Deployment target**：App target **18.6**（恢復原設定；放棄 iOS 17；Swift 6 × iOS 17 runtime 不相容）。
 - **股價合併**：移除 `PriceSnapshotMerger` 單日 100% 價差防呆，雲端修正可覆寫本機錯價。
+- **Free 方案放寬**（`PlusFeatureGate` / `SubscriptionComplianceState`）：
+  - 帳戶／其他資產：**無上限**（移除原 3 個限制）。
+  - distinct 持股：**3 → 5 檔**（可加碼既有標的；第 6 檔需 Plus）。
+  - 投資帳戶與持股：**可跨台股・美股・加密**（移除單一市場限制與跨市場合規模式）。
+  - 合規模式僅在 **>5 檔** 持股時觸發（全數賣出清倉、無法買入）。
+  - Paywall 對照表文案同步（`WalleafPlusPaywallL10n`）。
+- **更多頁**：兌換優惠碼移至「關於」下方；新增「追蹤FB粉專」；關於版本讀取 `CFBundleShortVersionString`（1.2.0）。
 
 **後端 / Edge / 排程**
 - **即時補價** `fetch-or-create-price`：台股 **Fugle `intraday/quote`（含 `previousClose`）→ Yahoo 5d 備援**；新增 `_shared/fugleQuote.ts`。
@@ -80,9 +87,10 @@ cd backend/scripts && python3 backfill_tw_previous_close_fugle.py --yahoo-only
 
 | 類型 | 路徑 |
 |------|------|
-| 備份分支 | `git checkout backup/v1.2.0-build8` |
-| Git tag | `git checkout v1.2.0-build8` |
-| 詳細 manifest | [`releases/Walleaf-1.2.0-build8.manifest.txt`](Walleaf-1.2.0-build8.manifest.txt) |
+| 備份分支 | `git checkout backup/v1.2.0-build9` |
+| Git tag | `git checkout v1.2.0-build9` |
+| 詳細 manifest | [`releases/Walleaf-1.2.0-build9.manifest.txt`](Walleaf-1.2.0-build9.manifest.txt) |
+| 預 release（已取代） | `v1.2.0-build8` / [`Walleaf-1.2.0-build8.manifest.txt`](Walleaf-1.2.0-build8.manifest.txt) |
 | 開發快照 manifest | [`releases/Walleaf-1.2.0.manifest.txt`](Walleaf-1.2.0.manifest.txt) |
 | 1.1.0 送審 baseline | `git checkout v1.1.0-build7` |
 
@@ -90,9 +98,9 @@ cd backend/scripts && python3 backfill_tw_previous_close_fugle.py --yahoo-only
 
 ```bash
 git fetch origin --tags
-git checkout v1.2.0-build8
+git checkout v1.2.0-build9
 # 或
-git checkout backup/v1.2.0-build8
+git checkout backup/v1.2.0-build9
 ```
 
 ---

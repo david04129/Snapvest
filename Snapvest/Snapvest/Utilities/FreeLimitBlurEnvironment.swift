@@ -17,9 +17,9 @@ enum FreeLimitBlurPolicy {
 }
 
 extension PortfolioLimitSnapshot {
-    /// 帳戶或持股任一超出 Free 上限
+    /// 持股超出 Free 上限
     var isOverFreeLimits: Bool {
-        isOverFreeAccountLimit || isOverFreeHoldingLimits
+        isOverFreeHoldingLimits
     }
 }
 

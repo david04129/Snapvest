@@ -1,0 +1,44 @@
+Walleaf App Store Release Snapshot
+==================================
+
+Version:        1.2.0 (9)
+Git tag:        v1.2.0-build9
+Git commit:     (pending)
+Git branch:     backup/v1.2.0-build9
+Bundle ID:      com.EggHsu.Walleaf
+Minimum iOS:    18.6
+Team ID:        64F82QUW6Z
+
+Commit date:    2026-06-21 — v1.2.0 (build 9) 正式送審 baseline
+
+Note:
+  v1.2.0-build8 為預 release（缺 Free 放寬與更多頁調整），已由 build9 取代。
+
+Restore source code:
+  git fetch --tags
+  git checkout v1.2.0-build9
+
+Restore from backup branch:
+  git checkout backup/v1.2.0-build9
+
+Key changes (v1.2.0 build 9):
+  - TW price: Fugle primary (fetch-or-create-price + daily_price_update previousClose)
+  - TW symbols catalog 1.15 (3258 items, Fugle tickers TWSE+TPEx)
+  - Import: TW symbol column accepts ticker or Chinese short name
+  - Manual asset notes editing; import tutorial copy updates
+  - Remove PriceSnapshotMerger 100% daily price delta guard
+  - Free tier: unlimited accounts/assets; up to 5 holdings; cross-market TW/US/crypto
+  - Settings: redeem code under About; Facebook fan page link; version 1.2.0
+  - Minimum iOS 18.6; Marketing 1.2.0 / Build 9
+
+Plus-only (unchanged):
+  - Unlimited distinct holdings
+  - Backup & restore, bulk import, Face ID privacy lock
+
+Backend deploy:
+  supabase secrets set FUGLE_API_KEY=...
+  supabase functions deploy fetch-or-create-price
+  Apply migration 026_tracked_symbols_summary.sql
+
+Related docs:
+  releases/VERSIONS.md (v1.2.0 section)

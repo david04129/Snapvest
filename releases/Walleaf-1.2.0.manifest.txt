@@ -1,35 +1,23 @@
 Walleaf v1.2.0 Release Snapshot
 ================================
 
-Version:        1.2.0 (8)
-Git tag:        v1.2.0-build8
-Git branch:     backup/v1.2.0-build8
-Git commit:     3ddd889
+Version:        1.2.0 (9)
+Git tag:        v1.2.0-build9
+Git branch:     backup/v1.2.0-build9
+Git commit:     (pending)
 Bundle ID:      com.EggHsu.Walleaf
 Minimum iOS:    18.6
 
 Restore source code:
   git fetch origin --tags
-  git checkout v1.2.0-build8
+  git checkout v1.2.0-build9
 
-Key changes (2026-06-20):
-  - TW price: Fugle primary (fetch-or-create-price + daily_price_update previousClose)
-  - TW symbols catalog 1.15 (3258 items, Fugle tickers TWSE+TPEx)
-  - Import: TW symbol column accepts ticker or Chinese short name
-  - Manual asset notes editing; import tutorial copy updates
-  - Remove PriceSnapshotMerger 100% price delta guard
-  - Minimum iOS 18.6; Marketing 1.2.0 / Build 8
-  - GitHub Actions Monthly Symbols Update requires FUGLE_API_KEY
-  - Migration 026_tracked_symbols_summary.sql
-
-Backend deploy:
-  supabase secrets set FUGLE_API_KEY=...
-  supabase functions deploy fetch-or-create-price
-  Apply migration 026_tracked_symbols_summary.sql
-
-Symbols backfill (one-off):
-  cd backend/scripts && python3 backfill_tw_previous_close_fugle.py --yahoo-only
+Key changes (2026-06-21):
+  - Fugle TW pricing, symbols 1.15, import enhancements
+  - Free: unlimited accounts, 5 holdings, cross-market
+  - PriceSnapshotMerger guard removed; Settings FB link
+  - Build 9 = canonical v1.2.0 (replaces build8 pre-release)
 
 Related docs:
-  releases/VERSIONS.md (v1.2.0 section)
-  releases/Walleaf-1.2.0-build8.manifest.txt
+  releases/VERSIONS.md
+  releases/Walleaf-1.2.0-build9.manifest.txt

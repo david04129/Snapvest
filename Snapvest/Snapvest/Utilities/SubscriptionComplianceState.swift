@@ -8,8 +8,7 @@
 import Foundation
 
 enum PlusFreeLimits {
-    static let maxAccounts = 3
-    static let maxDistinctHoldings = 3
+    static let maxDistinctHoldings = 5
 }
 
 struct PortfolioLimitSnapshot: Equatable {
@@ -19,14 +18,9 @@ struct PortfolioLimitSnapshot: Equatable {
     let holdingAssetTypes: Set<AssetType>
     let holdingKeys: Set<String>
 
-    var isOverFreeAccountLimit: Bool {
-        activeAccountCount > PlusFreeLimits.maxAccounts
-    }
-
-    /// 持股超過 Free 上限，或跨多種投資市場
+    /// 持股超過 Free 上限
     var isOverFreeHoldingLimits: Bool {
         distinctHoldingCount > PlusFreeLimits.maxDistinctHoldings
-            || holdingAssetTypes.count > 1
     }
 
     var requiresFullLiquidationSell: Bool {

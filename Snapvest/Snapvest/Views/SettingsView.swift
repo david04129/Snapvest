@@ -121,17 +121,22 @@ struct SettingsView: View {
                         Divider()
                             .padding(.leading, 56)
 
-                        contactSupportRow
-
-                        Divider()
-                            .padding(.leading, 56)
-
                         redeemOfferCodeRow
 
                         Divider()
                             .padding(.leading, 56)
 
+                        contactSupportRow
+
+                        Divider()
+                            .padding(.leading, 56)
+
                         fiveStarReviewRow
+
+                        Divider()
+                            .padding(.leading, 56)
+
+                        facebookFanPageRow
                     }
                 }
                 .padding(20)
@@ -839,6 +844,30 @@ struct SettingsView: View {
         .buttonStyle(.plain)
     }
 
+    private var facebookFanPageRow: some View {
+        Button {
+            openURL(AppExternalLinks.facebookFanPageURL)
+        } label: {
+            HStack(spacing: 12) {
+                FacebookBrandIcon()
+
+                Text("追蹤FB粉專")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.primaryText)
+
+                Spacer(minLength: 12)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.tertiaryText)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 13)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
     private var redeemOfferCodeRow: some View {
         Button {
             AppExternalActions.presentOfferCodeRedemptionSheet()
@@ -855,7 +884,7 @@ struct SettingsView: View {
     }
 
     private var appVersionText: String {
-        "1.1.0"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.2.0"
     }
 
     private func openSupportEmail() {
@@ -1362,6 +1391,19 @@ private enum SettingsComingSoonFeature: Identifiable {
     }
 }
 
+private struct FacebookBrandIcon: View {
+    private static let brandBlue = Color(red: 24 / 255, green: 119 / 255, blue: 242 / 255)
+
+    var body: some View {
+        Text("f")
+            .font(.system(size: 18, weight: .bold, design: .rounded))
+            .foregroundColor(.white)
+            .frame(width: 30, height: 30)
+            .background(Self.brandBlue)
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+    }
+}
+
 private struct SettingsPillOption: View {
     let title: String
     let isSelected: Bool
@@ -1499,6 +1541,7 @@ enum AppExternalLinks {
     static let termsURL = URL(string: "https://walleafapp.com/terms/")!
     static let disclaimerURL = URL(string: "https://walleafapp.com/disclaimer/")!
     static let appStoreWriteReviewURL = URL(string: "https://apps.apple.com/app/id6778330994?action=write-review")!
+    static let facebookFanPageURL = URL(string: "https://www.facebook.com/share/1AyG1jZt9U/?mibextid=wwXIfr")!
 
     static func supportEmailURL(subject: String = "Walleaf 使用問題") -> URL? {
         let encodedSubject = subject.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? subject

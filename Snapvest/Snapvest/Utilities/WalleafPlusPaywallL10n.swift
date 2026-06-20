@@ -107,9 +107,9 @@ enum WalleafPlusPaywallL10n {
     static var rowImport: String { t("批量匯入", "Bulk Import") }
     static var rowFaceID: String { t("Face ID 隱私鎖", "Face ID Lock") }
 
-    static var freeAccounts: String { t("最多 3 個", "Up to 3") }
-    static var freeHoldings: String { t("最多 3 檔", "Up to 3") }
-    static var freeMarkets: String { t("僅一種", "One market") }
+    static var freeAccounts: String { t("無上限", "Unlimited") }
+    static var freeHoldings: String { t("最多 5 檔", "Up to 5") }
+    static var freeMarkets: String { t("台股・美股・加密", "TW · US · Crypto") }
     static var plusUnlimited: String { t("無上限", "Unlimited") }
     static var plusMarkets: String { t("台股・美股・加密", "TW · US · Crypto") }
     static var included: String { "✓" }

@@ -9,10 +9,7 @@ import Foundation
 
 enum PlusGateBlockReason: Equatable {
     case plusFeatureRequired
-    case accountLimitReached
-    case singleInvestmentMarketRequired
     case holdingLimitReached
-    case singleHoldingMarketRequired
     case complianceModeNoBuy
 }
 
@@ -57,18 +54,9 @@ enum PlusFeatureGate {
         snapshot: PortfolioLimitSnapshot,
         isPlusActive: Bool
     ) -> PlusGateDecision {
+        _ = accountType
+        _ = snapshot
         guard !shouldBypassLimits(isPlusActive: isPlusActive) else { return .allowed }
-
-        if snapshot.activeAccountCount >= PlusFreeLimits.maxAccounts {
-            return .blocked(.accountLimitReached)
-        }
-
-        if accountType.category == .investment,
-           !snapshot.investmentAccountTypes.isEmpty,
-           !snapshot.investmentAccountTypes.contains(accountType) {
-            return .blocked(.singleInvestmentMarketRequired)
-        }
-
         return .allowed
     }
 
@@ -87,11 +75,6 @@ enum PlusFeatureGate {
         let holdingKey = SubscriptionComplianceState.holdingKey(assetType: assetType, symbol: symbol)
         let isExistingHolding = snapshot.holdingKeys.contains(holdingKey)
 
-        if !snapshot.holdingAssetTypes.isEmpty,
-           !snapshot.holdingAssetTypes.contains(assetType) {
-            return .blocked(.singleHoldingMarketRequired)
-        }
-
         if !isExistingHolding,
            snapshot.distinctHoldingCount >= PlusFreeLimits.maxDistinctHoldings {
             return .blocked(.holdingLimitReached)
@@ -105,16 +88,11 @@ enum PlusFeatureGate {
         snapshot: PortfolioLimitSnapshot,
         isPlusActive: Bool
     ) -> PlusGateDecision {
+        _ = assetType
         guard !shouldBypassLimits(isPlusActive: isPlusActive) else { return .allowed }
 
         if snapshot.isOverFreeHoldingLimits {
             return .blocked(.complianceModeNoBuy)
-        }
-
-        if let assetType,
-           !snapshot.holdingAssetTypes.isEmpty,
-           !snapshot.holdingAssetTypes.contains(assetType) {
-            return .blocked(.singleHoldingMarketRequired)
         }
 
         return .allowed
@@ -142,16 +120,10 @@ enum PlusFeatureGate {
         switch reason {
         case .plusFeatureRequired:
             return "此功能需要 Walleaf Plus。"
-        case .accountLimitReached:
-            return "Free 方案最多 \(PlusFreeLimits.maxAccounts) 個帳戶／其他資產。訂閱 Plus 可建立更多項目。"
-        case .singleInvestmentMarketRequired:
-            return "Free 方案投資帳戶只能使用一種市場（台股、美股或加密擇一）。訂閱 Plus 可開啟多種市場。"
         case .holdingLimitReached:
             return "Free 方案最多 \(PlusFreeLimits.maxDistinctHoldings) 檔持股。你仍可加碼既有標的；若要新增第 \(PlusFreeLimits.maxDistinctHoldings + 1) 檔，請訂閱 Plus。"
-        case .singleHoldingMarketRequired:
-            return "Free 方案持股需在同一投資市場。訂閱 Plus 可跨市場持有。"
         case .complianceModeNoBuy:
-            return "目前持股超出 Free 上限，只能全數賣出清倉，無法買入。訂閱 Plus 或賣至合規後即可恢復買入。"
+            return "目前持股超出 Free 上限（\(PlusFreeLimits.maxDistinctHoldings) 檔），只能全數賣出清倉，無法買入。訂閱 Plus 或賣至合規後即可恢復買入。"
         }
     }
 }

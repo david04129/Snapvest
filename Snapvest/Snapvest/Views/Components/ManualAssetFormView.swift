@@ -407,17 +407,6 @@ struct ManualAssetFormView: View {
             let succeeded: Bool
             switch mode {
             case .create(let userId):
-                do {
-                    let snapshot = try await PlusFeatureGate.loadSnapshot(userId: userId)
-                    guard PlusFeatureGate.shouldBypassLimits(isPlusActive: subscriptionManager.isPlusActive)
-                            || snapshot.activeAccountCount < PlusFreeLimits.maxAccounts else {
-                        localErrorMessage = PlusFeatureGate.message(for: .accountLimitReached)
-                        return
-                    }
-                } catch {
-                    localErrorMessage = "無法驗證 Free 上限：\(error.localizedDescription)"
-                    return
-                }
                 succeeded = await viewModel.createAsset(from: formState, userId: userId)
             case .edit(let asset, let syncCreationValuation):
                 succeeded = await viewModel.updateAsset(
