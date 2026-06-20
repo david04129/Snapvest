@@ -3,7 +3,7 @@ Walleaf v1.2.0 Development Snapshot
 
 Version:        1.2.0 (Xcode Marketing 仍 1.1.0 / Build 7 — 送審前 bump)
 Git branch:     backup/v1.2.0-20260620
-Git commit:     8bb94c2
+Git commit:     4e9070a
 Bundle ID:      com.EggHsu.Walleaf
 Minimum iOS:    18.0
 
