@@ -7,6 +7,7 @@
 - 有變：vn-1 ← vn，vn ← candidate，minor+1，累積 patch
 - 無變：不寫 vn / vn-1 / version
 - 異常（筆數、縮水、重複）：整 market 不寫入
+- 刻意縮表（如台股移除權證）：`--force tw`
 
 環境變數：SUPABASE_URL、SUPABASE_SERVICE_ROLE_KEY
 """
@@ -114,7 +115,7 @@ def bootstrap_row(client: Client, market: str, candidate: dict[str, Any]) -> boo
     return True
 
 
-def sync_market(client: Client, market: str) -> bool:
+def sync_market(client: Client, market: str, *, force: bool = False) -> bool:
     filename = catalog_filename(market)
     candidate_path = OUTPUT_DIR / filename
     candidate = read_catalog_file(candidate_path)
@@ -129,10 +130,12 @@ def sync_market(client: Client, market: str) -> bool:
         return bootstrap_row(client, market, candidate)
 
     vn_items = row.get("vn_items") or []
-    ok, reason = validate_candidate(market, candidate_items, vn_items)
+    ok, reason = validate_candidate(market, candidate_items, None if force else vn_items)
     if not ok:
         print(f"⏭️  {market} 略過寫入：{reason}")
         return False
+    if force:
+        print(f"⚠️  {market} --force：略過縮水檢查（{len(vn_items)} → {len(candidate_items)} 筆）")
 
     if sets_equal(market, vn_items, candidate_items):
         row_epoch = int(row["epoch"])
@@ -192,6 +195,18 @@ def sync_market(client: Client, market: str) -> bool:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="同步 symbol catalog 至 Supabase")
+    parser.add_argument(
+        "--force",
+        action="append",
+        choices=list(MARKETS),
+        default=[],
+        metavar="MARKET",
+        help="略過縮水檢查（tw/us/crypto），用於刻意移除權證等",
+    )
+    args = parser.parse_args()
+    force_markets = set(args.force or [])
+
     missing = [m for m in MARKETS if not (OUTPUT_DIR / catalog_filename(m)).exists()]
     if missing:
         print(f"❌ 缺少 output：{', '.join(missing)}")
@@ -205,7 +220,7 @@ def main() -> int:
 
     changed = False
     for market in MARKETS:
-        changed = sync_market(client, market) or changed
+        changed = sync_market(client, market, force=market in force_markets) or changed
     if changed:
         write_manifest()
     return 0
