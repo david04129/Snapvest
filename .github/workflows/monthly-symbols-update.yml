@@ -100,11 +100,5 @@ jobs:
           US_COUNT=$(python3 -c "import json;print(len(json.load(open('scripts/output/symbols_us.json'))['items']))")
           CR_COUNT=$(python3 -c "import json;print(len(json.load(open('scripts/output/symbols_crypto.json'))['items']))")
 
-          git commit -m "$(cat <<EOF
-chore(symbols): 更新美股/台股/加密清單
-
-台股來源：Fugle tickers（TWSE+TPEx）
-tw=${TW_COUNT} us=${US_COUNT} crypto=${CR_COUNT}
-EOF
-)"
+          git commit -m "chore(symbols): 更新美股/台股/加密清單 (Fugle TWSE+TPEx; tw=${TW_COUNT} us=${US_COUNT} crypto=${CR_COUNT})"
           git push
