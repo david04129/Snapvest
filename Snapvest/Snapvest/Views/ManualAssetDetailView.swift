@@ -17,6 +17,7 @@ struct ManualAssetDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var displayAsset: ManualAsset
     @State private var showingRenameSheet = false
+    @State private var showingEditNotesSheet = false
     @State private var showingUpdateValueSheet = false
     @State private var isDetailsExpanded = false
     @State private var valuationEntries: [ManualAssetValuationHistoryEntry] = []
@@ -93,6 +94,14 @@ struct ManualAssetDetailView: View {
         }
         .sheet(isPresented: $showingRenameSheet) {
             RenameManualAssetSheet(
+                asset: displayAsset,
+                viewModel: viewModel
+            ) { updated in
+                displayAsset = updated
+            }
+        }
+        .sheet(isPresented: $showingEditNotesSheet) {
+            EditManualAssetNotesSheet(
                 asset: displayAsset,
                 viewModel: viewModel
             ) { updated in
@@ -373,11 +382,9 @@ struct ManualAssetDetailView: View {
                             )
                         }
 
-                        if let notes = displayAsset.notes?.trimmingCharacters(in: .whitespacesAndNewlines),
-                           !notes.isEmpty {
-                            Divider()
-                            InfoRowWithoutIcon(label: "備註", value: notes)
-                        }
+                        Divider()
+
+                        notesInfoRow
                     }
                     .padding(.top, 8)
                     .transition(.opacity.combined(with: .move(edge: .top)))
@@ -417,6 +424,37 @@ struct ManualAssetDetailView: View {
     private var gainLossAmount: Decimal? {
         guard let gainLossTWD else { return nil }
         return twdPerBaseCurrency > 0 ? gainLossTWD / twdPerBaseCurrency : gainLossTWD
+    }
+
+    private var notesInfoRow: some View {
+        let trimmed = displayAsset.notes?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasNotes = !(trimmed?.isEmpty ?? true)
+        return HStack(alignment: .top, spacing: 12) {
+            HStack(spacing: 6) {
+                Text("備註")
+                    .font(.subheadline)
+                    .foregroundColor(.secondaryText)
+
+                Button {
+                    showingEditNotesSheet = true
+                } label: {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.appPrimary)
+                }
+                .buttonStyle(.plain)
+            }
+            .fixedSize()
+
+            Spacer(minLength: 12)
+
+            Text(hasNotes ? trimmed! : "未填寫")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundColor(hasNotes ? .primaryText : .secondaryText)
+                .multilineTextAlignment(.trailing)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private var currencyInfoRow: some View {
@@ -519,6 +557,87 @@ private struct RenameManualAssetSheet: View {
         if succeeded {
             var updated = asset
             updated.name = trimmedName
+            updated.updatedAt = Date()
+            onSaved(updated)
+            dismiss()
+        } else {
+            errorMessage = viewModel.errorMessage
+        }
+    }
+}
+
+private struct EditManualAssetNotesSheet: View {
+    let asset: ManualAsset
+    @ObservedObject var viewModel: ManualAssetsViewModel
+    let onSaved: (ManualAsset) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var notes: String
+    @State private var errorMessage: String?
+
+    init(asset: ManualAsset, viewModel: ManualAssetsViewModel, onSaved: @escaping (ManualAsset) -> Void) {
+        self.asset = asset
+        self.viewModel = viewModel
+        self.onSaved = onSaved
+        _notes = State(initialValue: asset.notes ?? "")
+    }
+
+    private var trimmedNotes: String {
+        notes.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var baselineNotes: String {
+        (asset.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canSave: Bool {
+        trimmedNotes != baselineNotes && !viewModel.isSaving
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("例如：保單編號、估值來源", text: $notes, axis: .vertical)
+                        .lineLimit(3...6)
+                } footer: {
+                    Text("備註僅顯示於此資產詳情，可留空。")
+                }
+
+                if let message = errorMessage ?? viewModel.errorMessage {
+                    Section {
+                        Text(message)
+                            .font(.subheadline)
+                            .foregroundColor(.lossRed)
+                    }
+                }
+            }
+            .navigationTitle("編輯備註")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("儲存") {
+                        Task { await save() }
+                    }
+                    .disabled(!canSave)
+                }
+            }
+        }
+        .presentationDetents([.medium])
+        .snapFormSheetChrome()
+    }
+
+    @MainActor
+    private func save() async {
+        var form = ManualAssetFormState(asset: asset)
+        form.notes = trimmedNotes
+        let succeeded = await viewModel.updateAsset(id: asset.id, formState: form, userId: asset.userId)
+        if succeeded {
+            var updated = asset
+            updated.notes = trimmedNotes.isEmpty ? nil : trimmedNotes
             updated.updatedAt = Date()
             onSaved(updated)
             dismiss()

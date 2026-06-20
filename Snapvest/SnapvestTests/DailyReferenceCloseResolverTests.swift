@@ -187,6 +187,28 @@ struct DailyReferenceCloseResolverTests {
         #expect(reference?.price == 369.27)
     }
 
+    @Test func bootstrapPreviousFromFugleFetchOrCreate_isTrusted() {
+        let snapshot = AssetPriceSnapshot(
+            assetType: .stockTW,
+            symbol: "6669",
+            currency: .TWD,
+            currentPrice: 5130,
+            previousPrice: 5080,
+            currentCloseDate: usDate("2026-06-18"),
+            previousCloseDate: usDate("2026-06-17"),
+            previousPriceSource: "fugle"
+        )
+
+        let reference = DailyReferenceCloseResolver.effectivePreviousClose(
+            snapshot: snapshot,
+            exactHistoryByDate: [:],
+            historyDateKeys: []
+        )
+
+        #expect(reference?.price == 5080)
+        #expect(DailyReferenceCloseResolver.isBootstrapPreviousSource("fugle"))
+    }
+
     @Test func bootstrapPreviousFromFetchOrCreate_isUsedWhenNoHistory() {
         let snapshot = AssetPriceSnapshot(
             assetType: .stockUS,

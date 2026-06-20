@@ -9,7 +9,7 @@ import Foundation
 
 enum DailyReferenceCloseResolver {
     nonisolated static let historyPreviousCloseSource = "asset_price_history"
-    nonisolated private static let bootstrapPreviousCloseSources: Set<String> = ["yahoo", "coingecko"]
+    nonisolated private static let bootstrapPreviousCloseSources: Set<String> = ["fugle", "yahoo", "coingecko"]
 
     struct ReferenceClose: Equatable, Sendable {
         let price: Decimal

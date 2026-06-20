@@ -241,9 +241,12 @@ Actions -> Monthly Symbols Update -> Run workflow
 注意事項：
 
 - workflow 會使用 GitHub `main` 上的腳本，不會使用你本機未 push 的修改。
+- workflow 要能建置台股清單，GitHub Secrets 必須有：
+  - **`FUGLE_API_KEY`**（Fugle tickers API）
 - workflow 要能寫 DB，GitHub Secrets 必須有：
   - `SUPABASE_URL`
   - `SUPABASE_SERVICE_ROLE_KEY`
+- 若只要重抓 JSON、不要写 DB：Run workflow 时勾选 **skip_db_sync**
 - 如果 GitHub Summary 顯示版本進了，但 DB 沒變，先確認那次 workflow 是否已包含 `Sync symbol catalog to Supabase` 這個 step。
 
 查 GitHub Secrets：
@@ -259,6 +262,7 @@ gh secret list
 cd /Users/david/Desktop/Snapvest
 gh secret set SUPABASE_URL --body "https://你的專案ID.supabase.co"
 gh secret set SUPABASE_SERVICE_ROLE_KEY --body "你的service_role_key"
+gh secret set FUGLE_API_KEY --body "你的_fugle_api_key"
 ```
 
 ## 大版：發布新 epoch

@@ -366,20 +366,20 @@ supabase functions deploy fetch-prices-batch --no-verify-jwt
 
 **程式位置：** [backend/supabase/functions/fetch-or-create-price/index.ts](./backend/supabase/functions/fetch-or-create-price/index.ts)
 
-台股／美股自 Yahoo `range=5d` 取現價與前收（`chartPreviousClose` 或倒數第二根日 K），並將前收寫入 `asset_price_history`。`previous_price` / `previous_close_date` 僅保留為 snapshot fallback；日漲跌仍以 history-backed 前收為準。
+台股／美股自外部 API 取現價與前收；**台股優先 Fugle**（`previousClose`），失敗時 Yahoo `range=5d` 備援。美股仍 Yahoo。前收寫入 `asset_price_history`。`previous_price` / `previous_close_date` 僅保留為 snapshot fallback；日漲跌仍以 history-backed 前收為準。
 
 **什麼時候觸發？**  
 App 查 `asset_price_snapshots` 發現**沒有這檔的價格**時，會 POST 這支 Function。
 
 | 資產 | API | 連結 | 備註 |
 |------|-----|------|------|
-| **台股** | Yahoo Finance Chart API | `https://query1.finance.yahoo.com/v8/finance/chart/{代號}.TW` | 例：`2330.TW` |
+| **台股** | Fugle intraday/quote → Yahoo Chart 備援 | [Fugle MarketData](https://developer.fugle.tw/) | 例：`6669`；前收 `previousClose` |
 | **美股** | Yahoo Finance Chart API | `https://query1.finance.yahoo.com/v8/finance/chart/{代號}` | 例：`AAPL` |
 | **加密** | CoinGecko Simple Price | [Simple Price API](https://docs.coingecko.com/reference/simple-price) | 可帶 `coingeckoId`；也會搜尋 CoinGecko |
 
-抓到價格後會寫入 `asset_price_snapshots` 與 `asset_price_history`（`current_price_source`：`yahoo` 或 `coingecko`；不加入 `hot_stocks`）
+抓到價格後會寫入 `asset_price_snapshots` 與 `asset_price_history`（`current_price_source`：`fugle`／`yahoo` 或 `coingecko`；不加入 `hot_stocks`）
 
-**來源欄常見值：** 排程 `fugle`（台股）／`finnhub`／`yfinance`（美股備援）／`coingecko`／`finmind`（匯率）；Edge `yahoo`／`coingecko`（`fetch-or-create-price` 台股仍 Yahoo）。本輪抓失敗未 upsert 的列，**現價與 `current_*` 皆維持上一輪**。
+**來源欄常見值：** 排程 `fugle`（台股）／`finnhub`／`yfinance`（美股備援）／`coingecko`／`finmind`（匯率）；Edge `fugle`／`yahoo`／`coingecko`（台股 Fugle 優先）。本輪抓失敗未 upsert 的列，**現價與 `current_*` 皆維持上一輪**。
 
 **部署方式（手動，不經 GitHub Actions）：**
 

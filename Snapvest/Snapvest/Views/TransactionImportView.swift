@@ -351,7 +351,7 @@ struct TransactionImportView: View {
                     .focused($isCSVFocused)
                 
                 if csvText.isEmpty {
-                    Text("把 AI 回覆貼在這裡，再按「解析預覽」")
+                    Text("把外部 AI 回覆貼在這裡，再按「解析預覽」")
                         .font(.caption)
                         .foregroundColor(.tertiaryText)
                         .padding(.horizontal, 14)

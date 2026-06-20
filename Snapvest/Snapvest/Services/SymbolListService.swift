@@ -7,6 +7,13 @@
 
 import Foundation
 
+/// 台股匯入：將 CSV symbol 欄（可能是簡稱）解析為代號。
+enum TaiwanImportSymbolResolution: Equatable {
+    case resolved(symbol: String)
+    case notFound(name: String)
+    case ambiguous(name: String, symbols: [String])
+}
+
 struct SymbolItem: Identifiable, Equatable, Sendable {
     let symbol: String
     let name: String
@@ -23,11 +30,13 @@ struct SymbolItem: Identifiable, Equatable, Sendable {
 
 private enum SymbolCatalogFileLookup {
     nonisolated(unsafe) private static var twNameCache: [String: String]?
+    nonisolated(unsafe) private static var twNameToSymbolsCache: [String: [String]]?
     nonisolated(unsafe) private static var cryptoNameCache: [String: String]?
     nonisolated(unsafe) private static var cryptoCoingeckoCache: [String: String]?
 
     nonisolated static func invalidateCaches() {
         twNameCache = nil
+        twNameToSymbolsCache = nil
         cryptoNameCache = nil
         cryptoCoingeckoCache = nil
     }
@@ -39,6 +48,33 @@ private enum SymbolCatalogFileLookup {
             twNameCache = loadLookup(fileName: "symbols_tw", keyTransform: { $0 })
         }
         return twNameCache?[key]
+    }
+
+    nonisolated static func twSymbols(matchingCatalogName name: String) -> [String] {
+        let key = normalizeCatalogName(name)
+        guard !key.isEmpty else { return [] }
+        if twNameToSymbolsCache == nil {
+            twNameToSymbolsCache = buildTwNameToSymbolsIndex()
+        }
+        return twNameToSymbolsCache?[key] ?? []
+    }
+
+    nonisolated private static func normalizeCatalogName(_ name: String) -> String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    nonisolated private static func buildTwNameToSymbolsIndex() -> [String: [String]] {
+        guard let items = loadItemsArray(fileName: "symbols_tw") else { return [:] }
+        var index: [String: [String]] = [:]
+        index.reserveCapacity(items.count)
+        for item in items {
+            guard let symbol = item["symbol"] as? String,
+                  let name = item["name"] as? String else { continue }
+            let key = normalizeCatalogName(name)
+            guard !key.isEmpty else { continue }
+            index[key, default: []].append(symbol)
+        }
+        return index
     }
 
     nonisolated static func cryptoListedName(for symbol: String) -> String? {
@@ -107,6 +143,48 @@ struct SymbolListService {
     /// 台股代號 → 簡稱
     nonisolated static func twDisplayName(for symbol: String) -> String? {
         SymbolCatalogFileLookup.twDisplayName(for: symbol)
+    }
+
+    /// 台股匯入：代號原樣通過；含中文則以 catalog 簡稱 exact match 反查代號。
+    nonisolated static func resolveTaiwanImportSymbol(_ raw: String) -> TaiwanImportSymbolResolution {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return .notFound(name: raw)
+        }
+        if isLikelyTaiwanTicker(trimmed) {
+            return .resolved(symbol: trimmed.uppercased())
+        }
+        guard containsCJK(trimmed) else {
+            return .notFound(name: trimmed)
+        }
+        let matches = SymbolCatalogFileLookup.twSymbols(matchingCatalogName: trimmed)
+        switch matches.count {
+        case 0:
+            return .notFound(name: trimmed)
+        case 1:
+            return .resolved(symbol: matches[0])
+        default:
+            return .ambiguous(name: trimmed, symbols: matches)
+        }
+    }
+
+    nonisolated static func isLikelyTaiwanTicker(_ raw: String) -> Bool {
+        let symbol = raw.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard (4...6).contains(symbol.count) else { return false }
+        return symbol.allSatisfy { char in
+            char.isNumber || ("A"..."Z").contains(char)
+        }
+    }
+
+    nonisolated static func containsCJK(_ text: String) -> Bool {
+        text.unicodeScalars.contains { scalar in
+            switch scalar.value {
+            case 0x4E00...0x9FFF, 0x3400...0x4DBF:
+                return true
+            default:
+                return false
+            }
+        }
     }
 
     /// 加密貨幣代號統一為大寫（BTC、ETH），與後端抓價一致

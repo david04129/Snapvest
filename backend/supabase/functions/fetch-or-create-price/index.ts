@@ -1,4 +1,5 @@
 // Supabase Edge Function: 新增股票時，若資料庫無價格則即時抓取並儲存
+// 台股：Fugle intraday/quote（previousClose）→ Yahoo 5d 備援
 // 部署（擇一）:
 //   cd backend && supabase functions deploy fetch-or-create-price
 //   cd 專案根目錄 && supabase functions deploy fetch-or-create-price
@@ -13,6 +14,7 @@ import {
   FETCH_OR_CREATE_ALL_LIMITS,
   FETCH_OR_CREATE_EXTERNAL_LIMITS,
 } from "../_shared/rateLimit.ts"
+import { fetchFugleTwQuote, type StockQuote } from "../_shared/fugleQuote.ts"
 import { allowedAssetTypes, normalizeSymbol } from "../_shared/symbolValidation.ts"
 
 const corsHeaders = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" }
@@ -71,14 +73,39 @@ async function fetchYahooChart(yahooSymbol: string): Promise<Response> {
   return fetch(url, { headers: yahooFetchHeaders })
 }
 
+/** 台股：上市 `.TW`、上櫃 `.TWO`；美股直接用 symbol。 */
+function yahooChartSymbols(assetType: string, symbol: string): string[] {
+  if (assetType === "stock_tw") {
+    return [`${symbol}.TW`, `${symbol}.TWO`]
+  }
+  if (assetType === "stock_us") {
+    return [symbol]
+  }
+  return []
+}
+
+async function fetchYahooStockQuote(
+  assetType: string,
+  symbol: string,
+): Promise<YahooStockQuote | null> {
+  for (const yahooSymbol of yahooChartSymbols(assetType, symbol)) {
+    const res = await fetchYahooChart(yahooSymbol)
+    if (!res.ok) continue
+    let json: Record<string, unknown>
+    try {
+      json = await res.json()
+    } catch {
+      continue
+    }
+    const parsed = parseYahooStockChart(json, assetType)
+    if (parsed) return parsed
+  }
+  return null
+}
+
 type YahooBar = { ts: number; close: number }
 
-type YahooStockQuote = {
-  currentPrice: number
-  currentCloseDate: string
-  previousPrice: number | null
-  previousCloseDate: string | null
-}
+type YahooStockQuote = Omit<StockQuote, "source">
 
 function validPrice(n: unknown): n is number {
   return typeof n === "number" && Number.isFinite(n) && n > 0
@@ -166,6 +193,22 @@ function parseYahooStockChart(json: Record<string, unknown>, assetType: string):
   }
 }
 
+async function fetchTwStockQuote(symbol: string): Promise<StockQuote | null> {
+  const fugle = await fetchFugleTwQuote(symbol)
+  if (fugle) return fugle
+  const yahoo = await fetchYahooStockQuote("stock_tw", symbol)
+  if (!yahoo) return null
+  return { ...yahoo, source: "yahoo" }
+}
+
+async function fetchTwPreviousForBackfill(symbol: string): Promise<StockQuote | null> {
+  const fugle = await fetchFugleTwQuote(symbol)
+  if (fugle?.previousPrice && fugle.previousCloseDate) return fugle
+  const yahoo = await fetchYahooStockQuote("stock_tw", symbol)
+  if (!yahoo?.previousPrice || !yahoo.previousCloseDate) return null
+  return { ...yahoo, source: "yahoo" }
+}
+
 const COINGECKO_ID_MAP: Record<string, string> = {
   BTC: "bitcoin", ETH: "ethereum", BNB: "binancecoin", SOL: "solana",
   XRP: "ripple", ADA: "cardano", DOGE: "dogecoin", AVAX: "avalanche-2",
@@ -249,51 +292,61 @@ async function backfillPreviousHistoryIfMissing(
   currentCloseDate: string,
   existingPreviousPrice: number | null,
   existingPreviousCloseDate: string | null,
+  existingPreviousPriceSource: string | null,
   currency: string,
-): Promise<{ previousPrice: number | null; previousCloseDate: string | null }> {
+): Promise<{
+  previousPrice: number | null
+  previousCloseDate: string | null
+  previousPriceSource: string | null
+}> {
   const updatedAt = taipeiUpdatedAtSeconds()
-  if (await hasPriorHistoryClose(supabase, assetType, symbol, currentCloseDate)) {
+  const staleTwYahoo =
+    assetType === "stock_tw" && existingPreviousPriceSource === "yahoo"
+  if (await hasPriorHistoryClose(supabase, assetType, symbol, currentCloseDate) && !staleTwYahoo) {
     return {
       previousPrice: existingPreviousPrice,
       previousCloseDate: existingPreviousCloseDate,
+      previousPriceSource: existingPreviousPriceSource,
     }
   }
 
   if (validPrice(existingPreviousPrice) && existingPreviousCloseDate) {
-    await upsertHistoryClose(
-      supabase,
-      assetType,
-      symbol,
-      existingPreviousCloseDate,
-      existingPreviousPrice as number,
-      currency,
-      "snapshot_bootstrap",
-      updatedAt,
-    )
-    return {
-      previousPrice: existingPreviousPrice,
-      previousCloseDate: existingPreviousCloseDate,
+    const twYahooBootstrap =
+      assetType === "stock_tw" && existingPreviousPriceSource === "yahoo"
+    if (!twYahooBootstrap) {
+      await upsertHistoryClose(
+        supabase,
+        assetType,
+        symbol,
+        existingPreviousCloseDate,
+        existingPreviousPrice as number,
+        currency,
+        "snapshot_bootstrap",
+        updatedAt,
+      )
+      return {
+        previousPrice: existingPreviousPrice,
+        previousCloseDate: existingPreviousCloseDate,
+        previousPriceSource: existingPreviousPriceSource,
+      }
     }
   }
 
   if (assetType !== "stock_tw" && assetType !== "stock_us") {
-    return { previousPrice: null, previousCloseDate: null }
+    return { previousPrice: null, previousCloseDate: null, previousPriceSource: null }
   }
 
-  const yahooSymbol = assetType === "stock_tw" ? `${symbol}.TW` : symbol
-  const res = await fetchYahooChart(yahooSymbol)
-  if (!res.ok) {
-    return { previousPrice: null, previousCloseDate: null }
+  let parsed: StockQuote | null = null
+  if (assetType === "stock_tw") {
+    parsed = await fetchTwPreviousForBackfill(symbol)
+  } else {
+    const yahoo = await fetchYahooStockQuote(assetType, symbol)
+    if (yahoo?.previousPrice && yahoo.previousCloseDate) {
+      parsed = { ...yahoo, source: "yahoo" }
+    }
   }
-  let json: Record<string, unknown>
-  try {
-    json = await res.json()
-  } catch {
-    return { previousPrice: null, previousCloseDate: null }
-  }
-  const parsed = parseYahooStockChart(json, assetType)
   if (!parsed?.previousPrice || !parsed.previousCloseDate) {
-    return { previousPrice: null, previousCloseDate: null }
+    return { previousPrice: null, previousCloseDate: null, previousPriceSource: null }
   }
 
   await upsertHistoryClose(
@@ -303,7 +356,7 @@ async function backfillPreviousHistoryIfMissing(
     parsed.previousCloseDate,
     parsed.previousPrice,
     currency,
-    "yahoo",
+    parsed.source,
     updatedAt,
   )
 
@@ -311,7 +364,7 @@ async function backfillPreviousHistoryIfMissing(
     previous_price: parsed.previousPrice,
     previous_close_date: parsed.previousCloseDate,
     previous_updated_at: updatedAt,
-    previous_price_source: "yahoo",
+    previous_price_source: parsed.source,
   }
   await supabase
     .from("asset_price_snapshots")
@@ -322,6 +375,7 @@ async function backfillPreviousHistoryIfMissing(
   return {
     previousPrice: parsed.previousPrice,
     previousCloseDate: parsed.previousCloseDate,
+    previousPriceSource: parsed.source,
   }
 }
 
@@ -393,7 +447,7 @@ serve(async (req) => {
 
     const { data: existing } = await supabase
       .from("asset_price_snapshots")
-      .select("current_price, current_close_date, previous_price, previous_close_date, currency")
+      .select("current_price, current_close_date, previous_price, previous_close_date, previous_price_source, currency")
       .eq("asset_type", assetType)
       .eq("symbol", symbol)
       .single()
@@ -403,10 +457,21 @@ serve(async (req) => {
       const currency = existing.currency ?? (assetType === "stock_tw" ? "TWD" : "USD")
 
       if (!isSnapshotCloseDateStale(currentCloseDate, assetType)) {
+        const priorSource = (existing as { previous_price_source?: string }).previous_price_source ?? null
+        const twYahooPreviousNeedsRefresh =
+          assetType === "stock_tw"
+          && priorSource === "yahoo"
+          && validPrice(existing.previous_price)
+          && !!existing.previous_close_date
         const needsExternalBackfill =
-          !(await hasPriorHistoryClose(supabase, assetType, symbol, currentCloseDate))
-          && !(validPrice(existing.previous_price) && existing.previous_close_date)
-          && (assetType === "stock_tw" || assetType === "stock_us")
+          (assetType === "stock_tw" || assetType === "stock_us")
+          && (
+            twYahooPreviousNeedsRefresh
+            || (
+              !(await hasPriorHistoryClose(supabase, assetType, symbol, currentCloseDate))
+              && !(validPrice(existing.previous_price) && existing.previous_close_date)
+            )
+          )
         if (needsExternalBackfill) {
           const externalLimited = await enforceRateLimits(
             supabase,
@@ -423,21 +488,26 @@ serve(async (req) => {
           currentCloseDate,
           existing.previous_price ?? null,
           existing.previous_close_date ?? null,
+          priorSource,
           currency,
         )
+        const dbHitBody: Record<string, unknown> = {
+          price: existing.current_price,
+          currency,
+          source: "database",
+          currentCloseDate,
+          previousPrice: backfilled.previousPrice,
+          previousCloseDate: backfilled.previousCloseDate,
+        }
+        if (backfilled.previousPriceSource) {
+          dbHitBody.previousPriceSource = backfilled.previousPriceSource
+        }
         return new Response(
-          JSON.stringify({
-            price: existing.current_price,
-            currency,
-            source: "database",
-            currentCloseDate,
-            previousPrice: backfilled.previousPrice,
-            previousCloseDate: backfilled.previousCloseDate,
-          }),
+          JSON.stringify(dbHitBody),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } },
         )
       }
-      // current_close_date 過期 →  fall through，從 Yahoo 重新抓取並覆寫
+      // current_close_date 過期 → fall through，台股 Fugle → Yahoo 重新抓取
     }
 
     const externalLimited = await enforceRateLimits(
@@ -454,6 +524,7 @@ serve(async (req) => {
     let currentCloseDate = marketTodayKey(assetType)
     let previousPrice: number | null = null
     let previousCloseDate: string | null = null
+    let previousPriceSource: string | null = null
 
     if (assetType === "crypto") {
       priceSource = "coingecko"
@@ -472,32 +543,28 @@ serve(async (req) => {
         })
       }
       currentCloseDate = marketTodayKey(assetType)
-    } else if (assetType === "stock_tw" || assetType === "stock_us") {
-      const yahooSymbol = assetType === "stock_tw" ? `${symbol}.TW` : symbol
-      const res = await fetchYahooChart(yahooSymbol)
-      if (!res.ok) {
-        return new Response(JSON.stringify({ error: `Yahoo API HTTP ${res.status}` }), {
-          status: 502,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        })
-      }
-      let json: Record<string, unknown>
-      try {
-        json = await res.json()
-      } catch {
-        return new Response(JSON.stringify({ error: "Yahoo API returned invalid JSON" }), {
-          status: 502,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        })
-      }
-      const parsed = parseYahooStockChart(json, assetType)
+    } else if (assetType === "stock_tw") {
+      const parsed = await fetchTwStockQuote(symbol)
       if (!parsed) {
         return new Response(JSON.stringify({ error: "Price not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } })
       }
       price = parsed.currentPrice
+      priceSource = parsed.source
       currentCloseDate = parsed.currentCloseDate
       previousPrice = parsed.previousPrice
       previousCloseDate = parsed.previousCloseDate
+      previousPriceSource = parsed.previousPrice ? parsed.source : null
+    } else if (assetType === "stock_us") {
+      const parsed = await fetchYahooStockQuote(assetType, symbol)
+      if (!parsed) {
+        return new Response(JSON.stringify({ error: "Price not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } })
+      }
+      price = parsed.currentPrice
+      priceSource = "yahoo"
+      currentCloseDate = parsed.currentCloseDate
+      previousPrice = parsed.previousPrice
+      previousCloseDate = parsed.previousCloseDate
+      previousPriceSource = parsed.previousPrice ? "yahoo" : null
     }
 
     if (price == null || price <= 0) {
@@ -529,7 +596,7 @@ serve(async (req) => {
       row.previous_price = previousPrice
       row.previous_close_date = previousCloseDate
       row.previous_updated_at = updatedAt
-      row.previous_price_source = priceSource
+      row.previous_price_source = previousPriceSource ?? priceSource
     } else if (prior?.current_price) {
       row.previous_price = prior.current_price
       row.previous_close_date = prior.current_close_date
@@ -575,6 +642,7 @@ serve(async (req) => {
     if (previousPrice != null && previousCloseDate) {
       responseBody.previousPrice = previousPrice
       responseBody.previousCloseDate = previousCloseDate
+      responseBody.previousPriceSource = previousPriceSource ?? priceSource
     }
 
     return new Response(JSON.stringify(responseBody), { headers: { ...corsHeaders, "Content-Type": "application/json" } })

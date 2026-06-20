@@ -28,7 +28,7 @@
 |------|------|------|
 | 美股 | NASDAQ nasdaqtraded.txt | 自動下載，含 NASDAQ/NYSE/AMEX |
 | 加密貨幣 | CoinGecko API /coins/markets（市值 Top 500） | 含 `coingeckoId`（抓價必用）；並產生 `backend/scripts/data/crypto_coingecko_map.json` |
-| 台股 | 證交所(上市，**公司簡稱**) + 櫃買(上櫃、興櫃) + 腳本內 ETF 補充 | 上市自動下載；上櫃/興櫃為行情或資本額 CSV；含字母代號 ETF 見 `TW_ETF_SUPPLEMENT` |
+| 台股 | **Fugle** `intraday/tickers`（TWSE + TPEx, type=EQUITY） | 可交易清单；需 `FUGLE_API_KEY`；备援 `--legacy` 用证交所/柜买 CSV |
 
 ## 使用方式
 
@@ -78,7 +78,8 @@ scripts/
 
 ## 維護頻率建議
 
-- **自動**：GitHub Actions `Monthly Symbols Update` 每月 1 日建置並 commit（亦可手動觸發）
+- **自動**：GitHub Actions [Monthly Symbols Update](../.github/workflows/monthly-symbols-update.yml) 每月 1 日建置并 commit；亦可 **Actions → Run workflow** 手动触发
+- **Secrets**：`FUGLE_API_KEY`（台股必填）、`SUPABASE_URL`、`SUPABASE_SERVICE_ROLE_KEY`（OTA DB 同步）
 - **手動**：本機執行 `./build_all.sh`（發 App 新版前可再跑一次確保最新）
 - 美股、加密：約每月
 - 台股（含簡稱 + ETF 補充表）：约每月

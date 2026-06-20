@@ -1,16 +1,28 @@
 #!/usr/bin/env python3
 """
-建立台股 symbols_tw.json（上市全商品 + 上櫃 + 興櫃）
-資料來源：
-1. 證交所上市全商品日行情: https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL
-2. 證交所上市公司: https://dts.twse.com.tw/opendata/t187ap03_L.csv（使用「公司簡稱」欄）
-3. 櫃買上櫃股票行情: https://www.tpex.org.tw/web/stock/aftertrading/DAILY_CLOSE_quotes/stk_quote_result.php?l=zh-tw&o=data
-4. 櫃買興櫃資本額排名: https://www.tpex.org.tw/web/regular_emerging/financereport/emerging_capitals_rank/list_result.php?l=zh-tw&type=l_list&o=data
-5. ETF 補充：腳本內 TW_ETF_SUPPLEMENT（保底用）
+建立台股 symbols_tw.json（Fugle 可交易清單）
+
+主要來源（預設）：
+  GET https://api.fugle.tw/marketdata/v1.0/stock/intraday/tickers
+  - exchange=TWSE  上市（含 ETF、創新板子集）
+  - exchange=TPEx  上櫃 + 興櫃
+  type=EQUITY（不含權證）
+
+清單上的代號皆為 Fugle 當前可報價標的，已排除下市／不存在者。
+
+環境變數：FUGLE_API_KEY（必填，除非 --legacy）
+
+備援（--legacy）：證交所 + 櫃買 CSV + ETF 手動補充（舊流程）
 """
 
+from __future__ import annotations
+
+import argparse
 import csv
 import json
+import os
+import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import date
 from pathlib import Path
@@ -19,11 +31,10 @@ from typing import Optional
 from symbols_paths import OUTPUT_DIR, SCRIPTS_DIR, catalog_document, read_catalog_meta
 
 DATA_DIR = SCRIPTS_DIR / "data"
+FUGLE_TICKERS_URL = "https://api.fugle.tw/marketdata/v1.0/stock/intraday/tickers"
 TWSE_STOCK_DAY_ALL_URL = "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL"
 TWSE_LISTED_URL = "https://dts.twse.com.tw/opendata/t187ap03_L.csv"
-# 上櫃股票行情（櫃買）
 TPEX_OTC_QUOTE_URL = "https://www.tpex.org.tw/web/stock/aftertrading/DAILY_CLOSE_quotes/stk_quote_result.php?l=zh-tw&o=data"
-# 興櫃資本額排名（櫃買）
 TPEX_EMERGING_URL = "https://www.tpex.org.tw/web/regular_emerging/financereport/emerging_capitals_rank/list_result.php?l=zh-tw&type=l_list&o=data"
 
 LOCAL_CSV_PATHS = [
@@ -33,11 +44,11 @@ LOCAL_CSV_PATHS = [
 ]
 
 
-def fetch_url(url: str, use_https_redirect: bool = False) -> Optional[str]:
+def fetch_url(url: str) -> Optional[str]:
     """下載 URL 內容，嘗試 UTF-8 與 Big5 編碼"""
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Snapvest/1.0"})
-        with urllib.request.urlopen(req, timeout=20) as response:
+        with urllib.request.urlopen(req, timeout=30) as response:
             raw = response.read()
         for enc in ("utf-8", "big5", "cp950"):
             try:
@@ -50,53 +61,34 @@ def fetch_url(url: str, use_https_redirect: bool = False) -> Optional[str]:
         return None
 
 
-def parse_listed_csv(content: str) -> list[dict]:
-    """解析上市公司 CSV：出表日期、公司代號、公司名稱、公司簡稱、..."""
-    return _parse_tw_csv_generic(
-        content,
-        symbol_col=1,
-        name_col=3,
-        fallback_name_col=2,
+def fetch_fugle_tickers(exchange: str, api_key: str) -> list[dict]:
+    """Fugle intraday/tickers → [{symbol, name}, ...]"""
+    params = urllib.parse.urlencode({"type": "EQUITY", "exchange": exchange})
+    url = f"{FUGLE_TICKERS_URL}?{params}"
+    req = urllib.request.Request(
+        url,
+        headers={"X-API-KEY": api_key, "User-Agent": "Snapvest/1.0"},
     )
-
-
-def parse_twse_stock_day_all(content: str) -> list[dict]:
-    """解析證交所上市全商品日行情 JSON：Code、Name、..."""
     try:
-        rows = json.loads(content)
-    except json.JSONDecodeError:
+        with urllib.request.urlopen(req, timeout=120) as response:
+            body = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        print(f"   ❌ Fugle {exchange} HTTP {e.code}: {e.read().decode('utf-8', errors='replace')[:200]}")
+        return []
+    except Exception as e:
+        print(f"   ❌ Fugle {exchange} 請求失敗: {e}")
         return []
 
-    items = []
-    seen = set()
-    if not isinstance(rows, list):
-        return items
-
+    rows = body.get("data") or []
+    items: list[dict] = []
     for row in rows:
         if not isinstance(row, dict):
             continue
-        symbol = str(row.get("Code", "")).strip().upper()
-        name = str(row.get("Name", "")).strip()
-        if not symbol or not name:
-            continue
-        if not _is_valid_tw_symbol(symbol, name):
-            continue
-        if symbol in seen:
-            continue
-        seen.add(symbol)
-        items.append({"symbol": symbol, "name": name})
-
+        symbol = str(row.get("symbol", "")).strip().upper()
+        name = str(row.get("name", "")).strip()
+        if symbol and name:
+            items.append({"symbol": symbol, "name": name})
     return items
-
-
-def parse_otc_csv(content: str) -> list[dict]:
-    """解析上櫃行情 CSV：資料日期、代號、名稱、收盤、..."""
-    return _parse_tw_csv_generic(content, symbol_col=1, name_col=2)
-
-
-def parse_emerging_csv(content: str) -> list[dict]:
-    """解析興櫃資本額 CSV：資料日期、排名、公司代號、公司名稱、..."""
-    return _parse_tw_csv_generic(content, symbol_col=2, name_col=3)
 
 
 def _is_warrant(symbol: str, name: str) -> bool:
@@ -120,6 +112,62 @@ def _is_valid_tw_symbol(symbol: str, name: str, max_len: int = 6) -> bool:
     return True
 
 
+def merge_symbol_items(
+    symbol_to_name: dict[str, str],
+    items: list[dict],
+    *,
+    overwrite: bool = False,
+) -> int:
+    added = 0
+    for item in items:
+        symbol = item["symbol"]
+        name = item["name"]
+        if not _is_valid_tw_symbol(symbol, name):
+            continue
+        if overwrite or symbol not in symbol_to_name:
+            if symbol not in symbol_to_name:
+                added += 1
+            symbol_to_name[symbol] = name
+    return added
+
+
+def build_symbols_tw_fugle(*, catalog_minor: Optional[int] = None) -> Optional[dict]:
+    """Fugle TWSE + TPEx 可交易清單（上市、上櫃、興櫃、ETF）。"""
+    api_key = os.environ.get("FUGLE_API_KEY", "").strip()
+    if not api_key:
+        print("❌ 未設定 FUGLE_API_KEY")
+        return None
+
+    symbol_to_name: dict[str, str] = {}
+
+    twse = fetch_fugle_tickers("TWSE", api_key)
+    twse_added = merge_symbol_items(symbol_to_name, twse, overwrite=True)
+    print(f"   Fugle TWSE（上市）: {len(twse)} 筆（納入 {twse_added}）")
+
+    tpex = fetch_fugle_tickers("TPEx", api_key)
+    tpex_added = merge_symbol_items(symbol_to_name, tpex)
+    print(f"   Fugle TPEx（上櫃+興櫃）: {len(tpex)} 筆（新增 {tpex_added}）")
+
+    if not symbol_to_name:
+        print("❌ Fugle 未回傳任何台股標的")
+        return None
+
+    merged = [{"symbol": s, "name": n} for s, n in symbol_to_name.items()]
+    merged.sort(key=lambda x: (x["symbol"].zfill(6), x["symbol"]))
+
+    epoch, _minor = read_catalog_meta("symbols_tw.json")
+    minor = catalog_minor if catalog_minor is not None else _minor
+    return catalog_document(
+        epoch=epoch,
+        minor=minor,
+        items=merged,
+        updated_at=str(date.today()),
+    )
+
+
+# --- Legacy 備援（證交所 + 櫃買 CSV）---
+
+
 def _parse_tw_csv_generic(
     content: str,
     symbol_col: int,
@@ -127,14 +175,12 @@ def _parse_tw_csv_generic(
     max_symbol_len: int = 6,
     fallback_name_col: Optional[int] = None,
 ) -> list[dict]:
-    """通用解析：依欄位索引提取 symbol、name（可選 fallback 欄位）"""
     content = content.lstrip("\ufeff")
     lines = content.strip().split("\n")
     if not lines:
         return []
 
     items = []
-    seen = set()
     for delim in (",", "\t", ";", " "):
         try:
             reader = csv.reader(lines, delimiter=delim)
@@ -148,9 +194,8 @@ def _parse_tw_csv_generic(
         if len(first) <= max(symbol_col, name_col):
             continue
         col_sym = str(first[symbol_col]).strip()
-        col_name = str(first[name_col]).strip()
         is_header = not col_sym.isdigit() and (
-            "代號" in col_sym or "代碼" in col_sym or "公司" in col_sym or "代號" in col_name
+            "代號" in col_sym or "代碼" in col_sym or "公司" in col_sym
         )
         start = 1 if is_header else 0
 
@@ -178,8 +223,47 @@ def _parse_tw_csv_generic(
     return items
 
 
+def parse_listed_csv(content: str) -> list[dict]:
+    return _parse_tw_csv_generic(content, symbol_col=1, name_col=3, fallback_name_col=2)
+
+
+def parse_otc_csv(content: str) -> list[dict]:
+    return _parse_tw_csv_generic(content, symbol_col=1, name_col=2)
+
+
+def parse_emerging_csv(content: str) -> list[dict]:
+    return _parse_tw_csv_generic(content, symbol_col=2, name_col=3)
+
+
+def parse_twse_stock_day_all(content: str) -> list[dict]:
+    try:
+        rows = json.loads(content)
+    except json.JSONDecodeError:
+        return []
+
+    items = []
+    seen = set()
+    if not isinstance(rows, list):
+        return items
+
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        symbol = str(row.get("Code", "")).strip().upper()
+        name = str(row.get("Name", "")).strip()
+        if not symbol or not name:
+            continue
+        if not _is_valid_tw_symbol(symbol, name):
+            continue
+        if symbol in seen:
+            continue
+        seen.add(symbol)
+        items.append({"symbol": symbol, "name": name})
+
+    return items
+
+
 def fetch_listed() -> list[dict]:
-    """取得上市公司"""
     content = fetch_url(TWSE_LISTED_URL)
     if content and not content.strip().startswith("<"):
         parsed = parse_listed_csv(content)
@@ -200,7 +284,6 @@ def fetch_listed() -> list[dict]:
 
 
 def fetch_twse_stock_day_all() -> list[dict]:
-    """取得證交所上市全商品日行情（含 ETF、權證與字母代號商品）"""
     content = fetch_url(TWSE_STOCK_DAY_ALL_URL)
     if content and content.strip().startswith("["):
         return parse_twse_stock_day_all(content)
@@ -208,7 +291,6 @@ def fetch_twse_stock_day_all() -> list[dict]:
 
 
 def fetch_otc() -> list[dict]:
-    """取得上櫃股票"""
     content = fetch_url(TPEX_OTC_QUOTE_URL)
     if content and not content.strip().startswith("<"):
         return parse_otc_csv(content)
@@ -216,152 +298,30 @@ def fetch_otc() -> list[dict]:
 
 
 def fetch_emerging() -> list[dict]:
-    """取得興櫃股票"""
     content = fetch_url(TPEX_EMERGING_URL)
     if content and not content.strip().startswith("<"):
         return parse_emerging_csv(content)
     return []
 
 
-# 熱門台股 ETF 補充清單（證交所上市公司清單可能不包含 ETF，且含英文字母的代號會被過濾）
-# 包含：一般 ETF、槓桿型正2（第六碼L）、反向型反1（第六碼R）、其它（第六碼U等）
-TW_ETF_SUPPLEMENT = [
-    # 一般 ETF
-    ("0050", "元大台灣50"),
-    ("0051", "元大中型100"),
-    ("0052", "富邦台灣科技"),
-    ("0053", "元大電子"),
-    ("0054", "元大台商50"),
-    ("0055", "元大MSCI金融"),
-    ("0056", "元大高股息"),
-    ("0057", "元大MSCI臺灣"),
-    ("0058", "富邦摩臺"),
-    ("0060", "元大台灣高息低波"),
-    ("0061", "元大寶滬深"),
-    ("006208", "富邦台50"),
-    ("00646", "元大S&P500"),
-    ("00692", "富邦公司治理"),
-    ("00693", "國泰臺灣加權"),
-    ("00713", "元大台灣高息低波"),
-    ("00730", "富邦臺灣加權"),
-    ("00731", "FH富時高息低波"),
-    ("00850", "元大臺灣ESG永續"),
-    ("00851", "台新MSCI中國"),
-    ("00861", "元大全球未來通訊"),
-    ("00875", "國泰北美科技"),
-    ("00876", "元大台灣高息低波"),
-    ("00878", "國泰永續高股息"),
-    ("00888", "永豐台灣ESG"),
-    ("00890", "富邦臺灣加權"),
-    ("00891", "國泰中國A50"),
-    ("00893", "國泰智能電動車"),
-    ("00900", "富邦特選高股息30"),
-    ("00905", "群益臺灣加權"),
-    ("00907", "永豐臺灣加權"),
-    ("00912", "群益臺灣加權"),
-    ("00919", "群益臺灣加權"),
-    ("00922", "國泰臺灣加權"),
-    ("00923", "群益臺灣加權"),
-    ("00924", "群益臺灣加權"),
-    ("00927", "群益臺灣加權"),
-    ("00928", "中信上櫃ESG 30"),
-    ("00929", "復華台灣科技優息"),
-    ("00930", "永豐臺灣加權"),
-    ("00935", "國泰臺灣加權"),
-    ("00939", "統一臺灣高息動能"),
-    ("00940", "元大臺灣價值高息"),
-    ("00941", "中信上游半導體"),
-    ("00943", "兆豐臺灣晶圓製造"),
-    ("00944", "野村臺灣趨勢動能高息"),
-    ("00981A", "主動統一台股增長"),
-    ("00981B", "第一金優選非投債"),
-    # 槓桿型正2（第六碼 L）
-    ("00631L", "元大台灣50正2"),
-    ("00633L", "富邦上証正2"),
-    ("00637L", "元大滬深300正2"),
-    ("00647L", "元大S&P500正2"),
-    ("00650L", "富邦日本正2"),
-    ("00651L", "國泰日本正2"),
-    ("00663L", "國泰臺灣加權正2"),
-    ("00665L", "富邦臺灣加權正2"),
-    ("00667L", "國泰日經225正2"),
-    ("00670L", "富邦NASDAQ正2"),
-    ("00672L", "元大S&P石油正2"),
-    ("00675L", "富邦香港正2"),
-    ("00680L", "元大美債20正2"),
-    ("00683L", "元大美元指數正2"),
-    ("00685L", "元大日本正2"),
-    ("00688L", "國泰20年美債正2"),
-    ("00708L", "富邦VIX正2"),
-    ("00715L", "期街口布蘭特油正2"),
-    # 反向型反1（第六碼 R）
-    ("00632R", "元大台灣50反1"),
-    ("00634R", "富邦上証反1"),
-    ("00638R", "元大滬深300反1"),
-    ("00648R", "元大S&P500反1"),
-    ("00652R", "富邦日本反1"),
-    ("00656R", "國泰中國A50反1"),
-    ("00664R", "國泰臺灣加權反1"),
-    ("00666R", "富邦臺灣加權反1"),
-    ("00668R", "國泰日經225反1"),
-    ("00669R", "國泰美國道瓊反1"),
-    ("00671R", "富邦NASDAQ反1"),
-    ("00673R", "元大S&P石油反1"),
-    ("00674R", "群益臺灣加權反1"),
-    ("00676R", "富邦香港反1"),
-    ("00681R", "元大美債20反1"),
-    ("00684R", "元大美元指數反1"),
-    ("00686R", "元大日本反1"),
-    ("00689R", "國泰20年美債反1"),
-    ("00709R", "富邦VIX反1"),
-    ("00716R", "期街口布蘭特油反1"),
-    # 其它（第六碼 U 等）
-    ("00677U", "富邦VIX"),
-    ("00682U", "元大美元指數"),
-    ("00635U", "元大S&P原油正2"),
-]
-
-
-def build_symbols_tw(*, catalog_minor: Optional[int] = None) -> Optional[dict]:
-    """合併上市、上櫃、興櫃、ETF 補充，去重後排序（不含權證）。"""
+def build_symbols_tw_legacy(*, catalog_minor: Optional[int] = None) -> Optional[dict]:
+    """舊流程：證交所 + 櫃買 CSV（含已下市標的）。"""
     symbol_to_name: dict[str, str] = {}
 
-    def merge_items(items: list[dict], *, overwrite: bool = False) -> int:
-        added = 0
-        for item in items:
-            symbol = item["symbol"]
-            name = item["name"]
-            if not _is_valid_tw_symbol(symbol, name):
-                continue
-            if overwrite or symbol not in symbol_to_name:
-                if symbol not in symbol_to_name:
-                    added += 1
-                symbol_to_name[symbol] = name
-        return added
-
-    # 1. 上市公司（主要上市櫃股票來源；含台積電、廣達等）
     listed = fetch_listed()
-    listed_added = merge_items(listed, overwrite=True)
+    listed_added = merge_symbol_items(symbol_to_name, listed, overwrite=True)
     print(f"   上市公司: {len(listed)} 筆（新增 {listed_added}）")
 
-    # 2. 上櫃
     otc = fetch_otc()
-    otc_added = merge_items(otc)
+    otc_added = merge_symbol_items(symbol_to_name, otc)
     print(f"   上櫃: {len(otc)} 筆（新增 {otc_added}）")
 
-    # 3. 興櫃
     emerging = fetch_emerging()
-    emerging_added = merge_items(emerging)
+    emerging_added = merge_symbol_items(symbol_to_name, emerging)
     print(f"   興櫃: {len(emerging)} 筆（新增 {emerging_added}）")
 
-    # 4. ETF 補充（含字母代號 ETF）
-    etf_items = [{"symbol": sym, "name": name} for sym, name in TW_ETF_SUPPLEMENT]
-    etf_added = merge_items(etf_items, overwrite=True)
-    print(f"   ETF 補充: {len(TW_ETF_SUPPLEMENT)} 筆（新增 {etf_added}）")
-
-    # 5. 證交所上市全商品（補 ETF / 字母商品；已濾權證）
     twse_all = fetch_twse_stock_day_all()
-    twse_added = merge_items(twse_all)
+    twse_added = merge_symbol_items(symbol_to_name, twse_all)
     print(f"   上市全商品: {len(twse_all)} 筆（新增 {twse_added}，已排除權證）")
 
     if not symbol_to_name:
@@ -381,12 +341,37 @@ def build_symbols_tw(*, catalog_minor: Optional[int] = None) -> Optional[dict]:
     )
 
 
-def main():
+def build_symbols_tw(*, catalog_minor: Optional[int] = None, legacy: bool = False) -> Optional[dict]:
+    if legacy:
+        return build_symbols_tw_legacy(catalog_minor=catalog_minor)
+    return build_symbols_tw_fugle(catalog_minor=catalog_minor)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="建立台股 symbols_tw.json")
+    parser.add_argument(
+        "--legacy",
+        action="store_true",
+        help="使用證交所/櫃買 CSV 舊流程（非 Fugle）",
+    )
+    parser.add_argument(
+        "--minor",
+        type=int,
+        default=None,
+        help="catalog minor 版本（預設沿用 output 現值）",
+    )
+    args = parser.parse_args()
+
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     output_path = OUTPUT_DIR / "symbols_tw.json"
-    print("台股：正在取得上市、上櫃、興櫃（不含權證）...")
-    data = build_symbols_tw(catalog_minor=14)
+
+    if args.legacy:
+        print("台股：legacy 模式（證交所 + 櫃買 CSV）...")
+    else:
+        print("台股：Fugle 可交易清單（TWSE + TPEx, type=EQUITY）...")
+
+    data = build_symbols_tw(catalog_minor=args.minor, legacy=args.legacy)
     if data is None:
         return 1
 
@@ -398,4 +383,4 @@ def main():
 
 
 if __name__ == "__main__":
-    exit(main())
+    raise SystemExit(main())

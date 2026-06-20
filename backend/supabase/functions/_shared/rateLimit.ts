@@ -112,7 +112,7 @@ export const FETCH_OR_CREATE_ALL_LIMITS: RateLimitRule[] = [
   { prefix: "fetch-or-create:all", limit: 120, windowSeconds: 60 },
 ]
 
-/** fetch-or-create 僅外部 Yahoo/CoinGecko：30/min + 200/hour */
+/** fetch-or-create 僅外部 Fugle / Yahoo / CoinGecko：30/min + 200/hour */
 export const FETCH_OR_CREATE_EXTERNAL_LIMITS: RateLimitRule[] = [
   { prefix: "fetch-or-create:external", limit: 30, windowSeconds: 60 },
   { prefix: "fetch-or-create:external", limit: 200, windowSeconds: 3600 },

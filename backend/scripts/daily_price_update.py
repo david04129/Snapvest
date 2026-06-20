@@ -59,6 +59,8 @@ class FetchedQuote:
     price: float
     source: str
     close_date: date
+    previous_price: Optional[float] = None
+    previous_close_date: Optional[date] = None
 
 
 def tw_now() -> datetime:
@@ -392,6 +394,16 @@ def _finmind_wait_hourly(request_times: deque[float]) -> None:
             time.sleep(sleep_sec)
 
 
+def _prior_trading_day(d: date) -> date:
+    """往前找最近週一至週五（不含國定假日）。"""
+    candidate = d - timedelta(days=1)
+    for _ in range(10):
+        if candidate.weekday() < 5:
+            return candidate
+        candidate -= timedelta(days=1)
+    return d - timedelta(days=1)
+
+
 def fetch_fugle_tw_quote(
     http: requests.Session,
     symbol: str,
@@ -427,7 +439,21 @@ def fetch_fugle_tw_quote(
         if price is None:
             return None, "invalid_quote"
         close_date = parse_close_date(body.get("date")) or session_close
-        return FetchedQuote(price, "fugle", close_date), ""
+        previous_price = None
+        previous_close_date = None
+        raw_prev = body.get("previousClose")
+        if not _is_valid_price(raw_prev):
+            raw_prev = body.get("referencePrice")
+        if _is_valid_price(raw_prev) and float(raw_prev) != price:
+            previous_price = float(raw_prev)
+            previous_close_date = _prior_trading_day(close_date)
+        return FetchedQuote(
+            price,
+            "fugle",
+            close_date,
+            previous_price=previous_price,
+            previous_close_date=previous_close_date,
+        ), ""
     except Exception as e:
         return None, str(e)
 
@@ -668,12 +694,13 @@ def fetch_crypto_prices_coingecko(symbols: list[dict]) -> dict[tuple, float]:
 
 
 def upsert_prices(supabase: Client, updates: list[dict], default_price_kind: Optional[str] = None):
-    """寫入 asset_price_snapshots；舊 current 滾入 previous_*"""
+    """寫入 asset_price_snapshots；舊 current 滾入 previous_*（Fugle 有 previousClose 時優先）"""
     if not updates:
         return
     for row in updates:
         if default_price_kind and not row.get("price_kind"):
             row["price_kind"] = default_price_kind
+        has_fugle_previous = row.get("previous_price") is not None and row.get("previous_close_date")
         try:
             existing = (
                 supabase.table("asset_price_snapshots")
@@ -684,17 +711,22 @@ def upsert_prices(supabase: Client, updates: list[dict], default_price_kind: Opt
                 .eq("symbol", row["symbol"])
                 .execute()
             )
-            if existing.data and existing.data[0].get("current_price"):
+            if existing.data and existing.data[0].get("current_price") and not has_fugle_previous:
                 prev = existing.data[0]
                 row["previous_price"] = str(prev["current_price"])
                 row["previous_close_date"] = prev.get("current_close_date")
                 row["previous_updated_at"] = prev.get("current_updated_at")
                 row["previous_price_source"] = prev.get("current_price_source")
+            elif has_fugle_previous:
+                row["previous_updated_at"] = row.get("current_updated_at")
+                row.setdefault("previous_price_source", "fugle")
             supabase.table("asset_price_snapshots").upsert(
                 row,
                 on_conflict="asset_type,symbol",
                 ignore_duplicates=False,
             ).execute()
+            if has_fugle_previous:
+                _upsert_previous_history_row(supabase, row)
         except Exception as e:
             print(f"寫入 {row.get('asset_type')}/{row.get('symbol')} 失敗: {e}")
         time.sleep(0.05)
@@ -702,6 +734,25 @@ def upsert_prices(supabase: Client, updates: list[dict], default_price_kind: Opt
         {"id": "global", "last_updated_at": tw_now_local_seconds()},
         on_conflict="id",
     ).execute()
+
+
+def _upsert_previous_history_row(supabase: Client, row: dict) -> None:
+    """Fugle previousClose → asset_price_history（供 App 日漲跌基準）。"""
+    try:
+        supabase.table("asset_price_history").upsert(
+            {
+                "asset_type": row["asset_type"],
+                "symbol": row["symbol"],
+                "price_date": row["previous_close_date"],
+                "close_price": row["previous_price"],
+                "currency": row["currency"],
+                "source": row.get("previous_price_source", "fugle"),
+                "updated_at": row.get("previous_updated_at") or row["current_updated_at"],
+            },
+            on_conflict="asset_type,symbol,price_date",
+        ).execute()
+    except Exception as e:
+        print(f"寫入前收 history {row.get('symbol')} 失敗: {e}")
 
 
 def upsert_price_history(supabase: Client, updates: list[dict]) -> None:
@@ -837,7 +888,7 @@ def _quotes_to_rows(
     currency_map = {"stock_tw": "TWD", "stock_us": "USD", "crypto": "USD"}
     rows = []
     for (asset_type, symbol), q in quotes.items():
-        rows.append({
+        row = {
             "asset_type": asset_type,
             "symbol": symbol,
             "currency": currency_map.get(asset_type, "USD"),
@@ -846,7 +897,12 @@ def _quotes_to_rows(
             "current_updated_at": updated_at,
             "current_price_source": q.source,
             "price_kind": price_kind,
-        })
+        }
+        if q.previous_price is not None and q.previous_close_date is not None:
+            row["previous_price"] = str(q.previous_price)
+            row["previous_close_date"] = q.previous_close_date.isoformat()
+            row["previous_price_source"] = "fugle"
+        rows.append(row)
     return rows
 
 

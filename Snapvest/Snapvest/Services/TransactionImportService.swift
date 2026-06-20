@@ -366,7 +366,21 @@ enum TransactionImportService {
         }
         
         var assetType = resolveAssetType(row: row, account: account)
-        var symbol = normalizedSymbol(row.symbol, assetType: assetType)
+        var symbol = row.symbol.trimmingCharacters(in: .whitespacesAndNewlines)
+        var symbolResolutionError: String?
+
+        if let assetType, assetType == .stockTW, !symbol.isEmpty {
+            switch SymbolListService.resolveTaiwanImportSymbol(symbol) {
+            case .resolved(let resolved):
+                symbol = resolved
+            case .notFound(let name):
+                symbolResolutionError = "無法由名稱「\(name)」對照台股代號，請點編輯選股"
+            case .ambiguous(let name, _):
+                symbolResolutionError = "名稱「\(name)」對應多檔標的，請點編輯選擇代號"
+            }
+        }
+
+        symbol = normalizedSymbol(symbol, assetType: assetType)
         
         switch row.type {
         case .buy, .sell, .dividend:
@@ -454,7 +468,7 @@ enum TransactionImportService {
             lineNumber: row.lineNumber,
             summary: summary,
             transaction: transaction,
-            errorMessage: nil,
+            errorMessage: symbolResolutionError,
             skipReason: nil
         )
     }

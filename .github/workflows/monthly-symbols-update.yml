@@ -1,12 +1,23 @@
-# 每月自動更新美股／台股／加密 symbols 清單（供發 App 新版使用）
-# 不需 Secrets；成功後會 commit 至 main
+# 每月自動更新美股／台股／加密 symbols 清單，並同步 Supabase OTA catalog
+#
+# 排程：每月 1 日 02:00 UTC（台灣 10:00）
+# 手動：Actions → Monthly Symbols Update → Run workflow
+#
+# 必要 Secrets：
+#   FUGLE_API_KEY              — 台股清單（build_symbols_tw.py）
+#   SUPABASE_URL                 — OTA DB 同步（可略過：skip_db_sync）
+#   SUPABASE_SERVICE_ROLE_KEY
 name: Monthly Symbols Update
 
 on:
   schedule:
-    # 每月 1 日 02:00 UTC = 台灣時間 10:00
     - cron: '0 2 1 * *'
   workflow_dispatch:
+    inputs:
+      skip_db_sync:
+        description: 只建置 JSON / commit，不同步 Supabase
+        type: boolean
+        default: false
 
 concurrency:
   group: monthly-symbols-update
@@ -29,11 +40,37 @@ jobs:
       - name: Install Python deps
         run: pip install -r backend/scripts/requirements.txt
 
+      - name: Verify secrets
+        run: |
+          set -euo pipefail
+          if [ -z "${FUGLE_API_KEY:-}" ]; then
+            echo "::error::未設定 GitHub Secret FUGLE_API_KEY（台股 Fugle 清單必填）"
+            echo "設定方式：Settings → Secrets → Actions → New repository secret"
+            exit 1
+          fi
+          if [ "${SKIP_DB_SYNC:-false}" != "true" ]; then
+            if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+              echo "::error::未設定 SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY"
+              echo "若只要建置清單，請勾選 skip_db_sync 再 Run workflow"
+              exit 1
+            fi
+          else
+            echo "skip_db_sync=true，略過 Supabase secret 檢查"
+          fi
+        env:
+          FUGLE_API_KEY: ${{ secrets.FUGLE_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SKIP_DB_SYNC: ${{ github.event_name == 'workflow_dispatch' && inputs.skip_db_sync && 'true' || 'false' }}
+
       - name: Build all symbol lists
         working-directory: scripts
+        env:
+          FUGLE_API_KEY: ${{ secrets.FUGLE_API_KEY }}
         run: ./build_all.sh
 
       - name: Sync symbol catalog to Supabase
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.skip_db_sync) }}
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -59,5 +96,15 @@ jobs:
             exit 0
           fi
 
-          git commit -m "chore(symbols): 每月自動更新美股/台股/加密清單"
+          TW_COUNT=$(python3 -c "import json;print(len(json.load(open('scripts/output/symbols_tw.json'))['items']))")
+          US_COUNT=$(python3 -c "import json;print(len(json.load(open('scripts/output/symbols_us.json'))['items']))")
+          CR_COUNT=$(python3 -c "import json;print(len(json.load(open('scripts/output/symbols_crypto.json'))['items']))")
+
+          git commit -m "$(cat <<EOF
+chore(symbols): 更新美股/台股/加密清單
+
+台股來源：Fugle tickers（TWSE+TPEx）
+tw=${TW_COUNT} us=${US_COUNT} crypto=${CR_COUNT}
+EOF
+)"
           git push

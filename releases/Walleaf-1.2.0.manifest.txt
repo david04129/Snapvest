@@ -1,0 +1,32 @@
+Walleaf v1.2.0 Development Snapshot
+===================================
+
+Version:        1.2.0 (Xcode Marketing 仍 1.1.0 / Build 7 — 送審前 bump)
+Git branch:     backup/v1.2.0-20260620
+Git commit:     8bb94c2
+Bundle ID:      com.EggHsu.Walleaf
+Minimum iOS:    18.0
+
+Restore source code:
+  git fetch origin
+  git checkout backup/v1.2.0-20260620
+
+Key changes (2026-06-20):
+  - TW price: Fugle primary (fetch-or-create-price + daily_price_update previousClose)
+  - TW symbols catalog 1.15 (3258 items, Fugle tickers TWSE+TPEx)
+  - Import: TW symbol column accepts ticker or Chinese short name
+  - Manual asset notes editing; import tutorial copy updates
+  - GitHub Actions Monthly Symbols Update requires FUGLE_API_KEY
+  - Migration 026_tracked_symbols_summary.sql
+
+Backend deploy:
+  supabase secrets set FUGLE_API_KEY=...
+  supabase functions deploy fetch-or-create-price
+  Apply migration 026_tracked_symbols_summary.sql
+
+Symbols backfill (one-off):
+  cd backend/scripts && python3 backfill_tw_previous_close_fugle.py --yahoo-only
+
+Related docs:
+  releases/VERSIONS.md (v1.2.0 section)
+  ENGINEERING_HANDBOOK.md (instant price / Fugle)

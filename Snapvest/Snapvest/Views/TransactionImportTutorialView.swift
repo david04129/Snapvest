@@ -194,7 +194,7 @@ private struct ImportTutorialPage: Identifiable {
                             .normal("、"),
                             .strong("買／賣"),
                             .normal("、"),
-                            .strong("代號"),
+                            .strong("代號或股票名稱"),
                             .normal("、"),
                             .strong("數量"),
                             .normal("、"),
@@ -208,7 +208,7 @@ private struct ImportTutorialPage: Identifiable {
                     bullets: [
                         [
                             .normal("必填欄位："),
-                            .strong("代號"),
+                            .strong("代號或股票名稱"),
                             .normal("、"),
                             .strong("持有數量"),
                             .normal("、"),
@@ -274,18 +274,18 @@ private struct ImportTutorialPage: Identifiable {
             ),
             ImportTutorialPage(
                 id: "ai",
-                title: "請 AI 產生匯入文字",
-                subtitle: "將提示詞與準備好的資料交給 AI，取得可貼回 Walleaf 的表格文字。",
+                title: "請「外部」AI 產生匯入文字",
+                subtitle: "在 ChatGPT、Gemini 等「Walleaf 以外」的 App 貼上提示詞與截圖，取得可貼回本 App 的表格文字。",
                 detailBullets: [
-                    [.normal("可使用 ChatGPT、Gemini 等工具")],
-                    [.normal("複製 AI 回覆全文，回到 Walleaf 貼上")],
+                    [.normal("請使用 ChatGPT、Gemini 等外部工具（非 Walleaf 內建 AI）")],
+                    [.normal("複製外部 AI 回覆全文，回到 Walleaf 貼上")],
                 ],
                 visual: .externalAI(accountType: accountType)
             ),
             ImportTutorialPage(
                 id: "paste",
                 title: "貼回並匯入",
-                subtitle: "將 AI 產生的文字貼入下方欄位，預覽確認無誤後即可匯入。",
+                subtitle: "將外部 AI 產生的文字貼入下方欄位，預覽確認無誤後即可匯入。",
                 detailBullets: [
                     [.normal("貼到「貼回並匯入」欄位，按「解析預覽」")],
                     [.normal("檢查每筆代號、數量、價格是否合理")],
@@ -560,12 +560,16 @@ private enum ImportTutorialBrokerSampleData {
         accountType == .cryptoWallet ? "幣種" : "代號"
     }
 
+    static func holdingsSymbolColumnTitle(for accountType: AccountType) -> String {
+        accountType == .cryptoWallet ? "幣種" : "股票名稱"
+    }
+
     static func statementColumns(for accountType: AccountType) -> [String] {
         ["日期", "買賣", symbolColumnTitle(for: accountType), "數量", "成交價"]
     }
 
     static func holdingsColumns(for accountType: AccountType) -> [String] {
-        [symbolColumnTitle(for: accountType), "持有數量", "成本價"]
+        [holdingsSymbolColumnTitle(for: accountType), "持有數量", "成本價"]
     }
 
     static func statementRows(for accountType: AccountType) -> [[ImportTutorialBrokerCell]] {
@@ -627,15 +631,15 @@ private enum ImportTutorialBrokerSampleData {
         switch accountType {
         case .twdSecurities:
             return [
-                [.init(text: "0050", underlined: true), .init(text: "150", underlined: true), .init(text: "154.20")],
-                [.init(text: "2330", underlined: true), .init(text: "10", underlined: true), .init(text: "985.00")],
-                [.init(text: "00878", underlined: true), .init(text: "500", underlined: true), .init(text: "19.86")],
+                [.init(text: "元大台灣50", underlined: true), .init(text: "150", underlined: true), .init(text: "154.20")],
+                [.init(text: "台積電", underlined: true), .init(text: "10", underlined: true), .init(text: "985.00")],
+                [.init(text: "國泰永續高股息", underlined: true), .init(text: "500", underlined: true), .init(text: "19.86")],
             ]
         case .usdAccount:
             return [
-                [.init(text: "NVDA", underlined: true), .init(text: "11.08", underlined: true), .init(text: "178.25")],
+                [.init(text: "NVIDIA", underlined: true), .init(text: "11.08", underlined: true), .init(text: "178.25")],
                 [.init(text: "AMD", underlined: true), .init(text: "8", underlined: true), .init(text: "158.20")],
-                [.init(text: "GOOG", underlined: true), .init(text: "35", underlined: true), .init(text: "142.50")],
+                [.init(text: "Alphabet", underlined: true), .init(text: "35", underlined: true), .init(text: "142.50")],
             ]
         case .cryptoWallet:
             return [
@@ -1054,7 +1058,7 @@ private struct ImportTutorialAIMock: View {
                         .background(Color.appPrimary.opacity(0.12))
                         .clipShape(Circle())
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("ChatGPT · Gemini")
+                        Text("ChatGPT · Gemini（外部 App）")
                             .font(.subheadline.weight(.bold))
                             .foregroundColor(.primaryText)
                         Text("貼上提示詞及附上截圖或檔案")
@@ -1284,7 +1288,7 @@ private struct ImportTutorialPasteMock: View {
 
             Group {
                 if pastedCSV.isEmpty {
-                    Text("在此貼上 AI 回覆的 CSV…")
+                    Text("在此貼上外部 AI 回覆的 CSV…")
                         .font(.caption)
                         .foregroundColor(.tertiaryText)
                         .frame(maxWidth: .infinity, minHeight: 96, alignment: .topLeading)

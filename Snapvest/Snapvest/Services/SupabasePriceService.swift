@@ -67,6 +67,7 @@ struct FetchOrCreateQuote: Sendable {
     let currentCloseDate: Date?
     let previousPrice: Decimal?
     let previousCloseDate: Date?
+    let previousPriceSource: String?
 }
 
 /// 從 Supabase 讀取股價與更新時間
@@ -749,11 +750,14 @@ struct SupabasePriceService {
 
     private static func trustedPreviousPriceSource(for quote: FetchOrCreateQuote) -> String? {
         guard quote.previousPrice != nil else { return nil }
+        if let explicit = quote.previousPriceSource,
+           DailyReferenceCloseResolver.isBootstrapPreviousSource(explicit) {
+            return explicit
+        }
         if DailyReferenceCloseResolver.isBootstrapPreviousSource(quote.source) {
             return quote.source
         }
-        // Edge DB hit 可能剛從 Yahoo / snapshot 補寫 history 昨收
-        return "yahoo"
+        return nil
     }
 
     static func fetchPreviousSessionCloseFromHistory(
@@ -849,6 +853,7 @@ struct SupabasePriceService {
         let currentCloseDate = SupabaseRESTTimestampParser.parseCloseDate(json?["currentCloseDate"] as? String)
         let previousPrice = parseJSONPrice(json?["previousPrice"])
         let previousCloseDate = SupabaseRESTTimestampParser.parseCloseDate(json?["previousCloseDate"] as? String)
+        let previousPriceSource = json?["previousPriceSource"] as? String
 
         return FetchOrCreateQuote(
             currentPrice: currentPrice,
@@ -856,7 +861,8 @@ struct SupabasePriceService {
             source: source,
             currentCloseDate: currentCloseDate,
             previousPrice: previousPrice,
-            previousCloseDate: previousCloseDate
+            previousCloseDate: previousCloseDate,
+            previousPriceSource: previousPriceSource
         )
     }
 

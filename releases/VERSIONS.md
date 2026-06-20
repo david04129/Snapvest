@@ -7,14 +7,89 @@
 
 ## 快速索引
 
-| 版本 | Build | 狀態 | Git Tag | 正式上架 |
-|------|-------|------|---------|----------|
+| 版本 | Build | 狀態 | Git Tag / 備份 | 正式上架 |
+|------|-------|------|----------------|----------|
+| **1.2.0** | （待 bump） | **開發中** | `backup/v1.2.0-20260620` | — |
 | 1.1.0 | 7 | **待送審** | `v1.1.0-build7` | — |
 | 1.0.0 | 6 | **已上架** | `v1.0.0-build6` | 2026-06（App Store 已可發布） |
 
 ---
 
 ## 版本詳細紀錄
+
+### v1.2.0 — Fugle 報價／台股清單、匯入與 catalog OTA
+
+| 項目 | 內容 |
+|------|------|
+| **狀態** | **開發中**（Xcode 仍 **1.1.0 (7)**，送審前需 bump Marketing / Build） |
+| **日期** | 2026-06-20 |
+| **Git Commit** | `8bb94c2` |
+| **備份分支** | `backup/v1.2.0-20260620` |
+| **最低 iOS** | **18.0**（Phase 2 降 iOS 17 **已取消**） |
+| **Symbol catalog** | 台股 **1.15**（3258 檔，Fugle 可交易清單）；先前 **1.14** 為 2744 檔 |
+
+#### 改動摘要
+
+**App**
+- **台股匯入**：`SymbolListService.resolveTaiwanImportSymbol` — CSV `symbol` 欄可填**代號或中文簡稱**（catalog exact match）；`TransactionImportService` 整合。
+- **匯入教學**：成交明細欄位改「代號或股票名稱」；持有倉位示意改中文名稱範例（`TransactionImportTutorialView`）。
+- **其他資產備註**：詳情頁備註列恆顯、可編輯（`ManualAssetDetailView` + `EditManualAssetNotesSheet`）。
+- **前收信任**：`DailyReferenceCloseResolver` 信任 bootstrap 來源 **`fugle`**；`SupabasePriceService` 解析 Edge `previousPriceSource`。
+- **Deployment target**：App target **17.0 → 18.0**（放棄 iOS 17；Swift 6 × iOS 17 runtime 不相容）。
+
+**後端 / Edge / 排程**
+- **即時補價** `fetch-or-create-price`：台股 **Fugle `intraday/quote`（含 `previousClose`）→ Yahoo 5d 備援**；新增 `_shared/fugleQuote.ts`。
+- **排程** `daily_price_update.py`：Fugle 抓價時一併寫入 **previousClose** → snapshot + history。
+- **一次性腳本** `backfill_tw_previous_close_fugle.py`：修正 Yahoo 錯誤前收（如 6669）。
+- **Supabase migration** `026_tracked_symbols_summary.sql`：`tracked_symbols_summary` 檢視（抓價池統計）。
+- **Rate limit 註解**：外部來源含 Fugle。
+
+**Symbols / CI**
+- **台股建置** `build_symbols_tw.py`：預設 **Fugle tickers**（`TWSE` + `TPEx`, `type=EQUITY`）；`--legacy` 保留舊 CSV 流程。
+- **Bundle + output**：`symbols_tw.json` **1.15 / 3258 檔**（剔除已下市如 0054、00716R；清單上標的 Fugle 可報價）。
+- **GitHub Actions** `monthly-symbols-update.yml`：需 **`FUGLE_API_KEY`**；手動 Run 可勾 **skip_db_sync**。
+
+**文件**
+- `ENGINEERING_HANDBOOK.md`、`README.md`（iOS 18.0）、`scripts/README.md`、`docs/SYMBOL_CATALOG_UPDATE_GUIDE.md`。
+
+#### 部署提醒（後端）
+
+```bash
+# Edge Secret + 部署
+supabase secrets set FUGLE_API_KEY=...
+cd backend && supabase functions deploy fetch-or-create-price
+
+# 修正既有錯誤 Yahoo 前收（本機）
+cd backend/scripts && python3 backfill_tw_previous_close_fugle.py --yahoo-only
+
+# Supabase migration
+# 套用 026_tracked_symbols_summary.sql
+```
+
+#### GitHub Secrets（Monthly Symbols Update）
+
+| Secret | 用途 |
+|--------|------|
+| `FUGLE_API_KEY` | 台股 symbols 建置 |
+| `SUPABASE_URL` | OTA catalog 同步 |
+| `SUPABASE_SERVICE_ROLE_KEY` | OTA catalog 同步 |
+
+#### 備份位置
+
+| 類型 | 路徑 |
+|------|------|
+| 備份分支 | `git checkout backup/v1.2.0-20260620` |
+| 詳細 manifest | [`releases/Walleaf-1.2.0.manifest.txt`](Walleaf-1.2.0.manifest.txt) |
+| 1.1.0 送審 baseline | `git checkout v1.1.0-build7` |
+
+#### 還原方式
+
+```bash
+git fetch origin
+git checkout backup/v1.2.0-20260620
+```
+
+---
 
 ### v1.1.0 (build 7) — 霧化、圖表手勢、分享與 Paywall 試用
 
@@ -43,7 +118,7 @@
 - **首頁圖表手勢**：長按後 scrub／選 slice；修正非 7 天區間 scrub 座標；長按 0.45 秒觸發。
 - **新增交易**：買入／賣出切換與賣出持股選單改善；買賣表單改為先填價格再填數量。
 - **Paywall**：年訂 7 天免費試用 UI（角標 + pill + 訂閱說明）；底部按鈕間距修正。
-- **最低系統**：iOS **18.0**（deployment target 自 18.6 放寬；iOS 17 支援規劃於 **v1.2.0**）。
+- **最低系統**：iOS **18.0**（Phase 2 放棄 iOS 17：Swift 6 編譯設定與 iOS 17 runtime 不相容）。
 - **版本號**：Marketing 1.1.0 / Build 7。
 
 **官網**
@@ -245,15 +320,13 @@ git checkout release/1.0.0
 
 ---
 
-## main 上尚未納入正式 tag 的改動
+## main 上尚未納入正式 App Store tag 的改動
 
-（v1.1.0-build7 仍為 iOS 18.0 送審 baseline；下方為 main 上後續改動。）
+（v1.2.0 開發內容已整併至上方 **v1.2.0** 章節；送審前請 bump **1.2.0 (build N)**、Archive、打 tag。）
 
 | 日期 | 改動 |
 |------|------|
-| 2026-06-20 | **Phase 1**：deployment target 18.6 → 18.0（v1.1.0 送審用） |
-| 2026-06-20 | **Phase 2**：deployment target 18.0 → **17.0**（無 Swift 改動；待驗證，目標 **v1.2.0**） |
-| 2026-06-20 | **選股 catalog 1.14**（v1.2.0）：台股 2744 檔、排除權證；補回 2330／2382／00981A 等；美股 **1.9**、加密 **1.11** |
+| — | （見 v1.2.0 改動摘要） |
 
 ### 1.0.0 上架後、官網 only（不影響 App binary）
 
@@ -272,10 +345,10 @@ git checkout release/1.0.0
 
 | 階段 | 目標 | 版本 | 狀態 |
 |------|------|------|------|
-| Phase 1 | 最低 **iOS 18.0**（18.6 → 18.0） | **v1.1.0** | **已完成**（僅改 deployment target） |
-| Phase 2 | 最低 **iOS 17.0**（18.0 → 17.0） | **v1.2.0** | **進行中**（deployment target 已改；catalog **1.14** 已建；待驗證送審） |
+| Phase 1 | 最低 **iOS 18.0**（18.6 → 18.0） | **v1.1.0** | **已完成** |
+| Phase 2 | 最低 **iOS 17.0** | **v1.2.0** | **已取消**（Swift 6 `MainActor` 預設隔離 × iOS 17 runtime 不相容；維持 18.0） |
 
-Phase 2：deployment target → 17.0；選股 catalog **tw 1.14**（2744 檔、無權證）、**us 1.9**、**crypto 1.11**。驗證通過後 bump **1.2.0**、打 tag、manifest、Archive；Supabase OTA 需執行 `sync_symbol_catalog_to_db.py`。
+Phase 2 原計畫降至 iOS 17.0；實測 iOS 17 模擬器啟動時 SwiftUI AttributeGraph crash（`nonisolated(nonsending)` metadata）。catalog **tw 1.14** 等仍屬 v1.2.0 功能，與最低 OS 無關。
 
 ---
 
@@ -321,4 +394,4 @@ releases/
 
 ---
 
-*最後更新：2026-06-20（Phase 2：最低 iOS 17.0，待驗證 → v1.2.0）*
+*最後更新：2026-06-20（v1.2.0：Fugle 報價／台股清單、匯入與 OTA workflow）*

@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def main() -> None:
-    lines = ["## Symbols 更新摘要", ""]
+    lines = ["## Symbols 更新摘要", "", "- 台股来源：**Fugle** tickers（TWSE + TPEx, EQUITY）", ""]
     for name in ("tw", "us", "crypto"):
         path = ROOT / "scripts" / "output" / f"symbols_{name}.json"
         data = json.loads(path.read_text(encoding="utf-8"))
