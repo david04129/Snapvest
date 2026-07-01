@@ -1,8 +1,8 @@
 {
   "epoch": 1,
-  "minor": 9,
-  "version": 9,
-  "updatedAt": "2026-06-10",
+  "minor": 12,
+  "version": 12,
+  "updatedAt": "2026-06-20",
   "items": [
     {
       "symbol": "0g",
@@ -430,11 +430,6 @@
       "coingeckoId": "bitway"
     },
     {
-      "symbol": "bty",
-      "name": "Bityuan",
-      "coingeckoId": "bityuan"
-    },
-    {
       "symbol": "buidl",
       "name": "BlackRock USD Institutional Digital Liquidity Fund",
       "coingeckoId": "blackrock-usd-institutional-digital-liquidity-fund"
@@ -563,11 +558,6 @@
       "symbol": "cvx",
       "name": "Convex Finance",
       "coingeckoId": "convex-finance"
-    },
-    {
-      "symbol": "cx",
-      "name": "Cortex",
-      "coingeckoId": "cortex-2"
     },
     {
       "symbol": "cys",
@@ -730,11 +720,6 @@
       "coingeckoId": "eurite"
     },
     {
-      "symbol": "eurs",
-      "name": "STASIS EURO",
-      "coingeckoId": "stasis-eurs"
-    },
-    {
       "symbol": "eursafo",
       "name": "Spiko Amundi Overnight Swap Fund (EUR)",
       "coingeckoId": "spiko-amundi-overnight-swap-fund-eur"
@@ -753,11 +738,6 @@
       "symbol": "fartcoin",
       "name": "Fartcoin",
       "coingeckoId": "fartcoin"
-    },
-    {
-      "symbol": "fb",
-      "name": "Fractal Bitcoin",
-      "coingeckoId": "fractal-bitcoin"
     },
     {
       "symbol": "fdit",
@@ -910,6 +890,11 @@
       "coingeckoId": "gmt-token"
     },
     {
+      "symbol": "gram",
+      "name": "Gram (prev. Toncoin)",
+      "coingeckoId": "the-open-network"
+    },
+    {
       "symbol": "grass",
       "name": "Grass",
       "coingeckoId": "grass"
@@ -960,6 +945,11 @@
       "coingeckoId": "helium"
     },
     {
+      "symbol": "holo",
+      "name": "Holoworld",
+      "coingeckoId": "holoworld"
+    },
+    {
       "symbol": "home",
       "name": "HOME",
       "coingeckoId": "home"
@@ -993,6 +983,11 @@
       "symbol": "idol",
       "name": "MEET48",
       "coingeckoId": "meet48"
+    },
+    {
+      "symbol": "igra",
+      "name": "IGRA",
+      "coingeckoId": "igra"
     },
     {
       "symbol": "imx",
@@ -1280,6 +1275,11 @@
       "coingeckoId": "mantle"
     },
     {
+      "symbol": "mog",
+      "name": "Mog Coin",
+      "coingeckoId": "mog-coin"
+    },
+    {
       "symbol": "mon",
       "name": "Monad",
       "coingeckoId": "monad"
@@ -1315,19 +1315,9 @@
       "coingeckoId": "micron-technology-ondo-tokenized-stock"
     },
     {
-      "symbol": "must",
-      "name": "Mustang",
-      "coingeckoId": "mustang"
-    },
-    {
       "symbol": "mx",
       "name": "MX",
       "coingeckoId": "mx-token"
-    },
-    {
-      "symbol": "myx",
-      "name": "MYX Finance",
-      "coingeckoId": "myx-finance"
     },
     {
       "symbol": "near",
@@ -1398,6 +1388,11 @@
       "symbol": "nxt",
       "name": "NEXST",
       "coingeckoId": "nexst"
+    },
+    {
+      "symbol": "o",
+      "name": "o1.exchange",
+      "coingeckoId": "o1-exchange"
     },
     {
       "symbol": "oct",
@@ -1570,6 +1565,11 @@
       "coingeckoId": "precious-metals-usd"
     },
     {
+      "symbol": "pnut",
+      "name": "Peanut the Squirrel",
+      "coingeckoId": "peanut-the-squirrel"
+    },
+    {
       "symbol": "pol",
       "name": "POL (ex-MATIC)",
       "coingeckoId": "polygon-ecosystem-token"
@@ -1670,9 +1670,19 @@
       "coingeckoId": "raydium"
     },
     {
+      "symbol": "re",
+      "name": "RE",
+      "coingeckoId": "re"
+    },
+    {
       "symbol": "real",
       "name": "RealLink",
       "coingeckoId": "reallink"
+    },
+    {
+      "symbol": "red",
+      "name": "RedStone",
+      "coingeckoId": "redstone-oracles"
     },
     {
       "symbol": "render",
@@ -1703,11 +1713,6 @@
       "symbol": "rlusd",
       "name": "Ripple USD",
       "coingeckoId": "ripple-usd"
-    },
-    {
-      "symbol": "robo",
-      "name": "Fabric Protocol",
-      "coingeckoId": "robo-token-2"
     },
     {
       "symbol": "ron",
@@ -1780,11 +1785,6 @@
       "coingeckoId": "sentient"
     },
     {
-      "symbol": "serv",
-      "name": "OpenServ",
-      "coingeckoId": "openserv"
-    },
-    {
       "symbol": "sfp",
       "name": "SafePal",
       "coingeckoId": "safepal"
@@ -1798,11 +1798,6 @@
       "symbol": "shib",
       "name": "Shiba Inu",
       "coingeckoId": "shiba-inu"
-    },
-    {
-      "symbol": "show",
-      "name": "SHOW",
-      "coingeckoId": "show-2"
     },
     {
       "symbol": "shx",
@@ -1880,6 +1875,11 @@
       "coingeckoId": "spx6900"
     },
     {
+      "symbol": "sqd",
+      "name": "SQD",
+      "coingeckoId": "subsquid"
+    },
+    {
       "symbol": "stable",
       "name": "​​Stable",
       "coingeckoId": "stable-2"
@@ -1893,11 +1893,6 @@
       "symbol": "stau",
       "name": "STAU",
       "coingeckoId": "stau"
-    },
-    {
-      "symbol": "stg",
-      "name": "Stargate Finance",
-      "coingeckoId": "stargate-finance"
     },
     {
       "symbol": "strcx",
@@ -2003,11 +1998,6 @@
       "symbol": "tkx",
       "name": "Tokenize Xchange",
       "coingeckoId": "tokenize-xchange"
-    },
-    {
-      "symbol": "ton",
-      "name": "Toncoin",
-      "coingeckoId": "the-open-network"
     },
     {
       "symbol": "toshi",
@@ -2265,6 +2255,11 @@
       "coingeckoId": "virtual-protocol"
     },
     {
+      "symbol": "vit",
+      "name": "V.I.T.R.I.O.L. Network",
+      "coingeckoId": "v-i-t-r-i-o-l-network"
+    },
+    {
       "symbol": "vsn",
       "name": "Vision",
       "coingeckoId": "vision-3"
@@ -2318,6 +2313,11 @@
       "symbol": "wlfi",
       "name": "World Liberty Financial",
       "coingeckoId": "world-liberty-financial"
+    },
+    {
+      "symbol": "wm",
+      "name": "WrappedM by M0",
+      "coingeckoId": "wrappedm-by-m0"
     },
     {
       "symbol": "would",
@@ -2435,6 +2435,11 @@
       "coingeckoId": "zebec-network"
     },
     {
+      "symbol": "zchf",
+      "name": "Frankencoin",
+      "coingeckoId": "frankencoin"
+    },
+    {
       "symbol": "zec",
       "name": "Zcash",
       "coingeckoId": "zcash"
@@ -2443,11 +2448,6 @@
       "symbol": "zen",
       "name": "Horizen",
       "coingeckoId": "zencash"
-    },
-    {
-      "symbol": "zest",
-      "name": "Zest Protocol",
-      "coingeckoId": "zest-protocol"
     },
     {
       "symbol": "zeta",
