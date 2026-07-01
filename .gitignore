@@ -44,3 +44,10 @@ scripts/output/*
 
 # Supabase secrets (never commit)
 **/SupabaseConfig.secrets.swift
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example
