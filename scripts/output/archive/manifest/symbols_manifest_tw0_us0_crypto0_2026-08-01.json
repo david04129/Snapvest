@@ -1,0 +1,17 @@
+{
+  "tw": {
+    "epoch": 1,
+    "minor": 17,
+    "updatedAt": "2026-08-01"
+  },
+  "us": {
+    "epoch": 1,
+    "minor": 11,
+    "updatedAt": "2026-08-01"
+  },
+  "crypto": {
+    "epoch": 1,
+    "minor": 14,
+    "updatedAt": "2026-08-01"
+  }
+}
